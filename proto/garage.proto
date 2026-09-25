@@ -43,6 +43,8 @@ service GarageService {
 
     // --- Facts ---
     rpc EnrichFacts (EnrichFactsRequest) returns (stream EnrichFactsStatus);
+    rpc ListFacts (ListFactsRequest) returns (ListFactsResponse);
+    rpc GetFactStats (FactStatsRequest) returns (FactStatsResponse);
 
     // --- Schema, Stats & Settings ---
     rpc GetStats (StatsRequest) returns (StatsResponse);
@@ -482,6 +484,70 @@ message EnrichFactsStatus {
     int64 enriched = 10;
     int64 failed = 11;
     string message = 12;
+}
+
+// What ListFacts and GetFactStats narrow to; an empty field matches everything.
+message FactFilter {
+    string query = 1;         // full-text (websearch syntax) or substring match on the fact
+    string source = 2;        // source slug
+    int64 document_id = 3;    // > 0: just this document's facts
+    string fact_class = 4;    // the extractor's class label, e.g. "fact"
+    string corpus_class = 5;  // document | code | communication
+}
+
+message ListFactsRequest {
+    FactFilter filter = 1;
+    string sort = 2;          // newest (default) | document | relevance
+    int32 limit = 3;          // 0 = 50; at most 500
+    int32 offset = 4;
+    int32 context_chars = 5;  // document text either side of the span; 0 = 200
+}
+
+message FactEntry {
+    int64 id = 1;
+    int64 document_id = 2;
+    int32 ord = 3;
+    string fact = 4;
+    string fact_class = 5;
+    string attributes_json = 6;
+    // Span of documents.content the fact was grounded to, in code points.
+    optional int32 char_start = 7;
+    optional int32 char_end = 8;
+    string extractor = 9;
+    string extractor_model = 10;
+    string created_at = 11;   // ISO 8601
+    string document_title = 12;
+    string document_uri = 13;
+    string source_slug = 14;
+    string corpus_class = 15;
+    string trust_tier = 16;
+    // documents.content around the span; empty when the fact has no span or the
+    // document no stored text. The span inside it, in code points (Unicode scalars).
+    string excerpt = 17;
+    optional int32 excerpt_span_start = 18;
+    optional int32 excerpt_span_end = 19;
+    bool excerpt_truncated_before = 20;
+    bool excerpt_truncated_after = 21;
+}
+
+message ListFactsResponse {
+    repeated FactEntry facts = 1;
+    int64 total_count = 2;   // across every page
+    int32 limit = 3;         // the page size the server applied
+    int32 offset = 4;
+    string formatted_output = 5;
+}
+
+message FactStatsRequest {
+    FactFilter filter = 1;
+}
+
+message FactStatsResponse {
+    int64 facts = 1;
+    int64 documents = 2;
+    map<string, int64> facts_by_source = 3;
+    map<string, int64> facts_by_class = 4;
+    string formatted_output = 5;
 }
 
 // ---------------------------------------------------------------------------

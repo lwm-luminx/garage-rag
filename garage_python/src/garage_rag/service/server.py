@@ -45,6 +45,10 @@ from garage_rag.proto.garage_pb2 import (
     EmbeddingChunkItem,
     EnrichFactsRequest,
     EnrichFactsStatus,
+    FactEntry,
+    FactFilter,
+    FactStatsRequest,
+    FactStatsResponse,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
     GetDocumentRequest,
@@ -59,6 +63,8 @@ from garage_rag.proto.garage_pb2 import (
     InitDbResponse,
     ListDocumentsRequest,
     ListDocumentsResponse,
+    ListFactsRequest,
+    ListFactsResponse,
     ListModelsRequest,
     ListModelsResponse,
     ListSourcesRequest,
@@ -115,6 +121,7 @@ from garage_rag.proto.garage_pb2_grpc import (
 
 if TYPE_CHECKING:
     from garage_rag.ingest.scanner import SourceScanResult
+    from garage_rag.ops.facts import FactFilters, FactRow
 
 logger = logging.getLogger(__name__)
 
@@ -244,6 +251,44 @@ def _stream_events[E](
 
 def _enum_value(value: Any) -> str:
     return value.value if hasattr(value, "value") else str(value)
+
+
+def _fact_filters(message: FactFilter) -> FactFilters:
+    from garage_rag.ops.facts import FactFilters
+
+    return FactFilters(
+        query=message.query or None,
+        source=message.source or None,
+        document_id=message.document_id or None,
+        fact_class=message.fact_class or None,
+        corpus_class=message.corpus_class or None,
+    )
+
+
+def _fact_entry(fact: FactRow) -> FactEntry:
+    return FactEntry(
+        id=fact.id,
+        document_id=fact.document_id,
+        ord=fact.ord,
+        fact=fact.fact,
+        fact_class=fact.fact_class,
+        attributes_json=json.dumps(fact.attributes) if fact.attributes else "",
+        char_start=fact.char_start,
+        char_end=fact.char_end,
+        extractor=fact.extractor,
+        extractor_model=fact.extractor_model or "",
+        created_at=fact.created_at.isoformat() if fact.created_at else "",
+        document_title=fact.document_title,
+        document_uri=fact.document_uri,
+        source_slug=fact.source_slug,
+        corpus_class=fact.corpus_class,
+        trust_tier=fact.trust_tier,
+        excerpt=fact.excerpt,
+        excerpt_span_start=fact.excerpt_span_start,
+        excerpt_span_end=fact.excerpt_span_end,
+        excerpt_truncated_before=fact.excerpt_truncated_before,
+        excerpt_truncated_after=fact.excerpt_truncated_after,
+    )
 
 
 class GarageRpcServicer(GarageServiceServicer):
@@ -894,6 +939,47 @@ class GarageRpcServicer(GarageServiceServicer):
             return summary
 
         yield from _stream_events(run, context)
+
+    @_grpc_errors
+    def ListFacts(self, request: ListFactsRequest, context: grpc.ServicerContext) -> ListFactsResponse:
+        """One page of distilled facts, each with its document and the evidence around its span."""
+        from garage_rag.db.engine import session_scope
+        from garage_rag.ops.facts import DEFAULT_CONTEXT_CHARS, list_facts
+
+        with session_scope() as session:
+            page = list_facts(
+                session,
+                _fact_filters(request.filter),
+                sort=request.sort or "newest",
+                limit=request.limit,
+                offset=request.offset,
+                context_chars=request.context_chars or DEFAULT_CONTEXT_CHARS,
+            )
+
+        return ListFactsResponse(
+            facts=[_fact_entry(f) for f in page.facts],
+            total_count=page.total,
+            limit=page.limit,
+            offset=page.offset,
+            formatted_output=page.message,
+        )
+
+    @_grpc_errors
+    def GetFactStats(self, request: FactStatsRequest, context: grpc.ServicerContext) -> FactStatsResponse:
+        """Fact counts overall, per source and per extraction class."""
+        from garage_rag.db.engine import session_scope
+        from garage_rag.ops.facts import fact_stats
+
+        with session_scope() as session:
+            stats = fact_stats(session, _fact_filters(request.filter))
+
+        return FactStatsResponse(
+            facts=stats.facts,
+            documents=stats.documents,
+            facts_by_source=stats.by_source,
+            facts_by_class=stats.by_class,
+            formatted_output=stats.message,
+        )
 
     # -----------------------------------------------------------------------
     # Schema & settings

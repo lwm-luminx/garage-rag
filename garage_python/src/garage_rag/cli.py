@@ -836,6 +836,124 @@ def enrich_facts(
     console.print(line)
 
 
+facts_app = typer.Typer(help="Browse the facts enrich-facts distilled.", no_args_is_help=True)
+app.add_typer(facts_app, name="facts")
+
+
+def _fact_filters(
+    query: str | None,
+    source: str | None,
+    document_id: int | None,
+    fact_class: str | None,
+    corpus_class: str | None,
+):
+    from garage_rag.ops.facts import FactFilters
+
+    return FactFilters(
+        query=query,
+        source=source,
+        document_id=document_id,
+        fact_class=fact_class,
+        corpus_class=corpus_class,
+    )
+
+
+_FactQuery = Annotated[
+    str | None, typer.Option("--query", "-q", help="Full-text (websearch syntax) or substring match on the fact.")
+]
+_FactSource = Annotated[str | None, typer.Option("--source", "-s", help="Source slug.")]
+_FactDocument = Annotated[int | None, typer.Option("--document-id", help="Only this document's facts.")]
+_FactClass = Annotated[str | None, typer.Option("--class", help="Extraction class, e.g. fact.")]
+_FactCorpusClass = Annotated[str | None, typer.Option("--corpus-class", help="document | code | communication")]
+
+
+@facts_app.command("list")
+def facts_list(
+    query: _FactQuery = None,
+    source: _FactSource = None,
+    document_id: _FactDocument = None,
+    fact_class: _FactClass = None,
+    corpus_class: _FactCorpusClass = None,
+    sort: Annotated[str, typer.Option(help="newest | document | relevance")] = "newest",
+    limit: Annotated[int, typer.Option(help="Facts per page.")] = 50,
+    offset: Annotated[int, typer.Option(help="Facts to skip.")] = 0,
+    evidence: Annotated[bool, typer.Option("--evidence", help="Show the grounded text under each fact.")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
+) -> None:
+    """List distilled facts, newest first, with the document each came from."""
+    from dataclasses import asdict
+
+    from garage_rag.ops.facts import list_facts
+
+    filters = _fact_filters(query, source, document_id, fact_class, corpus_class)
+    try:
+        with session_scope() as session:
+            page = list_facts(session, filters, sort=sort, limit=limit, offset=offset)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from None
+
+    if json_output:
+        payload = {
+            "total": page.total,
+            "limit": page.limit,
+            "offset": page.offset,
+            "facts": [{**asdict(f), "evidence": f.evidence} for f in page.facts],
+        }
+        typer.echo(json.dumps(payload, indent=2, default=str))
+        return
+    if not page.facts:
+        hint = "" if page.total else " (run `garage enrich-facts` to distill some)"
+        console.print(f"[yellow]{page.message}[/yellow]{hint}")
+        return
+    table = Table(title=page.message)
+    for col in ("id", "class", "fact", "document", "source"):
+        table.add_column(col, overflow="fold")
+    for f in page.facts:
+        text = f.fact
+        if evidence and f.evidence:
+            text += f"\n[dim]“{f.evidence}”[/dim]"
+        table.add_row(str(f.id), f.fact_class, text, f.document_title or f.document_uri, f.source_slug)
+    console.print(table)
+
+
+@facts_app.command("stats")
+def facts_stats(
+    query: _FactQuery = None,
+    source: _FactSource = None,
+    document_id: _FactDocument = None,
+    fact_class: _FactClass = None,
+    corpus_class: _FactCorpusClass = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
+) -> None:
+    """Count facts per source and per extraction class."""
+    from dataclasses import asdict
+
+    from garage_rag.ops.facts import fact_stats
+
+    filters = _fact_filters(query, source, document_id, fact_class, corpus_class)
+    try:
+        with session_scope() as session:
+            stats = fact_stats(session, filters)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from None
+
+    if json_output:
+        typer.echo(json.dumps(asdict(stats), indent=2))
+        return
+    console.print(stats.message)
+    for title, counts in (("source", stats.by_source), ("class", stats.by_class)):
+        if not counts:
+            continue
+        table = Table()
+        table.add_column(title)
+        table.add_column("facts", justify="right")
+        for key, count in counts.items():
+            table.add_row(key, f"{count:,}")
+        console.print(table)
+
+
 @app.command()
 def reconcile(
     source: Annotated[str, typer.Option("--source", "-s", help="Source slug.")],

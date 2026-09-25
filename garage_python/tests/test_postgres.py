@@ -2,7 +2,8 @@
 
 Everything else in this directory mocks the database, so SQL that only the
 server can judge (the migrations, the per-model DDL and operator classes, the
-search query, the egress filter on pending chunks) is checked here.
+search query, the egress filter on pending chunks, the fact browser's query) is
+checked here.
 
 They run only when ``GARAGE_TEST_DATABASE_URL`` names a development server with
 pgvector, reached as a superuser: each run creates a database, and pgvector is not
@@ -31,6 +32,7 @@ from garage_rag.db.engine import reset_engine, session_scope
 from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations, sql_dir, to_psycopg_conninfo
 from garage_rag.db.registry import ModelSpec
 from garage_rag.embed.ollama import count_pending
+from garage_rag.ops.facts import FactFilters, fact_stats, list_facts
 from garage_rag.search import SearchMode
 from garage_rag.search.hybrid import search
 
@@ -275,6 +277,152 @@ class TestEgress:
         row = get_model(db, model.slug)
         assert count_pending(db, row, include_communications=True) == 2
         assert count_pending(db, row, include_communications=False) == 1
+
+
+def _document(session: Session, source_id: int, title: str, content: str, *, corpus_class: str = "document") -> int:
+    return session.execute(
+        text(
+            "INSERT INTO documents (source_id, uri, corpus_class, trust_tier, title, content_sha256, extractor, "
+            "content) VALUES (:source, :uri, CAST(:cc AS corpus_class), 'authored', :title, :sha, 'test', :content) "
+            "RETURNING id"
+        ),
+        {
+            "source": source_id,
+            "uri": f"test://{title}",
+            "cc": corpus_class,
+            "title": title,
+            "sha": hashlib.sha256(content.encode()).digest(),
+            "content": content,
+        },
+    ).scalar_one()
+
+
+def _fact(session: Session, document_id: int, ord_: int, claim: str, *, content: str, minutes_ago: int) -> int:
+    """A fact grounded to where ``claim`` sits in ``content``, or ungrounded when it is not there."""
+    start = content.find(claim)
+    return session.execute(
+        text(
+            "INSERT INTO facts (document_id, ord, fact, char_start, char_end, created_at) "
+            "VALUES (:doc, :ord, :fact, :start, :end, now() - make_interval(mins => :minutes)) RETURNING id"
+        ),
+        {
+            "doc": document_id,
+            "ord": ord_,
+            "fact": claim,
+            "start": start if start >= 0 else None,
+            "end": start + len(claim) if start >= 0 else None,
+            "minutes": minutes_ago,
+        },
+    ).scalar_one()
+
+
+class TestFacts:
+    """Browsing facts: the full-text and substring match on the generated tsvector,
+    the joins and sorts, and the excerpt cut in SQL."""
+
+    ROOF = "Intro. The roof was replaced in 2019 by Acme. Other things happened afterwards."
+    # Multi-byte and astral characters before the span: offsets are code points on both sides.
+    CAFE = "Café ☕ 🏠 notes: The café opens at seven. Bye."
+    EMAIL = "Hi! The invoice is due Friday. Thanks."
+
+    def _corpus(self, db: Session) -> dict[str, int]:
+        notes = _source(db, "notes")
+        mail = _source(db, "mail")
+        roof = _document(db, notes, "Roof", self.ROOF)
+        cafe = _document(db, notes, "Cafe", self.CAFE)
+        email = _document(db, mail, "Invoice", self.EMAIL, corpus_class="communication")
+        ids = {
+            "roof_doc": roof,
+            "roof": _fact(db, roof, 0, "The roof was replaced in 2019 by Acme.", content=self.ROOF, minutes_ago=30),
+            "cafe": _fact(db, cafe, 0, "The café opens at seven.", content=self.CAFE, minutes_ago=20),
+            "email": _fact(db, email, 0, "The invoice is due Friday.", content=self.EMAIL, minutes_ago=10),
+            "ungrounded": _fact(db, roof, 1, "Acme is a roofing company.", content=self.ROOF, minutes_ago=0),
+        }
+        db.execute(text("UPDATE facts SET fact_class = 'date' WHERE id = :id"), {"id": ids["email"]})
+        db.flush()
+        return ids
+
+    def test_filters_sorts_and_pages(self, db: Session) -> None:
+        ids = self._corpus(db)
+
+        page = list_facts(db)
+        assert page.total == 4
+        assert [f.id for f in page.facts] == [ids["ungrounded"], ids["email"], ids["cafe"], ids["roof"]]
+        second = list_facts(db, limit=2, offset=2)
+        assert second.total == 4
+        assert [f.id for f in second.facts] == [ids["cafe"], ids["roof"]]
+
+        def matching(**filters: object) -> set[int]:
+            return {f.id for f in list_facts(db, FactFilters(**filters)).facts}
+
+        # Stemmed full text: "replacing" finds "replaced".
+        assert matching(query="replacing") == {ids["roof"]}
+        # Substring, for a partial word the parser never produces.
+        assert matching(query="nvoic") == {ids["email"]}
+        # LIKE wildcards in the query are literal.
+        assert matching(query="%") == set()
+        assert matching(source="mail") == {ids["email"]}
+        assert matching(corpus_class="communication") == {ids["email"]}
+        assert matching(fact_class="date") == {ids["email"]}
+        assert matching(document_id=ids["roof_doc"]) == {ids["roof"], ids["ungrounded"]}
+
+        by_document = list_facts(db, sort="document").facts
+        assert [f.document_title for f in by_document] == ["Cafe", "Invoice", "Roof", "Roof"]
+        assert [f.id for f in by_document[-2:]] == [ids["roof"], ids["ungrounded"]]
+        assert [f.id for f in list_facts(db, FactFilters(query="roof or 2019"), sort="relevance").facts] == [
+            ids["roof"],
+            ids["ungrounded"],
+        ]
+
+        email = list_facts(db, FactFilters(source="mail")).facts[0]
+        assert (email.source_slug, email.corpus_class, email.trust_tier) == ("mail", "communication", "authored")
+
+    def test_the_excerpt_is_cut_around_the_span(self, db: Session) -> None:
+        ids = self._corpus(db)
+
+        roof = {f.id: f for f in list_facts(db, FactFilters(document_id=ids["roof_doc"]), context_chars=6).facts}
+        grounded = roof[ids["roof"]]
+        assert grounded.evidence == "The roof was replaced in 2019 by Acme."
+        start = self.ROOF.index("The roof")
+        end = start + len(grounded.evidence)
+        assert grounded.excerpt == self.ROOF[start - 6 : end + 6]
+        assert grounded.excerpt_truncated_before and grounded.excerpt_truncated_after
+        ungrounded = roof[ids["ungrounded"]]
+        assert ungrounded.excerpt == "" and ungrounded.excerpt_span_start is None
+
+        cafe = list_facts(db, FactFilters(query="café"), context_chars=500).facts
+        assert [f.id for f in cafe] == [ids["cafe"]]
+        assert cafe[0].excerpt == self.CAFE
+        assert cafe[0].evidence == "The café opens at seven."
+        assert not cafe[0].excerpt_truncated_before and not cafe[0].excerpt_truncated_after
+
+    def test_stats(self, db: Session) -> None:
+        self._corpus(db)
+        stats = fact_stats(db)
+        assert (stats.facts, stats.documents) == (4, 3)
+        assert stats.by_source == {"mail": 1, "notes": 3}
+        assert stats.by_class == {"date": 1, "fact": 3}
+        assert fact_stats(db, FactFilters(source="notes")).by_class == {"fact": 3}
+
+    def test_the_rpcs_present_real_rows(self, db: Session) -> None:
+        """ListFacts / GetFactStats over the in-process servicer, which opens its own session."""
+        from garage_rag.proto.garage_pb2 import FactFilter, FactStatsRequest, ListFactsRequest
+        from garage_rag.service.client import GarageClient
+
+        ids = self._corpus(db)
+        db.commit()
+
+        client = GarageClient(in_process=True)
+        response = client.list_facts(ListFactsRequest(filter=FactFilter(query="café"), context_chars=500))
+        assert response.total_count == 1
+        (entry,) = response.facts
+        assert entry.id == ids["cafe"]
+        assert entry.document_title == "Cafe" and entry.source_slug == "notes"
+        assert entry.created_at
+        assert entry.excerpt[entry.excerpt_span_start : entry.excerpt_span_end] == "The café opens at seven."
+
+        stats = client.get_fact_stats(FactStatsRequest(filter=FactFilter(corpus_class="communication")))
+        assert (stats.facts, dict(stats.facts_by_source)) == (1, {"mail": 1})
 
 
 class TestAge:

@@ -138,6 +138,16 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.EnrichFactsRequest.SerializeToString,
                 response_deserializer=garage__pb2.EnrichFactsStatus.FromString,
                 _registered_method=True)
+        self.ListFacts = channel.unary_unary(
+                '/garage.GarageService/ListFacts',
+                request_serializer=garage__pb2.ListFactsRequest.SerializeToString,
+                response_deserializer=garage__pb2.ListFactsResponse.FromString,
+                _registered_method=True)
+        self.GetFactStats = channel.unary_unary(
+                '/garage.GarageService/GetFactStats',
+                request_serializer=garage__pb2.FactStatsRequest.SerializeToString,
+                response_deserializer=garage__pb2.FactStatsResponse.FromString,
+                _registered_method=True)
         self.GetStats = channel.unary_unary(
                 '/garage.GarageService/GetStats',
                 request_serializer=garage__pb2.StatsRequest.SerializeToString,
@@ -341,6 +351,18 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListFacts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetFactStats(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetStats(self, request, context):
         """--- Schema, Stats & Settings ---
         """
@@ -525,6 +547,16 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.EnrichFacts,
                     request_deserializer=garage__pb2.EnrichFactsRequest.FromString,
                     response_serializer=garage__pb2.EnrichFactsStatus.SerializeToString,
+            ),
+            'ListFacts': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListFacts,
+                    request_deserializer=garage__pb2.ListFactsRequest.FromString,
+                    response_serializer=garage__pb2.ListFactsResponse.SerializeToString,
+            ),
+            'GetFactStats': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetFactStats,
+                    request_deserializer=garage__pb2.FactStatsRequest.FromString,
+                    response_serializer=garage__pb2.FactStatsResponse.SerializeToString,
             ),
             'GetStats': grpc.unary_unary_rpc_method_handler(
                     servicer.GetStats,
@@ -1116,6 +1148,60 @@ class GarageService:
             '/garage.GarageService/EnrichFacts',
             garage__pb2.EnrichFactsRequest.SerializeToString,
             garage__pb2.EnrichFactsStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListFacts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/ListFacts',
+            garage__pb2.ListFactsRequest.SerializeToString,
+            garage__pb2.ListFactsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetFactStats(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/GetFactStats',
+            garage__pb2.FactStatsRequest.SerializeToString,
+            garage__pb2.FactStatsResponse.FromString,
             options,
             channel_credentials,
             insecure,

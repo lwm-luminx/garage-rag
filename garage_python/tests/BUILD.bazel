@@ -390,7 +390,10 @@ py_test(
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/embed",
+        "//garage_python/src/garage_rag/ops",
+        "//garage_python/src/garage_rag/proto",
         "//garage_python/src/garage_rag/search",
+        "//garage_python/src/garage_rag/service",
         "@pypi//pytest",
         "@pypi//sqlalchemy",
     ],
@@ -502,5 +505,22 @@ py_test(
         "//garage_python/src/garage_rag",
         "//garage_python/src/garage_rag/native",
         "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_facts_browse",
+    srcs = ["test_facts_browse.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/ops",
+        "//garage_python/src/garage_rag/proto",
+        "//garage_python/src/garage_rag/service",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+        "@pypi//typer",
     ],
 )

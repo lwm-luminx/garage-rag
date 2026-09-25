@@ -26,6 +26,8 @@ from garage_rag.proto.garage_pb2 import (
     DropModelResponse,
     EnrichFactsRequest,
     EnrichFactsStatus,
+    FactStatsRequest,
+    FactStatsResponse,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
     GetDocumentRequest,
@@ -40,6 +42,8 @@ from garage_rag.proto.garage_pb2 import (
     InitDbResponse,
     ListDocumentsRequest,
     ListDocumentsResponse,
+    ListFactsRequest,
+    ListFactsResponse,
     ListModelsRequest,
     ListModelsResponse,
     ListSourcesRequest,
@@ -249,6 +253,12 @@ class GarageClient:
 
     def enrich_facts(self, request: EnrichFactsRequest) -> Iterator[EnrichFactsStatus]:
         return self._invoke_stream("EnrichFacts", request, EnrichFactsStatus)
+
+    def list_facts(self, request: ListFactsRequest) -> ListFactsResponse:
+        return self._invoke_unary("ListFacts", request, ListFactsResponse)
+
+    def get_fact_stats(self, request: FactStatsRequest | None = None) -> FactStatsResponse:
+        return self._invoke_unary("GetFactStats", request or FactStatsRequest(), FactStatsResponse)
 
     def init_db(self, schema_dir: str = "") -> InitDbResponse:
         return self._invoke_unary("InitDb", InitDbRequest(schema_dir=schema_dir), InitDbResponse)

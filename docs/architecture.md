@@ -118,6 +118,11 @@ Each fact lands in `facts` grounded to the exact span of `documents.content`
 it came from; a fact the extractor cannot locate is dropped rather than stored.
 Facts for a document are replaced wholesale on re-extraction.
 
+Stored facts are browsed with `garage facts list` / `garage facts stats` or the
+`ListFacts` / `GetFactStats` RPCs behind the app's Facts page: paged, filtered by
+text (full-text or substring), source, document, extraction class and corpus
+class, and each carrying the document text around its grounding span.
+
 Every fact also gets a `chunks` row of its own (`chunks.fact_id`,
 `chunker = 'facts:langextract:<model>'`). That is the entire embedding story: a
 chunk is a chunk regardless of where its text came from, so the ordinary
