@@ -377,6 +377,23 @@ py_test(
 )
 
 py_test(
+    name = "test_second_brain_corpus",
+    srcs = ["test_second_brain_corpus.py"],
+    # A real-world Markdown corpus and the pipeline output recorded from it.
+    data = [
+        "golden/second_brain_os.json",
+        "//garage_python/tests/corpora:second_brain_os",  # keep
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_sources_ops",
     srcs = ["test_sources_ops.py"],
     deps = [
@@ -475,6 +492,7 @@ test_suite(
         ":test_postgres",
         ":test_registry_dims",
         ":test_scanner",
+        ":test_second_brain_corpus",
         ":test_sources_ops",
     ],
 )
