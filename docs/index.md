@@ -98,6 +98,15 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
   </div>
 </div>
 
+<div id="download-alpha" class="callout callout-warning" hidden>
+  <div class="callout-title">🧪 <span id="download-alpha-title">Try the next version</span></div>
+  <p>A test build of the next Garage is out: signed and notarized, but not finished. Back up <code>~/Library/Application Support/GarageApp</code> before installing it. It updates itself to the final release when that ships.</p>
+  <div class="hero-actions download-actions">
+    <a id="download-alpha-pkg" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary">Download the test build</a>
+    <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's new ↗</a>
+  </div>
+</div>
+
 ## Also a command line and a Python package
 
 The app installs a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients. The same pipeline ships as the `garage_rag` Python package, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does. Sources, build instructions and the developer documentation are on <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">GitHub</a>: the <a href="{{ '/architecture.html' | relative_url }}">architecture guide</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.

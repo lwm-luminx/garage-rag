@@ -9,6 +9,7 @@
 
   var REPO = 'rickmark/garage-rag';
   var API = 'https://api.github.com/repos/' + REPO + '/releases/latest';
+  var RELEASES = 'https://api.github.com/repos/' + REPO + '/releases?per_page=10';
   var INSTALLER = 'GarageInstaller_arm64.pkg';
 
   function byId(id) { return document.getElementById(id); }
@@ -75,15 +76,56 @@
     }
   }
 
-  function load() {
-    if (!window.fetch || !byId('download-primary')) { return; }
-    fetch(API, { headers: { Accept: 'application/vnd.github+json' } })
+  function installerOf(release) {
+    var found = null;
+    (release.assets || []).forEach(function (asset) {
+      if (asset.name === INSTALLER && asset.state === 'uploaded') { found = asset; }
+    });
+    return found;
+  }
+
+  // A pre-release newer than the latest release (GitHub's "latest" never is one) gets its own
+  // box under the download panel, which stays hidden while there is none.
+  function applyPrerelease(releases, latest) {
+    var box = byId('download-alpha');
+    if (!box) { return; }
+    var after = latest && latest.published_at ? latest.published_at : '';
+    var alpha = null;
+    (releases || []).forEach(function (release) {
+      if (alpha || !release.prerelease || release.draft) { return; }
+      if (after && (release.published_at || '') <= after) { return; }
+      if (installerOf(release)) { alpha = release; }
+    });
+    if (!alpha) { return; }
+
+    var installer = installerOf(alpha);
+    byId('download-alpha-pkg').href = installer.browser_download_url;
+    if (alpha.html_url) { byId('download-alpha-notes').href = alpha.html_url; }
+    var name = alpha.name || ('Garage ' + (alpha.tag_name || '').replace(/^v/, ''));
+    var date = formatDate(alpha.published_at);
+    var size = formatSize(installer.size);
+    byId('download-alpha-title').textContent =
+      'Try ' + name + (date ? ', released ' + date : '') + (size ? ' (' + size + ')' : '');
+    box.hidden = false;
+  }
+
+  function getJSON(url) {
+    return fetch(url, { headers: { Accept: 'application/vnd.github+json' } })
       .then(function (response) {
         if (!response.ok) { throw new Error('GitHub API ' + response.status); }
         return response.json();
-      })
+      });
+  }
+
+  function load() {
+    if (!window.fetch || !byId('download-primary')) { return; }
+    var latest = getJSON(API);
+    latest
       .then(apply)
       .catch(function () { /* keep the static releases/latest links */ });
+    Promise.all([getJSON(RELEASES), latest.catch(function () { return null; })])
+      .then(function (results) { applyPrerelease(results[0], results[1]); })
+      .catch(function () { /* no test build box */ });
   }
 
   if (document.readyState === 'loading') {
