@@ -72,7 +72,13 @@ He also runs [AudienceKit](https://github.com/audience-kit), a generalization of
 
 His most widely used project is [apple-knowledge](https://github.com/hack-different/apple-knowledge), mentioned above, with over 1,400 stars on GitHub.
 
-**Contributions to other projects.** Rick's merged pull requests include work on [AppleDB](https://github.com/littlebyteorg/appledb), the [Capstone](https://github.com/capstone-engine/capstone) disassembler, [Zstandard](https://github.com/facebook/zstd), [Meshtastic](https://github.com/meshtastic/firmware) firmware and Vector 35's [Objective-C workflow](https://github.com/Vector35/workflow_objc) for Binary Ninja. He also wrote [meshtastic-map-manager](https://github.com/rickmark/meshtastic-map-manager) for managing Meshtastic map data.
+**Contributions to other projects.** Rick has had pull requests merged in more than 25 projects outside his own. Among them:
+- **Apple platform tooling:** Mach-O fileset support and new segment types in Homebrew's [ruby-macho](https://github.com/Homebrew/ruby-macho) (five merged PRs), T2 support in [usbmuxd](https://github.com/libimobiledevice/usbmuxd/pull/141), Linux fixes to [ipwndfu](https://github.com/h0m3us3r/ipwndfu/pull/1), build work on checkra1n's [PongoOS](https://github.com/checkra1n/PongoOS/pull/14), pkg-config support in [ldid](https://github.com/sbingner/ldid/pull/3), the convert verb in [dmglib](https://github.com/0xbf00/dmglib/pull/2), and firmware sources in Acidanthera's [MacInfoPkg](https://github.com/acidanthera/MacInfoPkg/pull/16).
+- **Reverse engineering:** universal macOS builds of the [Capstone](https://github.com/capstone-engine/capstone/pull/2221) disassembler, a fix to Vector 35's [Objective-C workflow](https://github.com/Vector35/workflow_objc/pull/57) for Binary Ninja, and an easier install for [MEAnalyzer](https://github.com/platomav/MEAnalyzer/pull/7), Intel's Management Engine analyzer.
+- **Security:** `OpenSSL::BN#abs` in Ruby's [openssl](https://github.com/ruby/openssl/pull/430) library, removing unsafe OpenSSL patches from [money-tree](https://github.com/GemHQ/money-tree/pull/43), and a stricter content security policy for Dropbox's [merou](https://github.com/dropbox/merou) permissions system.
+- **Data and infrastructure:** the build and validation tests for [AppleDB](https://github.com/littlebyteorg/appledb) (four merged PRs), universal macOS build instructions for [Zstandard](https://github.com/facebook/zstd/pull/3568), fixes to [Homebrew](https://github.com/Homebrew/brew/pull/12822), [overcommit](https://github.com/sds/overcommit/pull/777) and [keccak.rb](https://github.com/q9f/keccak.rb/pull/39), and [Meshtastic](https://github.com/meshtastic/firmware/pull/5699) firmware dev containers.
+
+He also wrote [meshtastic-map-manager](https://github.com/rickmark/meshtastic-map-manager) for managing Meshtastic map data.
 
 ## Outside of work
 
