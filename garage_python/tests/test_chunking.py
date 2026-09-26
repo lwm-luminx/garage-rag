@@ -63,6 +63,19 @@ class TestMarkdown:
         chunks = chunk_markdown(MARKDOWN, size=1000, overlap=100)
         assert chunks[0].chunker.startswith("markdown-header+recursive")
 
+    def test_fenced_code_keeps_its_indentation(self) -> None:
+        text = "# Loop\n\nRuns forever.\n\n```python\nwhile True:\n    if done():\n\tbreak\n```\n"
+        [chunk] = chunk_markdown(text, size=1000, overlap=100)
+        assert "while True:\n    if done():\n\tbreak\n```" in chunk.text
+        # Prose around the fence is still stripped.
+        assert chunk.text.startswith("# Loop  \nRuns forever.")
+
+    def test_span_ends_at_the_closing_fence(self) -> None:
+        """A chunk's last line that also appears earlier in it (a fence) ends the span at the chunk's end."""
+        text = "# Log\n\nFormat:\n\n```\nDATE OPERATION target\n```\n"
+        [chunk] = chunk_text(text, ContentKind.MARKDOWN, size=1000, overlap=100)
+        assert (chunk.char_start, chunk.char_end) == (0, len(text.rstrip()))
+
 
 class TestProse:
     def test_splits_on_paragraphs(self) -> None:

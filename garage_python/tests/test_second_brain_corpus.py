@@ -169,6 +169,15 @@ def test_every_markdown_file_is_indexed(ingested: RecordingGateway) -> None:
         assert document["chunks"], f"{name} has no chunks"
 
 
+def test_every_chunk_lies_in_its_span(ingested: RecordingGateway) -> None:
+    """Each chunk's offsets cover its text, whitespace aside (the Markdown splitter drops blank lines)."""
+    for name, document in ingested.documents.items():
+        for chunk in document["chunks"]:
+            assert chunk.char_start is not None, (name, chunk.ord)
+            span = document["content"][chunk.char_start : chunk.char_end]
+            assert " ".join(chunk.text.split()) in " ".join(span.split()), (name, chunk.ord)
+
+
 def test_golden_covers_every_file(golden: dict[str, dict[str, Any]]) -> None:
     assert sorted(golden) == _markdown_files()
 
