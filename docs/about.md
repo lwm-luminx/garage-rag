@@ -86,7 +86,7 @@ Away from the keyboard, Rick makes documentary film and photography centered on 
 
 ## Why Garage
 
-Garage brings that security background to AI. It makes your own documents, code and messages searchable by your AI assistant without them leaving your Mac. The database, the models and the index all run on your machine, and communications never leave it. Garage is open source, so you can check that for yourself.
+Garage brings that security background to AI. It makes your own documents, code and messages searchable by your AI assistant. The database, the index and, by default, the models all run on your Mac, and Garage itself never sends your messages to another computer. Your AI assistant receives only the excerpts it asks for, and what happens to them after that depends on the assistant; the [privacy page]({{ '/privacy.html' | relative_url }}) covers the details. Garage is open source, so you can check all of this for yourself.
 
 ## Work with Rick
 
