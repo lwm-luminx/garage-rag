@@ -64,13 +64,15 @@ Rick publishes most of his work on [GitHub](https://github.com/rickmark). Beyond
 - [smcutil](https://github.com/hack-different/smcutil) for Apple's SMC payloads, [efivalidate](https://github.com/hack-different/efivalidate) for validating the firmware of Macs up to the T1, and [libapplefw](https://github.com/hack-different/libapplefw) for Apple firmware images;
 - [go-aapl-integrity](https://github.com/hack-different/go-aapl-integrity) and [cnklverify](https://github.com/t8012/cnklverify) for Apple's integrity formats (img4, chunklists, trust caches), and [secure_emu](https://github.com/hack-different/secure_emu), which runs SecureROM under the Unicorn emulator;
 - [mootool](https://github.com/hack-different/mootool) for Mach-O files, [yolo_dsc](https://github.com/hack-different/yolo_dsc) for extracting the dyld shared cache, [symbol-server](https://github.com/hack-different/symbol-server) for Apple symbols, [xnudex](https://github.com/hack-different/xnudex) for indexing XNU OS images, and [kext-kmem](https://github.com/hack-different/kext-kmem), a kernel extension for reading and writing kernel memory;
-- [homebrew-jailbreak](https://github.com/hack-different/homebrew-jailbreak), a Homebrew tap of research tools;
+- [homebrew-jailbreak](https://github.com/hack-different/homebrew-jailbreak), a Homebrew tap of research tools, and [newosxbook-tools](https://github.com/hack-different/newosxbook-tools), which packages Jonathan Levin's tools for it;
 - [libibackup](https://github.com/hack-different/libibackup) for iOS backups, [apple-diagnostics-format](https://github.com/hack-different/apple-diagnostics-format) for Apple's wireless diagnostics files, [apple-baseband](https://github.com/hack-different/apple-baseband) for the modem baseband, and [uarp](https://github.com/hack-different/uarp) for Apple's accessory firmware update protocol;
 - from the T2 work, [pongo-flash](https://github.com/t8012/pongo-flash), a flash storage driver for checkra1n's pongoOS, and [RemoteServiceDiscovery](https://github.com/t8012/RemoteServiceDiscovery), a reverse-engineered rewrite of Apple's framework of that name.
 
 He also runs [AudienceKit](https://github.com/audience-kit), a generalization of Hot Mess, his 2015 app that indexed subcultures by their people, places and events. AudienceKit has its own API, admin interface, and Swift and Ruby SDKs. He also built [hedonism_bot](https://github.com/lwm-luminx/hedonism_bot), where photographers upload photos. It uses the same Postgres, pgvector and embedding approach as Garage to find and group faces without naming anyone, so people can find and download the photos they appear in.
 
 His most widely used project is [apple-knowledge](https://github.com/hack-different/apple-knowledge), mentioned above, with over 1,400 stars on GitHub.
+
+**Contributions to other projects.** Rick's merged pull requests include work on [AppleDB](https://github.com/littlebyteorg/appledb), the [Capstone](https://github.com/capstone-engine/capstone) disassembler, [Zstandard](https://github.com/facebook/zstd), [Meshtastic](https://github.com/meshtastic/firmware) firmware and Vector 35's [Objective-C workflow](https://github.com/Vector35/workflow_objc) for Binary Ninja. He also wrote [meshtastic-map-manager](https://github.com/rickmark/meshtastic-map-manager) for managing Meshtastic map data.
 
 ## Outside of work
 
