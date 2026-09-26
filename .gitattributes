@@ -4,3 +4,6 @@
 garage_python/src/garage_rag/proto/*_pb2.py linguist-generated=true
 garage_python/src/garage_rag/proto/*_pb2_grpc.py linguist-generated=true
 garage_python/src/garage_rag/proto/*_pb2.pyi linguist-generated=true
+
+# Upstream test corpora, copied verbatim (garage_python/tests/corpora/README.md)
+garage_python/tests/corpora/** linguist-vendored=true
