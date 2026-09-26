@@ -61,7 +61,7 @@ public final class XPCFolderAccessRelay: FolderAccessRelaying {
         _ serviceName: String,
         _ body: @escaping (GarageFolderAccessReceiverProtocol, @escaping (Bool, String?) -> Void) -> Void
     ) async -> (Bool, String?) {
-        let connection = NSXPCConnection(serviceName: serviceName)
+        let connection = GarageInProcessServices.makeConnection(serviceName: serviceName)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageFolderAccessReceiverProtocol.self)
         connection.resume()
         defer { connection.invalidate() }

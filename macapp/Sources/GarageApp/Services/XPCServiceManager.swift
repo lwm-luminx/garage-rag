@@ -714,8 +714,9 @@ public final class XPCServiceManager: ObservableObject {
         logger.info("Restarting XPC service '\(service.bundleId, privacy: .public)'...")
         appendLog("[\(service.name)] Restarting service...", source: service.id, level: .warning, pid: service.pid)
 
-        // If currently running with known PID, send termination signal
-        if let currentPid = service.pid, currentPid > 0 {
+        // If currently running with known PID, send termination signal. A service the app hosts
+        // itself (GarageInProcessServices) answers with the app's own pid, which is never killed.
+        if let currentPid = service.pid, currentPid > 0, currentPid != getpid() {
             logger.info("Terminating existing process for '\(service.bundleId, privacy: .public)' (pid: \(currentPid))")
             _ = killExecutor(currentPid)
             appendLog("[\(service.name)] Sent termination signal to pid \(currentPid)", source: service.id, level: .warning, pid: currentPid)
@@ -762,7 +763,7 @@ public final class XPCServiceManager: ObservableObject {
         llamaEndpointBroker?.stop()
         stopAllStreaming()
         for service in services {
-            if let currentPid = service.pid, currentPid > 0 {
+            if let currentPid = service.pid, currentPid > 0, currentPid != getpid() {
                 logger.info("Terminating XPC service '\(service.bundleId, privacy: .public)' (pid: \(currentPid))")
                 _ = killExecutor(currentPid)
                 appendLog("[\(service.name)] Terminated process pid \(currentPid)", source: service.id, level: .warning, pid: currentPid)
@@ -823,7 +824,7 @@ public final class XPCServiceManager: ObservableObject {
         }
 
         let bundleId = service.bundleId
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         let adapter = XPCLogReceiverAdapter(serviceId: service.id, manager: self, osLogStreamService: osLogStreamService)
         streamingAdapters[key] = adapter
 
@@ -948,7 +949,7 @@ public final class XPCServiceManager: ObservableObject {
         timeoutNanoseconds: UInt64,
         _ body: @escaping (GarageCommonXPCServiceProtocol, ContinuationRelay<T>) -> Void
     ) async throws -> T {
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageCommonXPCServiceProtocol.self)
         connection.resume()
         defer { connection.invalidate() }
@@ -972,7 +973,7 @@ public final class XPCServiceManager: ObservableObject {
 
     private static func performXPCPing(bundleId: String) async throws -> (pid: pid_t, latencyMs: Double, response: String) {
         let startTime = CFAbsoluteTimeGetCurrent()
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageCommonXPCServiceProtocol.self)
         connection.resume()
         defer { connection.invalidate() }
@@ -1098,7 +1099,7 @@ public final class XPCServiceManager: ObservableObject {
         let testString = "Garage vector embedding verification test."
 
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: GarageEmbedXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }
@@ -1180,7 +1181,7 @@ public final class XPCServiceManager: ObservableObject {
         let startTime = CFAbsoluteTimeGetCurrent()
         let bundleId = "me.rickmark.garage-rag.llama-xpc"
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: LlamaXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }
@@ -1330,7 +1331,7 @@ public final class XPCServiceManager: ObservableObject {
         let bundleId = "me.rickmark.garage-rag.xpc"
 
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: GarageXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }

@@ -48,7 +48,9 @@ swift_library(
     module_name = "GarageApp",
     visibility = ["//visibility:public"],
     deps = [
+        "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
+        "//macapp/Sources/GarageXPCService:GarageXPCServiceCore",
         "//macapp/Sources/IngestClient",
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",

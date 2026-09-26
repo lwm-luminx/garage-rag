@@ -66,7 +66,7 @@ public final class IngestClient: Sendable {
     private func makeConnection(progressReceiver: GarageIngestProgressReceiverProtocol? = nil) -> NSXPCConnection {
         let name = customServiceName ?? IngestClient.serviceName
         logger.debug("Creating NSXPCConnection to service '\(name, privacy: .public)'")
-        let connection = NSXPCConnection(serviceName: name)
+        let connection = GarageInProcessServices.makeConnection(serviceName: name)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageIngestXPCServiceProtocol.self)
 
         // The ingest helper fans progress / log messages out to every connected client. A connection without an

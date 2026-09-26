@@ -332,7 +332,7 @@ private final class XPCLlamaEndpointSource: LlamaEndpointSource {
 
     init(bundleId: String, onLost: @escaping () -> Void) {
         self.bundleId = bundleId
-        connection = NSXPCConnection(serviceName: bundleId)
+        connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         connection.remoteObjectInterface = NSXPCInterface(with: LlamaXPCServiceProtocol.self)
         connection.interruptionHandler = onLost
         connection.invalidationHandler = onLost
@@ -362,7 +362,7 @@ private final class XPCLlamaEndpointReceiver: LlamaEndpointReceiver {
 
     init(bundleId: String, onLost: @escaping () -> Void) {
         self.bundleId = bundleId
-        connection = NSXPCConnection(serviceName: bundleId)
+        connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         // The receiver protocol alone: the services export protocols that adopt it, and NSXPC
         // matches calls by selector.
         connection.remoteObjectInterface = NSXPCInterface(with: GarageLlamaEndpointReceiverProtocol.self)
