@@ -259,8 +259,10 @@ class MarkdownHeaderSplitter:
     """Split markdown into sections at ATX headings, keeping the heading lines.
 
     Lines are stripped (and non-printable characters dropped), blank lines are
-    dropped, and fenced code blocks are never split on. Each section records the
-    text of the headings above it under the names in ``headers``.
+    dropped, and fenced code blocks are never split on. Lines inside a fence keep
+    their indentation, and tabs, since code (Python above all) means something
+    different without them. Each section records the text of the headings above
+    it under the names in ``headers``.
     """
 
     def __init__(self, headers: list[tuple[str, str]]) -> None:
@@ -287,7 +289,7 @@ class MarkdownHeaderSplitter:
                 in_code, fence = False, ""
 
             if in_code:
-                content.append(line)
+                content.append("".join(c for c in raw.rstrip() if c.isprintable() or c == "\t"))
                 continue
 
             for marker, name in self._headers:

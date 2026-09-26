@@ -136,7 +136,7 @@ def chunk_markdown(text: str, *, size: int, overlap: int) -> list[TextChunk]:
                     TextChunk(
                         ord=len(chunks),
                         text=piece.strip(),
-                        chunker=f"markdown-header+recursive:{size}/{overlap}",
+                        chunker=f"markdown-header+recursive/v2:{size}/{overlap}",
                         heading_path=heading,
                     )
                 )
@@ -202,7 +202,9 @@ def _span(source: str, text: str, cursor: int) -> tuple[int, int] | None:
     """Where ``text`` sits in ``source`` at or after ``cursor``.
 
     The exact text first; failing that, from its first line to its last, which
-    covers a chunk whose splitter dropped the blank lines in between.
+    covers a chunk whose splitter dropped the blank lines in between. Each line is
+    looked for after the one before it, so a last line that also appears earlier
+    in the chunk (a closing code fence) ends the span where the chunk ends.
     """
     start = source.find(text, cursor)
     if start >= 0:
@@ -213,10 +215,13 @@ def _span(source: str, text: str, cursor: int) -> tuple[int, int] | None:
     start = source.find(lines[0], cursor)
     if start < 0:
         return None
-    last = source.find(lines[-1], start)
-    if last < 0:
-        return None
-    return start, last + len(lines[-1])
+    end = start + len(lines[0])
+    for line in lines[1:]:
+        at = source.find(line, end)
+        if at < 0:
+            return None
+        end = at + len(line)
+    return start, end
 
 
 def _locate(source: str, chunks: list[TextChunk]) -> list[TextChunk]:
