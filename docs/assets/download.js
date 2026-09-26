@@ -85,11 +85,18 @@
   }
 
   // A pre-release newer than the latest release (GitHub's "latest" never is one) gets its own
-  // box under the download panel, which stays hidden while there is none.
+  // box under the download panel, which stays hidden while there is none. The cutoff is the newest
+  // full release in either reply, so a failed "latest" lookup can't bring back an old test build;
+  // with no full release in sight at all, the box stays hidden.
   function applyPrerelease(releases, latest) {
     var box = byId('download-alpha');
     if (!box) { return; }
     var after = latest && latest.published_at ? latest.published_at : '';
+    (releases || []).forEach(function (release) {
+      if (release.prerelease || release.draft) { return; }
+      if ((release.published_at || '') > after) { after = release.published_at; }
+    });
+    if (!after) { return; }
     var alpha = null;
     (releases || []).forEach(function (release) {
       if (alpha || !release.prerelease || release.draft) { return; }
