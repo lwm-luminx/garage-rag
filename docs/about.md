@@ -1,18 +1,30 @@
 ---
 layout: default
 title: About the creator
-description: Rick Mark-Penwell, the creator of Garage, is a security engineer and Apple platform reverse engineer known for his research into Apple's T2 chip.
+description: Rick Mark-Penwell, the creator of Garage, is a security and AI engineer, formerly of Meta, Coinbase, Dropbox and Microsoft, known for his research into Apple's T2 chip.
 ---
 
 # About the creator
 
 Garage is written and maintained by **Rick Mark-Penwell**.
 
-Rick is a security engineer and reverse engineer who has worked on Apple platforms since 2007. His Apple developer account dates from then and still carries his prior name, Richard Penwell, so that's the name on Garage's Developer ID signature. Rick Mark and Richard Penwell are the same person, and Garage's copyright uses the hyphenated name to make that clear.
+Rick is a security and AI engineer and a hardware security researcher who has worked on Apple platforms since 2007. His Apple developer account dates from then and still carries his prior name, Richard Penwell, so that's the name on Garage's Developer ID signature. Rick Mark and Richard Penwell are the same person, and Garage's copyright uses the hyphenated name to make that clear.
 
-## Background
+## Career
 
-Rick has worked as an internal security engineer at tech companies, assessing workstations, phones and other systems, with a focus on macOS integrity, EFI and device restore.
+Rick has spent more than fifteen years in security engineering, most recently using AI where it genuinely helps.
+
+- **Meta**, Privacy Engineer (2023 to 2025). He built PrivacyBrain, an LLM derived from Llama that evaluated privacy incidents, reviews and FTC commitments across millions of records, and Project Terminus, which linked incidents to their root causes and replaced months of manual investigation with consistent measures. He also wrote an LLVM-bitcode scanner for sensitive iOS and macOS APIs, and contributed to the design of Llama 4.
+- **Coinbase**, Security Architect (2021 to 2022).
+- **Dropbox**, Senior Security Engineer (2017 to 2019). He worked on corporate authentication, key management and Windows security in the datacenters, and open-sourced efivalidate for checking Mac firmware.
+- **Uber Advanced Technologies Group**, Senior Security Engineer (2017).
+- **Jet.com**, Senior Software Security Engineer (2016). He was the company's first security engineer, securing what was then the largest e-commerce site on Azure.
+- **Bloomberg**, Senior Web Application Developer (2015 to 2016), on Bloomberg's legal research platform.
+- **Microsoft**, Software Engineer and then Azure Security SDE II (2010 to 2015). He did threat modeling and penetration testing for Azure, automated security health reporting across more than 150 teams, and worked on the Windows Data Classification Toolkit. He holds a patent on [detecting and preventing phishing attacks](https://patents.google.com/patent/US20160006760A1).
+
+He also founded **Hot Mess** and **AudienceKit**, products that apply social science to in-person community (more below).
+
+## Apple security research
 
 He is best known for his research into Apple's **T2 security chip** as part of Team t8012:
 - He built an early T2 integrity verification tool in 2017.
@@ -21,7 +33,7 @@ He is best known for his research into Apple's **T2 security chip** as part of T
 - He helped bring the exploit into the checkra1n jailbreak.
 - He adapted libimobiledevice to talk to the T2, and reverse engineered the USB Target Disk Mode protocol.
 
-When the research went public in October 2020, Rick explained to the press why the flaw can't be patched in shipping Macs. He also corrected how the work had been credited. The team's own account is [On bridgeOS / T2 Research](https://blog.t8012.dev/on-bridgeos-t2-research/).
+When the research went public in October 2020, Rick explained to the press, including Forbes and The Register, why the flaw can't be patched in shipping Macs. He also corrected how the work had been credited. The team's own account is [On bridgeOS / T2 Research](https://blog.t8012.dev/on-bridgeos-t2-research/).
 
 Rick is part of [Hack Different](https://github.com/hack-different), an open-source community around Apple platforms. There he maintains [apple-knowledge](https://github.com/hack-different/apple-knowledge), a machine-readable collection of reverse-engineered Apple hardware and software facts. He also contributes to The Apple Wiki.
 
@@ -70,7 +82,7 @@ Garage brings that security background to AI. It makes your own documents, code 
 
 ## Work with Rick
 
-Rick is available for hire. If you or your team could use help with software like this, get in touch on [LinkedIn](https://linkedin.com/in/penwellr).
+Rick is available for hire, for AI security, privacy engineering and security research roles, remote or hybrid. If you or your team could use help with software like this, get in touch on [LinkedIn](https://linkedin.com/in/penwellr).
 
 ## Support the project
 
