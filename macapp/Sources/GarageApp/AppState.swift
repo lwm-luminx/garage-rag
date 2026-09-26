@@ -168,6 +168,8 @@ final class AppState: ObservableObject {
     @Published private(set) var isUpdatingEverything = false
 
     convenience init() {
+        // Before anything below connects to the services the sandboxed app hosts itself.
+        InProcessServiceHost.startIfSandboxed()
         self.init(llama: LlamaService(), volumeAccess: VolumeAccessService(), modelDownload: ModelDownloadService())
     }
 

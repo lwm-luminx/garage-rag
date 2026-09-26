@@ -19,7 +19,7 @@ public final class GarageXPCClient: @unchecked Sendable {
     public func makeConnection() -> NSXPCConnection {
         let name = customServiceName ?? GarageXPCClient.serviceName
         logger.debug("Creating NSXPCConnection to GarageXPCService '\(name, privacy: .public)'")
-        let connection = NSXPCConnection(serviceName: name)
+        let connection = GarageInProcessServices.makeConnection(serviceName: name)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageXPCServiceProtocol.self)
 
         connection.interruptionHandler = {

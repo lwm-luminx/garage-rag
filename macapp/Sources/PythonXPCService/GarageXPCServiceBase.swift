@@ -124,6 +124,19 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
     }
 
+    /// Starts this service inside the app (`GarageInProcessServices`) rather than as its own process:
+    /// the same host-thread start-up as `bootstrap()`, without what belongs to a process of its own
+    /// (crash handlers, capturing stdout/stderr, restoring saved folder grants, which the app holds
+    /// itself). Returns the endpoint of the listener that serves it, to register.
+    public func bootstrapInProcess() -> NSXPCListenerEndpoint {
+        logger.info("\(self.serviceName, privacy: .public) starting in the app process (pid \(ProcessInfo.processInfo.processIdentifier, privacy: .public))")
+        let endpoint = anonymousListenerEndpoint()
+        host.perform { [self] in
+            bootstrapOnHostThread()
+        }
+        return endpoint
+    }
+
     /// Creates the service listener, resumes it and blocks in `dispatchMain()`.
     public func run() -> Never {
         let listener = NSXPCListener.service()

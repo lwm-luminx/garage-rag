@@ -12,6 +12,7 @@ swift_library(
         "GarageAppGroup.swift",
         "GarageCommonXPCProtocol.swift",
         "GarageFolderAccess.swift",
+        "GarageInProcessServices.swift",
         "GarageLlamaEndpoint.swift",
         "GaragePostgresEndpoint.swift",
     ],

@@ -3,16 +3,27 @@ load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
 load("//bazel:framework_linking.bzl", "framework_linked_library")
 
+# The service's delegate. The sandboxed app links it too and hosts one in its own process
+# (GarageInProcessServices), since only the app can read the folders the user granted.
+swift_library(
+    name = "GarageXPCServiceCore",
+    srcs = ["GarageXPCServiceDelegate.swift"],
+    module_name = "GarageXPCServiceCore",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/LlamaModelLoader",
+        "//macapp/Sources/PythonXPCService",
+    ],
+)
+
 # Implementation library for GarageXPCService
 swift_library(
     name = "GarageXPCService_lib",
-    srcs = [
-        "main.swift",
-    ],
+    srcs = ["main.swift"],
     module_name = "GarageXPCService",
     visibility = ["//visibility:private"],
     deps = [
-        "//macapp/Sources/LlamaModelLoader",
+        ":GarageXPCServiceCore",
         "//macapp/Sources/PythonXPCService",
     ],
 )

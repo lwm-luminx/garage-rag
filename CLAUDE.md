@@ -458,6 +458,14 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   `*Client` module (`IngestClient`, `LlamaClient`, `ModelDownloadClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
   gRPC bridge to the Python `garage_rag` package.
+- The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
+  process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
+  sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each
+  service's delegate lives in a `*Core` library the app links, and the app registers an anonymous
+  listener for it with `GarageInProcessServices`; every connection is made with
+  `GarageInProcessServices.makeConnection(serviceName:)`, which reaches a registered service there
+  and any other by name. `XPCServiceManager` never kills its own pid, so Restart leaves the app up.
+  The Developer ID build is not sandboxed and runs every service out of process.
 
 ## Conventions worth knowing
 
