@@ -100,10 +100,11 @@ class TextChunk:
         return max(1, len(self.text) // 4)
 
 
-def _recursive_splitter(size: int, overlap: int) -> RecursiveSplitter:
+def _recursive_splitter(size: int, overlap: int, *, keep_indent: bool = False) -> RecursiveSplitter:
     return RecursiveSplitter(
         chunk_size=size,
         chunk_overlap=overlap,
+        keep_indent=keep_indent,
         # Prefer paragraph, then line, then sentence, then word boundaries.
         separators=["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""],
     )
@@ -117,7 +118,8 @@ def _heading_path(metadata: dict) -> str | None:
 def chunk_markdown(text: str, *, size: int, overlap: int) -> list[TextChunk]:
     """Header split, then size split, preserving heading breadcrumbs."""
     header_splitter = MarkdownHeaderSplitter(_MD_HEADERS)
-    size_splitter = _recursive_splitter(size, overlap)
+    # Keeps the indentation of fenced code that a size split starts mid-block.
+    size_splitter = _recursive_splitter(size, overlap, keep_indent=True)
 
     try:
         sections = header_splitter.split_text(text)
@@ -135,7 +137,8 @@ def chunk_markdown(text: str, *, size: int, overlap: int) -> list[TextChunk]:
                 chunks.append(
                     TextChunk(
                         ord=len(chunks),
-                        text=piece.strip(),
+                        # The size splitter already stripped it, keeping a code line's indentation.
+                        text=piece.rstrip(),
                         chunker=f"markdown-header+recursive/v2:{size}/{overlap}",
                         heading_path=heading,
                     )

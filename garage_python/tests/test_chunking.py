@@ -70,6 +70,15 @@ class TestMarkdown:
         # Prose around the fence is still stripped.
         assert chunk.text.startswith("# Loop  \nRuns forever.")
 
+    def test_fenced_code_split_by_size_keeps_its_indentation(self) -> None:
+        """A continuation chunk that starts mid-block keeps its first line's indentation."""
+        body = "\n".join(f"    step_{i}()" for i in range(40))
+        text = f"# Long\n\n```python\ndef run():\n{body}\n```\n"
+        chunks = chunk_markdown(text, size=200, overlap=0)
+        assert len(chunks) > 1
+        for chunk in chunks[1:]:
+            assert chunk.text.startswith("    step_"), chunk.text[:40]
+
     def test_span_ends_at_the_closing_fence(self) -> None:
         """A chunk's last line that also appears earlier in it (a fence) ends the span at the chunk's end."""
         text = "# Log\n\nFormat:\n\n```\nDATE OPERATION target\n```\n"
