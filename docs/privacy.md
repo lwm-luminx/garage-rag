@@ -172,7 +172,8 @@ of every account on the Mac, so none of these listen on one:
   (`GarageSockets`).
 - **Configuration changes need a vouched-for caller.** The gRPC methods that
   write `garage.json` or an MCP client's config (`SetSetting`, the source and
-  model methods, `McpInstall`/`McpUninstall`) run only for a caller presenting
+  model methods, `McpInstall`/`McpUninstall`), and `InitDb`, which runs the SQL
+  of a caller-named `schema_dir`, run only for a caller presenting
   the app's per-launch token or arriving over that owner-only socket. A server
   on a loopback TCP port with no token refuses them, so no other account on
   the Mac can point `embedding.ollama_host` off-box and widen the allowlist.

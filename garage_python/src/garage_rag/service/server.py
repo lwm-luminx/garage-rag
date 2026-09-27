@@ -1061,9 +1061,10 @@ class GarageRpcServicer(GarageServiceServicer):
     # Schema & settings
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def InitDb(self, request: InitDbRequest, context: grpc.ServicerContext) -> InitDbResponse:
-        """Apply the schema migrations (idempotent)."""
+        """Apply the schema migrations (idempotent). Guarded: ``schema_dir`` names SQL the server runs."""
         from garage_rag.config import get_settings
         from garage_rag.db.migrate import apply_migrations, redact_url
 

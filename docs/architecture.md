@@ -328,8 +328,9 @@ one exception, since a stdio `garage-mcp` an MCP client spawned has no token.
 Without the variable (`garage serve` by hand, the tests) the server takes any
 call that only reads or persists corpus data. The methods that write
 configuration (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`,
-`McpInstall`, `McpUninstall`) are stricter, because `SetSetting
-embedding.ollama_host` widens the egress allowlist: with no token they are
+`McpInstall`, `McpUninstall`, and `InitDb`, whose `schema_dir` names SQL the
+server runs) are stricter, because `SetSetting embedding.ollama_host` widens
+the egress allowlist and a caller's schema directory runs against the corpus: with no token they are
 answered only to a peer on the owner-only Unix socket, and a caller on a
 loopback TCP port gets `PERMISSION_DENIED` (`_config_change` in
 `service/server.py`). This keeps other local processes from driving
