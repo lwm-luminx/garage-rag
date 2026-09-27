@@ -5,6 +5,7 @@ py_library(
     srcs = [
         "__init__.py",
         "host.py",
+        "image_host.py",
         "llama_xpc.py",
     ],
     imports = ["../.."],

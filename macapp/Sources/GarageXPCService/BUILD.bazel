@@ -11,6 +11,7 @@ swift_library(
     module_name = "GarageXPCServiceCore",
     visibility = ["//visibility:public"],
     deps = [
+        "//macapp/Sources/ImageEmbedBridge",
         "//macapp/Sources/LlamaModelLoader",
         "//macapp/Sources/PythonXPCService",
     ],

@@ -102,6 +102,9 @@ xcodeproj(
             "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
         ),
         top_level_target(
+            "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
+        ),
+        top_level_target(
             "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
         ),
         top_level_target(
@@ -130,6 +133,9 @@ xcodeproj(
         ),
         top_level_target(
             "//macapp/Tests/LlamaModelLoaderTests:LlamaModelLoaderTests",
+        ),
+        top_level_target(
+            "//macapp/Tests/ImageEmbedEngineTests:ImageEmbedEngineTests",
         ),
     ],
     visibility = ["//visibility:public"],

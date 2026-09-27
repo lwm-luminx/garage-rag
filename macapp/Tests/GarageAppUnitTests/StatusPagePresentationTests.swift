@@ -571,6 +571,7 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "embed-xpc"), "Embeddings")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "llama-xpc"), "Built-in Engine")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "model-download-xpc"), "Model Downloads")
+        XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "image-embed-xpc"), "Image Embeddings")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "mcp-server-xpc"), "MCP Server")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "garage-xpc"), "Garage Backend")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "something-new"), "something-new")

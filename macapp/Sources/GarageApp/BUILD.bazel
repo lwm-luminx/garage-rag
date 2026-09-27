@@ -51,6 +51,7 @@ swift_library(
         "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
         "//macapp/Sources/GarageXPCService:GarageXPCServiceCore",
+        "//macapp/Sources/ImageEmbedClient",
         "//macapp/Sources/IngestClient",
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",

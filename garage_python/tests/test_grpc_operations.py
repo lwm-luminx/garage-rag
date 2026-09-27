@@ -178,6 +178,7 @@ class TestModels:
             provider="llama_xpc",
             model_id=None,
             distance="inner_product",
+            modality=None,
             make_default=False,
         )
         assert res.model.stored_dims == 2000

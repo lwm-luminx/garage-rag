@@ -21,13 +21,16 @@ class RegisteredModel:
     table_name: str
     is_default: bool
     distance: str = "cosine"
+    modality: str = "text"
     notes: list[str] = field(default_factory=list)
 
     @property
     def message(self) -> str:
+        kind = "image model" if self.modality == "image" else ""
         return (
-            f"registered {self.slug}: {self.dims}-dim -> {self.storage_kind}({self.stored_dims}), "
-            f"index={self.index_kind}, distance={self.distance}, table={self.table_name}"
+            f"registered {self.slug}{f' ({kind})' if kind else ''}: {self.dims}-dim -> "
+            f"{self.storage_kind}({self.stored_dims}), index={self.index_kind}, distance={self.distance}, "
+            f"table={self.table_name}"
         )
 
 
@@ -39,16 +42,23 @@ def register_model(
     provider: str | None = None,
     model_id: str | None = None,
     distance: str | None = None,
+    modality: str | None = None,
     make_default: bool = False,
 ) -> RegisteredModel:
     """Register an embedding model and create its table and index. Idempotent on ``slug``.
 
-    Width, distance and the rest come from models.json for a catalogued model;
-    explicit arguments override them. ValueError for an unknown distance, or for
-    a model outside the catalog registered without ``dims``.
+    Width, distance, modality and the rest come from models.json for a catalogued
+    model; explicit arguments override them. ValueError for an unknown distance or
+    modality, or for a model outside the catalog registered without ``dims``.
     """
     spec = emb_tables.resolve_spec(
-        slug, dims=dims, model_ref=model_ref, provider=provider, model_id=model_id, distance=distance
+        slug,
+        dims=dims,
+        model_ref=model_ref,
+        provider=provider,
+        model_id=model_id,
+        distance=distance,
+        modality=modality,
     )
     with session_scope() as session:
         row = emb_tables.register_model(session, spec, make_default=make_default)
@@ -69,6 +79,7 @@ def register_model(
             table_name=row.table_name,
             is_default=bool(row.is_default),
             distance=row.distance,
+            modality=row.modality,
             notes=notes,
         )
 

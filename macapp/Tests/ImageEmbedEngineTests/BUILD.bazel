@@ -1,0 +1,37 @@
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "ImageEmbedEngineTests_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]),
+    module_name = "ImageEmbedEngineTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/ImageEmbedClient",
+        "//macapp/Sources/ImageEmbedEngine",
+        "//macapp/Sources/PythonXPCService",
+    ],
+)
+
+macos_unit_test(
+    name = "ImageEmbedEngineTests",
+    additional_linker_inputs = [
+        "//ext/python:python_framework",
+    ],
+    bundle_id = "me.rickmark.garage-rag.ImageEmbedEngineTests",
+    bundle_name = "ImageEmbedEngineTests",
+    # ImageEmbedEngine -> PythonXPCService -> GaragePythonEmbed calls the CPython C
+    # API, so the test bundle has to link the interpreter like the app does.
+    linkopts = [
+        "-F$(location //ext/python:python_framework)/..",
+        "-framework",
+        "Python",
+    ],
+    minimum_os_version = "14.0",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ImageEmbedEngineTests_lib",
+        "//ext/python:python_framework",
+    ],
+)

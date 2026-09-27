@@ -83,13 +83,15 @@ extension ModelsView {
             return ModelRowState(symbol: "internaldrive", tint: .secondary, isActive: false, text: "On disk · loads when facts are gleaned")
         case .ollama, .lmStudio:
             return ModelRowState(symbol: "network", tint: .secondary, isActive: false, text: "Served by \(item.provider.displayName)")
+        case .imageXPC:
+            return ModelRowState(symbol: "photo", tint: .secondary, isActive: false, text: "An image model cannot glean facts")
         }
     }
 
     /// The download side of a Llama XPC model: in flight, or not on disk. `nil` once the file is
     /// there, or when the provider serves the model itself.
     func fileRowState(for item: UnifiedModelItem) -> ModelRowState? {
-        guard item.provider == .llamaXPC, !isModelFileDownloaded(item: item) else { return nil }
+        guard item.provider.downloadsFiles, !isModelFileDownloaded(item: item) else { return nil }
         if let task = getActiveDownloadTask(item: item) {
             var parts = ["Downloading", task.formattedProgress]
             if !task.formattedSpeed.isEmpty { parts.append(task.formattedSpeed) }
@@ -180,7 +182,9 @@ extension ModelsView {
         if role == .distillation, appState.factsModel == item.slug {
             StatusBadge("IN USE", tint: .green)
         }
-        if item.provider != .llamaXPC {
+        if item.provider == .imageXPC {
+            StatusBadge("IMAGES", tint: .indigo)
+        } else if item.provider != .llamaXPC {
             StatusBadge(item.provider.displayName.uppercased(), tint: item.provider == .ollama ? .orange : .teal)
         }
         if role == .embedding, item.provider == .llamaXPC, isModelActiveInLlama(item: item) {
@@ -195,16 +199,21 @@ extension ModelsView {
         let isDownloading = isModelDownloading(item: item)
         let isLoaded = role == .embedding ? isModelActiveInLlama(item: item) : llama.isModelLoaded(alias: item.slug)
 
-        if item.provider == .llamaXPC && !isDownloaded && !isDownloading && item.effectiveDownloadURL != nil {
+        let hasDownload = item.effectiveDownloadURL != nil || !item.downloadFileTargets.isEmpty
+        if item.provider.downloadsFiles && !isDownloaded && !isDownloading && hasDownload {
             Button("Download") {
                 downloadModelToLlamaXPC(item: item)
             }
             .controlSize(.small)
             .disabled(modelDownload.isBusy)
-            .help("Download the model file to the models folder and verify its SHA-256")
+            .help(item.provider == .imageXPC
+                ? "Download the model's Core ML packages and tokenizer to the models folder and verify their SHA-256"
+                : "Download the model file to the models folder and verify its SHA-256")
         }
 
-        if isDownloaded, let dl = downloadedInfo {
+        // The image embedding helper loads its models on first use and keeps them resident; there
+        // is no engine slot to load into or free.
+        if isDownloaded, item.provider != .imageXPC, let dl = downloadedInfo {
             if isLoaded {
                 Button("Unload") {
                     pendingUnloadAlias = item.slug

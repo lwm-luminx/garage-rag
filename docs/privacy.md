@@ -30,6 +30,12 @@ is built there, after its destination is checked:
 - `egress.url_opener(purpose=..., base_url=...)` — a stdlib client (the
   `mcp-test` probe).
 
+Image embedding models (`image_xpc`) open no connection at all: the Swift host
+of each helper installs two C functions (`garage_rag/xpc/image_host.py`) that
+reach the app's `GarageImageEmbedXPCService` over NSXPC, through the listener
+endpoint the app hands the helper, and the pictures are embedded on this
+machine's Neural Engine or GPU.
+
 The test parses every source file's AST, so a function-local or
 `importlib.import_module` import is caught too. Inbound and local infrastructure
 is exempt, and listed file by file rather than by pattern: the gRPC server and

@@ -74,6 +74,8 @@ final class AppState: ObservableObject {
     @Published private(set) var presetModels: [ModelPresetEntry] = []
     /// Generative presets (models.json `fact_distil`) offered for fact distillation / `rag_ask`.
     @Published private(set) var factDistilPresets: [ModelPresetEntry] = []
+    /// The catalog's `image_embedding` presets: CLIP-style models the image embedding helper runs.
+    @Published private(set) var imageEmbeddingPresets: [ModelPresetEntry] = []
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
     @Published private(set) var factsProvider: String = GarageConfigLoader.defaultFactsProvider
@@ -353,9 +355,15 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Every preset the Embedding page can register: text models, then image models.
+    var embeddingPresets: [ModelPresetEntry] {
+        presetModels + imageEmbeddingPresets
+    }
+
     func fetchPresetModels() {
         self.presetModels = GarageConfigLoader.loadModelPresets()
         self.factDistilPresets = GarageConfigLoader.loadFactDistilPresets()
+        self.imageEmbeddingPresets = GarageConfigLoader.loadImageEmbeddingPresets()
         fetchFactsSettings()
     }
 

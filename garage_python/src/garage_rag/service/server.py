@@ -182,7 +182,7 @@ def _grpc_errors[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
     if inspect.isgeneratorfunction(handler):
 
         @functools.wraps(handler)
-        def stream_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        def stream_wrapper(*args: P.args, **kwargs: P.kwargs) -> Iterator[Any]:
             context = cast(grpc.ServicerContext, args[2] if len(args) > 2 else kwargs["context"])
             try:
                 yield from cast(Iterator[Any], handler(*args, **kwargs))
@@ -673,6 +673,7 @@ class GarageRpcServicer(GarageServiceServicer):
                     is_default=m.is_default,
                     model_id=m.model_id or "",
                     distance=m.distance,
+                    modality=getattr(m, "modality", None) or "text",
                 )
                 for m in models
             ]
@@ -874,6 +875,7 @@ class GarageRpcServicer(GarageServiceServicer):
             provider=request.provider or None,
             model_id=request.model_id or None,
             distance=request.distance or None,
+            modality=request.modality or None,
             make_default=request.make_default,
         )
         return RegisterModelResponse(
@@ -889,6 +891,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 is_default=row.is_default,
                 model_id=row.model_id or "",
                 distance=row.distance,
+                modality=row.modality,
             ),
             notes=row.notes,
             message="\n".join([row.message, *row.notes]),
@@ -1371,7 +1374,13 @@ class GarageRpcServicer(GarageServiceServicer):
         from garage_rag.db.emb_tables import get_model
         from garage_rag.db.engine import session_scope
         from garage_rag.embed.factory import provider_is_local
-        from garage_rag.embed.ollama import assert_safe_table, count_pending, pending_chunks_sql
+        from garage_rag.embed.ollama import (
+            PENDING_SELECT,
+            assert_safe_table,
+            count_pending,
+            model_modality,
+            pending_chunks_sql,
+        )
 
         with session_scope() as session:
             # get_model raises LookupError (NOT_FOUND) for an unknown slug only; a DB
@@ -1381,14 +1390,18 @@ class GarageRpcServicer(GarageServiceServicer):
             # The worker posts these texts to the model's provider: an off-box one
             # never gets communication chunks (see embed.ollama.backfill_model).
             local = provider_is_local(model.provider or "")
+            modality = model_modality(model)
             pending_total = count_pending(session, model, include_communications=local)
 
             fetch_limit = request.batch_size if request.batch_size > 0 else 64
             if request.limit > 0 and request.limit < fetch_limit:
                 fetch_limit = request.limit
 
+            # For an image model each item's text is the image file's path.
             sql = text(
-                pending_chunks_sql(table, select="c.id, c.text", include_communications=local)
+                pending_chunks_sql(
+                    table, select=PENDING_SELECT[modality], include_communications=local, modality=modality
+                )
                 + " ORDER BY c.id LIMIT :limit"
             )
             rows = session.execute(sql, {"limit": fetch_limit}).all()
@@ -1406,6 +1419,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 total_pending=pending_total,
                 chunks=chunk_items,
                 has_more=has_more,
+                modality=modality,
             )
 
     @_grpc_errors
