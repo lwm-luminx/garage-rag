@@ -178,10 +178,11 @@ struct StatusView: View {
         let headline = indexing.headline
         return GroupBox("Library") {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    MenuBarSymbolCircle(symbol: headline.symbol, tint: headline.tint, isActive: headline.isActive)
-
-                    VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 3) {
+                    // The symbol and the actions share the title's line, centred on it; the bar
+                    // and the lines under it start where the title does.
+                    HStack(alignment: .center, spacing: 10) {
+                        MenuBarSymbolCircle(symbol: headline.symbol, tint: headline.tint, isActive: headline.isActive)
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text(headline.title)
                                 .font(.system(size: 15, weight: .semibold))
@@ -195,6 +196,16 @@ struct StatusView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
+                        Spacer(minLength: 12)
+                        HStack(spacing: 8) {
+                            if indexing.isRunning || appState.isFetchingStats {
+                                ProgressView().controlSize(.small)
+                            }
+                            indexingAction(indexing.action)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 3) {
                         if headline.isIndeterminate {
                             ProgressView()
                                 .progressViewStyle(.linear)
@@ -225,15 +236,7 @@ struct StatusView: View {
                                 .padding(.top, 2)
                         }
                     }
-
-                    Spacer(minLength: 12)
-
-                    HStack(spacing: 8) {
-                        if indexing.isRunning || appState.isFetchingStats {
-                            ProgressView().controlSize(.small)
-                        }
-                        indexingAction(indexing.action)
-                    }
+                    .padding(.leading, 36)
                 }
 
                 if appState.postgres.status == .running, appState.corpusStats.lastUpdated != nil {
