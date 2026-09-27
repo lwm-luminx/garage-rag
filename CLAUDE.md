@@ -72,6 +72,11 @@ The Aspect CLI takes its own flags only. Pass each Bazel flag as `--bazel-flag=.
 `aspect query`; use `bazel query` (on `PATH` from `bazel_env`), e.g.
 `bazel query 'kind(codesign_test, //...)'`.
 
+Every run writes a manifest of the Python files it loaded (`runtime_files.txt`, one absolute path per
+line, from `sys.modules` at the end of the session; `pytest_unconfigure` in `garage_python/tests/conftest.py`).
+It goes to `$GARAGE_RUNTIME_MANIFEST` when set, under Bazel to `bazel-testlogs/<target>/test.outputs/`,
+and otherwise to `garage_python/.pytest_cache/d/garage/`.
+
 Adding a new test file just needs `aspect gazelle`, which writes the `py_test` entry; the
 `# gazelle:map_kind py_test py_test //tools/pytest:defs.bzl` directive in `garage_python/BUILD.bazel`
 keeps them on the pytest wrapper rather than the stock rule.
