@@ -344,7 +344,7 @@ struct StatusView: View {
                 }
                 Toggle("Also run when Garage starts", isOn: $appState.maintenanceRunsAtLaunch)
                     .disabled(!appState.scheduledMaintenanceEnabled)
-                    .help("Run once as soon as the database is up after launch, instead of waiting a whole interval for the first run.")
+                    .help("Run once after launch, as soon as the database, the backend and the helpers are all up, instead of waiting a whole interval for the first run.")
                     .accessibilityIdentifier("status.maintenance.atLaunch")
                 Text("Each run scans and ingests every source, then embeds the new chunks with every registered model. Otherwise the first run starts after the chosen interval; a source added meanwhile is scanned as soon as the current run ends.")
                     .font(.caption)

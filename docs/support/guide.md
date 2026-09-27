@@ -140,7 +140,7 @@ Ingest is safe to re-run. Unchanged files are skipped without being read, a file
 <h3 id="keeping-up-to-date">Keeping the Index Up to Date</h3>
 
 - **Update Everything** on the Sources page scans and ingests every source, embeds the new chunks with every model, then gleans facts from documents that have not been distilled yet. **Stop** ends it at the current step.
-- **Automatic Updates**, under Library on the Status page, scans, ingests and embeds on a schedule, and optionally once when Garage starts.
+- **Automatic Updates**, under Library on the Status page, scans, ingests and embeds on a schedule, and optionally once when Garage starts, as soon as every service is up.
 - From the terminal: `garage scan`, `garage ingest`, `garage backfill`, then `garage enrich-facts --stale-only`.
 
 ---
