@@ -7,7 +7,7 @@ description: Garage indexes your documents, code and messages on your Mac and se
 <div class="hero hero-landing">
   <img src="{{ '/assets/logo.png' | relative_url }}" alt="Garage Logo" class="hero-logo">
   <h1>Your files, your Mac, your AI.</h1>
-  <p>Garage indexes your documents, code repositories, notes and messages on your Mac and hands them to your AI assistant over the Model Context Protocol. Nothing is uploaded, nothing is sent anywhere you did not point it at.</p>
+  <p>Garage indexes your documents, code, notes and messages on your Mac and serves them to your AI assistant over the Model Context Protocol. Garage uploads nothing: your assistant gets only the excerpts it searches for, never the whole collection.</p>
   <div class="hero-actions">
     <a id="download-primary" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary btn-large"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download for Mac</span></a>
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
@@ -72,7 +72,31 @@ description: Garage indexes your documents, code and messages on your Mac and se
   <div class="card">
     <span class="card-icon">🛡️</span>
     <h3>Private by construction</h3>
-    <p>No cloud AI client in the app. One tested egress choke point with a destination allowlist, and your messages never leave the machine. <a href="{{ '/support/privacy-policy.html' | relative_url }}">Read the privacy policy →</a></p>
+    <p>No cloud AI client in the app. One tested egress choke point with a destination allowlist, and Garage itself never sends your messages off your Mac. <a href="{{ '/support/privacy-policy.html' | relative_url }}">Read the privacy policy →</a></p>
+  </div>
+</div>
+
+## Where your data goes
+
+Garage never uploads your files or its index. What leaves your Mac depends on which AI you connect, and Garage's [privacy guarantee]({{ '/privacy.html' | relative_url }}) is enforced by tests, not by promise.
+
+<div class="grid">
+  <div class="card">
+    <span class="card-icon">☁️</span>
+    <h3>Claude, ChatGPT and other cloud assistants</h3>
+    <p>Most people connect a cloud assistant. Its app on your Mac queries Garage over MCP and gets only the relevant parts of your collection: the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant does send those parts to its provider's servers with your conversation, under the provider's terms, so leave out any source you don't want to go there.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">💻</span>
+    <h3>Fully private, on your Mac</h3>
+    <p>Use the built-in llama.cpp engine, or LM Studio or Ollama on this Mac, for embeddings and answers, and connect an agent that runs its model locally, such as LM Studio's chat. Nothing leaves the machine: not your files, not the index, not the questions you ask.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🏠</span>
+    <h3>Private AI on your own network</h3>
+    <p>Point Garage at an LM Studio or Ollama server on another machine you run, and documents and code go to that one server for embedding, and nowhere else. Messages and Mail never do: they stay on this Mac even then.</p>
   </div>
 </div>
 
