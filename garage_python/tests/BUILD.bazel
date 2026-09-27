@@ -310,6 +310,7 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
     ],
 )
 
