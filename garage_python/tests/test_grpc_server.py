@@ -218,6 +218,21 @@ def test_config_changes_are_refused_on_tcp_without_the_token(grpc_server):
         assert GarageServiceStub(channel).Ping(PingRequest(message="a")).message == "a"
 
 
+def test_init_db_is_refused_on_tcp_without_the_token(grpc_server):
+    """``InitDb`` runs the SQL files of a caller-chosen ``schema_dir``, so it is guarded like a config write."""
+    from garage_rag.proto.garage_pb2 import InitDbRequest
+
+    port, _ = grpc_server
+    with (
+        patch("garage_rag.db.migrate.apply_migrations") as apply_migrations,
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        with pytest.raises(grpc.RpcError) as excinfo:
+            GarageServiceStub(channel).InitDb(InitDbRequest(schema_dir="/tmp/anyone-can-write-here"))
+        assert excinfo.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        apply_migrations.assert_not_called()
+
+
 def test_config_changes_are_answered_with_the_token(token_server):
     from pathlib import Path
 
