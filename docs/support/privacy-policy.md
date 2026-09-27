@@ -8,7 +8,7 @@ redirect_from:
 
 # Privacy Policy
 
-**Effective Date:** September 24, 2026  
+**Effective Date:** September 27, 2026  
 **Application:** Garage & GarageApp  
 **Developer:** Rick Mark-Penwell
 
@@ -16,7 +16,7 @@ redirect_from:
 
 ## 1. Overview & Local-First Philosophy
 
-Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5).
+Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5). This website, garagerag.app, uses Google Analytics to count visits; the application does not (section 6).
 
 ---
 
@@ -72,7 +72,17 @@ Like any server, garagerag.app (hosted on GitHub Pages) and Hugging Face receive
 
 ---
 
-## 6. Security & Access Control
+## 6. This Website
+
+The website at garagerag.app, including these support pages, uses **Google Analytics** to count visits and see which pages people read. When you open a page, your browser loads Google's analytics script, which sets cookies and sends Google the page address, the referring page, your browser and device type, an approximate location derived from your IP address, and how you interact with the page. Google handles that information under the [Google Privacy Policy](https://policies.google.com/privacy). We use the reports only to understand how the site is used; we do not use them for advertising and do not combine them with anything else.
+
+You can stop this collection with a content blocker, by blocking cookies for garagerag.app, or with [Google's opt-out browser add-on](https://tools.google.com/dlpage/gaoptout).
+
+This applies to the website only. GarageApp and the `garage` tools contain no analytics, and the website cannot see anything in your Garage library.
+
+---
+
+## 7. Security & Access Control
 
 - **Keychain Security**: Database superuser passwords and optional API tokens (e.g., LM Studio API keys) are stored securely in the native **macOS Keychain**.
 - **Loopback Isolation**: The embedded HTTP MCP server binds exclusively to `127.0.0.1` with DNS-rebinding guards and origin validation, preventing web pages and remote networks from accessing your corpus.
@@ -80,19 +90,19 @@ Like any server, garagerag.app (hosted on GitHub Pages) and Hugging Face receive
 
 ---
 
-## 7. Children's Privacy
+## 8. Children's Privacy
 
 Garage does not knowingly collect information from children or any other users. Because the application does not collect personal data, it does not knowingly collect personal data from children under 13 or the equivalent minimum age in other jurisdictions.
 
 ---
 
-## 8. Changes to This Policy
+## 9. Changes to This Policy
 
 This Privacy Policy may be updated from time to time. Any material updates will be published to this website and included with subsequent application releases.
 
 ---
 
-## 9. Contact
+## 10. Contact
 
 If you have questions about this Privacy Policy or our local-first security architecture, please reach out:
 
