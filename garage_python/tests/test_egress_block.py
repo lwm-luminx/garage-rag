@@ -81,6 +81,7 @@ INBOUND_OR_LOCAL = {
         "service/client.py",  # the facade's client; checks its address with egress.check_destination
     },
     "uvicorn": {"mcp_server/server.py"},  # serves MCP over HTTP (inbound)
+    "socket": {"service/server.py"},  # probes its own Unix socket path for a live listener before binding
     "psycopg": {"db/engine.py", "db/migrate.py"},  # the Postgres connection
 }
 

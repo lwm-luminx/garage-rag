@@ -1440,7 +1440,10 @@ def _bind_unix_socket(server: grpc.Server, socket_path: str) -> None:
     """Binds ``server`` to ``socket_path``, owner-only.
 
     A socket file left by a server that died is removed first (gRPC will not
-    bind over it); anything else at the path is left alone and the bind fails.
+    bind over it). A socket something still answers on is another server's (a
+    second Garage, or an older build still running): unlinking it would take the
+    path from under that server's clients, so the bind fails instead. Anything
+    else at the path is left alone and the bind fails too.
     """
     path = Path(socket_path)
     if not path.is_absolute():
@@ -1448,12 +1451,32 @@ def _bind_unix_socket(server: grpc.Server, socket_path: str) -> None:
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     try:
         if stat.S_ISSOCK(path.lstat().st_mode):
-            path.unlink()
+            if _unix_socket_is_stale(socket_path):
+                path.unlink()
+            else:
+                raise RuntimeError(f"another server is listening on the gRPC socket {socket_path}; not binding over it")
     except FileNotFoundError:
         pass
     if not server.add_insecure_port(f"unix:{socket_path}"):
         raise RuntimeError(f"could not bind the gRPC socket {socket_path}")
     path.chmod(0o600)
+
+
+def _unix_socket_is_stale(socket_path: str) -> bool:
+    """True when nothing accepts connections on the socket file: a connect is refused."""
+    import socket  # a probe of this server's own listening path, not egress (test_egress_block lists it)
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        try:
+            probe.connect(socket_path)
+        except ConnectionRefusedError:
+            return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False  # in use, or not ours to judge: leave it alone and let the bind fail
+    return False
 
 
 def serve_grpc(
