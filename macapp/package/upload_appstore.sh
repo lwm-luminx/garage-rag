@@ -16,7 +16,8 @@
 # can also upload by hand.
 #
 # The API key (App Store Connect → Users and Access → Integrations → Team Keys, role Developer or
-# App Manager) is read from the login keychain, stored once with:
+# App Manager) is read from the login keychain: an item labelled "ASC API Key (<LocalHostName>)",
+# as other App Store Connect tools save it, or GARAGE_ASC_KEYCHAIN_LABEL, or one stored with:
 #
 #   security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \
 #       -a <KEY ID> -j <ISSUER ID> -w "$(base64 < AuthKey_<KEY ID>.p8)"
@@ -82,16 +83,69 @@ if [[ "$mode" != "export" ]]; then
             die "GARAGE_ASC_KEY_PATH needs GARAGE_ASC_KEY_ID and GARAGE_ASC_ISSUER_ID"
         cp "$GARAGE_ASC_KEY_PATH" "$work/private_keys/AuthKey_$key_id.p8"
     else
-        attributes="$(security find-generic-password -s "$KEYCHAIN_SERVICE" 2>/dev/null)" ||
-            die "no App Store Connect API key in the keychain; store it once with:
+        # This script's own item, else one labelled "ASC API Key (<this Mac's name>)", as other
+        # App Store Connect tools save it; GARAGE_ASC_KEYCHAIN_LABEL names another.
+        label="${GARAGE_ASC_KEYCHAIN_LABEL:-}"
+        if [[ -n "$label" ]]; then
+            item=(-l "$label")
+        elif security find-generic-password -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1; then
+            item=(-s "$KEYCHAIN_SERVICE")
+        else
+            label="ASC API Key ($(scutil --get LocalHostName 2>/dev/null || hostname -s))"
+            item=(-l "$label")
+        fi
+        attributes="$(security find-generic-password "${item[@]}" 2>/dev/null)" ||
+            die "no App Store Connect API key in the keychain (looked for $KEYCHAIN_SERVICE and '$label'); store it once with:
   security add-generic-password -U -s $KEYCHAIN_SERVICE -a <KEY ID> -j <ISSUER ID> -w \"\$(base64 < AuthKey_<KEY ID>.p8)\""
-        [[ -n "$key_id" ]] || key_id="$(sed -n 's/^ *"acct"<blob>="\(.*\)"$/\1/p' <<<"$attributes")"
-        [[ -n "$issuer_id" ]] || issuer_id="$(sed -n 's/^ *"icmt"<blob>="\(.*\)"$/\1/p' <<<"$attributes")"
-        [[ -n "$key_id" && -n "$issuer_id" ]] ||
-            die "the keychain item $KEYCHAIN_SERVICE needs the key ID as its account and the issuer ID as its comment"
-        (umask 077 && security find-generic-password -s "$KEYCHAIN_SERVICE" -w |
-            base64 --decode >"$work/private_keys/AuthKey_$key_id.p8") ||
-            die "could not read the API key from the keychain item $KEYCHAIN_SERVICE"
+        secret="$(security find-generic-password "${item[@]}" -w)" ||
+            die "could not read the API key from the keychain item ${item[*]}"
+        # The secret may be the .p8 itself, its base64, the hex `security` prints for multi-line
+        # data, or JSON carrying the key and its IDs. The IDs come from the environment, then
+        # the JSON, then the item's account (key ID) and comment or description (issuer ID).
+        ids="$(umask 077 && KEY_ID="$key_id" ISSUER_ID="$issuer_id" SECRET="$secret" ATTRIBUTES="$attributes" \
+            /usr/bin/python3 - "$work/private_keys" <<'EOF'
+import base64, binascii, json, os, re, sys
+
+secret = os.environ["SECRET"].strip()
+fields = {}
+
+def pem(text):
+    return text if "PRIVATE KEY-----" in text else None
+
+if re.fullmatch(r"[0-9a-fA-F]+", secret) and len(secret) % 2 == 0:
+    secret = binascii.unhexlify(secret).decode("utf-8", "replace").strip()
+key = None
+if secret.startswith("{"):
+    fields = {k.lower().replace("_", "").replace("-", ""): v for k, v in json.loads(secret).items() if isinstance(v, str)}
+    key = next((pem(v) for v in fields.values() if pem(v)), None)
+else:
+    key = pem(secret)
+if key is None:
+    try:
+        key = pem(base64.b64decode(secret, validate=True).decode("utf-8"))
+    except (binascii.Error, UnicodeDecodeError):
+        pass
+if key is None:
+    sys.exit("the keychain item holds no recognizable .p8 private key")
+
+attrs = dict(re.findall(r'^\s*"(\w+)"<blob>="(.*)"$', os.environ["ATTRIBUTES"], re.M))
+uuid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+key_id = os.environ["KEY_ID"] or fields.get("keyid") or fields.get("apikey") or ""
+if not key_id and re.fullmatch(r"[A-Z0-9]{4,}", attrs.get("acct", "")):
+    key_id = attrs["acct"]
+issuer = os.environ["ISSUER_ID"] or fields.get("issuerid") or fields.get("issuer") or ""
+if not issuer:
+    issuer = attrs.get("icmt", "")
+if not issuer:
+    issuer = next((m.group(0) for v in attrs.values() if (m := re.search(uuid, v))), "")
+if not key_id or not issuer:
+    sys.exit("found the key but not its key ID or issuer ID; set GARAGE_ASC_KEY_ID and GARAGE_ASC_ISSUER_ID")
+with open(os.path.join(sys.argv[1], f"AuthKey_{key_id}.p8"), "w") as f:
+    f.write(key.strip() + "\n")
+print(key_id, issuer)
+EOF
+        )" || die "could not use the API key in the keychain item ${item[*]}"
+        read -r key_id issuer_id <<<"$ids"
     fi
     chmod 600 "$work/private_keys/AuthKey_$key_id.p8"
     # altool looks for AuthKey_<id>.p8 here before its default folders.
