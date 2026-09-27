@@ -19,21 +19,11 @@ description: Garage indexes your documents, code and messages on your Mac and se
       <span>Signed and notarized, but not finished. Back up <code>~/Library/Application Support/GarageApp</code> first.</span>
     </div>
     <div class="hero-strip-actions">
-      <a id="download-alpha-pkg" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary">Download the test build</a>
-      <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's new ↗</a>
+      <a id="download-alpha-pkg" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary">Download</a>
+      {% if site.testflight_url and site.testflight_url != "" %}<a id="download-alpha-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">TestFlight</a>{% endif %}
+      <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's New ↗</a>
     </div>
   </div>
-  {% if site.testflight_url and site.testflight_url != "" %}
-  <div id="download-testflight" class="hero-strip hero-alpha">
-    <div class="hero-strip-text">
-      <strong>✈️ Test the App Store version on TestFlight</strong>
-      <span>Garage 1.5 for the Mac App Store, installed and updated by Apple's TestFlight app.</span>
-    </div>
-    <div class="hero-strip-actions">
-      <a href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">How to join</a>
-    </div>
-  </div>
-  {% endif %}
 </div>
 
 <div class="hero-strip hero-hire">
