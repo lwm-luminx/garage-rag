@@ -72,16 +72,32 @@ public final class LlamaHTTPServer: @unchecked Sendable {
 
         let parameters = NWParameters.tcp
         if let socketPath {
-            try Self.prepareSocketPath(socketPath)
-            parameters.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
+            // Probe, unlink and bind under the lock beside the socket, so two LlamaXPCServices
+            // (two Garages, or an old and a new build) recovering the same stale socket take
+            // turns: the second finds the first's live socket and fails instead of unlinking it.
+            try GarageSockets.withRecoveryLock(at: socketPath) {
+                try Self.prepareSocketPath(socketPath)
+                parameters.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
+                try bindListener(using: parameters)
+            }
+            lock.lock()
+            ownsSocketFile = true
+            lock.unlock()
+            // The folder is already owner-only; the socket is too, in case it is ever moved out of it.
+            chmod(socketPath, 0o600)
         } else {
             guard let nwPort = NWEndpoint.Port(rawValue: port) else {
                 throw LlamaEngineError(500, "invalid HTTP port \(port)")
             }
             parameters.allowLocalEndpointReuse = true
             parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+            try bindListener(using: parameters)
         }
+    }
 
+    /// Starts a listener with `parameters` and waits for it to be ready, throwing when it is not
+    /// within a few seconds or the bind failed.
+    private func bindListener(using parameters: NWParameters) throws {
         let newListener = try NWListener(using: parameters)
         let ready = DispatchSemaphore(value: 0)
         let failure = LockedBox<String?>(nil)
@@ -117,13 +133,6 @@ public final class LlamaHTTPServer: @unchecked Sendable {
         if let message = failure.value {
             stop()
             throw LlamaEngineError(500, "llama HTTP listener could not bind \(url): \(message)")
-        }
-        if let socketPath {
-            lock.lock()
-            ownsSocketFile = true
-            lock.unlock()
-            // The folder is already owner-only; the socket is too, in case it is ever moved out of it.
-            chmod(socketPath, 0o600)
         }
     }
 

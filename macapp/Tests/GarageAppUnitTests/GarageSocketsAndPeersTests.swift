@@ -55,6 +55,37 @@ final class GarageSocketsAndPeersTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: file), "a regular file was removed")
     }
 
+    func testRecoveryLockIsHeldAcrossTheBodyAndSharedByPath() throws {
+        try GarageSockets.ensureDirectory(directory)
+        let path = directory.path + "/grpc"
+
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let holder = Thread {
+            try? GarageSockets.withRecoveryLock(at: path) {
+                entered.signal()
+                release.wait()
+            }
+        }
+        holder.start()
+        XCTAssertEqual(entered.wait(timeout: .now() + 5), .success)
+
+        // A second taker on the same path blocks until the holder is done.
+        let fd = open(path + ".lock", O_RDWR)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        defer { close(fd) }
+        XCTAssertEqual(flock(fd, LOCK_EX | LOCK_NB), -1, "the lock was not held while the body ran")
+        XCTAssertEqual(errno, EWOULDBLOCK)
+
+        release.signal()
+        var acquired = false
+        for _ in 0..<50 where !acquired {
+            acquired = flock(fd, LOCK_EX | LOCK_NB) == 0
+            if !acquired { Thread.sleep(forTimeInterval: 0.1) }
+        }
+        XCTAssertTrue(acquired, "the lock was not released after the body")
+    }
+
     func testPeerRequirementNamesTheTeam() {
         XCTAssertEqual(
             GarageXPCPeerRequirement.requirement(forTeam: "DWVXMLB45Y"),
