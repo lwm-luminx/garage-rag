@@ -108,7 +108,7 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   run Cypher and `create_graph` without `LOAD 'age'` or a `SET search_path` first.
 - `Resources/schema` — the SQL migrations, `Resources/postgresql.conf`, the model
   manifest and the config JSON schema.
-- `Frameworks/PythonXPCService.framework` — the shared runtime for the six
+- `Frameworks/PythonXPCService.framework` — the shared runtime for the seven
   `XPCServices/*.xpc` helpers listed under `xpc_services`. Its resources hold
   `site-python` (`//macapp/externals:site-python`): the standard library,
   `lib-dynload` and site-packages, used by the CLI and every XPC service, and
@@ -493,7 +493,8 @@ with the Status page listing the missing sources and model under Health.
 - `GarageGRPCService` — owns the `GarageService` gRPC backend hosted inside the `GarageXPCService` helper, on the socket `s/grpc` in the group container (port 50051 only when that path would be too long); the Search and Documents views talk to it over gRPC-Swift, and the launchers find it through `GARAGE_GRPC_SOCKET`.
 - `LlamaService` / `ModelDownloadService` — drive the `LlamaXPCService` and `ModelDownloadXPCService` helpers through the `LlamaClient` / `ModelDownloadClient` modules.
 - `LlamaXPCService` runs llama.cpp in-process (`Sources/LlamaEngine`, linked from `//ext/llama_cpp` with Metal and Accelerate). Its XPC interface carries the same llama-server routes (`handleServerRequest`), which the Python embedded in the other XPC services calls directly (`LlamaInferenceBridge`). For Python outside them (the launchers), it also serves the routes (`/health`, `/props`, `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/completion`, `/tokenize`, `/detokenize`, `/v1/rerank`) over HTTP on the socket `s/llama` in the group container, which the launchers export as `GARAGE_LLAMA_SOCKET`. `GARAGE_LLAMA_HTTP_PORT` in the helper's environment moves it to that loopback port instead; the Python side then reads `embedding.llama_host` from `garage.json`. Both front ends (the NSXPC delegate and the HTTP listener) are `Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`: the model UI tests' host app (`GarageApp_uitest`) embeds `Tests/MockLlamaXPCService` instead, the same front end on the testonly `DeterministicLlamaEngine`, under the same bundle identifier.
-- `XPCServiceManager` — pings all six helpers, streams their logs into the app, runs their in-service self tests and can restart or terminate them.
+- `GarageImageEmbedXPCService` (`Sources/GarageImageEmbedXPCService`, on `Sources/ImageEmbedEngine`) runs CLIP-style image embedding models as Core ML packages (`image_embedding` entries of models.json, downloaded file by file into `models/<slug>/`): an image tower fed decoded pixels and a text tower fed a Gemma-style BPE tokenizer's ids, both L2-normalized into one space. It has no network listener and no Python; the app reaches it through `ImageEmbedClient`, and the Python in `GarageXPCService`, `GarageEmbedXPCService` and `GarageMCPServerService` through `Sources/ImageEmbedBridge`, two C entry points that call the service over NSXPC through the endpoint a second `LlamaEndpointBroker` hands over (`setImageEmbedEndpoint`).
+- `XPCServiceManager` — pings all seven helpers, streams their logs into the app, runs their in-service self tests and can restart or terminate them.
 - `AppDelegate` — keeps the app running in the menu bar after the window closes, and signals Postgres and every helper to stop on every quit path (Cmd+Q, Dock quit, menu item).
 - `AppState+LlamaModels` — decides which models `LlamaXPCService` holds: the default `llama_xpc`
   embedding model from the moment Postgres is up (and again when the default changes), so a search

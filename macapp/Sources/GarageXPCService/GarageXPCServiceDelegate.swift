@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import OSLog
+import ImageEmbedBridge
 import LlamaModelLoader
 import PythonXPCService
 import PythonKit
@@ -147,6 +148,7 @@ final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProt
             GarageXPCStandardSelfTests.serviceModule("garage_rag.service"),
             GarageXPCStandardSelfTests.serviceModule("garage_rag.service.server", attributes: ["create_grpc_server"]),
             LlamaModelLoaderBridge.selfTest(),
+            ImageEmbedBridge.selfTest(),
         ]
     }
 
@@ -155,6 +157,7 @@ final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProt
     /// (`setLlamaEndpoint`). `EnsureLlamaModel` (the stdio launchers' way in) uses the same loader.
     override func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {
         LlamaModelLoaderBridge.install()
+        ImageEmbedBridge.install()
     }
 
     override func registerManagedServices(in host: GarageXPCServiceHost) {

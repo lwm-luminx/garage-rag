@@ -42,9 +42,10 @@ public protocol GarageIngestXPCServiceProtocol: GarageCommonXPCServiceProtocol, 
 }
 
 /// Objective-C protocol for Embed XPC Service communication. It receives the LlamaXPCService
-/// endpoint because embedding with a llama_xpc model loads it on demand.
+/// endpoint because embedding with a llama_xpc model loads it on demand, and the
+/// GarageImageEmbedXPCService endpoint because the embed worker embeds image models there.
 @objc(GarageEmbedXPCServiceProtocol)
-public protocol GarageEmbedXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol {
+public protocol GarageEmbedXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol {
     func embedTexts(_ texts: [String], model: String?, with reply: @escaping (Bool, String?) -> Void)
 }
 

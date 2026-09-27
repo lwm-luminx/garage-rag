@@ -22,6 +22,7 @@ from garage_rag.db.registry import (
     ModelSpec,
     StoragePlan,
     check_distance,
+    check_modality,
     column_type_sql,
     index_ddl,
     plan_storage,
@@ -75,6 +76,7 @@ def resolve_spec(
     provider: str | None = None,
     model_id: str | None = None,
     distance: str | None = None,
+    modality: str | None = None,
 ) -> ModelSpec:
     """The catalog's model (models.json), adjusted by explicit arguments, or a
     spec built from the arguments alone for a model the catalog does not list."""
@@ -89,6 +91,7 @@ def resolve_spec(
             model_ref=model_ref or known.ref_for(chosen_provider),
             model_id=model_id or known.model_id,
             distance=check_distance(distance) if distance else known.distance,
+            modality=check_modality(modality) if modality else known.modality,
         )
 
     if dims is None:
@@ -100,6 +103,7 @@ def resolve_spec(
         provider=provider or "llama_xpc",
         model_id=model_id,
         distance=check_distance(distance) if distance else "cosine",
+        modality=check_modality(modality) if modality else "text",
     )
 
 
@@ -147,6 +151,7 @@ def register_model(
         storage_kind=plan.storage_kind,
         index_kind=plan.index_kind,
         distance=spec.distance,
+        modality=spec.modality,
         normalized=spec.normalized,
         table_name=table,
         is_default=False,

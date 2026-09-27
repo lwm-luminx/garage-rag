@@ -25,7 +25,7 @@ from garage_rag.config import get_settings
 from garage_rag.db.emb_tables import assert_safe_table
 from garage_rag.db.models import EmbeddingModel
 from garage_rag.db.registry import StoragePlan, truncate_vector
-from garage_rag.embed.base import Embedder, EmbeddingError
+from garage_rag.embed.base import Embedder, EmbeddingError, ImageEmbedder
 from garage_rag.inference import Backend, BackendKind, InferenceClient
 
 log = logging.getLogger(__name__)
@@ -34,11 +34,15 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 # ``EmbeddingError`` is defined once in ``embed.base``; it stays importable from
 # here because the CLI and the gRPC service catch it under this name.
 __all__ = [
+    "IMAGE_CHUNKER",
+    "PENDING_SELECT",
     "BackfillProgress",
     "EmbeddingError",
     "OllamaEmbedder",
     "backfill_model",
     "count_pending",
+    "model_modality",
+    "pending_chunks_sql",
     "verify_model_dims",
 ]
 
@@ -93,13 +97,32 @@ def _adapt(values: list[float], plan: StoragePlan):
     return HalfVector(reduced) if plan.storage_kind == "halfvec" else reduced
 
 
-def pending_chunks_sql(table: str, *, select: str, include_communications: bool) -> str:
+# The chunker name of the one chunk an image document carries for image models
+# (ingest.chunking.IMAGE_CHUNKER); text models never see it.
+IMAGE_CHUNKER = "image"
+# What a batch carries per chunk: its text for a text model, the path of the
+# image file behind it (documents.uri) for an image model.
+PENDING_SELECT = {"text": "c.id, c.text", "image": "c.id, d.uri"}
+
+
+def pending_chunks_sql(table: str, *, select: str, include_communications: bool, modality: str = "text") -> str:
     """``SELECT <select>`` over the chunks ``table`` has no vector for.
 
     ``include_communications=False`` leaves out chunks of communication
     documents: the query for a provider that is not on this machine, since
     embedding a chunk means posting its text to the provider.
+
+    ``modality`` picks the chunks: a text model gets every chunk but the image
+    chunks; an image model gets only those, joined to their documents so the
+    caller can select the image file's path (``d.uri``).
     """
+    if modality == "image":
+        return (
+            f"SELECT {select} FROM chunks c JOIN documents d ON d.id = c.document_id"
+            f" LEFT JOIN {table} e ON e.chunk_id = c.id"
+            f" WHERE e.chunk_id IS NULL AND c.chunker = '{IMAGE_CHUNKER}'"
+            + ("" if include_communications else " AND d.corpus_class <> 'communication'")
+        )
     withheld = (
         ""
         if include_communications
@@ -108,20 +131,26 @@ def pending_chunks_sql(table: str, *, select: str, include_communications: bool)
             " WHERE d.id = c.document_id AND d.corpus_class = 'communication')"
         )
     )
-    return f"SELECT {select} FROM chunks c LEFT JOIN {table} e ON e.chunk_id = c.id WHERE e.chunk_id IS NULL{withheld}"
+    return (
+        f"SELECT {select} FROM chunks c LEFT JOIN {table} e ON e.chunk_id = c.id"
+        f" WHERE e.chunk_id IS NULL AND c.chunker <> '{IMAGE_CHUNKER}'{withheld}"
+    )
 
 
 def _pending_chunk_batches(
-    session: Session, table: str, batch_size: int, *, include_communications: bool = True
+    session: Session, table: str, batch_size: int, *, include_communications: bool = True, modality: str = "text"
 ) -> Iterator[list[tuple[int, str]]]:
-    """Yield batches of (chunk_id, text) that ``table`` has no vector for.
+    """Yield batches of (chunk_id, text) that ``table`` has no vector for; for an
+    image model, (chunk_id, path of the image file).
 
     Re-queried each iteration rather than held open: the anti-join shrinks as
     rows are inserted, so this converges without keeping a long-lived cursor
     across the write transactions.
     """
     sql = text(
-        pending_chunks_sql(table, select="c.id, c.text", include_communications=include_communications)
+        pending_chunks_sql(
+            table, select=PENDING_SELECT[modality], include_communications=include_communications, modality=modality
+        )
         + " ORDER BY c.id LIMIT :limit"
     )
     while True:
@@ -131,9 +160,17 @@ def _pending_chunk_batches(
         yield [(int(cid), txt) for cid, txt in rows]
 
 
+def model_modality(model: EmbeddingModel) -> str:
+    """``text`` or ``image``; rows from before 014_model_modality.sql read as text."""
+    modality = getattr(model, "modality", None)
+    return modality if modality in PENDING_SELECT else "text"
+
+
 def count_pending(session: Session, model: EmbeddingModel, *, include_communications: bool = True) -> int:
     table = assert_safe_table(model.table_name)
-    sql = pending_chunks_sql(table, select="count(*)", include_communications=include_communications)
+    sql = pending_chunks_sql(
+        table, select="count(*)", include_communications=include_communications, modality=model_modality(model)
+    )
     return int(session.execute(text(sql)).scalar_one())
 
 
@@ -163,6 +200,9 @@ def backfill_model(
     plan = _plan_from_row(model)
     local = provider_is_local(model.provider)
     embedder = get_embedder(model.provider, model.model_ref)
+    modality = model_modality(model)
+    if modality == "image" and not isinstance(embedder, ImageEmbedder):
+        raise EmbeddingError(f"{model.slug} is an image model but provider {model.provider!r} embeds text only")
 
     state = BackfillProgress(total=count_pending(session, model, include_communications=local))
     if not local:
@@ -176,11 +216,15 @@ def backfill_model(
         f"INSERT INTO {table} (chunk_id, embedding) VALUES (:chunk_id, :embedding) ON CONFLICT (chunk_id) DO NOTHING"
     )
 
-    for batch in _pending_chunk_batches(session, table, size, include_communications=local):
+    for batch in _pending_chunk_batches(session, table, size, include_communications=local, modality=modality):
         ids = [cid for cid, _ in batch]
         texts = [txt for _, txt in batch]
         try:
-            vectors = embedder.embed(texts)
+            if modality == "image":
+                assert isinstance(embedder, ImageEmbedder)  # checked above; for the type checker
+                vectors = embedder.embed_images(texts)
+            else:
+                vectors = embedder.embed(texts)
             # Check the width before touching the column: a vector of the wrong
             # size would be rejected by pgvector anyway, and a model that emits
             # the wrong width does so for every batch.

@@ -56,6 +56,18 @@ public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
+/// One file of a model that ships as several (a Core ML package's files and a tokenizer), with the
+/// path under the model's download repository, which is also its path under `models/<slug>/`.
+public struct ModelDownloadFile: Hashable, Sendable, Codable {
+    public let path: String
+    public let sha256: String?
+
+    public init(path: String, sha256: String? = nil) {
+        self.path = path
+        self.sha256 = sha256
+    }
+}
+
 /// Represents a model preset loaded from `models.json` (the fetched copy or the bundle's) or a configuration file.
 public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public var id: String { slug }
@@ -73,6 +85,11 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public let downloadModelId: String?
     public let downloadFile: String?
     public let sha256: String?
+    /// The files of a model downloaded as several (`image_embedding` entries), each into
+    /// `models/<slug>/<path>`; `downloadFile` is then nil.
+    public let downloadFiles: [ModelDownloadFile]?
+    /// `text` (the default) or `image`: which chunks the model embeds and which tower serves it.
+    public let modality: String?
     /// Short human-readable summary of what this model is good for, shown in preset pickers.
     public let description: String?
     /// Example use cases surfaced alongside the description (e.g. "Semantic search", "Chat / Q&A").
@@ -93,6 +110,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case downloadModelId = "download_model_id"
         case downloadFile = "download_file"
         case sha256
+        case downloadFiles = "download_files"
+        case modality
         case description
         case useCases = "use_cases"
         case featured
@@ -111,6 +130,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         downloadModelId: String? = nil,
         downloadFile: String? = nil,
         sha256: String? = nil,
+        downloadFiles: [ModelDownloadFile]? = nil,
+        modality: String? = nil,
         description: String? = nil,
         useCases: [String]? = nil,
         featured: Bool = false
@@ -127,6 +148,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.downloadModelId = downloadModelId
         self.downloadFile = downloadFile
         self.sha256 = sha256
+        self.downloadFiles = downloadFiles
+        self.modality = modality
         self.description = description
         self.useCases = useCases
         self.featured = featured
@@ -147,6 +170,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         downloadModelId = try container.decodeIfPresent(String.self, forKey: .downloadModelId)
         downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
+        downloadFiles = try container.decodeIfPresent([ModelDownloadFile].self, forKey: .downloadFiles)
+        modality = try container.decodeIfPresent(String.self, forKey: .modality)
         description = try container.decodeIfPresent(String.self, forKey: .description)
         useCases = try container.decodeIfPresent([String].self, forKey: .useCases)
         featured = try container.decodeIfPresent(Bool.self, forKey: .featured) ?? false
@@ -177,6 +202,20 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
             return downloadFile
         }
         return nil
+    }
+
+    /// Whether the model embeds images (an `image_embedding` entry, served by `image_xpc`).
+    public var isImageModel: Bool {
+        modality == "image" || provider == "image_xpc"
+    }
+
+    /// The files to download for a model that ships as several: each one's URL under the
+    /// download repository, its path under `models/<slug>/`, and its expected digest.
+    public var downloadFileTargets: [(url: String, filename: String, sha256: String?)] {
+        guard let downloadModelId, !downloadModelId.isEmpty, let downloadFiles, !downloadFiles.isEmpty else { return [] }
+        return downloadFiles.map { file in
+            ("https://huggingface.co/\(downloadModelId)/resolve/main/\(file.path)", "\(slug)/\(file.path)", file.sha256)
+        }
     }
 
     public var isEmbeddingModel: Bool {
@@ -238,11 +277,20 @@ public struct GarageConfigFile: Codable {
 private struct ModelsManifest: Codable {
     let textEmbedding: [ModelPresetEntry]?
     let factDistil: [ModelPresetEntry]?
+    let imageEmbedding: [ModelPresetEntry]?
 
     enum CodingKeys: String, CodingKey {
         case textEmbedding = "text_embedding"
         case factDistil = "fact_distil"
+        case imageEmbedding = "image_embedding"
     }
+}
+
+/// The preset groups of a catalog; nil for a group no source provided at all.
+struct ModelPresetGroups {
+    var textEmbedding: [ModelPresetEntry]?
+    var factDistil: [ModelPresetEntry]?
+    var imageEmbedding: [ModelPresetEntry]?
 }
 
 /// Utility for discovering and parsing Garage configuration files and model presets.
@@ -283,6 +331,12 @@ public enum GarageConfigLoader {
         loadModelManifest(fileURL: fileURL).factDistil ?? []
     }
 
+    /// Loads image-embedding model presets (CLIP-style models the image embedding helper runs on
+    /// Core ML) from models.json's `image_embedding` section, from the same files.
+    public static func loadImageEmbeddingPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
+        loadModelManifest(fileURL: fileURL).imageEmbedding ?? []
+    }
+
     /// The files `loadModelPresets` reads, in order: `fileURL`, then `Paths.modelsJSON`
     /// (fetched copy, else the bundle's), then the configuration files.
     static func modelManifestCandidates(fileURL: URL?) -> [URL] {
@@ -295,14 +349,14 @@ public enum GarageConfigLoader {
         return candidates
     }
 
-    /// Resolves models.json (or a candidate config file) into its two preset
-    /// groups. Returns `nil` for a group that no source provided at all.
-    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    /// Resolves models.json (or a candidate config file) into its preset groups. A group that no
+    /// source provided at all is `nil`.
+    private static func loadModelManifest(fileURL: URL?) -> ModelPresetGroups {
         loadModelManifest(candidates: modelManifestCandidates(fileURL: fileURL))
     }
 
-    /// The first of `candidates` that exists and decodes as a catalog, or `(nil, nil)`.
-    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    /// The first of `candidates` that exists and decodes as a catalog, or empty groups.
+    static func loadModelManifest(candidates: [URL]) -> ModelPresetGroups {
         for url in candidates {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             if let manifest = decodeModelManifest(from: url) {
@@ -310,7 +364,7 @@ public enum GarageConfigLoader {
             }
         }
 
-        return (nil, nil)
+        return ModelPresetGroups()
     }
 
     /// Whether `data` is a models.json worth using: the grouped shape, with at least one
@@ -320,24 +374,25 @@ public enum GarageConfigLoader {
         return !(manifest.textEmbedding ?? []).isEmpty
     }
 
-    private static func decodeModelManifest(from url: URL) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?)? {
+    private static func decodeModelManifest(from url: URL) -> ModelPresetGroups? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
 
-        // 1. Current models.json shape: presets grouped by use (text_embedding / fact_distil).
+        // 1. Current models.json shape: presets grouped by use (text_embedding / fact_distil /
+        //    image_embedding).
         if let manifest = try? decoder.decode(ModelsManifest.self, from: data),
-           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.factDistil ?? []).isEmpty {
-            return (manifest.textEmbedding, manifest.factDistil)
+           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.factDistil ?? []).isEmpty || !(manifest.imageEmbedding ?? []).isEmpty {
+            return ModelPresetGroups(textEmbedding: manifest.textEmbedding, factDistil: manifest.factDistil, imageEmbedding: manifest.imageEmbedding)
         }
 
         // 2. Legacy flat array of ModelPresetEntry (pre-grouping models.json).
         if let list = try? decoder.decode([ModelPresetEntry].self, from: data), !list.isEmpty {
-            return (list, nil)
+            return ModelPresetGroups(textEmbedding: list)
         }
 
         // 3. garage.json with an embedded `models` array.
         if let config = try? decoder.decode(GarageConfigFile.self, from: data), let models = config.models, !models.isEmpty {
-            return (models, nil)
+            return ModelPresetGroups(textEmbedding: models)
         }
 
         return nil

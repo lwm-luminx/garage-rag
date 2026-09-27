@@ -226,6 +226,18 @@ pgvector 0.8 HNSW ceilings are hard limits — `vector` ≤ 2000 dims, `halfvec`
 | > 4000, Matryoshka | `halfvec(4000)` truncated + renormalized | HNSW on the model's distance |
 | > 4000, not Matryoshka | `vector(d)` | HNSW on `binary_quantize(...)::bit(d)`, re-ranked on the exact distance |
 
+#### Modality
+
+`embedding_models.modality` (`014_model_modality.sql`) is `text` (the default,
+and what every row from before the column reads as) or `image`. A text model
+embeds every chunk but the `image` chunks (`chunks.chunker = 'image'`, the one
+chunk a picture gets: its text is the title or caption full-text search sees).
+An image model embeds only those, from the image file at `documents.uri`, in
+the app's `GarageImageEmbedXPCService` (provider `image_xpc`), and embeds
+search queries through the model's text tower, so one query ranks pictures
+beside text. Both kinds share `chunks` and the `emb_*` layout; only the pending
+query differs.
+
 #### Distance
 
 `embedding_models.distance` (`009_model_distance.sql`) is the similarity the
@@ -247,6 +259,17 @@ Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog
 change therefore reaches installed apps without a release.
+
+The catalog has three sections. `text_embedding` and `fact_distil` entries name
+one GGUF (`download_model_id`, `download_file`, `sha256`). `image_embedding`
+entries (`modality: image`, provider `image_xpc`) describe a CLIP-style model as
+Core ML packages: `image_model` and `text_model` (the `.mlpackage` folder names
+under `models/<slug>/`), `tokenizer` (a Hugging Face `tokenizer.json`),
+`image_size` (the square the image tower takes), `text_length` (tokens the text
+tower takes), `image_mean` / `image_std` (per-channel normalization) and
+`text_lowercase`; `download_files` lists every file to fetch, each with its path
+under the repository and its `sha256` (`Manifest.json`, a small file whose
+formatting is not pinned, may carry none).
 
 Truncation is only sound for MRL-trained models, so `supports_mrl` is declared
 per model rather than assumed. A CHECK constraint refuses to register an

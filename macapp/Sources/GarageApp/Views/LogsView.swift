@@ -16,6 +16,7 @@ public struct LogsView: View {
         case grpc = "Index Manager"
         case llama = "Built-in Engine"
         case modelDownload = "Downloader"
+        case imageEmbed = "Image Embeddings"
 
         public var id: String { rawValue }
     }

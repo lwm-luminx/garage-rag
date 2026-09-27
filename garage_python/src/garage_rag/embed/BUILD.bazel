@@ -6,6 +6,7 @@ py_library(
         "__init__.py",
         "base.py",
         "factory.py",
+        "image_xpc.py",
         "llama_xpc.py",
         "lmstudio.py",
         "ollama.py",

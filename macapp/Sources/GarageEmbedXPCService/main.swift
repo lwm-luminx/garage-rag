@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import IngestClient
+import ImageEmbedBridge
 import LlamaModelLoader
 import PythonXPCService
 import PythonKit
@@ -27,6 +28,7 @@ final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCS
         [
             GarageXPCStandardSelfTests.serviceModule("garage_rag.embed", attributes: ["get_embedder", "embed_via_grpc"]),
             LlamaModelLoaderBridge.selfTest(),
+            ImageEmbedBridge.selfTest(),
         ]
     }
 
@@ -34,6 +36,7 @@ final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCS
     /// through the LlamaXPCService endpoint the app hands this process (`setLlamaEndpoint`).
     override func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {
         LlamaModelLoaderBridge.install()
+        ImageEmbedBridge.install()
     }
 
     // MARK: - GarageEmbedXPCServiceProtocol

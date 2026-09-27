@@ -244,6 +244,18 @@ def _locate(source: str, chunks: list[TextChunk]) -> list[TextChunk]:
     return chunks
 
 
+# The chunker name of the one chunk that stands for a picture. Image embedding models
+# embed the image file behind it (embed.ollama.IMAGE_CHUNKER); text models skip it.
+IMAGE_CHUNKER = "image"
+
+
+def image_chunk(text: str, *, ord: int = 0) -> TextChunk:  # noqa: A002 - the field's name
+    """The chunk an image embedding model embeds: its text is what full-text
+    search sees for the picture (its title and any caption), its vector comes
+    from the image file."""
+    return TextChunk(ord=ord, text=text, chunker=IMAGE_CHUNKER, char_start=0, char_end=len(text))
+
+
 def chunk_text(
     text: str,
     kind: ContentKind,
@@ -254,6 +266,9 @@ def chunk_text(
 ) -> list[TextChunk]:
     """Chunk ``text`` according to its :class:`ContentKind`."""
     settings = get_settings()
+
+    if kind is ContentKind.IMAGE:
+        return [image_chunk(text)]
 
     if kind is ContentKind.CODE:
         size = size or settings.code_chunk_size

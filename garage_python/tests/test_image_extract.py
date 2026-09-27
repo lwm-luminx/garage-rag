@@ -10,9 +10,10 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
+from garage_rag.config import Settings, reset_settings, set_settings
 from garage_rag.extract import image as image_extract
 from garage_rag.extract import tesseract
-from garage_rag.extract.base import ExtractionError, NoTextFound
+from garage_rag.extract.base import ContentKind, ExtractionError, NoTextFound
 
 
 def _write(tmp_path: Path, name: str, size: tuple[int, int] = (400, 300)) -> Path:
@@ -30,15 +31,16 @@ def test_joins_readable_words_and_averages_their_confidence(monkeypatch, tmp_pat
     ]
     monkeypatch.setattr(tesseract, "recognize", lambda image: words)
 
-    text, confidence = image_extract._tesseract(_write(tmp_path, "shot.png"))
+    text, confidence, size = image_extract._tesseract(_write(tmp_path, "shot.png"))
 
     assert text == "Hello world"
     assert confidence == pytest.approx(85.0)
+    assert size == (400, 300)
 
 
 def test_nothing_readable_is_zero_confidence(monkeypatch, tmp_path):
     monkeypatch.setattr(tesseract, "recognize", lambda image: [])
-    assert image_extract._tesseract(_write(tmp_path, "blank.png")) == ("", 0.0)
+    assert image_extract._tesseract(_write(tmp_path, "blank.png")) == ("", 0.0, (400, 300))
 
 
 def test_icons_are_rejected_before_ocr(monkeypatch, tmp_path):
@@ -59,10 +61,43 @@ def test_library_failures_become_extraction_errors(monkeypatch, tmp_path):
         image_extract._tesseract(_write(tmp_path, "shot.png"))
 
 
-def test_an_image_without_text_is_no_text_not_a_failure(monkeypatch, tmp_path):
+def test_an_image_without_text_is_a_picture_document(monkeypatch, tmp_path):
+    """The picture gets one image chunk (for image embedding models) whose text is its name."""
     monkeypatch.setattr(tesseract, "recognize", lambda image: [])
-    with pytest.raises(NoTextFound, match="no usable text"):
-        image_extract.extract_image(_write(tmp_path, "photo.png"))
+    result = image_extract.extract_image(_write(tmp_path, "kitchen-remodel_03.png"))
+    assert result.kind is ContentKind.IMAGE
+    assert result.extractor == "image"
+    assert result.text == "kitchen remodel 03"
+    assert result.title == "kitchen-remodel_03"
+    assert result.meta == {"image": {"width": 400, "height": 300}}
+
+
+def test_an_image_without_text_is_no_text_when_pictures_are_not_indexed(monkeypatch, tmp_path):
+    monkeypatch.setattr(tesseract, "recognize", lambda image: [])
+    set_settings(Settings(index_images=False))
+    try:
+        with pytest.raises(NoTextFound, match="no usable text"):
+            image_extract.extract_image(_write(tmp_path, "photo.png"))
+    finally:
+        reset_settings()
+
+
+def test_a_screenshot_with_text_keeps_the_ocr_result(monkeypatch, tmp_path):
+    words = [tesseract.Word(word, 90.0) for word in ["meeting", "notes", "for", "the", "quarterly", "review"]]
+    monkeypatch.setattr(tesseract, "recognize", lambda image: words)
+    result = image_extract.extract_image(_write(tmp_path, "shot.png"))
+    assert result.kind is ContentKind.PROSE
+    assert result.extractor == "tesseract"
+    assert result.text == "meeting notes for the quarterly review"
+    assert result.meta["image"] == {"width": 400, "height": 300}
+
+
+@pytest.mark.parametrize(
+    ("name", "words"),
+    [("IMG_4021.HEIC", "IMG 4021"), ("kitchen-remodel.03.jpg", "kitchen remodel 03"), ("___.png", "___")],
+)
+def test_picture_text_is_the_name_as_words(name: str, words: str) -> None:
+    assert image_extract.picture_text(Path(name)) == words
 
 
 def test_library_failures_are_not_mistaken_for_no_text(monkeypatch, tmp_path):
@@ -90,7 +125,7 @@ def test_heic_is_decoded_by_imageio_not_pillow(monkeypatch, tmp_path):
     monkeypatch.setattr(imageio, "open_image", open_image)
     monkeypatch.setattr(tesseract, "recognize", lambda image: [tesseract.Word("receipt", 90.0)])
 
-    assert image_extract._tesseract(path) == ("receipt", 90.0)
+    assert image_extract._tesseract(path) == ("receipt", 90.0, (400, 300))
     assert calls == [(path, image_extract.MAX_OCR_PIXELS)]
 
 

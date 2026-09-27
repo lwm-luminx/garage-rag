@@ -173,9 +173,11 @@ class TestKnownModels:
         assert known_models()["nomic-embed-text"].dims == 768
         assert known_models()["mxbai-embed-xsmall"].dims == 384
 
-    def test_known_models_default_provider_is_llama_xpc(self) -> None:
+    def test_known_models_default_provider_is_the_built_in_engine(self) -> None:
+        # Text models run in LlamaXPCService, image models in GarageImageEmbedXPCService.
         for slug, spec in known_models().items():
-            assert spec.provider == "llama_xpc", f"{slug} must default to llama_xpc provider"
+            expected = "image_xpc" if spec.modality == "image" else "llama_xpc"
+            assert spec.provider == expected, f"{slug} must default to the {expected} provider"
 
     def test_known_models_have_model_id(self) -> None:
         for _slug, spec in known_models().items():

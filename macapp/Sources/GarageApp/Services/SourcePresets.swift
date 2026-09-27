@@ -87,6 +87,7 @@ extension AppState {
                 dims: dims > 0 ? dims : nil,
                 modelRef: ref.flatMap { $0.isEmpty || $0 == preset.slug ? nil : $0 },
                 provider: preset.provider ?? "llama_xpc",
+                modality: preset.isImageModel ? "image" : nil,
                 makeDefault: makeDefault
             ).message
         }

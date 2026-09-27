@@ -56,18 +56,20 @@ public protocol GarageCommonXPCServiceProtocol: NSObjectProtocol {
 }
 
 /// Objective-C protocol for MCP Server XPC Service communication. It receives the LlamaXPCService
-/// endpoint because rag_search / rag_ask load llama_xpc models on demand.
+/// endpoint because rag_search / rag_ask load llama_xpc models on demand, and the
+/// GarageImageEmbedXPCService endpoint because rag_search embeds a query for an image model there.
 @objc(GarageMCPServerServiceProtocol)
-public protocol GarageMCPServerServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol {
+public protocol GarageMCPServerServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol {
     func startServer(host: String, port: Int, path: String, options: [String: String], with reply: @escaping (Bool, String?) -> Void)
     func stopServer(with reply: @escaping (Bool, String?) -> Void)
     func isServerRunning(with reply: @escaping (Bool) -> Void)
 }
 
 /// Objective-C protocol for Garage Core Backend XPC Service communication. It receives the
-/// LlamaXPCService endpoint because Search, Backfill and EnrichFacts load llama_xpc models on demand.
+/// LlamaXPCService endpoint because Search, Backfill and EnrichFacts load llama_xpc models on demand,
+/// and the GarageImageEmbedXPCService endpoint because Search and Backfill embed with image models there.
 @objc(GarageXPCServiceProtocol)
-public protocol GarageXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
+public protocol GarageXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
     func startServer(host: String, port: Int, options: [String: String], with reply: @escaping (Bool, String?) -> Void)
     func stopServer(with reply: @escaping (Bool, String?) -> Void)
     func isServerRunning(with reply: @escaping (Bool) -> Void)
