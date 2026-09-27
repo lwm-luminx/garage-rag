@@ -23,6 +23,17 @@ description: Garage indexes your documents, code and messages on your Mac and se
       <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's new ↗</a>
     </div>
   </div>
+  {% if site.testflight_url and site.testflight_url != "" %}
+  <div id="download-testflight" class="hero-strip hero-alpha">
+    <div class="hero-strip-text">
+      <strong>✈️ Test the App Store version on TestFlight</strong>
+      <span>Garage 1.5 for the Mac App Store, installed and updated by Apple's TestFlight app.</span>
+    </div>
+    <div class="hero-strip-actions">
+      <a href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">How to join</a>
+    </div>
+  </div>
+  {% endif %}
 </div>
 
 <div class="hero-strip hero-hire">
@@ -139,7 +150,8 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>The first-run assistant picks your folders, an embedding model and the AI clients to connect.</li>
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
-    <p><small>Garage checks for updates through Sparkle, only after asking you once. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
+    <p><small>Garage checks for updates through Sparkle, only after asking you once. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>{% if site.testflight_url and site.testflight_url != "" %}
+    <p><small>Want the App Store version? It's in testing: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight beta</a>.</small></p>{% endif %}
   </div>
 </div>
 
