@@ -145,7 +145,6 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     public func run() -> Never {
         let listener = NSXPCListener.service()
         listener.delegate = self
-        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         logger.info("\(self.serviceName, privacy: .public): resuming NSXPCListener")
         listener.resume()
         dispatchMain()
@@ -163,7 +162,6 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
         let listener = NSXPCListener.anonymous()
         listener.delegate = self
-        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         listener.resume()
         _anonymousListener = listener
         logger.info("\(self.serviceName, privacy: .public): anonymous NSXPCListener resumed")
@@ -436,9 +434,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
 
         // Only processes signed by this build's team (the app, the other services, the launchers) may
         // talk to the service; messages from anything else are dropped and the connection invalidated.
-        if let requirement = GarageXPCPeerRequirement.current {
-            newConnection.setCodeSigningRequirement(requirement)
-        }
+        GarageXPCPeerRequirement.apply(to: newConnection, serviceName: serviceName)
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: GarageXPCLogReceiverProtocol.self)
         newConnection.exportedInterface = exportedInterface

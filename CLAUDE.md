@@ -493,9 +493,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   `ModelDownloadXPCService`, `PythonXPCService`, …) is a separate XPC service process paired with a
   `*Client` module (`IngestClient`, `LlamaClient`, `ModelDownloadClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
-  gRPC bridge to the Python `garage_rag` package. Every listener, the service one and the
-  anonymous ones, carries `GarageXPCPeerRequirement`: a peer must be Apple-signed with the
-  listener's own team. A process signed without a team (ad hoc, tests) checks nothing.
+  gRPC bridge to the Python `garage_rag` package. Every connection a listener accepts, from the service
+  listener and the anonymous ones, carries `GarageXPCPeerRequirement` (set on the connection in
+  `listener(_:shouldAcceptNewConnection:)`, never on the listener: on `NSXPCListener.service()` that
+  crashes the service at launch): a peer must be Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
 - The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
   process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
   sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each
