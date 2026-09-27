@@ -13,6 +13,27 @@ description: Garage indexes your documents, code and messages on your Mac and se
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
+  <div id="download-alpha" class="hero-strip hero-alpha" hidden>
+    <div class="hero-strip-text">
+      <strong>🧪 <span id="download-alpha-title">Try the next version</span> <small id="download-alpha-meta"></small></strong>
+      <span>Signed and notarized, but not finished. Back up <code>~/Library/Application Support/GarageApp</code> first.</span>
+    </div>
+    <div class="hero-strip-actions">
+      <a id="download-alpha-pkg" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary">Download the test build</a>
+      <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's new ↗</a>
+    </div>
+  </div>
+</div>
+
+<div class="hero-strip hero-hire">
+  <div class="hero-strip-text">
+    <strong>👋 Made by Rick Mark-Penwell, and he's available to hire</strong>
+    <span>Security and AI engineer, formerly of Meta, Coinbase, Dropbox and Microsoft, and one of the researchers behind the Apple T2 work. Open to AI security, privacy engineering and security research roles.</span>
+  </div>
+  <div class="hero-strip-actions">
+    <a href="{{ '/about.html' | relative_url }}" class="btn btn-primary">About Rick</a>
+    <a href="https://linkedin.com/in/penwellr" class="btn btn-secondary" target="_blank" rel="noopener">Get in touch on LinkedIn ↗</a>
+  </div>
 </div>
 
 ## What Garage does
@@ -95,15 +116,6 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
     <p><small>Garage checks for updates through Sparkle, only after asking you once. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
-  </div>
-</div>
-
-<div id="download-alpha" class="callout callout-warning" hidden>
-  <div class="callout-title">🧪 <span id="download-alpha-title">Try the next version</span></div>
-  <p>A test build of the next Garage is out: signed and notarized, but not finished. Back up <code>~/Library/Application Support/GarageApp</code> before installing it. It updates itself to the final release when that ships.</p>
-  <div class="hero-actions download-actions">
-    <a id="download-alpha-pkg" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary">Download the test build</a>
-    <a id="download-alpha-notes" href="https://github.com/rickmark/garage-rag/releases" class="btn btn-secondary" target="_blank" rel="noopener">What's new ↗</a>
   </div>
 </div>
 
