@@ -27,6 +27,10 @@ public final class LlamaHTTPServer: @unchecked Sendable {
     private let lock = NSLock()
     private var listener: NWListener?
     private var connections: [ObjectIdentifier: NWConnection] = [:]
+    /// True once this listener bound `socketPath` itself. A socket file at that path before the
+    /// bind, which `prepareSocketPath` left because something still answers on it, belongs to
+    /// another Garage; `stop()` unlinks only what this listener created.
+    private var ownsSocketFile = false
 
     /// Largest request body accepted; embedding batches are well under this.
     private static let maxBodyBytes = 64 * 1024 * 1024
@@ -115,6 +119,9 @@ public final class LlamaHTTPServer: @unchecked Sendable {
             throw LlamaEngineError(500, "llama HTTP listener could not bind \(url): \(message)")
         }
         if let socketPath {
+            lock.lock()
+            ownsSocketFile = true
+            lock.unlock()
             // The folder is already owner-only; the socket is too, in case it is ever moved out of it.
             chmod(socketPath, 0o600)
         }
@@ -134,12 +141,16 @@ public final class LlamaHTTPServer: @unchecked Sendable {
         listener = nil
         let open = Array(connections.values)
         connections.removeAll()
+        let bound = ownsSocketFile
+        ownsSocketFile = false
         lock.unlock()
         current?.cancel()
         for connection in open {
             connection.cancel()
         }
-        if current != nil, let socketPath {
+        // Only a socket this listener bound: after a failed bind the file at the path is another
+        // instance's live socket, and unlinking it would cut that instance's clients off.
+        if bound, let socketPath {
             unlink(socketPath)
         }
     }
