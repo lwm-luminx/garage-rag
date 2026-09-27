@@ -307,11 +307,9 @@ The Bazel build carries two Postgres externals: `//ext/postgres` (18, the
 default) and `//ext/postgres19` (19beta4, pinned by commit). Both share one
 build definition (`ext/postgres/postgres.bzl`); each has its own sandbox patch.
 18 carries `appstore.patch`, which adds a `--enable-appstore` configure/meson
-option (no System V IPC: a `flock()` on the data directory as the interlock against
+option (no System V IPC: a `flock()` on `postmaster.pid` as the interlock against
 orphaned backends, and process-shared pthread semaphores in the mmap'd segment)
-and is the version being prepared for upstream. `postgres.bzl` passes the option
-only under `//bazel:is_store` (`--config=appstore`), so ad-hoc, local and Developer ID
-builds get the stock System V server; the store build is a second Postgres build. 19 still carries the older
+and is the version being prepared for upstream. 19 still carries the older
 `sysv_shmem.patch`, since 19 replaced the semaphore/shmem sizing API and the
 port is pending; it ignores `--enable-appstore` with an autoconf warning. Select 19 for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
 server, libpq) with:

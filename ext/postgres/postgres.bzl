@@ -56,18 +56,14 @@ def postgres_targets(name, lib_source, tags = []):
             "--with-zlib",
             "--with-template=darwin",
             "--disable-rpath",
-        ] + select({
-            # Added by ext/postgres/appstore.patch, and only for the sandboxed App Store
-            # build: no System V shared memory or semaphores, which the App Sandbox
-            # denies. The interlock against orphaned backends becomes a flock() on the
-            # data directory and the semaphores process-shared pthread primitives in the
-            # mmap'd segment. Every other configuration builds the stock System V code, so
-            # the Developer ID app runs the same server as any other macOS install.
-            # Postgres 19 still carries the older sysv_shmem.patch and ignores this
-            # option (an autoconf warning) until the patch is ported.
-            "//bazel:is_store": ["--enable-appstore"],
-            "//conditions:default": [],
-        }),
+            # Added by ext/postgres/appstore.patch: no System V shared memory or
+            # semaphores, which the App Sandbox denies. The interlock against orphaned
+            # backends is a flock() on postmaster.pid and the semaphores are
+            # process-shared pthread primitives in the mmap'd segment. Postgres 19
+            # still carries the older sysv_shmem.patch and ignores this option (an
+            # autoconf warning) until the patch is ported.
+            "--enable-appstore",
+        ],
         copts = [
             "-Wno-error=unguarded-availability-new",
             "-Wno-unguarded-availability-new",
