@@ -44,6 +44,7 @@ from garage_rag.ingest.walker import (
     is_diagnostic_file,
     is_git_dir,
     is_inside_git_dir,
+    root_problem,
 )
 
 log = logging.getLogger(__name__)
@@ -557,6 +558,10 @@ def scan_feed(
 # ---------------------------------------------------------------------------
 
 
+# What each kind counts, for a scan that could not start.
+_ITEM_TYPES = {"filesystem": "files", "git": "files", "sqlite": "records", "maildir": "messages", "feed": "entries"}
+
+
 def scan_source(
     source: Source | Any,
     *,
@@ -574,7 +579,21 @@ def scan_source(
 
     log.info("Scanning source %r (kind=%s, root=%s, include_code=%s)", slug, kind, root, include_code)
 
-    prefixes = default_exclude_prefixes(root) if root.exists() else ()
+    if problem := root_problem(root):
+        # Nothing can be counted. ``root_problem`` in the details is what tells the pipeline
+        # this is the whole source, not a subtree it may skip.
+        log.warning("Cannot scan source %r: %s", slug, problem)
+        return SourceScanResult(
+            source_slug=slug,
+            kind=kind,
+            root=root,
+            item_count=0,
+            item_type=_ITEM_TYPES.get(kind, "items"),
+            details={"root_problem": problem},
+            error=problem,
+        )
+
+    prefixes = default_exclude_prefixes(root)
 
     match kind:
         case "git":

@@ -643,6 +643,9 @@ def ingest(
         console.print("[yellow]no sources registered to ingest[/yellow]")
         return
 
+    from garage_rag.ingest.walker import SourceUnavailable
+
+    unavailable: list[str] = []
     for source in sources:
         with console.status(f"scanning {source}...") as status:
             last_reported = 0
@@ -678,14 +681,19 @@ def ingest(
                     last_reported = progress_counters.seen
                     console.print(status_msg)
 
-            counters, walk_stats, budget = ingest_source(
-                factory,
-                source,
-                include_code=include_code,
-                limit=limit,
-                force=force,
-                progress=on_progress,
-            )
+            try:
+                counters, walk_stats, budget = ingest_source(
+                    factory,
+                    source,
+                    include_code=include_code,
+                    limit=limit,
+                    force=force,
+                    progress=on_progress,
+                )
+            except SourceUnavailable as exc:
+                console.print(f"[red]{source}: {exc}[/red]")
+                unavailable.append(source)
+                continue
 
         table = Table(title=f"ingest: {source}")
         table.add_column("metric")
@@ -726,6 +734,10 @@ def ingest(
             console.print(f"\n[red]first {min(5, len(counters.errors))} errors[/red]:")
             for message in counters.errors[:5]:
                 console.print(f"  {message}")
+
+    if unavailable:
+        console.print(f"\n[red]{len(unavailable)} source(s) could not be read:[/red] {', '.join(unavailable)}")
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from garage_rag.ingest import (
     IngestProgress,
     cancel_ingest,
@@ -243,3 +245,30 @@ def test_ingest_xpc_with_grpc_options():
         mock_gw_cls.assert_called_once()
         assert len(progress_events) >= 2
         assert progress_events[-1].phase == "complete"
+
+
+def test_ingest_xpc_reports_an_unreadable_source_and_still_runs_the_others():
+    from garage_rag.ingest.walker import SourceUnavailable
+
+    progress_events: list[IngestProgress] = []
+    ran: list[str] = []
+
+    def fake_ingest_source(*, gateway, source_slug, **kwargs):
+        ran.append(source_slug)
+        if source_slug == "denied":
+            raise SourceUnavailable("not readable: /Users/x/Dropbox (permission denied)")
+        return IngestCounters(), WalkStats(), MaterializationBudget()
+
+    gateway = MagicMock()
+    gateway.list_enabled_sources.return_value = ["denied", "documents"]
+    with (
+        patch("garage_rag.ingest.pipeline.ingest_source", side_effect=fake_ingest_source),
+        pytest.raises(SourceUnavailable, match="denied: not readable"),
+    ):
+        ingest_xpc(source="*", progress_callback=progress_events.append, gateway=gateway)
+
+    assert ran == ["denied", "documents"]
+    errors = [e for e in progress_events if e.phase == "error"]
+    assert [e.source for e in errors] == ["denied"]
+    assert errors[0].error is not None and "permission denied" in errors[0].error
+    assert progress_events[-1].phase == "complete" and progress_events[-1].source == "documents"

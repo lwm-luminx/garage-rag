@@ -244,8 +244,10 @@ def ingest_xpc(
 
     from garage_rag.ingest.gateway import get_storage_gateway
     from garage_rag.ingest.pipeline import ingest_source
+    from garage_rag.ingest.walker import SourceUnavailable
 
     reset_ingest_cancel()
+    unavailable: list[str] = []
 
     gw = get_storage_gateway(
         session_factory=session_factory,
@@ -378,6 +380,20 @@ def ingest_xpc(
                 counters.placeholders,
                 counters.chunks_written,
             )
+        except SourceUnavailable as exc:
+            # The other sources still get their turn; the run fails as a whole below.
+            log.error("Source %r cannot be read: %s", current_source, exc)
+            _emit_progress(
+                IngestProgress(
+                    source=current_source,
+                    phase="error",
+                    error=str(exc),
+                    message=f"Error ingesting {current_source}: {exc}",
+                    progress=0.0,
+                )
+            )
+            unavailable.append(f"{current_source}: {exc}")
+            continue
         except Exception as exc:
             log.exception("Pipeline exception while ingesting %r: %s", current_source, exc)
             err_prog = IngestProgress(
@@ -416,3 +432,6 @@ def ingest_xpc(
             ),
         )
         _emit_progress(final_prog)
+
+    if unavailable:
+        raise SourceUnavailable("; ".join(unavailable))

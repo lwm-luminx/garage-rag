@@ -56,7 +56,7 @@ from garage_rag.ingest.gateway import (
 )
 from garage_rag.ingest.materialize import MaterializationBudget, ensure_local
 from garage_rag.ingest.scanner import scan_source
-from garage_rag.ingest.walker import Candidate, WalkStats, default_exclude_prefixes, walk
+from garage_rag.ingest.walker import Candidate, SourceUnavailable, WalkStats, default_exclude_prefixes, walk
 
 log = logging.getLogger(__name__)
 
@@ -455,6 +455,13 @@ def ingest_source(
     scan_result = scan_source(source_ctx, include_code=include_code)
     counters.total_items = scan_result.item_count
     counters.item_type = scan_result.item_type
+    if scan_result.details.get("root_problem"):
+        # A root that cannot be read would walk as empty and finish "complete" with nothing
+        # seen. That is not up to date; it is a failed run, and the previous scan's count stays.
+        problem = scan_result.error or "source root unavailable"
+        counters.note_error(problem)
+        _finalize(gw, run_id, source_slug, counters, budget, completed=False)
+        raise SourceUnavailable(problem)
     log.info(
         "Source scan completed for %r in %.2fs: found %d %s",
         source_slug,
