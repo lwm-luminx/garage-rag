@@ -4,7 +4,7 @@
 #   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md]
 #   aspect run //macapp/package:publish_appcast -- --check-live
 #
-# The first form takes the notarized bazel-bin/macapp/package/GarageApp.zip, checks it
+# The first form takes the stapled dist/Garage-<version>.zip that notarize_all wrote, checks it
 # (version matches the tag, notarized, arm64 only, newer than every entry already in the
 # feed, and the Keychain's EdDSA key is the one the shipped app trusts), runs Sparkle's
 # generate_appcast over it, verifies the entry it wrote, and leaves:
@@ -96,7 +96,14 @@ fi
 work="$(mktemp -d "${TMPDIR:-/tmp}/garage-appcast.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
-# 1. What is being released.
+# 1. What is being released: the stapled archive notarize_all left in dist/, which has to be
+#    the build bazel-bin holds now, not one left over from an earlier release.
+/usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
+    die "$archive does not contain Garage.app"
+built_short="$(plist_value "$work/built-Info.plist" CFBundleShortVersionString)"
+built_build="$(plist_value "$work/built-Info.plist" CFBundleVersion)"
+archive="$PWD/dist/Garage-$built_short.zip"
+[[ -f "$archive" ]] || die "no $archive; run 'aspect run //macapp/package:notarize_all' first"
 mkdir "$work/unpacked"
 /usr/bin/ditto -x -k "$archive" "$work/unpacked"
 app="$work/unpacked/Garage.app"
@@ -105,6 +112,8 @@ short="$(plist_value "$app/Contents/Info.plist" CFBundleShortVersionString)"
 build="$(plist_value "$app/Contents/Info.plist" CFBundleVersion)"
 echo "==> Garage $short (build $build)"
 [[ "$tag" == "v$short" ]] || die "tag $tag does not match the archive's version $short (expected v$short)"
+[[ "$build" == "$built_build" ]] ||
+    die "$archive is build $build, but bazel-bin holds build $built_build; run 'aspect run //macapp/package:notarize_all' again"
 [[ "$build" =~ ^[0-9]+$ ]] || die "CFBundleVersion '$build' is not a build number; was the build stamped?"
 /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$app/Contents/Info.plist" >/dev/null 2>&1 ||
     die "the archive has no SUFeedURL; it is not a Developer ID build"
@@ -116,6 +125,8 @@ assessment="$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 || true)"
 grep -q "source=Notarized Developer ID" <<<"$assessment" ||
     die "Garage.app is not notarized (run 'aspect run //macapp/package:notarize_all' first):
 $assessment"
+/usr/bin/xcrun stapler validate "$app" >/dev/null ||
+    die "Garage.app has no stapled ticket (run 'aspect run //macapp/package:notarize_all' first)"
 
 # 3. The new build must be newer than every entry already published, since Sparkle
 #    compares CFBundleVersion, not the marketing version.

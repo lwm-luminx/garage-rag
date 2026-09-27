@@ -415,6 +415,17 @@ py_test(
 )
 
 py_test(
+    name = "test_notarize_release",
+    srcs = ["test_notarize_release.py"],
+    data = ["//macapp/package:notarize_release.sh"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_postgres",
     srcs = ["test_postgres.py"],
     # Runs only when GARAGE_TEST_DATABASE_URL names a server (.bazelrc passes it

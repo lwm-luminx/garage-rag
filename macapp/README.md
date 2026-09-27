@@ -43,11 +43,12 @@ xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests -desti
 # MockLlamaXPCService in place of llama.cpp, so no model is downloaded.
 xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppModelUITests -destination 'platform=macOS'
 
-# Distribution: thinned + notarized apps and .pkg installers (Developer ID),
+# Distribution: thinned + signed apps and .pkg installers (Developer ID),
 # or an App Store xcarchive
 aspect build //:package                  # //macapp/package:package
-aspect build //:installer                # //macapp/package:GarageInstaller (arm64 .pkg)
+aspect build //:installer                # //macapp/package:GarageInstaller (arm64 .pkg, not notarized)
 aspect run //:install                    # installs the .pkg locally
+aspect run //macapp/package:notarize_all # the release: notarized, stapled zip and .pkg in dist/
 aspect build //macapp:xcarchive          # //macapp:GarageStore.xcarchive
 aspect run //macapp:xcarchive_open       # copies the archive into Xcode's Archives folder and opens it
 
@@ -377,8 +378,14 @@ refuses that). The marketing version is `short_version_string` in
    `bazel-bin/macapp/package/GarageApp.zip`: a zip of `Garage.app`, which is exactly the
    shape Sparkle wants to download. This is also the step that re-signs Sparkle's nested
    code (see below).
-2. `aspect run //macapp/package:notarize_all` submits that archive and the installer `.pkg`
-   to the notary service.
+2. `aspect run //macapp/package:notarize_all` notarizes and staples, in the order Gatekeeper
+   needs: it notarizes that archive, staples the ticket to `Garage.app`, builds and signs the
+   installer from the stapled app, then notarizes and staples the installer. It writes the
+   release's two files, `dist/Garage-<version>.zip` (the stapled app) and
+   `dist/GarageInstaller_arm64.pkg` (a stapled installer carrying the stapled app, which
+   always installs to `/Applications`). The installer is built by this script rather than by
+   a build action because stapling needs the ticket, so it has to come after notarization;
+   `//macapp/package:GarageInstaller` is an unnotarized installer for local installs only.
 3. Add the release to the feed:
 
    ```bash
@@ -386,21 +393,22 @@ refuses that). The marketing version is `short_version_string` in
    ```
 
    `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
-   in Sparkle's update window. Before signing anything the script checks that the archive's
-   version matches the tag, that it is notarized, arm64 only and newer than every entry
+   in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
+   and refuses one whose build is not the one in `bazel-bin`. Before signing anything the
+   script checks that the archive's version matches the tag, that it is notarized and
+   stapled, arm64 only and newer than every entry
    already in `docs/appcast.xml`, and that the EdDSA key in the login Keychain is the one
    `SUPublicEDKey` names. It then runs `//ext/sparkle:generate_appcast` with the
    `--download-url-prefix` of that tag's GitHub release, which reads the version and
    architectures from the app, signs the entry with the Keychain key (macOS asks to allow
    access), and adds `sparkle:hardwareRequirements` `arm64` so Intel Macs are never offered
    it. The script verifies that entry against the archive and leaves `docs/appcast.xml`
-   updated and the signed archive at `dist/Garage-<version>.zip`.
+   updated.
 4. Publish in this order, so the feed never names a download that is not there yet. The
    site's download buttons (`docs/assets/download.js`) look for an asset named exactly
-   `GarageInstaller_arm64.pkg`, so copy the notarized installer to that name first:
+   `GarageInstaller_arm64.pkg`, the name step 2 gives the installer:
 
    ```bash
-   cp bazel-bin/macapp/package/GarageInstaller.pkg dist/GarageInstaller_arm64.pkg
    gh release create v1.5 --verify-tag --title "Garage 1.5" --notes-file path/to/notes.md \
      dist/Garage-1.5.zip dist/GarageInstaller_arm64.pkg
    git add docs/appcast.xml && git commit -S -m "Add Garage 1.5 to the appcast" && git push

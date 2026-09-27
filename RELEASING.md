@@ -20,21 +20,23 @@ Both are built from the same commit and share one data folder and one Keychain i
 
 1. **Freeze `main` and build from a full clone.** `CFBundleVersion` is the commit count of `HEAD` (`bazel/workspace_status.sh`). A shallow clone or a stale branch produces a lower number, and Sparkle won't offer it.
 2. **Tag.** Push a signed tag `v<version>` (for example `v1.5`). Commits and tags are signed with Secretive.
-3. **Build and notarize:**
+3. **Build, notarize and staple:**
    ```bash
    aspect build //macapp/package:GarageApp
    aspect run //macapp/package:notarize_all
    ```
+   `notarize_all` notarizes the app, staples it, builds the installer from the stapled app, then notarizes and staples the installer. It leaves `dist/Garage-<version>.zip` and `dist/GarageInstaller_arm64.pkg`. Record both notary submission IDs it prints.
 4. **Check the bundle on the Mac that built it:**
    - `lipo -archs` over the app and the site-packages `.so` files should say `arm64` only. Garage is Apple Silicon only.
-   - `codesign --verify --deep --strict` and `spctl -a -vv` should pass on the app and the `.pkg`.
+   - `codesign --verify --deep --strict` and `spctl -a -vv` should pass on the app and the `.pkg` in `dist/`.
+   - `xcrun stapler validate` should pass on the app unpacked from the zip and on the `.pkg`.
    - No release entitlement may carry `get-task-allow`.
 5. **Add the release to the feed:**
    ```bash
    aspect run //macapp/package:publish_appcast -- v<version> --notes notes.md
    ```
 6. **Publish, in this order**, so the feed never names a download that isn't up yet:
-   1. Create the GitHub release from the signed tag with `dist/Garage-<version>.zip` and `GarageInstaller_arm64.pkg`. Those exact names matter: the appcast signature covers the zip, and the site's download buttons look for the `.pkg` name.
+   1. Create the GitHub release from the signed tag with `dist/Garage-<version>.zip` and `dist/GarageInstaller_arm64.pkg`. Those exact names matter: the appcast signature covers the zip, and the site's download buttons look for the `.pkg` name.
    2. Commit and push `docs/appcast.xml`, signed.
    3. Once Pages has deployed, run `aspect run //macapp/package:publish_appcast -- --check-live`.
 7. **Check the site.** garagerag.app's download button should fetch the new `.pkg`. Look at the page in light and dark.
