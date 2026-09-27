@@ -1222,7 +1222,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 item_count=request.item_count,
                 item_type=request.item_type,
                 duration_seconds=request.duration_seconds,
-                details=dict(request.details) if request.details else {},
+                details=json.loads(request.details_json) if request.details_json else {},
                 error=request.error or None,
             ),
         )
