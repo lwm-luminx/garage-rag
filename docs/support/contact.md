@@ -69,5 +69,5 @@ reporter attaches — they matter when you paste log snippets by hand.
 
 <div class="callout callout-success">
   <div class="callout-title">Community & Open Source</div>
-  <p>Garage is maintained as an open-source project by Rick Mark. Contributions and pull requests are warmly welcomed!</p>
+  <p>Garage is maintained as an open-source project by <a href="{{ '/about.html' | relative_url }}">Rick Mark-Penwell</a>. Contributions and pull requests are warmly welcomed!</p>
 </div>
