@@ -11,8 +11,8 @@ This macro calls `macos_framework` with //bazel:version_framework.sh as its `ipa
 which moves the assembled bundle into Versions/A (Info.plist and resources in Versions/A/Resources)
 and adds Versions/Current and the top-level links before rules_apple signs and zips it. The
 framework's own zip and the one the app embeds both go through it, and `zip --symlinks` plus the
-app's bundletool keep the links. See //bazel/patches:rules_apple_versioned_macos_framework.patch
-for the same layout done in rules_apple itself.
+app's bundletool keep the links. bazel/patches/README.md describes a draft rules_apple patch that
+builds the same layout in rules_apple itself.
 """
 
 load("@rules_apple//apple:macos.bzl", "macos_framework")
