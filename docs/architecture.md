@@ -326,8 +326,14 @@ configuration (never `garage.json`, never a log), and sends it on every call;
 `GarageClient` sends it whenever the variable is set. `EnsureLlamaModel` is the
 one exception, since a stdio `garage-mcp` an MCP client spawned has no token.
 Without the variable (`garage serve` by hand, the tests) the server takes any
-call. This keeps other local processes from driving `SetSetting`, `McpInstall`
-and the rest until the app reaches the server over XPC, with code-signing
+call that only reads or persists corpus data. The methods that write
+configuration (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`,
+`McpInstall`, `McpUninstall`) are stricter, because `SetSetting
+embedding.ollama_host` widens the egress allowlist: with no token they are
+answered only to a peer on the owner-only Unix socket, and a caller on a
+loopback TCP port gets `PERMISSION_DENIED` (`_config_change` in
+`service/server.py`). This keeps other local processes from driving
+configuration until the app reaches the server over XPC, with code-signing
 checks and no socket.
 
 ## Local inference client

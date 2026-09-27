@@ -170,6 +170,12 @@ of every account on the Mac, so none of these listen on one:
   A socket path must fit in 104 bytes; for a user name long enough to overflow
   that, the affected endpoint falls back to its loopback port as before
   (`GarageSockets`).
+- **Configuration changes need a vouched-for caller.** The gRPC methods that
+  write `garage.json` or an MCP client's config (`SetSetting`, the source and
+  model methods, `McpInstall`/`McpUninstall`) run only for a caller presenting
+  the app's per-launch token or arriving over that owner-only socket. A server
+  on a loopback TCP port with no token refuses them, so no other account on
+  the Mac can point `embedding.ollama_host` off-box and widen the allowlist.
 - **XPC peers must share the team.** Each XPC service puts a code-signing
   requirement on its connections (`anchor apple generic and certificate
   leaf[subject.OU]` = the team in its own signature), so only the app, its

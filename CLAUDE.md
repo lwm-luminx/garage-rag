@@ -269,7 +269,10 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   `PersistDocument` carries a whole document's text and chunks. When `GARAGE_GRPC_TOKEN` is set (the
   app sets a random one per launch, passed like `GARAGE_GRPC_PORT` and never logged or saved), every
   call but `EnsureLlamaModel` must carry it as `x-garage-token` metadata or gets `UNAUTHENTICATED`
-  (`service/auth.py`; `GarageClient` and the app's `GarageGRPCAuth` send it).
+  (`service/auth.py`; `GarageClient` and the app's `GarageGRPCAuth` send it). Without a token, the
+  config-changing methods (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`, MCP
+  install/uninstall; `@_config_change` on the handler) answer only a peer on the Unix socket and
+  give a TCP caller `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
 
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction
