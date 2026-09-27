@@ -578,31 +578,49 @@ public final class XPCServiceManager: ObservableObject {
     /// were skipped.
     public static let helpersConfiguredByTheApp = ["ingest-xpc", "embed-xpc", "mcp-server-xpc"]
 
+    /// The last configuration handed to the helpers, reapplied to a helper `restart` relaunches:
+    /// a helper keeps it in memory, so a fresh process would otherwise skip its Database
+    /// Connection and gRPC Connection tests again until its first job.
+    private var helperConfiguration: [String: String]?
+
     /// Hands `options` (`GarageGRPCService.helperConfiguration`) to each of
     /// `helpersConfiguredByTheApp` and re-runs its self tests, so the status page shows whether the
     /// helper reaches the database and the backend. A helper that cannot be reached is logged and
     /// skipped; `refresh` reports it in its own row.
     public func configureHelpers(_ options: [String: String]) async {
+        helperConfiguration = options
         for serviceId in Self.helpersConfiguredByTheApp {
-            guard let service = resolveService(serviceId) else { continue }
-            let bundleId = service.bundleId
-            do {
-                let (accepted, message): (Bool, String?) = try await Self.performCommonCall(bundleId: bundleId, timeoutNanoseconds: Self.statusCallTimeout) { proxy, relay in
-                    proxy.updateConfiguration(options) { accepted, message in
-                        relay.resume(returning: (accepted, message))
-                    }
-                }
-                guard accepted else {
-                    appendLog("[\(service.name)] Did not take the configuration: \(message ?? "no reason given")", stream: .stderr, source: service.id, level: .warning)
-                    continue
-                }
-                appendLog("[\(service.name)] Configured with the database and the backend's address", source: service.id, level: .info)
-            } catch {
-                appendLog("[\(service.name)] Could not be configured: \(error.localizedDescription)", stream: .stderr, source: service.id, level: .warning)
-                continue
-            }
-            _ = await runServiceSelfTests(serviceId: service.id)
+            await configureHelper(serviceId: serviceId, options: options)
         }
+    }
+
+    /// Hands `options` to one helper and re-runs its self tests when it took them.
+    private func configureHelper(serviceId: String, options: [String: String]) async {
+        guard let service = resolveService(serviceId) else { return }
+        let bundleId = service.bundleId
+        do {
+            let (accepted, message): (Bool, String?) = try await Self.performCommonCall(bundleId: bundleId, timeoutNanoseconds: Self.statusCallTimeout) { proxy, relay in
+                proxy.updateConfiguration(options) { accepted, message in
+                    relay.resume(returning: (accepted, message))
+                }
+            }
+            guard accepted else {
+                appendLog("[\(service.name)] Did not take the configuration: \(message ?? "no reason given")", stream: .stderr, source: service.id, level: .warning)
+                return
+            }
+            appendLog("[\(service.name)] Configured with the database and the backend's address", source: service.id, level: .info)
+        } catch {
+            appendLog("[\(service.name)] Could not be configured: \(error.localizedDescription)", stream: .stderr, source: service.id, level: .warning)
+            return
+        }
+        _ = await runServiceSelfTests(serviceId: service.id)
+    }
+
+    /// Reapplies the last helper configuration to `serviceId` when it is one of
+    /// `helpersConfiguredByTheApp` and the backend has configured the helpers before.
+    private func reconfigureRelaunchedHelper(serviceId: String) async {
+        guard Self.helpersConfiguredByTheApp.contains(serviceId), let options = helperConfiguration else { return }
+        await configureHelper(serviceId: serviceId, options: options)
     }
 
     /// Re-runs the in-service self tests of a helper and mirrors the outcome into `diagnosticResults`.
@@ -771,6 +789,10 @@ public final class XPCServiceManager: ObservableObject {
             llamaEndpointBroker?.handOverAgain()
         }
         appendLog("[\(service.name)] Restart finished with state: \(newState.title)", source: service.id, level: newState.isRunning ? .info : .error)
+        // The new process starts unconfigured: give it the database and the backend's address again.
+        if newState.isRunning {
+            await reconfigureRelaunchedHelper(serviceId: service.id)
+        }
         return newState.isRunning
     }
 
