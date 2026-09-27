@@ -46,6 +46,12 @@ final class SplashViewTests: XCTestCase {
         )
     }
 
+    func testOnlyTheAppStoreBuildLeavesOutTheDonationLink() {
+        XCTAssertFalse(AppVersionInfo(shortVersion: "1.5", build: "80", distribution: .appStore).offersDonationLink)
+        XCTAssertTrue(AppVersionInfo(shortVersion: "1.5", build: "80", distribution: .developerID).offersDonationLink)
+        XCTAssertTrue(AppVersionInfo(shortVersion: nil, build: nil).offersDonationLink)
+    }
+
     func testVersionInfoFromBundleNamesTheRunningDistribution() {
         let expected: AppVersionInfo.Distribution = GarageAppGroup.isSandboxed ? .appStore : .developerID
         XCTAssertEqual(AppVersionInfo(bundle: .main).distribution, expected)
