@@ -12,7 +12,8 @@
 # Keychain is read. It also checks that PythonXPCService's code is only in the app's framework:
 # `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
 # service binary defines the framework's types. Every versioned framework in Contents/Frameworks
-# keeps its links (Versions/Current and the top-level entries), which App Store validation needs.
+# is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
+# validation needs.
 set -euo pipefail
 
 archive="$1"
@@ -42,7 +43,10 @@ pass() {
 check_framework_links() {
     local fw="$1" name
     name="$(basename "$fw")"
-    [ -d "$fw/Versions" ] || return 0
+    if [ ! -d "$fw/Versions" ]; then
+        fail "$name: flat framework (no Versions); the Mac App Store needs the versioned layout"
+        return
+    fi
     if [ ! -L "$fw/Versions/Current" ]; then
         fail "$name: Versions/Current is not a symlink"
         return
