@@ -334,7 +334,7 @@ final class StatusPagePresentationTests: XCTestCase {
             ]
         )
         let skipping = ServiceRowPresentation.xpc(service, report: withSkips, test: nil)
-        XCTAssertEqual(skipping.detail, "Running · 12 ms · 1 passed, 1 skipped")
+        XCTAssertEqual(skipping.detail, "Running · 12 ms · 1 passed, 1 skipped (Database Connection)")
         XCTAssertFalse(skipping.detailIsError, "a skipped self test is not a failure")
 
         let failedTest = ServiceDiagnosticTestResult(

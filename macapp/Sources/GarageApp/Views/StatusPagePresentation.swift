@@ -890,16 +890,17 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         )
     }
 
-    /// "10 passed, 2 skipped": a skipped test (one with nothing to check, such as a helper started
-    /// without a database) is neither a pass nor a failure, so "10 of 12 passed" would read as two
-    /// failures.
+    /// "10 passed, 1 skipped (Model File)": a skipped test (one with nothing to check yet, such as
+    /// the model file of an engine with no model loaded) is neither a pass nor a failure, so
+    /// "10 of 12 passed" would read as two failures. The skipped tests are named, so a row that
+    /// says "2 skipped" says which two, and the helper's own detail says why.
     static func selfTestSummary(_ tests: [GarageXPCTestResult]) -> String {
         let passed = tests.filter { $0.status == .passed }.count
         let failed = tests.filter { $0.status == .failed }.count
-        let skipped = tests.filter { $0.status == .skipped }.count
+        let skipped = tests.filter { $0.status == .skipped }
         var parts = ["\(passed) passed"]
         if failed > 0 { parts.append("\(failed) failed") }
-        if skipped > 0 { parts.append("\(skipped) skipped") }
+        if !skipped.isEmpty { parts.append("\(skipped.count) skipped (\(skipped.map(\.name).joined(separator: ", ")))") }
         return parts.joined(separator: ", ")
     }
 }
