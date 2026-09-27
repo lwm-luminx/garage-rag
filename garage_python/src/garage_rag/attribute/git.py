@@ -14,7 +14,9 @@ in practice still identifies the right person.
 from __future__ import annotations
 
 import logging
+import shutil
 import subprocess
+import sys
 from collections import defaultdict
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -28,6 +30,43 @@ _COMMIT_MARK = "\x01"
 _FIELD_SEP = "\x1f"
 
 _GIT_TIMEOUT = 300.0
+
+# macOS ships /usr/bin/git as a stub. Without the Command Line Tools or Xcode, running it opens
+# the "install the command line developer tools" dialog, once per call, and then fails.
+_MACOS_GIT_STUB = "/usr/bin/git"
+
+
+@lru_cache(maxsize=1)
+def git_executable() -> str | None:
+    """The git binary to run, or None when there is none that works without a prompt.
+
+    On macOS the stub at ``/usr/bin/git`` counts only when ``xcode-select -p`` names a developer
+    folder that exists. That check never prompts, so an XPC service on a Mac without the
+    developer tools skips git attribution quietly instead of opening the install dialog.
+    """
+    found = shutil.which("git")
+    if found is None:
+        log.info("git not found; skipping git attribution")
+        return None
+    if sys.platform == "darwin" and Path(found).resolve() == Path(_MACOS_GIT_STUB) and not _has_developer_dir():
+        log.info("git needs the Xcode Command Line Tools, which are not installed; skipping git attribution")
+        return None
+    return found
+
+
+def _has_developer_dir() -> bool:
+    try:
+        result = subprocess.run(  # noqa: S603 - fixed argv, no shell
+            ["/usr/bin/xcode-select", "-p"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    path = result.stdout.strip()
+    return result.returncode == 0 and bool(path) and Path(path).is_dir()
 
 
 @dataclass
@@ -58,9 +97,12 @@ class RepoAttribution:
 
 
 def _run_git(args: list[str], cwd: Path, *, timeout: float = _GIT_TIMEOUT) -> str | None:
+    git = git_executable()
+    if git is None:
+        return None
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            ["git", *args],
+            [git, *args],
             cwd=cwd,
             capture_output=True,
             text=True,
