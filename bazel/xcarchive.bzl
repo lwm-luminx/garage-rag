@@ -40,8 +40,21 @@ if ! codesign --verify --deep --strict --verbose=2 "$archived"; then
     exit 1
 fi
 
+# A dSYM's name does not matter (tools match by UUID), but two can differ only in case
+# (Garage.app.dSYM, the helper's garage.app.dSYM), which a case-insensitive volume would merge into
+# one; the second gets a suffix. cp -L copies the DWARF files Bazel links from its cache, so the
+# archive keeps them when it is moved or the cache is cleaned.
+unique_dsym_path() {
+    local base="$1" candidate n=1
+    candidate="$out/dSYMs/$base"
+    while [ -e "$candidate" ] || [ -n "$(find "$out/dSYMs" -maxdepth 1 -iname "$(basename "$candidate")" -print -quit)" ]; do
+        n=$((n + 1))
+        candidate="$out/dSYMs/${base%.dSYM}-$n.dSYM"
+    done
+    printf '%s\n' "$candidate"
+}
 for dsym in "$@"; do
-    ditto "$dsym" "$out/dSYMs/$(basename "$dsym")"
+    cp -RL "$dsym" "$(unique_dsym_path "$(basename "$dsym")")"
 done
 
 # App Store Connect asks for a dSYM matching the UUID of every Mach-O in the app. Bazel makes them
@@ -60,9 +73,7 @@ find "$archived" -type f -print0 | while IFS= read -r -d '' file; do
     missing=0
     for uuid in $uuids; do grep -qx "$uuid" "$known" || missing=1; done
     [ "$missing" = 1 ] || continue
-    dsym="$out/dSYMs/$(basename "$file").dSYM"
-    n=1
-    while [ -e "$dsym" ]; do n=$((n + 1)); dsym="$out/dSYMs/$(basename "$file")-$n.dSYM"; done
+    dsym="$(unique_dsym_path "$(basename "$file").dSYM")"
     if dsymutil --quiet "$file" -o "$dsym" 2>/dev/null; then
         printf '%s\n' $uuids >>"$known"
     else
