@@ -115,6 +115,8 @@ message SearchRequest {
     repeated string sources = 7;
     string author = 8;
     bool full = 9;
+    // "sent" | "received": only message chunks that went that way. Empty: no filter.
+    string direction = 10;
 }
 
 message SearchHit {
@@ -129,6 +131,10 @@ message SearchHit {
     repeated string authors = 9;
     string text = 10;
     string snippet = 11;
+    // Message chunks: "sent" | "received", and the handle that wrote it, or "me".
+    // Empty for every other chunk.
+    string direction = 12;
+    string sender = 13;
 }
 
 message SearchResponse {
@@ -744,6 +750,9 @@ message DocumentChunkPayload {
     string heading_path = 6;
     string chunk_sha256 = 7;
     string chunker = 8;
+    // Message chunks only (chunks.direction/sender); empty otherwise.
+    string direction = 9;
+    string sender = 10;
 }
 
 message PersistDocumentRequest {

@@ -135,7 +135,10 @@ message file tracked in a repository is attributed from its commits.
 thread: those who wrote in it as `sender`, those who only read it as
 `recipient` (evidence `imessage-handle`), and you as `sender` when you wrote and
 `identity.name` is set (`imessage-is-from-me`). The thread's trust is the
-source's default (`received` for the app's Messages preset).
+source's default (`received` for the app's Messages preset). Since a thread holds
+both sides, each message's chunk says who wrote it: `chunks.direction` is `sent`
+for your own messages and `received` for everyone else's, and `chunks.sender` is
+the handle, or `me`.
 
 `cc` is not assigned yet.
 
@@ -163,6 +166,7 @@ garage extract <file>          # shows author hints and extracted metadata
 garage search "..." --author "Name"
 garage search "..." --trust authored     # only your own writing
 garage search "..." --trust reference    # only QA'ed external material
+garage search "..." --direction sent     # only messages you sent
 ```
 
 The `evidence` column on `document_authors` records exactly which rule fired:

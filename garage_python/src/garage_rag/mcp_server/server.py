@@ -43,6 +43,7 @@ from garage_rag.db.models import (
 )
 from garage_rag.enrich.generation import LocalChatModel
 from garage_rag.net import egress
+from garage_rag.search import Direction
 from garage_rag.search.hybrid import SearchHit, corpus_overview
 from garage_rag.search.hybrid import search as run_search
 
@@ -97,6 +98,7 @@ TrustFilter = Annotated[
     BeforeValidator(_as_list),
 ]
 SourceFilter = Annotated[list[str] | str | None, BeforeValidator(_as_list)]
+DirectionFilter = Direction | None
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +119,10 @@ class Hit:
     matched_by: str
     score: float
     text: str
+    # Message chunks: 'sent' (the owner wrote it) or 'received', and who wrote
+    # it -- a handle, or 'me'. None for every other chunk.
+    direction: str | None = None
+    sender: str | None = None
 
 
 @dataclass
@@ -238,6 +244,7 @@ def _retrieve(
     trust: object = None,
     source: object = None,
     author: str | None = None,
+    direction: str | None = None,
 ) -> tuple[list[SearchHit], str]:
     """Run the hybrid search; returns the hits and the embedding model's slug."""
     # The BeforeValidator only runs when the call comes through the MCP layer; a
@@ -258,6 +265,7 @@ def _retrieve(
             trust_tiers=list(tiers) if tiers else None,
             sources=list(slugs) if slugs else None,
             author=author,
+            direction=direction,
         )
         models = list_models(session)
         default = next((m.slug for m in models if m.is_default), "none")
@@ -307,14 +315,33 @@ def rag_search(
         Field(description="Restrict to these source slugs. Accepts one value or a list."),
     ] = None,
     author: Annotated[str | None, Field(description="Restrict to documents by this author (substring match).")] = None,
+    direction: Annotated[
+        DirectionFilter,
+        Field(
+            description=(
+                "Restrict to messages (SMS/iMessage) that went one way: 'sent' is what the "
+                "corpus owner wrote, 'received' is what others wrote to them. A message "
+                "thread holds both, so this is how to find the owner's own words in a "
+                "conversation. Excludes everything that is not a message."
+            )
+        ),
+    ] = None,
 ) -> SearchResult:
     """Search the personal corpus with hybrid semantic + keyword retrieval.
 
     Filter by trust to separate the owner's own writing from reference material,
-    and by corpus_class to keep source code out of prose answers.
+    by corpus_class to keep source code out of prose answers, and by direction
+    to keep to messages the owner sent or received.
     """
     hits, embedding_model = _retrieve(
-        query, limit=limit, mode=mode, corpus_class=corpus_class, trust=trust, source=source, author=author
+        query,
+        limit=limit,
+        mode=mode,
+        corpus_class=corpus_class,
+        trust=trust,
+        source=source,
+        author=author,
+        direction=direction,
     )
 
     return SearchResult(
@@ -335,6 +362,8 @@ def rag_search(
                 matched_by=h.matched_by,
                 score=round(h.score, 6),
                 text=h.text,
+                direction=h.direction,
+                sender=h.sender,
             )
             for h in hits
         ],

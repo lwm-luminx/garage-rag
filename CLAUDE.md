@@ -237,7 +237,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   libpq, so `garage_rag.native` finds the loaded copy; elsewhere the linker's search applies; HEIC/HEIF is
   decoded by macOS ImageIO, `extract/imageio.py`), mail (`.eml`/`.emlx`, `extract/mail.py`, filed as
   `communication`), code verbatim via `text.py`). Messages `chat.db` (`sqlite` sources) is not walked file
-  by file: `ingest/conversations.py` stores each thread as one document with one chunk per message.
+  by file: `ingest/conversations.py` stores each thread as one document with one chunk per message,
+  each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for
+  search's `direction` filter; messages in no `chat_message_join` row join their sender's one-to-one chat.
 - **Quality gate** (`extract/quality.py`) — content-based backstop against non-prose text (repeated
   line shapes, timestamp prefixes, hex/base64 density) that path rules alone miss.
 - **Attribute** (`attribute/`) — precedence-ordered signals, each recording its `evidence`: git
