@@ -239,7 +239,7 @@ def test_ingest_xpc_with_grpc_options():
             grpc_port=50051,
         )
 
-        mock_client_cls.assert_called_once_with(host="127.0.0.1", port=50051, in_process=False)
+        mock_client_cls.assert_called_once_with(host="127.0.0.1", port=50051, in_process=False, socket_path=None)
         mock_gw_cls.assert_called_once()
         assert len(progress_events) >= 2
         assert progress_events[-1].phase == "complete"

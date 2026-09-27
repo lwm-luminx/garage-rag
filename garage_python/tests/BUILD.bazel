@@ -96,6 +96,7 @@ py_test(
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/ingest",
+        "@pypi//psycopg",
         "@pypi//pytest",
     ],
 )
@@ -628,6 +629,17 @@ py_test(
         "//garage_python/src/garage_rag/enrich/langextract",
         "//garage_python/src/garage_rag/inference",
         "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_inference_bridge",
+    srcs = ["test_inference_bridge.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/inference",
+        "//garage_python/src/garage_rag/xpc",
         "@pypi//pytest",
     ],
 )

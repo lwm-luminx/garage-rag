@@ -998,8 +998,13 @@ def get_storage_gateway(
     grpc_client: Any | None = None,
     grpc_host: str | None = None,
     grpc_port: int | None = None,
+    grpc_socket: str | None = None,
 ) -> IngestStorageGateway:
-    """Obtain the configured IngestStorageGateway."""
+    """Obtain the configured IngestStorageGateway.
+
+    The gRPC facade is used when a socket (``grpc_socket`` or ``GARAGE_GRPC_SOCKET``)
+    or a port (``grpc_port`` or ``GARAGE_GRPC_PORT``) names it; the socket wins.
+    """
     if gateway is not None:
         return gateway
 
@@ -1015,14 +1020,15 @@ def get_storage_gateway(
 
     port = grpc_port or (int(env_port) if env_port else None)
     host = grpc_host or env_host
+    socket_path = grpc_socket or os.environ.get("GARAGE_GRPC_SOCKET") or None
 
-    if port:
+    if socket_path or port:
         # Imported here, not at module scope: garage_rag.service depends on
         # ingest, so a top-level import would be a cycle.
         # gazelle:ignore garage_rag.service.client
         from garage_rag.service.client import GarageClient
 
-        client = GarageClient(host=host, port=port, in_process=False)
+        client = GarageClient(host=host, port=port, in_process=False, socket_path=socket_path)
         return GrpcIngestStorageGateway(client)
 
     # Fallback to direct DB engine session factory

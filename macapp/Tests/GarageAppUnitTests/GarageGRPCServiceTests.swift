@@ -18,6 +18,19 @@ final class GarageGRPCServiceTests: XCTestCase {
         XCTAssertTrue(grpcService.logs.isEmpty)
     }
 
+    @MainActor
+    func testAddressNamesTheSocketWhenThereIsOne() {
+        let grpcService = GarageGRPCService(postgres: PostgresService(), port: 50051)
+        if let socketPath = grpcService.socketPath {
+            XCTAssertTrue(socketPath.hasSuffix("/s/grpc"), socketPath)
+            XCTAssertEqual(grpcService.address, "unix:\(socketPath)")
+            XCTAssertEqual(grpcService.shortAddress, "a private socket")
+        } else {
+            XCTAssertEqual(grpcService.address, "127.0.0.1:50051")
+            XCTAssertEqual(grpcService.shortAddress, "127.0.0.1:50051")
+        }
+    }
+
     func testGarageGRPCStatusEquality() {
         XCTAssertEqual(GarageGRPCStatus.stopped, GarageGRPCStatus.stopped)
         XCTAssertEqual(GarageGRPCStatus.starting, GarageGRPCStatus.starting)

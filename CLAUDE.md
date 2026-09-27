@@ -337,6 +337,17 @@ document content, preserve all of this — it's the load-bearing privacy propert
 new caller builds its client through `net/egress.py` and is added to `CALLERS` in the test. Full
 detail: `docs/privacy.md`.
 
+### Local endpoints: sockets and XPC peers
+
+Postgres, the `GarageService` gRPC facade and LlamaXPCService's llama-server API listen on Unix-domain
+sockets in `s/` at the root of the App Group container (0700; `GarageSockets` in `PythonXPCService`),
+not on loopback TCP, which every account on the Mac can reach. Python finds them through the database
+URL (`?host=<dir>&port=14824`), `GARAGE_GRPC_SOCKET` and `GARAGE_LLAMA_SOCKET`, which the app's XPC
+services and the launchers set; an endpoint whose socket path would overflow `sun_path` (104 bytes)
+keeps its old port. Every XPC service requires its peers to be signed by its own team
+(`GarageXPCPeerRequirement`), and the Python in the app's XPC services sends `llama_xpc` requests over
+NSXPC (`LlamaInferenceBridge` → `garage_rag.inference.bridge`). See `docs/privacy.md`.
+
 ### Configuration (`config/__init__.py`)
 
 One JSON config, nested on disk (`~/.garage.json`, or `./garage.json` for project-local override,
@@ -406,7 +417,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   `ipa_post_processor`; codesign rejects a script in `MacOS` but seals a symlink) to `/bin/sh`
   forwarders in `Resources/launchers` that `exec` the helper by its real path (not Mach-O: a
   sandboxed forwarder could not start a helper with its own sandbox). When a command needs the
-  database and nothing listens on 14824
+  database and nothing listens on its socket
   they open the app hidden (`--background`), then read the Postgres password from the Keychain
   and export `GARAGE_DATABASE_URL`; stdio registrations therefore carry no database URL. Only
   these bundled launchers do this; `garage` from a venv is untouched. `garage quit` (launcher only,
@@ -418,8 +429,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   mcp-install`, so both transports coexist.
 - `LlamaXPCService` hosts llama.cpp itself (`macapp/Sources/LlamaEngine`, statically linked from
   `//ext/llama_cpp`, Metal + Accelerate) and serves it two ways: NSXPC for the app (load/unload,
-  health, test calls) and a llama-server-compatible HTTP API on `127.0.0.1:8790` for the Python
-  `llama_xpc` provider (`backfill`, `enrich-facts` run in their own process). Both front ends live
+  health, test calls, and `handleServerRequest`, which the Python in the other XPC services calls through
+  `LlamaInferenceBridge`) and a llama-server-compatible HTTP API on its socket (`s/llama` in the group
+  container, `GARAGE_LLAMA_SOCKET`; a loopback port only with `GARAGE_LLAMA_HTTP_PORT`) for Python outside
+  them, the launchers' `llama_xpc` provider (`backfill`, `enrich-facts` run in their own process). Both front ends live
   in `macapp/Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`; the other engines
   are test-only, in `macapp/Tests/LlamaTestSupport`: `MockLlamaServerEngine` for the unit tests,
   and `DeterministicLlamaEngine` (hashed bag-of-words embeddings, one grounded fact per sentence),

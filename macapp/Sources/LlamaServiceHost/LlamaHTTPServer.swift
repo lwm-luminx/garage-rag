@@ -1,19 +1,26 @@
+import Darwin
 import Foundation
 import Network
 import OSLog
 import LlamaClient
+import PythonXPCService_protocol
 
-/// Minimal HTTP/1.1 listener on the loopback interface that forwards every request to an engine's
-/// llama-server route table.
+/// Minimal HTTP/1.1 listener, on a Unix-domain socket or the loopback interface, that forwards every
+/// request to an engine's llama-server route table.
 ///
 /// This exists for the Python side: `garage backfill` and `garage enrich-facts` run in their own
 /// process (the CLI), where NSXPC is not available, so the `llama_xpc` provider speaks plain HTTP
-/// to this port instead. The listener only ever binds 127.0.0.1, answers one request per
+/// to this listener instead. Given a `socketPath` (the app passes one in its owner-only App Group
+/// folder, `GarageSockets`) it listens there and nowhere else, so only this account's Garage
+/// processes reach it; otherwise it binds 127.0.0.1, which every account on the Mac can reach. It
+/// answers one request per
 /// connection (`Connection: close`), and understands exactly what the engine needs: a request
 /// line, headers, and an optional `Content-Length` body. Nothing else is implemented on purpose.
 public final class LlamaHTTPServer: @unchecked Sendable {
     public let host: String
     public let port: UInt16
+    /// The Unix-domain socket to listen on instead of `host:port`, or nil for TCP.
+    public let socketPath: String?
     private let engine: any LlamaInferenceEngine
     private let queue = DispatchQueue(label: "me.rickmark.garage-rag.llama-http", qos: .userInitiated)
     private let logger = Logger(subsystem: "me.rickmark.garage-rag.llama-xpc", category: "http")
@@ -25,7 +32,8 @@ public final class LlamaHTTPServer: @unchecked Sendable {
     private static let maxBodyBytes = 64 * 1024 * 1024
     private static let maxHeaderBytes = 64 * 1024
 
-    public var url: String { "http://\(host):\(port)" }
+    /// Where the listener is, for logs and `/props`: `unix:<path>` or `http://host:port`.
+    public var url: String { socketPath.map { "unix:\($0)" } ?? "http://\(host):\(port)" }
 
     public var isListening: Bool {
         lock.lock()
@@ -33,10 +41,16 @@ public final class LlamaHTTPServer: @unchecked Sendable {
         return listener?.state == .ready
     }
 
-    public init(engine: any LlamaInferenceEngine, host: String = "127.0.0.1", port: UInt16 = LlamaXPCConstants.defaultHTTPPort) {
+    public init(
+        engine: any LlamaInferenceEngine,
+        host: String = "127.0.0.1",
+        port: UInt16 = LlamaXPCConstants.defaultHTTPPort,
+        socketPath: String? = nil
+    ) {
         self.engine = engine
         self.host = host
         self.port = port
+        self.socketPath = socketPath
     }
 
     // MARK: - Lifecycle
@@ -52,12 +66,17 @@ public final class LlamaHTTPServer: @unchecked Sendable {
         }
         lock.unlock()
 
-        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
-            throw LlamaEngineError(500, "invalid HTTP port \(port)")
-        }
         let parameters = NWParameters.tcp
-        parameters.allowLocalEndpointReuse = true
-        parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+        if let socketPath {
+            try Self.prepareSocketPath(socketPath)
+            parameters.requiredLocalEndpoint = NWEndpoint.unix(path: socketPath)
+        } else {
+            guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+                throw LlamaEngineError(500, "invalid HTTP port \(port)")
+            }
+            parameters.allowLocalEndpointReuse = true
+            parameters.requiredLocalEndpoint = NWEndpoint.hostPort(host: NWEndpoint.Host(host), port: nwPort)
+        }
 
         let newListener = try NWListener(using: parameters)
         let ready = DispatchSemaphore(value: 0)
@@ -95,6 +114,18 @@ public final class LlamaHTTPServer: @unchecked Sendable {
             stop()
             throw LlamaEngineError(500, "llama HTTP listener could not bind \(url): \(message)")
         }
+        if let socketPath {
+            // The folder is already owner-only; the socket is too, in case it is ever moved out of it.
+            chmod(socketPath, 0o600)
+        }
+    }
+
+    /// Creates the socket's folder owner-only and removes a socket file a crashed listener left
+    /// behind (a new one cannot bind over it). A socket something still answers on, or anything
+    /// that is not a socket, is left alone, and the bind then fails.
+    static func prepareSocketPath(_ path: String) throws {
+        try GarageSockets.ensureDirectory(URL(fileURLWithPath: path).deletingLastPathComponent())
+        GarageSockets.removeStaleSocket(at: path)
     }
 
     public func stop() {
@@ -107,6 +138,9 @@ public final class LlamaHTTPServer: @unchecked Sendable {
         current?.cancel()
         for connection in open {
             connection.cancel()
+        }
+        if current != nil, let socketPath {
+            unlink(socketPath)
         }
     }
 

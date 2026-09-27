@@ -231,15 +231,17 @@ def ingest_xpc(
     grpc_client: Any = None,
     grpc_host: str | None = None,
     grpc_port: int | None = None,
+    grpc_socket: str | None = None,
 ) -> None:
     _ensure_logging()
     log.info(
-        "ingest_xpc called for source=%r (include_code=%s, limit=%s, force=%s, grpc_port=%s)",
+        "ingest_xpc called for source=%r (include_code=%s, limit=%s, force=%s, grpc_port=%s, grpc_socket=%s)",
         source,
         include_code,
         limit,
         force,
         grpc_port,
+        grpc_socket,
     )
 
     from garage_rag.ingest.gateway import get_storage_gateway
@@ -253,6 +255,7 @@ def ingest_xpc(
         grpc_client=grpc_client,
         grpc_host=grpc_host,
         grpc_port=grpc_port,
+        grpc_socket=grpc_socket,
     )
 
     if source == "*":

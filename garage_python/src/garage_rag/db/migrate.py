@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from urllib.parse import quote, urlencode
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -53,12 +54,20 @@ def redact_url(url: str) -> str:
 
 
 def to_psycopg_conninfo(url: str) -> str:
-    """Convert an engine database URL (e.g. postgresql+psycopg://...) to psycopg conninfo/URL."""
+    """Convert an engine database URL (e.g. postgresql+psycopg://...) to psycopg conninfo/URL.
+
+    The query is re-encoded with ``%20`` for spaces: SQLAlchemy writes ``+``,
+    which libpq keeps literally, and the app's socket directory
+    (``?host=.../Group Containers/...``) has a space in it.
+    """
     try:
         parsed = make_url(url)
         if "+" in parsed.drivername:
             parsed = parsed.set(drivername=parsed.drivername.split("+")[0])
-        return parsed.render_as_string(hide_password=False)
+        rendered = parsed.set(query={}).render_as_string(hide_password=False)
+        if not parsed.query:
+            return rendered
+        return f"{rendered}?{urlencode(parsed.query, doseq=True, quote_via=quote, safe='/')}"
     except Exception:
         if url.startswith("postgresql+"):
             prefix, rest = url.split("://", 1)

@@ -112,7 +112,7 @@ class GarageUITestCase: XCTestCase {
             return
         }
         XCTAssertTrue(
-            waitUntil(timeout: timeout) { self.postgresIsServing(from: owner) && Self.isListening(on: Self.grpcPort) },
+            waitUntil(timeout: timeout) { self.postgresIsServing(from: owner) && self.grpcIsServing },
             "Postgres and gRPC did not come up on the test folder",
             file: file,
             line: line
@@ -387,13 +387,53 @@ class GarageUITestCase: XCTestCase {
         return pid
     }
 
-    /// True when a postmaster the instance `owner` started serves this test's cluster on 14824.
+    /// The folder of this test's Postgres socket (`GarageSockets` below the `--data-directory` folder), or
+    /// nil when its path is too long for `sun_path` and the app fell back to loopback TCP on 14824.
+    var postgresSocketDirectory: String? {
+        let directory = dataDirectory.appendingPathComponent("s", isDirectory: true).path
+        let socket = directory + "/.s.PGSQL.\(Self.postgresPort)"
+        let address = sockaddr_un()
+        return socket.utf8.count < MemoryLayout.size(ofValue: address.sun_path) ? directory : nil
+    }
+
+    /// True when a postmaster the instance `owner` started serves this test's cluster.
     func postgresIsServing(from owner: pid_t) -> Bool {
         guard let postmaster = postmasterPID(), Self.isAlive(postmaster),
               Self.parent(of: postmaster) == owner else {
             return false
         }
+        if let directory = postgresSocketDirectory {
+            return Self.isListening(atSocket: directory + "/.s.PGSQL.\(Self.postgresPort)")
+        }
         return Self.isListening(on: Self.postgresPort)
+    }
+
+    /// True when the app's gRPC server answers: on `s/grpc` in the data folder when that path fits
+    /// `sun_path` (as `GarageSockets` decides in the app), else on port 50051.
+    var grpcIsServing: Bool {
+        let socket = dataDirectory.appendingPathComponent("s/grpc", isDirectory: false).path
+        let address = sockaddr_un()
+        if socket.utf8.count < MemoryLayout.size(ofValue: address.sun_path) {
+            return Self.isListening(atSocket: socket)
+        }
+        return Self.isListening(on: Self.grpcPort)
+    }
+
+    static func isListening(atSocket path: String) -> Bool {
+        let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var address = sockaddr_un()
+        address.sun_family = sa_family_t(AF_UNIX)
+        withUnsafeMutableBytes(of: &address.sun_path) { buffer in
+            buffer.initializeMemory(as: UInt8.self, repeating: 0)
+            buffer.copyBytes(from: Array(path.utf8.prefix(buffer.count - 1)))
+        }
+        return withUnsafePointer(to: &address) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) == 0
+            }
+        }
     }
 
     struct ClusterIdentity: Equatable {

@@ -81,10 +81,14 @@ final class GarageGRPCManagedServer: GarageManagedService {
             let threading = Python.import("threading")
             let event = threading.Event()
             let serverModule = try Python.attemptImport("garage_rag.service.server")
+            // The app names a Unix-domain socket in its App Group container (`GarageSockets`); the server
+            // then listens there instead of on host:port.
+            let socketPath = opts[GarageXPCConfigurationKey.grpcSocket].flatMap { $0.isEmpty ? nil : $0 }
             let created = try serverModule.create_grpc_server.throwing.dynamicallyCall(withKeywordArguments: [
-                ("host", h),
-                ("port", p),
-                ("stop_event", event)
+                ("host", PythonObject(h)),
+                ("port", PythonObject(p)),
+                ("stop_event", event),
+                ("socket_path", socketPath.map { PythonObject($0) } ?? Python.None),
             ])
             let instance = created[0]
             _ = try instance.start.throwing.dynamicallyCall(withArguments: [])
@@ -93,8 +97,9 @@ final class GarageGRPCManagedServer: GarageManagedService {
             server = instance
             stopEvent = event
             lock.unlock()
-            logger.info("Garage gRPC server started on \(h, privacy: .public):\(p, privacy: .public)")
-            GarageXPCOutputCapture.shared.log(message: "gRPC server listening on \(h):\(p)")
+            let address = socketPath.map { "unix:\($0)" } ?? "\(h):\(p)"
+            logger.info("Garage gRPC server started on \(address, privacy: .public)")
+            GarageXPCOutputCapture.shared.log(message: "gRPC server listening on \(address)")
         }
     }
 
@@ -174,7 +179,7 @@ final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProt
         self.host.restart(named: grpcServer.name, graceful: true) { state in
             switch state {
             case .running:
-                reply(true, "gRPC server started on \(host):\(port)")
+                reply(true, "gRPC server started on \(options[GarageXPCConfigurationKey.grpcSocket].map { "unix:\($0)" } ?? "\(host):\(port)")")
             case .failed(let message):
                 reply(false, "Failed to start gRPC server: \(message)")
             default:

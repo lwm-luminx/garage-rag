@@ -17,6 +17,7 @@ import logging
 import os
 import queue
 import signal
+import stat
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -1437,8 +1438,14 @@ def create_grpc_server(
     max_workers: int = 10,
     stop_event: threading.Event | None = None,
     stop_grace: float = 2.0,
+    socket_path: str | None = None,
 ) -> tuple[grpc.Server, GarageRpcServicer]:
     """Create and configure a gRPC server for Garage.
+
+    With ``socket_path`` the server listens on that Unix-domain socket instead of
+    ``host:port``. The app puts it in an owner-only folder of its App Group
+    container, so only this account's Garage processes reach it; a loopback TCP
+    port is open to every account on the Mac.
 
     When ``stop_event`` is given, setting it stops the server with ``stop_grace``
     seconds of grace; ``serve_grpc`` sets it from SIGINT/SIGTERM.
@@ -1457,8 +1464,10 @@ def create_grpc_server(
     servicer = GarageRpcServicer(stop_event=stop_event)
     add_GarageServiceServicer_to_server(servicer, server)
 
-    server_address = f"{host}:{port}"
-    server.add_insecure_port(server_address)
+    if socket_path:
+        _bind_unix_socket(server, socket_path)
+    else:
+        server.add_insecure_port(f"{host}:{port}")
 
     if stop_event is not None:
         # The CLI loop polls the event, the Swift host calls server.stop() itself;
@@ -1471,16 +1480,38 @@ def create_grpc_server(
     return server, servicer
 
 
+def _bind_unix_socket(server: grpc.Server, socket_path: str) -> None:
+    """Binds ``server`` to ``socket_path``, owner-only.
+
+    A socket file left by a server that died is removed first (gRPC will not
+    bind over it); anything else at the path is left alone and the bind fails.
+    """
+    path = Path(socket_path)
+    if not path.is_absolute():
+        raise ValueError(f"gRPC socket path must be absolute: {socket_path!r}")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        if stat.S_ISSOCK(path.lstat().st_mode):
+            path.unlink()
+    except FileNotFoundError:
+        pass
+    if not server.add_insecure_port(f"unix:{socket_path}"):
+        raise RuntimeError(f"could not bind the gRPC socket {socket_path}")
+    path.chmod(0o600)
+
+
 def serve_grpc(
     host: str = "127.0.0.1",
     port: int = 50051,
     stop_event: threading.Event | None = None,
+    socket_path: str | None = None,
 ) -> None:
     """Start the gRPC server and block until stopped."""
     stop_evt = stop_event or threading.Event()
-    server, servicer = create_grpc_server(host=host, port=port, stop_event=stop_evt)
+    server, servicer = create_grpc_server(host=host, port=port, stop_event=stop_evt, socket_path=socket_path)
     server.start()
-    print(f"Garage gRPC server listening on {host}:{port} (PID: {os.getpid()})")
+    where = f"unix:{socket_path}" if socket_path else f"{host}:{port}"
+    print(f"Garage gRPC server listening on {where} (PID: {os.getpid()})")
 
     def handle_signal(sig, frame):
         print("\nShutting down gRPC server...")

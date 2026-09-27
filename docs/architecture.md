@@ -256,9 +256,11 @@ invocations, not from a pool inside the pipeline.
 Embedding is a single batching producer at 64 chunks per request: Ollama
 serializes model execution, so client fan-out buys contention, not throughput.
 The `llama_xpc` provider (embeddings and, with `--provider llama_xpc`, facts)
-talks to the app's `LlamaXPCService` over loopback HTTP (`llama_host`, a
-llama-server-compatible API). Models are loaded over NSXPC only, never over
-HTTP. When a request finds its model not resident (503 `no model loaded`, 404
+talks to the app's `LlamaXPCService` through a llama-server-compatible API:
+over NSXPC from the app's own XPC services (`garage_rag.inference.bridge`),
+otherwise over HTTP on its socket in the App Group container
+(`GARAGE_LLAMA_SOCKET`, which the app's processes export), with `llama_host`
+naming the origin. Models are loaded over NSXPC only, never over HTTP. When a request finds its model not resident (503 `no model loaded`, 404
 `model X is not loaded`), `LlamaXPCClient` asks `garage_rag.xpc.host` to load
 it and retries once:
 

@@ -1603,12 +1603,17 @@ def version_cmd() -> None:
 def serve(
     host: Annotated[str, typer.Option("--host", "-h", help="gRPC host binding.")] = "127.0.0.1",
     port: Annotated[int, typer.Option("--port", "-p", help="gRPC port.")] = 50051,
+    socket: Annotated[
+        str | None,
+        typer.Option("--socket", help="Listen on this Unix-domain socket (absolute path) instead of host:port."),
+    ] = None,
 ) -> None:
     """Start the long-running gRPC server the macOS app reads the corpus through."""
-    console.print(f"[bold green]Starting Garage gRPC Server[/bold green] on {host}:{port}...")
+    where = f"unix:{socket}" if socket else f"{host}:{port}"
+    console.print(f"[bold green]Starting Garage gRPC Server[/bold green] on {where}...")
     from garage_rag.service.server import serve_grpc
 
-    serve_grpc(host=host, port=port)
+    serve_grpc(host=host, port=port, socket_path=socket)
 
 
 def _is_database_error(exc: BaseException) -> bool:

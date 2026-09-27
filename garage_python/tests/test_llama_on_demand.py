@@ -145,8 +145,15 @@ class _FakeGarageClient:
     calls: list[tuple[str, str, int, float | None]] = []
     outcome: Any = None
 
-    def __init__(self, host: str | None = None, port: int | None = None, in_process: bool = True) -> None:
-        self.host, self.port = host, port
+    def __init__(
+        self,
+        host: str | None = None,
+        port: int | None = None,
+        in_process: bool = True,
+        socket_path: str | None = None,
+    ) -> None:
+        self.host, self.port, self.socket_path = host, port, socket_path
+        self.address = f"unix:{socket_path}" if socket_path else f"{host}:{port}"
 
     def ensure_llama_model(self, model: str, *, timeout: float | None = None) -> EnsureLlamaModelResponse:
         type(self).calls.append((model, self.host or "", self.port or 0, timeout))
@@ -166,6 +173,7 @@ def fake_grpc(monkeypatch: pytest.MonkeyPatch) -> type[_FakeGarageClient]:
     _FakeGarageClient.outcome = "loaded"
     monkeypatch.setattr(service_client, "GarageClient", _FakeGarageClient)
     monkeypatch.delenv("GARAGE_GRPC_HOST", raising=False)
+    monkeypatch.delenv("GARAGE_GRPC_SOCKET", raising=False)
     monkeypatch.setenv("GARAGE_GRPC_PORT", "50123")
     return _FakeGarageClient
 
@@ -175,6 +183,22 @@ def test_without_a_loader_the_app_is_asked_over_grpc(fake_grpc: type[_FakeGarage
     (model, grpc_host, grpc_port, timeout) = fake_grpc.calls[0]
     assert (model, grpc_host, grpc_port) == ("bge-m3", "127.0.0.1", 50123)
     assert timeout and timeout >= 600
+
+
+def test_the_launchers_socket_wins_over_the_port(
+    fake_grpc: type[_FakeGarageClient], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created: list[_FakeGarageClient] = []
+    original_init = _FakeGarageClient.__init__
+
+    def recording_init(self, *args, **kwargs) -> None:
+        original_init(self, *args, **kwargs)
+        created.append(self)
+
+    monkeypatch.setattr(_FakeGarageClient, "__init__", recording_init)
+    monkeypatch.setenv("GARAGE_GRPC_SOCKET", "/tmp/garage-test/s/grpc")
+    assert ensure_model("bge-m3") == "loaded"
+    assert created[0].socket_path == "/tmp/garage-test/s/grpc"
 
 
 def test_app_not_running_says_to_open_garage(fake_grpc: type[_FakeGarageClient]) -> None:
