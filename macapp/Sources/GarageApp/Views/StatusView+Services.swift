@@ -135,7 +135,7 @@ extension StatusView {
     private var grpcRow: some View {
         let row = ServiceRowPresentation.grpc(
             status: appState.grpc.status,
-            address: appState.grpc.shortAddress,
+            listening: appState.grpc.listeningPhrase,
             lastTest: grpcTestResult.map { (isSuccess: $0.isSuccess, summary: $0.summary) }
         )
         let isExpanded = expandedServiceIds.contains(row.id)

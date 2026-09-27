@@ -824,7 +824,8 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         }
     }
 
-    static func grpc(status: GarageGRPCStatus, address: String, lastTest: (isSuccess: Bool, summary: String)?) -> ServiceRowPresentation {
+    /// `listening` opens the running line: "Without remote access" or "On 127.0.0.1:50051".
+    static func grpc(status: GarageGRPCStatus, listening: String, lastTest: (isSuccess: Bool, summary: String)?) -> ServiceRowPresentation {
         let state: State
         var detail: String
         var isError = false
@@ -832,7 +833,7 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         switch status {
         case .running:
             state = .running
-            detail = "On \(address) · \(role)"
+            detail = "\(listening) · \(role)"
         case .starting:
             state = .checking
             detail = "Starting with the database…"
@@ -849,7 +850,7 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         }
         if let lastTest, state == .running {
             if lastTest.isSuccess {
-                detail = "On \(address) · test passed"
+                detail = "\(listening) · test passed"
             } else {
                 detail = MenuBarStatus.firstLine(lastTest.summary) ?? "The test failed"
                 isError = true

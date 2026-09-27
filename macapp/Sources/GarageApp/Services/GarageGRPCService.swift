@@ -58,9 +58,10 @@ final class GarageGRPCService: ObservableObject {
         socketPath.map { "unix:\($0)" } ?? "\(host):\(port)"
     }
 
-    /// Where the server listens, in the few words a status line has room for.
-    var shortAddress: String {
-        socketPath == nil ? "\(host):\(port)" : "a private socket"
+    /// How the status line opens: "Without remote access" on the Unix socket, which nothing off
+    /// the Mac can reach, or "On 127.0.0.1:50051" when the server has a port.
+    var listeningPhrase: String {
+        socketPath == nil ? "On \(host):\(port)" : "Without remote access"
     }
 
     private let postgres: PostgresService
