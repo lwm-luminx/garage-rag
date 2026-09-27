@@ -144,6 +144,20 @@ py_test(
 )
 
 py_test(
+    name = "test_launcher_scripts",
+    srcs = ["test_launcher_scripts.py"],
+    data = [
+        "//macapp/Sources/GarageCLI:garage",  # keep
+        "//macapp/Sources/GarageMCPCLI:garage-mcp",  # keep
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_mcp_install",
     srcs = ["test_mcp_install.py"],
     deps = [

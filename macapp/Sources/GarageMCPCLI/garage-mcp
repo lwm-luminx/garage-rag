@@ -5,6 +5,15 @@
 # whose own bundle identifier, entitlements and provisioning profile give it the application
 # identifier the data-protection keychain needs. This forwards to it; exec keeps stdin/stdout, the
 # MCP stream, on the helper. See Contents/Resources/launchers/garage for why a script.
+#
+# It also works copied onto the PATH, e.g.
+#
+#   cp /Applications/Garage.app/Contents/Resources/launchers/garage-mcp /usr/local/bin/
+#
+# Outside the app it finds Garage by bundle identifier, through Launch Services (which does not
+# launch it) and then Spotlight, so a copy keeps working when Garage moves or updates.
+name="garage-mcp"
+bundle_id="me.rickmark.garage-rag"
 self="$0"
 while [ -L "$self" ]; do
     target="$(readlink "$self")"
@@ -13,6 +22,20 @@ while [ -L "$self" ]; do
         *) self="$(dirname "$self")/$target" ;;
     esac
 done
-here="$(cd "$(dirname "$self")" && pwd -P)"
-helper="$(cd "$here/../../Helpers/garage-mcp.app/Contents/MacOS" && pwd -P)/garage-mcp"
+app="$(cd "$(dirname "$self")/../../.." 2>/dev/null && pwd -P)"
+if [ ! -x "$app/Contents/Helpers/$name.app/Contents/MacOS/$name" ]; then
+    # A copy outside the app.
+    lookup="ObjC.import('AppKit');"
+    lookup="$lookup var u = \$.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier('$bundle_id');"
+    lookup="$lookup u.isNil() ? '' : u.path.js"
+    app="$(osascript -l JavaScript -e "$lookup" 2>/dev/null)"
+    if [ ! -x "$app/Contents/Helpers/$name.app/Contents/MacOS/$name" ]; then
+        app="$(mdfind "kMDItemCFBundleIdentifier == '$bundle_id'" 2>/dev/null | head -n 1)"
+    fi
+    if [ ! -x "$app/Contents/Helpers/$name.app/Contents/MacOS/$name" ]; then
+        echo "$name: Garage ($bundle_id) is not installed, or macOS has not seen it yet; open it once." >&2
+        exit 127
+    fi
+fi
+helper="$(cd "$app/Contents/Helpers/$name.app/Contents/MacOS" && pwd -P)/$name"
 exec "$helper" "$@"

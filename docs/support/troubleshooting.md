@@ -148,7 +148,7 @@ Ensure your client sends `Host: 127.0.0.1:8787`. If accessing from a web applica
 
 **Solution**:
 1. Check `~/Library/Application Support/Claude/claude_desktop_config.json`.
-2. Confirm the `garage-rag` entry exists: either the URL `http://127.0.0.1:8787/mcp` (the default, which needs Garage running) or, for a `--stdio` registration, the path to `/Applications/Garage.app/Contents/MacOS/garage-mcp`. The **MCP Server** page shows each assistant as Connected, or offers **Update** when its entry points at an old address.
+2. Confirm the `garage-rag` entry exists: the command `/Applications/Garage.app/Contents/MacOS/garage-mcp` (the default, which starts Garage when needed) or, if you turned on the HTTP server, the URL `http://127.0.0.1:8787/mcp`, which needs Garage running. The **MCP Server** page shows each assistant as Connected, or offers **Update** when its entry points at an old address.
 3. Re-install using:
    ```bash
    garage mcp-install --target claude-desktop
