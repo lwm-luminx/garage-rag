@@ -142,7 +142,7 @@ final class DatabaseUITests: GarageUITestCase {
         let process = Process()
         process.executableURL = postgres.appendingPathComponent("bin/psql")
         process.arguments = [
-            "-h", "localhost", "-p", String(Self.postgresPort),
+            "-h", postgresSocketDirectory ?? "localhost", "-p", String(Self.postgresPort),
             "-U", NSUserName(), "-d", "garage-rag",
             "-X", "-tA", "-v", "ON_ERROR_STOP=1", "-c", sql,
         ]

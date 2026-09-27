@@ -13,13 +13,14 @@ from garage_rag.proto.garage_pb2 import (
     EnsureLlamaModelRequest,
     GetEmbeddingBatchesRequest,
     PingRequest,
+    SetSettingRequest,
     StatusRequest,
     VersionRequest,
 )
 from garage_rag.proto.garage_pb2_grpc import GarageServiceStub
-from garage_rag.service.auth import METADATA_KEY, TOKEN_ENV
+from garage_rag.service.auth import CONFIG_CHANGING_METHODS, METADATA_KEY, TOKEN_ENV, config_change_allowed
 from garage_rag.service.client import GarageClient
-from garage_rag.service.server import create_grpc_server
+from garage_rag.service.server import GarageRpcServicer, create_grpc_server
 
 TOKEN = "0123456789abcdef" * 4
 
@@ -173,3 +174,248 @@ def test_server_without_the_token_accepts_any_call(grpc_server):
         stub = GarageServiceStub(channel)
         assert stub.Ping(PingRequest(message="a")).message == "a"
         assert stub.Ping(PingRequest(message="b"), metadata=[(METADATA_KEY, "anything")]).message == "b"
+
+
+# ---------------------------------------------------------------------------
+# Config-changing methods (auth.CONFIG_CHANGING_METHODS)
+# ---------------------------------------------------------------------------
+
+
+def _set_setting(channel, metadata=None):
+    return GarageServiceStub(channel).SetSetting(SetSettingRequest(name="facts.model", value="m"), metadata=metadata)
+
+
+def test_every_config_changing_method_is_guarded():
+    for name in CONFIG_CHANGING_METHODS:
+        assert getattr(getattr(GarageRpcServicer, name), "__garage_config_change__", False), name
+    # Reads and the ingest facade are not: any caller the token admits may use them.
+    assert not hasattr(GarageRpcServicer.Search, "__garage_config_change__")
+    assert not hasattr(GarageRpcServicer.PersistDocument, "__garage_config_change__")
+
+
+def test_config_change_allowed_by_token_or_unix_socket():
+    assert config_change_allowed(token_configured=True, unix_socket=False)
+    assert config_change_allowed(token_configured=False, unix_socket=True)
+    assert config_change_allowed(token_configured=True, unix_socket=True)
+    assert not config_change_allowed(token_configured=False, unix_socket=False)
+
+
+def test_config_changes_are_refused_on_tcp_without_the_token(grpc_server):
+    """A port with no token is open to every account, so it cannot widen the egress allowlist."""
+    port, _ = grpc_server
+    with (
+        patch("garage_rag.ops.settings.set_setting") as set_setting,
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        with pytest.raises(grpc.RpcError) as excinfo:
+            _set_setting(channel)
+        assert excinfo.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        assert "Unix socket" in excinfo.value.details()
+        set_setting.assert_not_called()
+        # Reads are still answered.
+        assert GarageServiceStub(channel).Ping(PingRequest(message="a")).message == "a"
+
+
+def test_init_db_is_refused_on_tcp_without_the_token(grpc_server):
+    """``InitDb`` runs the SQL files of a caller-chosen ``schema_dir``, so it is guarded like a config write."""
+    from garage_rag.proto.garage_pb2 import InitDbRequest
+
+    port, _ = grpc_server
+    with (
+        patch("garage_rag.db.migrate.apply_migrations") as apply_migrations,
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        with pytest.raises(grpc.RpcError) as excinfo:
+            GarageServiceStub(channel).InitDb(InitDbRequest(schema_dir="/tmp/anyone-can-write-here"))
+        assert excinfo.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        apply_migrations.assert_not_called()
+
+
+def test_config_changes_are_answered_with_the_token(token_server):
+    from pathlib import Path
+
+    with (
+        patch("garage_rag.ops.settings.set_setting", return_value=(Path("/tmp/garage.json"), "m")) as set_setting,
+        grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel,
+    ):
+        response = _set_setting(channel, metadata=[(METADATA_KEY, TOKEN)])
+    assert response.value_json == '"m"'
+    set_setting.assert_called_once()
+
+
+def test_config_changes_are_answered_over_the_unix_socket(socket_dir, monkeypatch):
+    """The owner-only socket folder is the peer check when there is no token."""
+    import os
+    from pathlib import Path
+
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    path = os.path.join(socket_dir, "grpc")
+    server, _ = create_grpc_server(socket_path=path)
+    server.start()
+    try:
+        with (
+            patch("garage_rag.ops.settings.set_setting", return_value=(Path("/tmp/garage.json"), "m")),
+            grpc.insecure_channel(f"unix:{path}") as channel,
+        ):
+            assert _set_setting(channel).value_json == '"m"'
+    finally:
+        server.stop(grace=None)
+
+
+@pytest.fixture
+def socket_dir():
+    """A short folder for sockets: ``sun_path`` holds only 104 bytes on macOS (108 on Linux)."""
+    import shutil
+    import tempfile
+
+    directory = tempfile.mkdtemp(prefix="garage-", dir=_short_temp_root())
+    yield directory
+    shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_grpc_over_a_unix_socket(socket_dir):
+    """The app serves the facade on a socket in its App Group container, not on a TCP port."""
+    import os
+    import stat
+
+    from garage_rag.service.client import GarageClient
+
+    path = os.path.join(socket_dir, "s", "grpc")
+    server, _ = create_grpc_server(socket_path=path)
+    server.start()
+    try:
+        assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+        assert stat.S_IMODE(os.stat(os.path.dirname(path)).st_mode) == 0o700
+        with GarageClient(socket_path=path) as client:
+            assert not client.in_process
+            assert client.address == f"unix:{path}"
+            assert client.ping("over the socket").message == "over the socket"
+    finally:
+        server.stop(grace=None)
+
+
+def test_grpc_socket_replaces_a_stale_socket_but_nothing_else(socket_dir):
+    import os
+    import socket
+
+    path = os.path.join(socket_dir, "grpc")
+    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stale.bind(path)
+    stale.close()  # the file stays behind, as after a crash
+    server, _ = create_grpc_server(socket_path=path)
+    server.start()
+    server.stop(grace=None)
+
+    regular = os.path.join(socket_dir, "not-a-socket")
+    with open(regular, "w") as handle:
+        handle.write("keep me")
+    with pytest.raises(RuntimeError, match="bind"):
+        create_grpc_server(socket_path=regular)
+    with open(regular) as handle:
+        assert handle.read() == "keep me"
+
+
+def test_grpc_socket_is_not_taken_from_a_running_server(socket_dir):
+    """Two Garages (or an old and a new build) overlapping must not steal each other's socket."""
+    import os
+
+    from garage_rag.service.client import GarageClient
+
+    path = os.path.join(socket_dir, "grpc")
+    first, _ = create_grpc_server(socket_path=path)
+    first.start()
+    try:
+        with pytest.raises(RuntimeError, match="another server is listening"):
+            create_grpc_server(socket_path=path)
+        # The first server still answers on its socket.
+        with GarageClient(socket_path=path) as client:
+            assert client.ping("still here").message == "still here"
+    finally:
+        first.stop(grace=None)
+
+
+def test_grpc_socket_recovery_waits_for_the_lock(socket_dir):
+    """Probe, unlink and bind run under ``<socket>.lock``, so a server recovering the path holds off another."""
+    import fcntl
+    import os
+    import stat
+    import threading
+
+    path = os.path.join(socket_dir, "grpc")
+    lock_fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    bound = threading.Event()
+    result: list = []
+
+    def bind() -> None:
+        result.append(create_grpc_server(socket_path=path))
+        bound.set()
+
+    thread = threading.Thread(target=bind, daemon=True)
+    thread.start()
+    try:
+        assert not bound.wait(0.5), "the bind went ahead while another process held the recovery lock"
+        assert not os.path.exists(path)
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        assert bound.wait(10)
+        assert stat.S_ISSOCK(os.lstat(path).st_mode)
+    finally:
+        os.close(lock_fd)
+        thread.join(10)
+        for server, _ in result:
+            server.stop(grace=None)
+
+
+def test_grpc_socket_recovery_race_leaves_one_live_server(socket_dir):
+    """Two servers recovering the same stale socket at once: one binds, the other refuses, nobody unlinks a live one."""
+    import os
+    import socket
+    import threading
+
+    from garage_rag.service.client import GarageClient
+
+    path = os.path.join(socket_dir, "grpc")
+    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stale.bind(path)
+    stale.close()
+
+    outcomes: list = []
+    barrier = threading.Barrier(2)
+
+    def race() -> None:
+        barrier.wait()
+        try:
+            server, _ = create_grpc_server(socket_path=path)
+            server.start()
+            outcomes.append(server)
+        except RuntimeError as error:
+            outcomes.append(error)
+
+    threads = [threading.Thread(target=race) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    servers = [outcome for outcome in outcomes if not isinstance(outcome, Exception)]
+    errors = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+    try:
+        assert len(servers) == 1, outcomes
+        assert len(errors) == 1 and "another server is listening" in str(errors[0]), outcomes
+        with GarageClient(socket_path=path) as client:
+            assert client.ping("survivor").message == "survivor"
+    finally:
+        for server in servers:
+            server.stop(grace=None)
+
+
+def test_grpc_socket_path_must_be_absolute():
+    with pytest.raises(ValueError, match="absolute"):
+        create_grpc_server(socket_path="relative/grpc")
+
+
+def _short_temp_root() -> str:
+    """The temporary folder, or /tmp when its path leaves too little room in sun_path (104 bytes on macOS)."""
+    import tempfile
+
+    root = tempfile.gettempdir()
+    return root if len(root) <= 60 else "/tmp"

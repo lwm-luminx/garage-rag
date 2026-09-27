@@ -175,7 +175,7 @@ final class LlamaClientEndpointTests: XCTestCase {
 
     func testAClientOnTheEndpointReachesTheService() async throws {
         let engine = MockLlamaServerEngine(modelPath: "/tmp/mock-model.gguf", modelAlias: "test-model")
-        let service = LlamaXPCServiceDelegate(engine: engine, httpPort: 0)
+        let service = LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
         let client = LlamaClient(endpoint: service.anonymousListenerEndpoint())
 
         let ping = try await client.ping()

@@ -150,17 +150,52 @@ public enum GaragePostgresEndpoint {
         return .migrated
     }
 
+    /// The folder the server puts its socket in (`unix_socket_directories`), or nil when the socket's
+    /// path would be too long to bind and the server listens on loopback TCP instead (`GarageSockets`).
+    public static var socketDirectory: String? {
+        let directory = GarageSockets.directory
+        guard GarageSockets.path(for: GarageSockets.postgresName, in: directory) != nil else { return nil }
+        return directory.path
+    }
+
     /// `postgresql+psycopg://…` (SQLAlchemy, what garage_rag reads) or `postgresql://…`.
-    public static func connectionURL(password: String, scheme: String = "postgresql+psycopg") throws -> String {
+    ///
+    /// Over the socket: `…@/garage-rag?host=<socket folder>&port=14824` (libpq names the socket file
+    /// after the port, so the port still matters). Otherwise `…@localhost:14824/garage-rag`.
+    public static func connectionURL(
+        password: String,
+        scheme: String = "postgresql+psycopg",
+        socketDirectory: String? = GaragePostgresEndpoint.socketDirectory
+    ) throws -> String {
         guard let user = percentEncode(username), let secret = percentEncode(password) else {
             throw EndpointError.encoding
         }
-        return "\(scheme)://\(user):\(secret)@localhost:\(port)/\(databaseName)"
+        guard let socketDirectory else {
+            return "\(scheme)://\(user):\(secret)@localhost:\(port)/\(databaseName)"
+        }
+        guard let host = percentEncode(socketDirectory) else {
+            throw EndpointError.encoding
+        }
+        return "\(scheme)://\(user):\(secret)@/\(databaseName)?host=\(host)&port=\(port)"
     }
 
-    /// True when something accepts TCP connections on the Postgres port. A refused
-    /// connection returns at once, so this is cheap to poll.
+    /// The `-h` and `-p` arguments of the bundled Postgres command-line tools.
+    public static func clientArguments(socketDirectory: String? = GaragePostgresEndpoint.socketDirectory) -> [String] {
+        ["-h", socketDirectory ?? "localhost", "-p", String(port)]
+    }
+
+    /// True when the server accepts connections: on its socket, or on the TCP port when it has none.
+    /// A refused connection returns at once, so this is cheap to poll.
     public static func isAcceptingConnections() -> Bool {
+        if let socketDirectory {
+            return GarageSockets.isAcceptingConnections(
+                at: URL(fileURLWithPath: socketDirectory).appendingPathComponent(GarageSockets.postgresName).path
+            )
+        }
+        return isAcceptingTCPConnections()
+    }
+
+    private static func isAcceptingTCPConnections() -> Bool {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { close(fd) }

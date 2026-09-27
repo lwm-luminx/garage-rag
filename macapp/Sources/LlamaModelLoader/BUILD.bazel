@@ -3,6 +3,7 @@ load("@rules_swift//swift:swift.bzl", "swift_library")
 # LlamaModelLoader: loads llama_xpc models on demand over NSXPC (LlamaXPCService `ensureModel`).
 # Resolves a model's slug to its downloaded GGUF and load settings (shared with the Models page),
 # deduplicates concurrent loads, and hands the embedded Python a C entry point to call through ctypes.
+# LlamaInferenceBridge hands it two more, so llama_xpc requests go over NSXPC instead of HTTP.
 swift_library(
     name = "LlamaModelLoader",
     srcs = glob(["**/*.swift"]),

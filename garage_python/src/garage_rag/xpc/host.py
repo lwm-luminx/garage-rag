@@ -13,7 +13,8 @@ have it loaded and retries once. Two ways to reach an NSXPC client:
   ctypes, which releases the GIL while the Swift side waits for the load.
 * **Over gRPC.** Everything else (the ``garage``/``garage-mcp`` launchers
   that stdio MCP clients spawn, or ``garage`` from a venv while the app runs)
-  asks the app's ``GarageService`` (``EnsureLlamaModel`` on loopback), whose
+  asks the app's ``GarageService`` (``EnsureLlamaModel`` on the socket the
+  launchers export as ``GARAGE_GRPC_SOCKET``, else on loopback), whose
   handler runs in ``GarageXPCService`` and uses the loader installed there.
 
 Nothing here opens a network connection of its own: the C function is local
@@ -119,13 +120,14 @@ def ensure_model(alias: str, *, allow_remote: bool = True) -> str:
     return _ensure_via_grpc(alias)
 
 
-def _grpc_address() -> tuple[str, int]:
+def _grpc_address() -> tuple[str, int, str | None]:
+    """``(host, port, socket path)``: the app's socket (``GARAGE_GRPC_SOCKET``) wins over host and port."""
     host = os.environ.get("GARAGE_GRPC_HOST") or "127.0.0.1"
     try:
         port = int(os.environ.get("GARAGE_GRPC_PORT") or 50051)
     except ValueError:
         port = 50051
-    return host, port
+    return host, port, os.environ.get("GARAGE_GRPC_SOCKET") or None
 
 
 def _ensure_via_grpc(alias: str) -> str:
@@ -134,15 +136,15 @@ def _ensure_via_grpc(alias: str) -> str:
     # gazelle:ignore garage_rag.service.client
     from garage_rag.service.client import GarageClient
 
-    host, port = _grpc_address()
-    client = GarageClient(host=host, port=port, in_process=False)
+    host, port, socket_path = _grpc_address()
+    client = GarageClient(host=host, port=port, in_process=False, socket_path=socket_path)
     try:
         return client.ensure_llama_model(alias, timeout=_GRPC_LOAD_TIMEOUT_SECONDS).message
     except Exception as exc:  # grpc.RpcError; grpc itself is only imported by the facade's client
         code, details = _rpc_error_detail(exc)
         if code in (None, "UNAVAILABLE", "UNIMPLEMENTED", "DEADLINE_EXCEEDED"):
             raise ModelLoadError(
-                f"{alias} is not loaded, and the Garage app could not load it (gRPC {host}:{port}: "
+                f"{alias} is not loaded, and the Garage app could not load it (gRPC {client.address}: "
                 f"{details or code or exc}). Open Garage, which loads models on demand, or load {alias} "
                 f"on its Models page."
             ) from exc

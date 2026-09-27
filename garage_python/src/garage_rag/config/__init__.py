@@ -187,6 +187,19 @@ def is_loopback_url(url: str) -> bool:
         return False
 
 
+# Where the app's LlamaXPCService serves its llama-server API when it listens on a
+# Unix-domain socket (in the App Group container) rather than on loopback TCP. The
+# app's XPC services and launchers export it; ``embedding.llama_host`` then only
+# names the origin of the requests.
+LLAMA_SOCKET_ENV = "GARAGE_LLAMA_SOCKET"
+
+
+def llama_socket_path() -> str | None:
+    """The socket ``GARAGE_LLAMA_SOCKET`` names, or None. Only an absolute path counts."""
+    path = os.environ.get(LLAMA_SOCKET_ENV, "").strip()
+    return path if path.startswith("/") else None
+
+
 class SourceSpec(BaseModel):
     """A source declared in the config file.
 

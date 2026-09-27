@@ -53,7 +53,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, Self, cast
 
-from garage_rag.config import Settings, get_settings, is_loopback_url
+from garage_rag.config import Settings, get_settings, is_loopback_url, llama_socket_path
 from garage_rag.db.models import CorpusClass
 from garage_rag.inference.transport import Transport, TransportError, open_transport
 from garage_rag.net.egress import EgressBlocked
@@ -128,10 +128,16 @@ class Backend:
     # ``POST /v1/embeddings``. Parity between the two is unproven -- see
     # tests/test_inference_live.py -- so native stays the default.
     ollama_embed_route: Literal["native", "openai"] = "native"
+    # LlamaXPCService on its Unix-domain socket (``GARAGE_LLAMA_SOCKET``, which the
+    # app's processes export) rather than on ``base_url``'s TCP port; ``base_url``
+    # still names the origin every request is checked against.
+    socket_path: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "kind", BackendKind(self.kind))
         object.__setattr__(self, "base_url", _normalise_base_url(self.base_url))
+        if self.socket_path is None and self.kind is BackendKind.LLAMA_XPC and is_loopback_url(self.base_url):
+            object.__setattr__(self, "socket_path", llama_socket_path())
 
     @classmethod
     def from_settings(
@@ -162,6 +168,11 @@ class Backend:
     @property
     def label(self) -> str:
         return _LABELS[self.kind]
+
+    @property
+    def where(self) -> str:
+        """Where requests go, for messages: the socket when there is one, else ``base_url``."""
+        return f"unix:{self.socket_path}" if self.socket_path else self.base_url
 
     @property
     def is_local(self) -> bool:
@@ -387,7 +398,7 @@ class InferenceClient:
             except TransportError as exc:
                 if last:
                     raise InferenceUnreachable(
-                        f"cannot reach {self.backend.label} at {self.base_url}: {exc}", status_code=503
+                        f"cannot reach {self.backend.label} at {self.backend.where}: {exc}", status_code=503
                     ) from exc
             else:
                 if last or not (reply.status in _RETRY_STATUSES or reply.status >= 500):

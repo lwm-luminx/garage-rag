@@ -175,6 +175,8 @@ private let postgresCLIQueue = DispatchQueue(
 /// main actor is free while the tool runs.
 struct PostgresCommandRunner: Sendable {
     let port: Int
+    /// The server's socket folder, or nil when it listens on loopback TCP (`GaragePostgresEndpoint.socketDirectory`).
+    let socketDirectory: String?
     let databaseName: String
     let user: String
     let environment: [String: String]
@@ -201,7 +203,7 @@ struct PostgresCommandRunner: Sendable {
 
     /// Host/port/user flags every client tool in this cluster needs.
     var connectionArguments: [String] {
-        ["-h", "localhost", "-p", String(port), "-U", user]
+        GaragePostgresEndpoint.clientArguments(socketDirectory: socketDirectory) + ["-U", user]
     }
 
     func run(_ tool: String, arguments: [String]) async -> (status: Int32, output: String) {
@@ -304,16 +306,20 @@ final class PostgresService: ObservableObject {
     private let maxLogLines = 2000
     private var cachedPassword: String?
 
+    /// Where the server puts its socket, fixed for the life of the app (it follows `--data-directory`).
+    /// Nil when the socket's path would be too long, and the server listens on loopback TCP instead.
+    let socketDirectory: String? = GaragePostgresEndpoint.socketDirectory
+
     func connectionURL() throws -> String {
-        let username = try percentEncode(NSUserName())
-        let password = try percentEncode(postgresPassword())
-        return "postgresql+psycopg://\(username):\(password)@localhost:\(port)/\(databaseName)"
+        try GaragePostgresEndpoint.connectionURL(password: postgresPassword(), socketDirectory: socketDirectory)
     }
 
     func standardConnectionURLString() throws -> String {
-        let username = try percentEncode(NSUserName())
-        let password = try percentEncode(postgresPassword())
-        return "postgresql://\(username):\(password)@localhost:\(port)/\(databaseName)"
+        try GaragePostgresEndpoint.connectionURL(
+            password: postgresPassword(),
+            scheme: "postgresql",
+            socketDirectory: socketDirectory
+        )
     }
 
     func standardConnectionURL() throws -> URL {
@@ -343,6 +349,7 @@ final class PostgresService: ObservableObject {
     private func commandRunner() throws -> PostgresCommandRunner {
         PostgresCommandRunner(
             port: port,
+            socketDirectory: socketDirectory,
             databaseName: databaseName,
             user: NSUserName(),
             environment: runtimeEnvironment(password: try postgresPassword())
@@ -454,16 +461,38 @@ final class PostgresService: ObservableObject {
 
         try FileManager.default.createDirectory(at: Paths.logsDir, withIntermediateDirectories: true)
 
+        // Only this account's Garage processes may connect: the socket lives in an owner-only folder
+        // of the App Group container, and TCP is off. Loopback TCP is open to every account on the
+        // Mac, so it is used only when the socket's path is too long to bind (`GarageSockets`).
+        let listen: [String]
+        if let socketDirectory {
+            do {
+                try GarageSockets.ensureDirectory(URL(fileURLWithPath: socketDirectory, isDirectory: true))
+            } catch {
+                status = .failed("could not create the database's socket folder: \(error.localizedDescription)")
+                throw error
+            }
+            listen = [
+                "-c", "listen_addresses=",
+                "-c", "unix_socket_directories=\(Self.quotedSetting(socketDirectory))",
+                "-c", "unix_socket_permissions=0700",
+            ]
+        } else {
+            appendLog(LogLine(
+                stream: .stderr,
+                text: "The socket path in \(GarageSockets.directory.path) is too long; listening on localhost:\(port) instead",
+                source: "garage"
+            ))
+            listen = ["-c", "listen_addresses=localhost", "-c", "unix_socket_directories="]
+        }
         var postgresArguments = [
             "-D", Paths.pgDataDir.path,
             "-p", String(port),
-            "-c", "listen_addresses=localhost",
             "-c", "logging_collector=off",
-            "-c", "unix_socket_directories=",
             "-c", "log_line_prefix=%m [%p] ",
             "-c", "shared_memory_type=mmap",
             "-c", "dynamic_shared_memory_type=mmap",
-        ]
+        ] + listen
         // Apache AGE hooks the parser, so it has to be loaded into every backend, and
         // create_graph resolves its operator classes through search_path. ag_catalog goes
         // last so Garage's own unqualified names still land in public. Passed here rather
@@ -1067,7 +1096,7 @@ final class PostgresService: ObservableObject {
         while Date() < deadline {
             let (code, messages) = await PostgresCommandRunner.run(
                 tool: "pg_isready",
-                arguments: ["-h", "localhost", "-p", String(port)]
+                arguments: GaragePostgresEndpoint.clientArguments(socketDirectory: socketDirectory)
             )
             if code == 0 { return true }
             appendLog(LogLine(stream: .stdout, text: String(messages), source: "pg_isready"))
@@ -1157,12 +1186,10 @@ final class PostgresService: ObservableObject {
         return resolved.password
     }
 
-    private func percentEncode(_ value: String) throws -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
-        guard let encoded = value.addingPercentEncoding(withAllowedCharacters: allowed) else {
-            throw PostgresError.other("could not encode Postgres credential for its connection URL")
-        }
-        return encoded
+    /// A directory as one element of a list setting such as `unix_socket_directories`: double-quoted,
+    /// with embedded quotes doubled, so a comma in the path cannot split it (`SplitDirectoriesString`).
+    nonisolated static func quotedSetting(_ value: String) -> String {
+        "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 }
 

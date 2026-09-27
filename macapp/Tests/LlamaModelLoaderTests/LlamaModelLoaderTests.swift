@@ -290,7 +290,7 @@ final class LlamaModelLoaderEndpointTests: XCTestCase {
     }
 
     private static func service(_ engine: MockLlamaServerEngine) -> LlamaXPCServiceDelegate {
-        LlamaXPCServiceDelegate(engine: engine, httpPort: 0)
+        LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
     }
 
     func testWithoutAnEndpointTheLoaderSaysSo() async {
@@ -418,7 +418,7 @@ final class LlamaModelLoaderBridgeTests: XCTestCase {
 
     func testSelfTestPassesThroughAHandedOverEndpoint() throws {
         let engine = MockLlamaServerEngine(modelPath: "/tmp/mock-model.gguf", modelAlias: "test-model")
-        let llama = LlamaXPCServiceDelegate(engine: engine, httpPort: 0)
+        let llama = LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
         let store = GarageLlamaEndpointStore()
         store.set(llama.anonymousListenerEndpoint())
         let text = try LlamaModelLoaderBridge.selfTest(store: store).body()

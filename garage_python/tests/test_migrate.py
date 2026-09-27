@@ -1,5 +1,6 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+from urllib.parse import quote
 
 import pytest
 
@@ -56,6 +57,16 @@ def test_to_psycopg_conninfo() -> None:
         == "postgresql://user:pass@localhost:5432/test"
     )
     assert to_psycopg_conninfo("host=localhost port=5432 dbname=rag") == "host=localhost port=5432 dbname=rag"
+
+
+def test_to_psycopg_conninfo_keeps_a_socket_directory_with_spaces() -> None:
+    """The app's Postgres listens in the App Group container, whose path has a space."""
+    import psycopg.conninfo
+
+    socket_dir = "/Users/me/Library/Group Containers/TEAM.group.x/s"
+    url = f"postgresql+psycopg://me:p%40ss@/garage-rag?host={quote(socket_dir, safe='')}&port=14824"
+    info = psycopg.conninfo.conninfo_to_dict(to_psycopg_conninfo(url))
+    assert info == {"user": "me", "password": "p@ss", "dbname": "garage-rag", "host": socket_dir, "port": "14824"}
 
 
 def test_migration_files_uses_supplied_schema_directory(tmp_path: Path) -> None:

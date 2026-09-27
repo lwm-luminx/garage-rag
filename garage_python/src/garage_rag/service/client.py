@@ -111,6 +111,10 @@ class _InProcessServicerContext:
     def is_active(self) -> bool:
         return True
 
+    def peer(self) -> str:
+        """The caller is this process; gRPC would answer ``unix:`` or ``ipv4:...``."""
+        return "inprocess:"
+
 
 class _CallDetails(NamedTuple):
     method: str
@@ -170,21 +174,35 @@ class GarageClient:
         port: int | None = None,
         in_process: bool = True,
         servicer: GarageRpcServicer | None = None,
+        socket_path: str | None = None,
     ) -> None:
+        """``socket_path`` (a Unix-domain socket, as the app serves it) wins over ``host``/``port``."""
         self.host = host or "127.0.0.1"
         self.port = port or 50051
-        self.in_process = in_process and not (host and port)
+        self.socket_path = socket_path or None
+        self.in_process = in_process and not self.socket_path and not (host and port)
         self.servicer = servicer or GarageRpcServicer()
         self._channel: grpc.Channel | None = None
         self._stub: GarageServiceStub | None = None
 
+    @property
+    def address(self) -> str:
+        """Where the client connects, for messages: ``unix:<path>`` or ``host:port``."""
+        return f"unix:{self.socket_path}" if self.socket_path else f"{self.host}:{self.port}"
+
     def _get_stub(self) -> GarageServiceStub:
         if self._stub is None:
-            host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
-            server_address = f"{host}:{self.port}"
             # The facade carries document text (the ingest and embed workers persist through it).
-            egress.check_destination(f"http://{server_address}", purpose="grpc-facade", loopback_only=True)
-            self._channel = grpc.insecure_channel(server_address)
+            if self.socket_path:
+                # A Unix-domain socket never leaves the machine; only require a real path.
+                if not self.socket_path.startswith("/"):
+                    raise egress.EgressBlocked(f"grpc-facade: socket path must be absolute: {self.socket_path!r}")
+                target = f"unix:{self.socket_path}"
+            else:
+                host = f"[{self.host}]" if ":" in self.host and not self.host.startswith("[") else self.host
+                target = f"{host}:{self.port}"
+                egress.check_destination(f"http://{target}", purpose="grpc-facade", loopback_only=True)
+            self._channel = grpc.insecure_channel(target)
             self._stub = GarageServiceStub(authenticated_channel(self._channel))
         return self._stub
 

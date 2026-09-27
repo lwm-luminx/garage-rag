@@ -265,9 +265,11 @@ invocations, not from a pool inside the pipeline.
 Embedding is a single batching producer at 64 chunks per request: Ollama
 serializes model execution, so client fan-out buys contention, not throughput.
 The `llama_xpc` provider (embeddings and, with `--provider llama_xpc`, facts)
-talks to the app's `LlamaXPCService` over loopback HTTP (`llama_host`, a
-llama-server-compatible API). Models are loaded over NSXPC only, never over
-HTTP. When a request finds its model not resident (503 `no model loaded`, 404
+talks to the app's `LlamaXPCService` through a llama-server-compatible API:
+over NSXPC from the app's own XPC services (`garage_rag.inference.bridge`),
+otherwise over HTTP on its socket in the App Group container
+(`GARAGE_LLAMA_SOCKET`, which the app's processes export), with `llama_host`
+naming the origin. Models are loaded over NSXPC only, never over HTTP. When a request finds its model not resident (503 `no model loaded`, 404
 `model X is not loaded`), `LlamaXPCClient` asks `garage_rag.xpc.host` to load
 it and retries once:
 
@@ -333,8 +335,17 @@ configuration (never `garage.json`, never a log), and sends it on every call;
 `GarageClient` sends it whenever the variable is set. `EnsureLlamaModel` is the
 one exception, since a stdio `garage-mcp` an MCP client spawned has no token.
 Without the variable (`garage serve` by hand, the tests) the server takes any
-call. This keeps other local processes from driving `SetSetting`, `McpInstall`
-and the rest until the app reaches the server over XPC, with code-signing
+call that only reads or persists corpus data. The methods that write
+configuration (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`,
+`McpInstall`, `McpUninstall`, and `InitDb`, whose `schema_dir` names SQL the
+server runs) are stricter, because `SetSetting embedding.ollama_host` widens
+the egress allowlist and a caller's schema directory runs against the corpus: with no token they are
+answered only by a server bound to the owner-only Unix socket, whose folder mode
+admits this account alone, and a server on a loopback TCP port refuses them with
+`PERMISSION_DENIED` (`_config_change` in `service/server.py`; the decision is made
+from the server's binding, not from `ServicerContext.peer()`, which macOS gRPC does
+not report as `unix:` the way Linux does). This keeps other local processes from driving
+configuration until the app reaches the server over XPC, with code-signing
 checks and no socket.
 
 ## Local inference client

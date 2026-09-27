@@ -15,6 +15,7 @@ swift_library(
         "GarageInProcessServices.swift",
         "GarageLlamaEndpoint.swift",
         "GaragePostgresEndpoint.swift",
+        "GarageSockets.swift",
     ],
     module_name = "PythonXPCService_protocol",
     visibility = ["//visibility:public"],

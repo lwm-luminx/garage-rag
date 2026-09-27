@@ -86,6 +86,8 @@ public enum Launcher {
         let appBundle = containingAppBundle(of: executable)
         exportMCPLauncherPath(appBundle: appBundle, executable: executable)
         exportModelManifest(in: appBundle)
+        exportGRPCSocket()
+        GarageSockets.exportLlamaSocket()
 
         if entry.needsDatabase(CommandLine.arguments) {
             do {
@@ -157,6 +159,17 @@ public enum Launcher {
         if let path = mcpLauncherPath(appBundle: appBundle, executable: executable) {
             setenv("GARAGE_MCP_EXECUTABLE", path, 1)
         }
+    }
+
+    /// Tells Python where the app's gRPC server listens (`GARAGE_GRPC_SOCKET`), which on-demand model
+    /// loads (`EnsureLlamaModel`) go through, unless the caller chose a socket or port already. The app
+    /// listens on this socket in the App Group container, not on a TCP port.
+    private static func exportGRPCSocket() {
+        let environment = ProcessInfo.processInfo.environment
+        guard environment[GarageXPCConfigurationKey.grpcSocket] == nil,
+              environment[GarageXPCConfigurationKey.grpcPort] == nil,
+              let path = GarageSockets.path(for: GarageSockets.grpcName) else { return }
+        setenv(GarageXPCConfigurationKey.grpcSocket, path, 1)
     }
 
     /// Points Python at the models.json the app uses (widths, distance metrics): the one it last

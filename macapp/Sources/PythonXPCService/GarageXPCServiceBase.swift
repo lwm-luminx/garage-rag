@@ -63,7 +63,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         super.init()
         // Seed configuration from the process environment (launchd passes the app's environment through).
         let env = ProcessInfo.processInfo.environment
-        for key in [GarageXPCConfigurationKey.databaseURL, GarageXPCConfigurationKey.grpcHost, GarageXPCConfigurationKey.grpcPort, GarageXPCConfigurationKey.grpcToken, GarageXPCConfigurationKey.logLevel] {
+        for key in [GarageXPCConfigurationKey.databaseURL, GarageXPCConfigurationKey.grpcHost, GarageXPCConfigurationKey.grpcPort, GarageXPCConfigurationKey.grpcToken, GarageXPCConfigurationKey.grpcSocket, GarageXPCConfigurationKey.logLevel] {
             if let value = env[key], !value.isEmpty {
                 _configuration[key] = value
             }
@@ -104,6 +104,10 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         GarageXPCCrashHandler.install(serviceName: serviceName)
         GarageXPCOutputCapture.shared.configure(serviceName: serviceName, logFileName: logFileName)
         GarageXPCOutputCapture.shared.startCapturing()
+        if usesPython {
+            // Before Python starts, so `os.environ` has it: the llama_xpc provider's socket.
+            GarageSockets.exportLlamaSocket()
+        }
 
         let info = ProcessInfo.processInfo
         logger.info("\(self.serviceName, privacy: .public) starting (pid \(info.processIdentifier, privacy: .public), bundle \(Bundle.main.bundleIdentifier ?? "?", privacy: .public), macOS \(info.operatingSystemVersionString, privacy: .public))")
@@ -259,11 +263,15 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         configurationValue(GarageXPCConfigurationKey.databaseURL).map { XPCSitePathSetup.ensurePsycopgDatabaseURL($0) }
     }
 
-    public var grpcTarget: (host: String, port: Int)? {
+    /// The gRPC server's address as grpc names it: `unix:<path>` when a socket is configured, else `host:port`.
+    public var grpcTarget: String? {
+        if let socket = configurationValue(GarageXPCConfigurationKey.grpcSocket), !socket.isEmpty {
+            return "unix:\(socket)"
+        }
         guard let portText = configurationValue(GarageXPCConfigurationKey.grpcPort), let port = Int(portText), port > 0 else {
             return nil
         }
-        return (configurationValue(GarageXPCConfigurationKey.grpcHost) ?? "127.0.0.1", port)
+        return "\(configurationValue(GarageXPCConfigurationKey.grpcHost) ?? "127.0.0.1"):\(port)"
     }
 
     /// Merges options into the configuration and mirrors well-known keys into `os.environ` for Python code.
@@ -301,7 +309,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
             tests.append(GarageXPCStandardSelfTests.tlsTrust(runtime: runtime))
             tests.append(GarageXPCStandardSelfTests.libtesseract())
             tests.append(GarageXPCStandardSelfTests.database(urlProvider: { [weak self] in self?.databaseURL }))
-            tests.append(GarageXPCStandardSelfTests.grpcConnection(hostProvider: { [weak self] in self?.grpcTarget }))
+            tests.append(GarageXPCStandardSelfTests.grpcConnection(addressProvider: { [weak self] in self?.grpcTarget }))
         }
         tests.append(contentsOf: additionalSelfTests())
         return tests
@@ -425,6 +433,12 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     public func listener(_ listener: NSXPCListener, shouldAcceptNewConnection newConnection: NSXPCConnection) -> Bool {
         let clientPID = newConnection.processIdentifier
         logger.info("\(self.serviceName, privacy: .public): accepting connection from pid \(clientPID, privacy: .public)")
+
+        // Only processes signed by this build's team (the app, the other services, the launchers) may
+        // talk to the service; messages from anything else are dropped and the connection invalidated.
+        if let requirement = GarageXPCPeerRequirement.current {
+            newConnection.setCodeSigningRequirement(requirement)
+        }
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: GarageXPCLogReceiverProtocol.self)
         newConnection.exportedInterface = exportedInterface

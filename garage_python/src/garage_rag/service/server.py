@@ -10,6 +10,7 @@ command also calls.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import json
@@ -17,6 +18,7 @@ import logging
 import os
 import queue
 import signal
+import stat
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -121,7 +123,14 @@ from garage_rag.proto.garage_pb2_grpc import (
     GarageServiceServicer,
     add_GarageServiceServicer_to_server,
 )
-from garage_rag.service.auth import METADATA_KEY, UNAUTHENTICATED_METHODS, token_from_env, token_matches
+from garage_rag.service.auth import (
+    CONFIG_CHANGING_METHODS,
+    METADATA_KEY,
+    UNAUTHENTICATED_METHODS,
+    config_change_allowed,
+    token_from_env,
+    token_matches,
+)
 
 if TYPE_CHECKING:
     from garage_rag.ingest.scanner import SourceScanResult
@@ -256,11 +265,42 @@ def _enum_value(value: Any) -> str:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
+    """Refuse a config-changing method to a caller the server cannot vouch for.
+
+    See :data:`garage_rag.service.auth.CONFIG_CHANGING_METHODS`: with no token
+    configured, only a server bound to the owner-only Unix socket answers them
+    (``GarageRpcServicer.callers_vouched_for``). Applied outside ``_grpc_errors`` so
+    its abort is not re-mapped.
+    """
+    name = cast(Any, handler).__name__
+    assert name in CONFIG_CHANGING_METHODS, name
+
+    @functools.wraps(handler)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        servicer = cast("GarageRpcServicer", args[0])
+        context = cast(grpc.ServicerContext, args[2] if len(args) > 2 else kwargs["context"])
+        if not servicer.callers_vouched_for:
+            context.abort(
+                grpc.StatusCode.PERMISSION_DENIED,
+                f"{name} changes configuration; it needs the {METADATA_KEY} token or the Unix socket",
+            )
+        return handler(*args, **kwargs)
+
+    cast(Any, wrapper).__garage_config_change__ = True  # the test checks every listed method carries it
+    return wrapper
+
+
 class GarageRpcServicer(GarageServiceServicer):
     """gRPC servicer implementing ``GarageService``."""
 
-    def __init__(self, stop_event: threading.Event | None = None) -> None:
+    def __init__(self, stop_event: threading.Event | None = None, *, callers_vouched_for: bool = True) -> None:
         self.stop_event = stop_event or threading.Event()
+        # Whether every caller of this server is one it can vouch for (see
+        # ``_config_change``): the per-launch token guards it, or it is bound to the
+        # owner-only Unix socket. A servicer built directly, as the in-process client and
+        # the tests do, is trusted.
+        self.callers_vouched_for = callers_vouched_for
 
     # -----------------------------------------------------------------------
     # System / Lifecycle
@@ -683,6 +723,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # `sync` / `config import-sources` / `reconcile`)
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def AddSource(self, request: AddSourceRequest, context: grpc.ServicerContext) -> AddSourceResponse:
         """Register a source root, or update the one registered under the slug."""
@@ -699,6 +740,7 @@ class GarageRpcServicer(GarageServiceServicer):
             slug=result.slug, root=str(result.root), created=result.created, message=result.message
         )
 
+    @_config_change
     @_grpc_errors
     def RemoveSource(self, request: RemoveSourceRequest, context: grpc.ServicerContext) -> RemoveSourceResponse:
         """Deregister a source and delete its documents, chunks and vectors."""
@@ -774,6 +816,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join(result.lines),
         )
 
+    @_config_change
     @_grpc_errors
     def ImportSourcesToConfig(
         self, request: ImportSourcesToConfigRequest, context: grpc.ServicerContext
@@ -818,6 +861,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # Model operations
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def RegisterModel(self, request: RegisterModelRequest, context: grpc.ServicerContext) -> RegisterModelResponse:
         """Register an embedding model and create its table and index."""
@@ -850,6 +894,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join([row.message, *row.notes]),
         )
 
+    @_config_change
     @_grpc_errors
     def SetDefaultModel(
         self, request: SetDefaultModelRequest, context: grpc.ServicerContext
@@ -860,6 +905,7 @@ class GarageRpcServicer(GarageServiceServicer):
         set_default_model(request.slug)
         return SetDefaultModelResponse(message=f"default model = {request.slug}")
 
+    @_config_change
     @_grpc_errors
     def DropModel(self, request: DropModelRequest, context: grpc.ServicerContext) -> DropModelResponse:
         """Deregister a model and drop its vectors."""
@@ -1018,9 +1064,10 @@ class GarageRpcServicer(GarageServiceServicer):
     # Schema & settings
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def InitDb(self, request: InitDbRequest, context: grpc.ServicerContext) -> InitDbResponse:
-        """Apply the schema migrations (idempotent)."""
+        """Apply the schema migrations (idempotent). Guarded: ``schema_dir`` names SQL the server runs."""
         from garage_rag.config import get_settings
         from garage_rag.db.migrate import apply_migrations, redact_url
 
@@ -1036,6 +1083,7 @@ class GarageRpcServicer(GarageServiceServicer):
 
         return GetSettingResponse(name=request.name, value_json=json.dumps(get_setting(request.name)))
 
+    @_config_change
     @_grpc_errors
     def SetSetting(self, request: SetSettingRequest, context: grpc.ServicerContext) -> SetSettingResponse:
         """Change one setting in the config file, validated before writing."""
@@ -1048,6 +1096,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # MCP client registration
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def McpInstall(self, request: McpInstallRequest, context: grpc.ServicerContext) -> McpInstallResponse:
         """Register this MCP server with a client (no prompts: the app asked)."""
@@ -1087,6 +1136,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join(report.lines),
         )
 
+    @_config_change
     @_grpc_errors
     def McpUninstall(self, request: McpUninstallRequest, context: grpc.ServicerContext) -> McpUninstallResponse:
         """Remove this server from one client's config."""
@@ -1437,14 +1487,22 @@ def create_grpc_server(
     max_workers: int = 10,
     stop_event: threading.Event | None = None,
     stop_grace: float = 2.0,
+    socket_path: str | None = None,
 ) -> tuple[grpc.Server, GarageRpcServicer]:
     """Create and configure a gRPC server for Garage.
+
+    With ``socket_path`` the server listens on that Unix-domain socket instead of
+    ``host:port``. The app puts it in an owner-only folder of its App Group
+    container, so only this account's Garage processes reach it; a loopback TCP
+    port is open to every account on the Mac.
 
     When ``stop_event`` is given, setting it stops the server with ``stop_grace``
     seconds of grace; ``serve_grpc`` sets it from SIGINT/SIGTERM.
 
     When ``GARAGE_GRPC_TOKEN`` is set, every call must carry it as ``x-garage-token``
-    metadata (the app sets a fresh one each launch); unset, the server takes any call.
+    metadata (the app sets a fresh one each launch). Unset, the server takes any call
+    except the config-changing ones (``auth.CONFIG_CHANGING_METHODS``), which it then
+    answers only over the Unix socket, where the folder's mode is the peer check.
     """
     token = token_from_env()
     server = grpc.server(
@@ -1454,11 +1512,16 @@ def create_grpc_server(
         # years-long Messages thread outgrows gRPC's 4 MiB default.
         options=[("grpc.max_receive_message_length", MAX_REQUEST_BYTES)],
     )
-    servicer = GarageRpcServicer(stop_event=stop_event)
+    servicer = GarageRpcServicer(
+        stop_event=stop_event,
+        callers_vouched_for=config_change_allowed(token_configured=token is not None, unix_socket=bool(socket_path)),
+    )
     add_GarageServiceServicer_to_server(servicer, server)
 
-    server_address = f"{host}:{port}"
-    server.add_insecure_port(server_address)
+    if socket_path:
+        _bind_unix_socket(server, socket_path)
+    else:
+        server.add_insecure_port(f"{host}:{port}")
 
     if stop_event is not None:
         # The CLI loop polls the event, the Swift host calls server.stop() itself;
@@ -1471,16 +1534,92 @@ def create_grpc_server(
     return server, servicer
 
 
+def _bind_unix_socket(server: grpc.Server, socket_path: str) -> None:
+    """Binds ``server`` to ``socket_path``, owner-only.
+
+    A socket file left by a server that died is removed first (gRPC will not
+    bind over it). A socket something still answers on is another server's (a
+    second Garage, or an older build still running): unlinking it would take the
+    path from under that server's clients, so the bind fails instead. Anything
+    else at the path is left alone and the bind fails too.
+
+    The probe, the unlink and the bind run under an exclusive lock on the file
+    beside the socket (``<socket_path>.lock``), so two servers recovering the
+    same stale socket at once take turns: the second sees the first's live
+    socket and fails, instead of unlinking it after both probes found the old
+    one dead.
+    """
+    path = Path(socket_path)
+    if not path.is_absolute():
+        raise ValueError(f"gRPC socket path must be absolute: {socket_path!r}")
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with _socket_recovery_lock(path):
+        try:
+            if stat.S_ISSOCK(path.lstat().st_mode):
+                if _unix_socket_is_stale(socket_path):
+                    path.unlink()
+                else:
+                    raise RuntimeError(
+                        f"another server is listening on the gRPC socket {socket_path}; not binding over it"
+                    )
+        except FileNotFoundError:
+            pass
+        if not server.add_insecure_port(f"unix:{socket_path}"):
+            raise RuntimeError(f"could not bind the gRPC socket {socket_path}")
+        path.chmod(0o600)
+
+
+@contextlib.contextmanager
+def _socket_recovery_lock(socket_path: Path) -> Iterator[None]:
+    """Holds ``<socket_path>.lock`` exclusively across probe, unlink and bind.
+
+    The lock file is left in place: it lives in the owner-only socket folder and
+    any process on the path takes the same one, so removing it would let a
+    third server lock a fresh inode while another still holds the old one.
+    """
+    import fcntl  # advisory file lock, not a network client
+
+    lock_path = socket_path.with_name(socket_path.name + ".lock")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _unix_socket_is_stale(socket_path: str) -> bool:
+    """True when nothing accepts connections on the socket file: a connect is refused."""
+    import socket  # a probe of this server's own listening path, not egress (test_egress_block lists it)
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+        probe.settimeout(1.0)
+        try:
+            probe.connect(socket_path)
+        except ConnectionRefusedError:
+            return True
+        except FileNotFoundError:
+            return True
+        except OSError:
+            return False  # in use, or not ours to judge: leave it alone and let the bind fail
+    return False
+
+
 def serve_grpc(
     host: str = "127.0.0.1",
     port: int = 50051,
     stop_event: threading.Event | None = None,
+    socket_path: str | None = None,
 ) -> None:
     """Start the gRPC server and block until stopped."""
     stop_evt = stop_event or threading.Event()
-    server, servicer = create_grpc_server(host=host, port=port, stop_event=stop_evt)
+    server, servicer = create_grpc_server(host=host, port=port, stop_event=stop_evt, socket_path=socket_path)
     server.start()
-    print(f"Garage gRPC server listening on {host}:{port} (PID: {os.getpid()})")
+    where = f"unix:{socket_path}" if socket_path else f"{host}:{port}"
+    print(f"Garage gRPC server listening on {where} (PID: {os.getpid()})")
 
     def handle_signal(sig, frame):
         print("\nShutting down gRPC server...")

@@ -277,28 +277,31 @@ final class StatusPagePresentationTests: XCTestCase {
     // MARK: - Helper services
 
     func testGRPCRowReadsItsState() {
-        let running = ServiceRowPresentation.grpc(status: .running, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let running = ServiceRowPresentation.grpc(status: .running, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(running.name, "Index Manager")
         XCTAssertEqual(running.state, .running)
         XCTAssertEqual(running.stateTitle, "Running")
         XCTAssertTrue(running.detail.hasPrefix("On 127.0.0.1:50051 · "), running.detail)
         XCTAssertEqual(running.tint, .green)
 
-        let tested = ServiceRowPresentation.grpc(status: .running, host: "127.0.0.1", port: 50051, lastTest: (isSuccess: true, summary: "5 queries"))
+        let tested = ServiceRowPresentation.grpc(status: .running, address: "127.0.0.1:50051", lastTest: (isSuccess: true, summary: "5 queries"))
         XCTAssertEqual(tested.detail, "On 127.0.0.1:50051 · test passed")
 
-        let failedTest = ServiceRowPresentation.grpc(status: .running, host: "127.0.0.1", port: 50051, lastTest: (isSuccess: false, summary: "GetStats: unavailable"))
+        let failedTest = ServiceRowPresentation.grpc(status: .running, address: "127.0.0.1:50051", lastTest: (isSuccess: false, summary: "GetStats: unavailable"))
         XCTAssertEqual(failedTest.detail, "GetStats: unavailable")
         XCTAssertTrue(failedTest.detailIsError)
 
-        let failed = ServiceRowPresentation.grpc(status: .failed("bind: address in use"), host: "127.0.0.1", port: 50051, lastTest: nil)
+        let failed = ServiceRowPresentation.grpc(status: .failed("bind: address in use"), address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(failed.state, .unreachable)
         XCTAssertEqual(failed.detail, "bind: address in use")
         XCTAssertTrue(failed.detailIsError)
 
-        let stopped = ServiceRowPresentation.grpc(status: .stopped, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let stopped = ServiceRowPresentation.grpc(status: .stopped, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(stopped.state, .stopped)
         XCTAssertEqual(stopped.stateTitle, "Stopped")
+
+        let onSocket = ServiceRowPresentation.grpc(status: .running, address: "a private socket", lastTest: nil)
+        XCTAssertTrue(onSocket.detail.hasPrefix("On a private socket · "), onSocket.detail)
     }
 
     func testXPCRowReadsPingReportAndTest() {
@@ -331,7 +334,7 @@ final class StatusPagePresentationTests: XCTestCase {
             ]
         )
         let skipping = ServiceRowPresentation.xpc(service, report: withSkips, test: nil)
-        XCTAssertEqual(skipping.detail, "Running · 12 ms · 1 passed, 1 skipped")
+        XCTAssertEqual(skipping.detail, "Running · 12 ms · 1 passed, 1 skipped (Database Connection)")
         XCTAssertFalse(skipping.detailIsError, "a skipped self test is not a failure")
 
         let failedTest = ServiceDiagnosticTestResult(
@@ -596,16 +599,16 @@ final class StatusPagePresentationTests: XCTestCase {
     }
 
     func testGRPCOnItsWayUpOrDownIsChecking() {
-        let starting = ServiceRowPresentation.grpc(status: .starting, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let starting = ServiceRowPresentation.grpc(status: .starting, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(starting.state, .checking)
         XCTAssertEqual(starting.detail, "Starting with the database…")
 
-        let stopping = ServiceRowPresentation.grpc(status: .stopping, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let stopping = ServiceRowPresentation.grpc(status: .stopping, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(stopping.state, .checking)
         XCTAssertEqual(stopping.detail, "Stopping…")
 
         // A test result only speaks for a running backend.
-        let stoppedAfterATest = ServiceRowPresentation.grpc(status: .stopped, host: "127.0.0.1", port: 50051, lastTest: (isSuccess: false, summary: "old"))
+        let stoppedAfterATest = ServiceRowPresentation.grpc(status: .stopped, address: "127.0.0.1:50051", lastTest: (isSuccess: false, summary: "old"))
         XCTAssertFalse(stoppedAfterATest.detailIsError)
         XCTAssertTrue(stoppedAfterATest.detail.hasPrefix("Starts with the database."), stoppedAfterATest.detail)
     }

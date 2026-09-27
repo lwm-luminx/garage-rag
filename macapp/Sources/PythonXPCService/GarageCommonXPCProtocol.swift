@@ -22,7 +22,7 @@ public protocol GarageCommonXPCServiceProtocol: NSObjectProtocol {
     func getServiceInfo(with reply: @escaping (String, Int32, Double, String?) -> Void)
 
     /// Updates runtime configuration used by the service and its self tests (for example `GARAGE_DATABASE_URL`,
-    /// `GARAGE_GRPC_HOST`, `GARAGE_GRPC_PORT`). Keys are merged into the existing configuration.
+    /// `GARAGE_GRPC_HOST`, `GARAGE_GRPC_PORT`, `GARAGE_GRPC_SOCKET`). Keys are merged into the existing configuration.
     func updateConfiguration(_ options: [String: String], with reply: @escaping (Bool, String?) -> Void)
 
     /// Runs a service diagnostic check returning success status, summary, and details.
@@ -248,6 +248,8 @@ public enum GarageXPCConfigurationKey {
     /// The app's per-launch token for the gRPC server (`x-garage-token`, `garage_rag.service.auth`).
     /// A secret: never log it or write it to garage.json.
     public static let grpcToken = "GARAGE_GRPC_TOKEN"
+    /// The Unix-domain socket the gRPC server listens on (`GarageSockets`); wins over host and port.
+    public static let grpcSocket = "GARAGE_GRPC_SOCKET"
     public static let logLevel = "GARAGE_LOG_LEVEL"
     /// Directory the Python server works in, and so where it finds `./garage.json`: the
     /// app's working directory, as when the app ran the `garage` CLI there.
