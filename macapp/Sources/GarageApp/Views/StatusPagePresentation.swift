@@ -784,6 +784,17 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         state == .running || state == .unreachable
     }
 
+    /// The colour of the row's Restart button when a restart is what the row calls for: red for a
+    /// helper that cannot be reached, yellow for one that runs but fails its tests, and none when
+    /// it is healthy or on its way somewhere.
+    var restartTint: Color? {
+        switch state {
+        case .unreachable: .red
+        case .running: detailIsError ? .yellow : nil
+        case .checking, .restarting, .stopped, .unknown: nil
+        }
+    }
+
     /// The state in a word, for a row whose box already names the service.
     var stateTitle: String {
         switch state {

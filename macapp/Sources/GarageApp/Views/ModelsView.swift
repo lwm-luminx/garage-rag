@@ -493,12 +493,15 @@ struct ModelsView: View {
                     ProgressView().controlSize(.small)
                 }
                 if !llama.models.isEmpty {
-                    Button("Unload All") {
+                    Button {
                         pendingUnloadAlias = nil
                         showUnloadConfirmation = true
+                    } label: {
+                        Label("Unload All", systemImage: "eject.fill")
                     }
                     .controlSize(.small)
                     .disabled(llama.isBusy)
+                    .help("Unload every model from the built-in engine")
                 }
                 Button("Refresh") {
                     Task { await llama.refreshStatus() }
@@ -561,12 +564,17 @@ struct ModelsView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("Unload") {
+            Button {
                 pendingUnloadAlias = alias
                 showUnloadConfirmation = true
+            } label: {
+                Label("Unload", systemImage: "eject.fill")
+                    .labelStyle(.iconOnly)
             }
             .controlSize(.small)
             .disabled(llama.isBusy)
+            .help("Unload '\(alias)' from the built-in engine")
+            .accessibilityIdentifier("models.llama.resident.\(alias).unload")
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)

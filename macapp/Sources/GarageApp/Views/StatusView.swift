@@ -274,26 +274,40 @@ struct StatusView: View {
             .controlSize(.small)
             .accessibilityIdentifier("status.addSource")
         case .updateEverything(let enabled):
-            Button("Update Everything") {
+            // Icon buttons, as the service rows have: the box's title and detail already say
+            // what the library is, so the actions only need their symbols and a tooltip.
+            Button {
                 Task { await appState.updateEverything() }
+            } label: {
+                Label("Update Everything", systemImage: "arrow.triangle.2.circlepath")
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(!enabled)
-            .help("Scan and read every source, index the new chunks with every model, then glean facts from the new documents")
+            .help("Update Everything: scan and read every source, index the new chunks with every model, then glean facts from the new documents")
             .accessibilityIdentifier("status.updateEverything")
         case .stop(let isStopping):
-            Button(isStopping ? "Stopping…" : "Stop") {
+            Button {
                 // cancelAll stops a backfill or distillation only when a whole-pipeline run started
                 // it; one started from Models has its own runner to cancel.
                 appState.cancelAll()
                 appState.backfill.cancel()
                 appState.enrichFacts.cancel()
+            } label: {
+                if isStopping {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Stop", systemImage: "stop.fill")
+                        .labelStyle(.iconOnly)
+                }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(.red)
             .disabled(isStopping)
+            .help(isStopping ? "Stopping…" : "Stop the run after its current step")
+            .accessibilityLabel(isStopping ? "Stopping" : "Stop")
             .accessibilityIdentifier("status.stop")
         }
     }

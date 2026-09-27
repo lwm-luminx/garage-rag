@@ -313,6 +313,7 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(plain.name, "Garage Backend")
         XCTAssertEqual(plain.detail, "Running · 12 ms")
         XCTAssertFalse(plain.detailIsError)
+        XCTAssertNil(plain.restartTint, "a healthy helper does not ask for a restart")
 
         let python = GarageXPCPythonStatus(state: "ready")
         let report = GarageXPCStatusReport(
@@ -325,6 +326,7 @@ final class StatusPagePresentationTests: XCTestCase {
         let reported = ServiceRowPresentation.xpc(service, report: report, test: nil)
         XCTAssertEqual(reported.detail, "Running · 12 ms · 1 passed, 1 failed")
         XCTAssertTrue(reported.detailIsError, "a failed self test colours the line")
+        XCTAssertEqual(reported.restartTint, .yellow, "a failed self test suggests a restart")
 
         let withSkips = GarageXPCStatusReport(
             serviceName: "garage", bundleIdentifier: service.bundleId, pid: 42, uptimeSeconds: 10, lifecycle: "ready", python: python,
@@ -351,6 +353,7 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(down.state, .unreachable)
         XCTAssertEqual(down.detail, "Can't be reached: Couldn't communicate with a helper application.")
         XCTAssertEqual(down.tint, .red)
+        XCTAssertEqual(down.restartTint, .red, "an unreachable helper needs a restart")
 
         let checking = XPCServiceInfo(id: "embed-xpc", name: "", bundleId: "", serviceDescription: "", state: .checking)
         XCTAssertTrue(ServiceRowPresentation.xpc(checking, report: nil, test: nil).isBusy)
