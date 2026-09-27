@@ -656,20 +656,39 @@ def rag_agent(
     ] = _agent.DEFAULT_MAX_STEPS,
     max_tokens: Annotated[int, Field(ge=16, le=4096, description="Cap on each model reply.")] = 768,
     temperature: Annotated[float, Field(ge=0.0, le=2.0, description="Sampling temperature.")] = 0.2,
+    search_first: Annotated[
+        bool,
+        Field(
+            description=(
+                "Search the corpus for the question before the model's first reply, so a small "
+                "model starts from the user's documents instead of answering from its training."
+            )
+        ),
+    ] = True,
 ) -> AgentResult:
     """Answer a question by letting the local model search and read the corpus itself.
 
     The model named by facts.model on facts.provider gets this server's read-only
     tools (rag_search, rag_get_document, rag_list_sources, rag_list_authors,
     rag_stats) to call, in a loop, until it answers; the result carries the
-    answer, the steps it took and the documents it saw. Use rag_ask for one
+    answer, the steps it took and the documents it saw. By default the question is
+    searched first and the model starts from those hits. Use rag_ask for one
     retrieval and a cited answer, rag_agent when the question needs more than one
     look. Runs on the local model, so nothing leaves the machine; an off-box
     Ollama or LM Studio host never receives a communication.
     """
     model = LocalChatModel()
     tools = _agent.tools_from_server(mcp)
-    return _agent.run_agent(question, tools, model, max_steps=max_steps, max_tokens=max_tokens, temperature=temperature)
+    return _agent.run_agent(
+        question,
+        tools,
+        model,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        search_first=search_first,
+        owner=get_settings().self_name,
+    )
 
 
 # Names that ``ipaddress`` cannot classify; every 127.x.x.x literal is handled
