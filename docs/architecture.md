@@ -233,7 +233,7 @@ the `garage` CLI) or HTTP (`garage mcp-serve`, or the macOS app's MCP helper).
 Every tool returns a dataclass, because under MCP 2.0
 dataclass returns map field-for-field while scalars and lists get wrapped in
 `{"result": ...}`. `rag_search`, `rag_get_document`, `rag_list_sources`,
-`rag_list_authors` and `rag_stats` read the corpus; `rag_ask` and
+`rag_list_authors` and `rag_stats` read the corpus; `rag_ask`, `rag_agent` and
 `rag_generate` also generate text, entirely on a local model.
 
 `rag_ask` runs the same retrieval as `rag_search`, numbers the excerpts (each
@@ -249,7 +249,21 @@ selects among the models the engine holds), `ollama` to the Ollama server on
 through the egress guard. None is a cloud API; retrieved communications may
 appear in the prompt but never leave the machine: `rag_ask` runs each excerpt's
 class through the guard, which refuses a communication for a host that is not
-loopback (see `docs/privacy.md`). `garage ask` is the
+loopback (see `docs/privacy.md`).
+
+`rag_agent` (`mcp_server/agent.py`) lets the model drive instead: it gets the
+five read-only tools above, described with their input schemas in the system
+prompt, and calls them by replying with one JSON object
+(`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
+user turn, and a reply that is not a tool call is the answer. Calls travel in the
+conversation rather than as the OpenAI `tools` field because the app's llama engine
+renders the chat template from role/content pairs alone, and the one format then
+works on Ollama and LM Studio too. Arguments are validated against the tool's own
+schema, as `tools/call` validates them, and an error goes back to the model to
+correct. The result carries the answer, the steps (`AgentStep`) and one
+`AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+Its content rule: when the model host is not loopback, `rag_search` is restricted
+to documents and code and `rag_get_document` refuses a communication. `garage ask` is the
 CLI front door to both tools, with `--json` for the app.
 
 ## Idempotency

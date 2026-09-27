@@ -21,7 +21,20 @@ final class MenuBarStatusTests: XCTestCase {
         XCTAssertFalse(status.isPulsing)
         XCTAssertEqual(status.headline, "Database stopped")
         XCTAssertFalse(status.canSearch)
+        XCTAssertFalse(status.canAsk)
         XCTAssertFalse(status.canIngest)
+    }
+
+    // MARK: - Ask Garage
+
+    func testAskNeedsTheDatabaseAndTheMCPServer() {
+        XCTAssertTrue(MenuBarStatus(database: .running, mcp: .running(clients: 0)).canAsk)
+        XCTAssertFalse(MenuBarStatus(database: .running, mcp: .stopped).canAsk)
+        XCTAssertFalse(MenuBarStatus(database: .running, mcp: .starting).canAsk)
+        XCTAssertFalse(MenuBarStatus(database: .running, mcp: .failed("port in use")).canAsk)
+        XCTAssertFalse(MenuBarStatus(database: .starting, mcp: .running(clients: 1)).canAsk)
+        // Search only needs the database.
+        XCTAssertTrue(MenuBarStatus(database: .running, mcp: .stopped).canSearch)
     }
 
     func testStartingDatabasePulsesBehindAClosedDoor() {

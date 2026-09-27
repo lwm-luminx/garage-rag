@@ -325,6 +325,13 @@ struct MenuBarStatus: Equatable {
         database == .running
     }
 
+    /// "Ask Garage" runs `rag_agent` on the MCP server, so it needs the server up as well as the
+    /// database. The local model loads on demand, so it is not a condition.
+    var canAsk: Bool {
+        guard canSearch, case .running = mcp else { return false }
+        return true
+    }
+
     // MARK: - Menu bar item
 
     /// The menu bar icon: a garage door, closed while the database is down and open while it

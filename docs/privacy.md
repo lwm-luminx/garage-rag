@@ -84,7 +84,9 @@ anything else when the caller says what it is sending:
   stored facts are touched.
 - **Answers** (`rag_ask`) run every retrieved excerpt's class through the guard
   before building a prompt for an off-box Ollama or LM Studio, so a communication in the
-  results aborts the call.
+  results aborts the call. `rag_agent`, where the model searches for itself, restricts
+  its searches to documents and code and refuses to read a communication when the
+  model host is not loopback, so the model never sees one.
 - **Embeddings** — backfill, in-process or through the embed worker, asks
   `egress.allows_communications` and leaves chunks of communication documents
   out for a provider that is not on this machine. They stay unembedded for that
@@ -230,7 +232,7 @@ network you do not control.
 The MCP server answers whichever client you connect: Claude Desktop, Claude
 Code, Cursor, or anything else you register. An agent receives the excerpts its
 searches return (`rag_search`, `rag_get_document`, and the answers from `rag_ask` /
-`rag_generate`), only those, not the whole index. Most agents run their model in
+`rag_agent` / `rag_generate`), only those, not the whole index. Most agents run their model in
 the cloud, so they send those excerpts, with your conversation, to their model
 provider. That includes excerpts from Messages and Mail if you have indexed
 them: the MCP tools serve communications like any other content, and the egress

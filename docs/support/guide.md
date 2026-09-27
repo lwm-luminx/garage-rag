@@ -187,7 +187,7 @@ Garage can distill each document into short, self-contained facts, each tied to 
 
 <h2 id="mcp-integration">5. Model Context Protocol (MCP) Integration</h2>
 
-Garage implements the **Model Context Protocol (MCP) 2.0**, allowing AI assistants to query your local knowledge base with `rag_search`, `rag_get_document`, `rag_list_sources`, `rag_list_authors`, `rag_stats`, `rag_ask` and `rag_generate`.
+Garage implements the **Model Context Protocol (MCP) 2.0**, allowing AI assistants to query your local knowledge base with `rag_search`, `rag_get_document`, `rag_list_sources`, `rag_list_authors`, `rag_stats`, `rag_ask`, `rag_agent` and `rag_generate`.
 
 The easiest way to connect an assistant is the **MCP Server** page: each assistant Garage finds has a **Connect** button.
 

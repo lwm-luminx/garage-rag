@@ -2,7 +2,10 @@ load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "garage-mcp",
-    srcs = ["server.py"],
+    srcs = [
+        "agent.py",
+        "server.py",
+    ],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
@@ -27,6 +30,7 @@ py_library(
     name = "mcp_server",
     srcs = [
         "__init__.py",
+        "agent.py",
         "install.py",
         "server.py",
     ],
