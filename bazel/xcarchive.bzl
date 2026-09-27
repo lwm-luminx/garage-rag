@@ -14,7 +14,8 @@ _ASSEMBLE = """set -euo pipefail
 bundle="$1"
 out="$2"
 shift 2
-# The rest: the app's dSYM bundles (--apple_generate_dsym), for crash symbolication.
+# The rest: the app's dSYM bundles (--apple_generate_dsym), for crash symbolication. Every other
+# Mach-O in the app gets one from dsymutil below.
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -41,6 +42,33 @@ fi
 
 for dsym in "$@"; do
     ditto "$dsym" "$out/dSYMs/$(basename "$dsym")"
+done
+
+# App Store Connect asks for a dSYM matching the UUID of every Mach-O in the app. Bazel makes them
+# for the Swift targets only; the rest (Postgres, ICU, Python, the extension modules) are built by
+# their own build systems, so dsymutil makes one here from whatever debug information the binary
+# keeps. Symlinks and binaries whose UUIDs already have a dSYM are skipped.
+known="$work/uuids"
+: >"$known"
+for dsym in "$out"/dSYMs/*.dSYM; do
+    [ -d "$dsym" ] && dwarfdump --uuid "$dsym" | awk '{print $2}' >>"$known"
+done
+find "$archived" -type f -print0 | while IFS= read -r -d '' file; do
+    case "$(file -b "$file")" in *Mach-O*) ;; *) continue ;; esac
+    uuids="$(dwarfdump --uuid "$file" 2>/dev/null | awk '{print $2}')"
+    [ -n "$uuids" ] || continue
+    missing=0
+    for uuid in $uuids; do grep -qx "$uuid" "$known" || missing=1; done
+    [ "$missing" = 1 ] || continue
+    dsym="$out/dSYMs/$(basename "$file").dSYM"
+    n=1
+    while [ -e "$dsym" ]; do n=$((n + 1)); dsym="$out/dSYMs/$(basename "$file")-$n.dSYM"; done
+    if dsymutil --quiet "$file" -o "$dsym" 2>/dev/null; then
+        printf '%s\n' $uuids >>"$known"
+    else
+        echo "xcarchive: no dSYM for ${file#$archived/}" >&2
+        rm -rf "$dsym"
+    fi
 done
 
 plist="$archived/Contents/Info.plist"
