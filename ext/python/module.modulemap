@@ -1,5 +1,5 @@
 module Python [system] {
     header "Python.h"
-    link "python3.13"
+    link "python3.14"
     export *
 }
