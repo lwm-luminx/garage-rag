@@ -180,6 +180,10 @@ extension ModelsView {
         if role == .distillation, appState.factsModel == item.slug {
             StatusBadge("IN USE", tint: .green)
         }
+        if role == .distillation, let preset = item.presetEntry, !preset.isForDistillation {
+            StatusBadge("CHAT ONLY", tint: .orange)
+                .help("Tagged for inference (chat, rag_ask) but not for distilling facts")
+        }
         if item.provider != .llamaXPC {
             StatusBadge(item.provider.displayName.uppercased(), tint: item.provider == .ollama ? .orange : .teal)
         }

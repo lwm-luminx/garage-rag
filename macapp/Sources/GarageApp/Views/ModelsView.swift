@@ -284,16 +284,18 @@ struct ModelsView: View {
 
     // MARK: - Fact distillation
 
-    /// The `fact_distil` presets, wrapped so the download/load helpers written for
-    /// embedding rows apply unchanged.
+    /// The `inference_models` presets, those tagged for distillation first, wrapped so the
+    /// download/load helpers written for embedding rows apply unchanged.
     var distillationModelItems: [UnifiedModelItem] {
-        appState.factDistilPresets.map { UnifiedModelItem(preset: $0) }
+        let presets = appState.inferencePresets
+        return (presets.filter(\.isForDistillation) + presets.filter { !$0.isForDistillation })
+            .map { UnifiedModelItem(preset: $0) }
     }
 
     /// The facts model garage.json names, when it is not one of the presets on the page.
     var unlistedFactsModel: String? {
         let slug = appState.factsModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !slug.isEmpty, !appState.factDistilPresets.contains(where: { $0.slug == slug }) else { return nil }
+        guard !slug.isEmpty, !appState.inferencePresets.contains(where: { $0.slug == slug }) else { return nil }
         return slug
     }
 
@@ -331,7 +333,7 @@ struct ModelsView: View {
                     emptyState(
                         symbol: "text.quote",
                         title: "No distillation presets",
-                        detail: "models.json lists no fact_distil models. Facts and rag_ask stay off until one is configured."
+                        detail: "models.json lists no inference models. Facts and rag_ask stay off until one is configured."
                     )
                 } else {
                     VStack(spacing: 8) {

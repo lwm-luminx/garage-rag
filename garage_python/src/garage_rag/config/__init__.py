@@ -436,7 +436,7 @@ class Settings(BaseModel):
             "Slug or alias of the local model used for fact distillation "
             "('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. "
             "For llama_xpc this is the alias the app loaded the model under (the "
-            "'fact_distil' preset slug); for ollama it is the Ollama model name; for "
+            "'inference_models' preset slug); for ollama it is the Ollama model name; for "
             "lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b')."
         ),
     )

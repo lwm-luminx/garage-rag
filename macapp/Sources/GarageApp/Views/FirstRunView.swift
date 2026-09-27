@@ -808,6 +808,15 @@ struct FirstRunSelectModelsPage: View {
                         if let ctx = preset.contextSize, ctx > 0 {
                             FirstRunBadge(text: "\(ctx) CTX", tint: .secondary)
                         }
+                        if preset.toolCalling {
+                            FirstRunBadge(text: "TOOLS", tint: .purple)
+                                .help("Trained to call tools, so it can use Garage's MCP tools")
+                        }
+                        if let region = preset.originRegion {
+                            FirstRunBadge(text: region, tint: .secondary)
+                                .help("Made by \(preset.originSummary)")
+                                .accessibilityLabel("Origin \(preset.originSummary)")
+                        }
                         if registered {
                             FirstRunBadge(text: "REGISTERED", tint: .teal)
                         }

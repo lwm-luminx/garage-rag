@@ -355,6 +355,60 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(factDistilPresets.contains { $0.slug == "bge-m3" })
     }
 
+    func testInferenceModelsAreTaggedForDistillation() throws {
+        let json = """
+        {
+            "text_embedding": [{"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024}],
+            "inference_models": [
+                {"name": "Both", "slug": "both", "tags": ["inference", "distillation"]},
+                {"name": "Chat", "slug": "chat", "tags": ["inference"]}
+            ]
+        }
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_models_tags_\(UUID().uuidString).json")
+        try json.data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        XCTAssertEqual(GarageConfigLoader.loadInferencePresets(fileURL: tempURL).map(\.slug), ["both", "chat"])
+        XCTAssertEqual(GarageConfigLoader.loadFactDistilPresets(fileURL: tempURL).map(\.slug), ["both"])
+        // An untagged entry (the older fact_distil list) counts as a distillation model.
+        XCTAssertTrue(ModelPresetEntry(name: "Legacy", slug: "legacy").isForDistillation)
+    }
+
+    func testPresetsCarryOriginAndToolCalling() throws {
+        let json = """
+        {
+            "text_embedding": [
+                {"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024, "maker": "BAAI", "country_of_origin": "CN"}
+            ],
+            "inference_models": [
+                {"name": "Granite", "slug": "granite-4.1-8b", "tool_calling": true, "maker": "IBM", "country_of_origin": "US"},
+                {"name": "Mistral", "slug": "mistral-small", "maker": "Mistral AI", "country_of_origin": "fr"},
+                {"name": "Legacy", "slug": "legacy"}
+            ]
+        }
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_models_origin_\(UUID().uuidString).json")
+        try json.data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        XCTAssertEqual(GarageConfigLoader.loadModelPresets(fileURL: tempURL).first?.originRegion, "CN")
+        let facts = Dictionary(uniqueKeysWithValues: GarageConfigLoader.loadInferencePresets(fileURL: tempURL).map { ($0.slug, $0) })
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originRegion, "US")
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originSummary, "IBM, US")
+        XCTAssertTrue(facts["granite-4.1-8b"]?.toolCalling ?? false)
+        // An EU member state is grouped as EU, whatever the case of its code.
+        XCTAssertEqual(facts["mistral-small"]?.originRegion, "EU")
+        XCTAssertFalse(facts["mistral-small"]?.toolCalling ?? true)
+        // An entry from before the fields existed still decodes, with neither badge.
+        XCTAssertNil(facts["legacy"]?.maker)
+        XCTAssertNil(facts["legacy"]?.originRegion)
+        XCTAssertFalse(facts["legacy"]?.toolCalling ?? true)
+        XCTAssertEqual(ModelOriginRegion.region(for: "GB"), "GB")
+        // A stated origin zone wins over the one derived from the country.
+        XCTAssertEqual(ModelPresetEntry(name: "M", countryOfOrigin: "GB", originZone: "uk", slug: "m").originRegion, "UK")
+    }
+
     func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {
         // A pre-grouping models.json (flat array) has no fact_distil section at all, and there is
         // no built-in list to fall back on: models.json is the one catalog.
@@ -452,7 +506,7 @@ final class GarageConfigLoaderTests: XCTestCase {
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_models_\(UUID().uuidString).json")
         let manifest = GarageConfigLoader.loadModelManifest(candidates: [fakeURL])
         XCTAssertNil(manifest.textEmbedding)
-        XCTAssertNil(manifest.factDistil)
+        XCTAssertNil(manifest.inference)
     }
 
     func testTheBundledCatalogIsTheFallback() {
@@ -482,6 +536,12 @@ final class GarageConfigLoaderTests: XCTestCase {
 
         let factDistil = GarageConfigLoader.loadFactDistilPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(factDistil.contains { $0.slug == "gemma2-2b" })
+        // gpt-oss is an inference model only: its reasoning text would land in the facts.
+        let inference = GarageConfigLoader.loadInferencePresets(fileURL: try committedCatalogURL())
+        XCTAssertTrue(inference.contains { $0.slug == "gpt-oss-20b" })
+        XCTAssertFalse(factDistil.contains { $0.slug == "gpt-oss-20b" })
+        // Chat models are no longer offered as embedding presets.
+        XCTAssertFalse(presets.contains { $0.slug == "mistral-7b-instruct-v0.3" })
     }
 
     /// docs/.data/models.json, from the test bundle's resources or Bazel's runfiles.

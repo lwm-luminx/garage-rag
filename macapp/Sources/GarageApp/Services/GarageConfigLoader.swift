@@ -64,12 +64,24 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     /// The model's page, where its license and model card can be read. The catalog names it;
     /// without that, a Hugging Face repository id in `modelId` points at its page there.
     public let modelCardURLString: String?
+    /// Who made the model (`maker`, e.g. "IBM").
+    public let maker: String?
+    /// Where its maker is based, as an ISO 3166-1 alpha-2 code (`country_of_origin`, e.g. "US").
+    public let countryOfOrigin: String?
+    /// The zone its maker is based in, which the model is grouped under (`origin_zone`: US, EU, CN, UK,
+    /// CH, OTHER). It says where the model comes from, not that it complies with any rules.
+    public let originZone: String?
     public let slug: String
     public let modelRef: String?
     public let provider: String?
     public let nativeDims: Int?
     public let defaultDims: Int?
     public let contextSize: Int?
+    /// The model was trained to call tools, so it can drive Garage's MCP tools.
+    public let toolCalling: Bool
+    /// What an `inference_models` entry is good for: "inference" (chat, rag_ask), "distillation"
+    /// (gleaning facts), or both. Nil for an embedding model or a legacy `fact_distil` entry.
+    public let tags: [String]?
     public let downloadModelId: String?
     public let downloadFile: String?
     public let sha256: String?
@@ -84,12 +96,17 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case name
         case modelId = "model_id"
         case modelCardURLString = "model_card_url"
+        case maker
+        case countryOfOrigin = "country_of_origin"
+        case originZone = "origin_zone"
         case slug
         case modelRef = "model_ref"
         case provider
         case nativeDims = "native_dims"
         case defaultDims = "default_dims"
         case contextSize = "context_size"
+        case toolCalling = "tool_calling"
+        case tags
         case downloadModelId = "download_model_id"
         case downloadFile = "download_file"
         case sha256
@@ -102,12 +119,17 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name: String,
         modelId: String? = nil,
         modelCardURLString: String? = nil,
+        maker: String? = nil,
+        countryOfOrigin: String? = nil,
+        originZone: String? = nil,
         slug: String,
         modelRef: String? = nil,
         provider: String? = "llama_xpc",
         nativeDims: Int? = nil,
         defaultDims: Int? = nil,
         contextSize: Int? = 8192,
+        toolCalling: Bool = false,
+        tags: [String]? = nil,
         downloadModelId: String? = nil,
         downloadFile: String? = nil,
         sha256: String? = nil,
@@ -118,12 +140,17 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.name = name
         self.modelId = modelId
         self.modelCardURLString = modelCardURLString
+        self.maker = maker
+        self.countryOfOrigin = countryOfOrigin
+        self.originZone = originZone
         self.slug = slug
         self.modelRef = modelRef ?? slug
         self.provider = provider
         self.nativeDims = nativeDims
         self.defaultDims = defaultDims
         self.contextSize = contextSize
+        self.toolCalling = toolCalling
+        self.tags = tags
         self.downloadModelId = downloadModelId
         self.downloadFile = downloadFile
         self.sha256 = sha256
@@ -137,6 +164,9 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name = try container.decode(String.self, forKey: .name)
         modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
         modelCardURLString = try container.decodeIfPresent(String.self, forKey: .modelCardURLString)
+        maker = try container.decodeIfPresent(String.self, forKey: .maker)
+        countryOfOrigin = try container.decodeIfPresent(String.self, forKey: .countryOfOrigin)
+        originZone = try container.decodeIfPresent(String.self, forKey: .originZone)
         slug = try container.decode(String.self, forKey: .slug)
         let decodedModelRef = try container.decodeIfPresent(String.self, forKey: .modelRef)
         modelRef = decodedModelRef ?? slug
@@ -144,6 +174,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         nativeDims = try container.decodeIfPresent(Int.self, forKey: .nativeDims)
         defaultDims = try container.decodeIfPresent(Int.self, forKey: .defaultDims)
         contextSize = try container.decodeIfPresent(Int.self, forKey: .contextSize) ?? 8192
+        toolCalling = try container.decodeIfPresent(Bool.self, forKey: .toolCalling) ?? false
+        tags = try container.decodeIfPresent([String].self, forKey: .tags)
         downloadModelId = try container.decodeIfPresent(String.self, forKey: .downloadModelId)
         downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
@@ -179,12 +211,51 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         return nil
     }
 
+    /// Whether the model is good for distilling facts: tagged "distillation", or untagged, as every
+    /// entry of the older `fact_distil` list was a distillation model.
+    public var isForDistillation: Bool {
+        guard let tags else { return true }
+        return tags.contains("distillation")
+    }
+
+    /// The origin badge: the catalog's origin zone, else one derived from the country (US, EU,
+    /// CN or the country code); nil when the catalog names neither.
+    public var originRegion: String? {
+        if let zone = originZone?.trimmingCharacters(in: .whitespaces).uppercased(), !zone.isEmpty {
+            return zone
+        }
+        return ModelOriginRegion.region(for: countryOfOrigin)
+    }
+
+    /// "IBM, US" or "Mistral AI, FR", for the origin badge's tooltip.
+    public var originSummary: String {
+        [maker, countryOfOrigin].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
     public var isEmbeddingModel: Bool {
         if let dims = defaultDims ?? nativeDims, dims > 0 {
             return true
         }
         let lower = (name + " " + slug).lowercased()
         return lower.contains("embed") || lower.contains("bge") || lower.contains("arctic")
+    }
+}
+
+/// Groups a model's country of origin (an ISO 3166-1 alpha-2 code) for its badge when the catalog
+/// gives no `origin_zone`.
+public enum ModelOriginRegion {
+    /// EU member states, grouped as one region.
+    static let euCountries: Set<String> = [
+        "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+        "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+    ]
+
+    /// US, EU, CN, or the country code itself for anywhere else; nil for no usable code.
+    public static func region(for country: String?) -> String? {
+        guard let code = country?.trimmingCharacters(in: .whitespaces).uppercased(), code.count == 2 else {
+            return nil
+        }
+        return euCountries.contains(code) ? "EU" : code
     }
 }
 
@@ -233,15 +304,22 @@ public struct GarageConfigFile: Codable {
 }
 
 /// The on-disk shape of `models.json`: presets grouped by what they're used for,
-/// rather than one flat list. `text_embedding` feeds the embedding model
-/// picker; `fact_distil` feeds the (generative) fact-distillation model picker.
+/// rather than one flat list. `text_embedding` feeds the embedding model picker;
+/// `inference_models` holds the generative models, each tagged for inference, distillation or
+/// both. `fact_distil` is the older name of that list, still read when `inference_models` is absent.
 private struct ModelsManifest: Codable {
     let textEmbedding: [ModelPresetEntry]?
+    let inferenceModels: [ModelPresetEntry]?
     let factDistil: [ModelPresetEntry]?
 
     enum CodingKeys: String, CodingKey {
         case textEmbedding = "text_embedding"
+        case inferenceModels = "inference_models"
         case factDistil = "fact_distil"
+    }
+
+    var inference: [ModelPresetEntry]? {
+        inferenceModels ?? factDistil
     }
 }
 
@@ -277,10 +355,14 @@ public enum GarageConfigLoader {
         loadModelManifest(fileURL: fileURL).textEmbedding ?? []
     }
 
-    /// Loads fact-distillation model presets (generative models used to glean facts
-    /// out of documents) from models.json's `fact_distil` section, from the same files.
+    /// Loads every generative model preset (models.json's `inference_models`), from the same files.
+    public static func loadInferencePresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
+        loadModelManifest(fileURL: fileURL).inference ?? []
+    }
+
+    /// Loads the inference presets tagged for fact distillation (gleaning facts out of documents).
     public static func loadFactDistilPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
-        loadModelManifest(fileURL: fileURL).factDistil ?? []
+        loadInferencePresets(fileURL: fileURL).filter(\.isForDistillation)
     }
 
     /// The files `loadModelPresets` reads, in order: `fileURL`, then `Paths.modelsJSON`
@@ -297,12 +379,12 @@ public enum GarageConfigLoader {
 
     /// Resolves models.json (or a candidate config file) into its two preset
     /// groups. Returns `nil` for a group that no source provided at all.
-    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?) {
         loadModelManifest(candidates: modelManifestCandidates(fileURL: fileURL))
     }
 
     /// The first of `candidates` that exists and decodes as a catalog, or `(nil, nil)`.
-    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?) {
         for url in candidates {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             if let manifest = decodeModelManifest(from: url) {
@@ -320,14 +402,14 @@ public enum GarageConfigLoader {
         return !(manifest.textEmbedding ?? []).isEmpty
     }
 
-    private static func decodeModelManifest(from url: URL) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?)? {
+    private static func decodeModelManifest(from url: URL) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?)? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
 
-        // 1. Current models.json shape: presets grouped by use (text_embedding / fact_distil).
+        // 1. Current models.json shape: presets grouped by use (text_embedding / inference_models).
         if let manifest = try? decoder.decode(ModelsManifest.self, from: data),
-           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.factDistil ?? []).isEmpty {
-            return (manifest.textEmbedding, manifest.factDistil)
+           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.inference ?? []).isEmpty {
+            return (manifest.textEmbedding, manifest.inference)
         }
 
         // 2. Legacy flat array of ModelPresetEntry (pre-grouping models.json).
