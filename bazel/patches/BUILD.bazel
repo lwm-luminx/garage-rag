@@ -1,0 +1,2 @@
+# Patches for Bazel modules. See README.md; none is applied by MODULE.bazel at the moment.
+exports_files(["rules_apple_versioned_macos_framework.patch"])
