@@ -85,7 +85,9 @@ check_forwarder() {
         fail "$name: forwarder is a Mach-O, not a script"
     fi
     head -n 1 "$script" | grep -q '^#!/bin/sh' || fail "$name: forwarder does not start with #!/bin/sh"
-    grep -q "Helpers/$helper/Contents/MacOS" "$script" || fail "$name: forwarder does not name Helpers/$helper"
+    # The forwarder names its helper as Helpers/$name.app, with name="<helper>" set above it.
+    { grep -q "^name=\"${helper%.app}\"$" "$script" && grep -qF 'Helpers/$name.app/Contents/MacOS' "$script"; } ||
+        fail "$name: forwarder does not name Helpers/$helper"
     pass "$name: Contents/MacOS/$name -> Resources/launchers/$name, forwarding to Helpers/$helper"
 }
 
