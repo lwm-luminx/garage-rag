@@ -124,7 +124,8 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
 
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: the `python` job (ruff and the whole venv pytest suite, with a Postgres service),
-    `swiftcheck`, `format`, `gazelle` and `buildifier`.
+    `python-freethreaded` (the same suite on free-threaded CPython 3.14t, informational until the
+    app ships on it), `swiftcheck`, `format`, `gazelle` and `buildifier`.
   - On macOS: `lint`, which analyzes Apple targets.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
@@ -139,6 +140,11 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
   source on `windows-latest`, from the pins in `ext/*/*.MODULE.bazel` (read by
   `tools/windows/fetch_ext.py`), with each project's own MSVC build rather than Bazel. It then runs
   `test_postgres.py` on the built interpreter against the built server.
+- **`.github/workflows/known-answers.yaml`** (on changes under `ext/llama_cpp`, `ext/nomic_embed`,
+  `tools/llama`) rebuilds `llama-embedding` and regenerates the nomic-embed Q2_K reference vectors
+  (`tools/llama/known_answers.py`). The reference is the Apple silicon CPU job; Metal and a Linux
+  x86-64 job are held to `MIN_COSINE` (0.98) against it, because Q2_K is not bit-exact across
+  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 
@@ -218,9 +224,11 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
 
 - **Walk** (`ingest/walker.py`) — stats candidates without opening them; pruning happens during
   descent so excluded subtrees are never entered.
-- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (e.g. Dropbox online-only
-  stubs) are zero-byte; reading one triggers a download, so this is budget-metered
-  (`MaterializationBudget`). Idempotent ingest means hitting the budget cap is fine, not a failure.
+- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (Dropbox and iCloud online-only
+  stubs; dataless under File Provider) download when read, so this is budget-metered
+  (`MaterializationBudget`), and on macOS the dataless-file I/O policy is off for the pipeline's
+  thread so only the materialize thread can start a download. Idempotent ingest means hitting the
+  budget cap is fine, not a failure.
 - **Extract** (`extract/`) — dispatch by extension with lazy imports (Markdown/`text.py`,
   PDF/`pdf.py` with `pypdf`→`pdfplumber` per-page escalation, Office/`office.py`,
   images/`image.py` via Tesseract only, in-process through libtesseract's C API (`extract/tesseract.py`
@@ -404,7 +412,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   which would stop the new instance's Postgres by pid file and XPC services by executable name). It
   calls `terminate:` from the run loop, not from a main-actor task, where AppKit's wait for a
   `.terminateLater` reply deadlocks. The new instance waits for the old one to exit, then initializes a
-  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`).
+  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`;
+  the Database page shows `isFinishingDatabaseReset` as a progress line until the outcome arrives).
 - Postgres is stopped with SIGINT (fast shutdown), never SIGTERM: a smart shutdown waits on the XPC
   services' pooled connections until the grace period ends in SIGKILL, leaving no shutdown checkpoint.
 - `OperationRunner` runs app operations as gRPC calls (`GarageGRPCService+Operations.swift`) with a

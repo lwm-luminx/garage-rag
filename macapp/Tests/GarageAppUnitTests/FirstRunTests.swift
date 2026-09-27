@@ -148,6 +148,21 @@ final class FirstRunTests: XCTestCase {
         }
     }
 
+    func testAbsoluteRootsAreCheckedAsTheyAre() {
+        // The Dropbox folder info.json names may be on another volume; `~/…` stays home-relative.
+        let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("/Volumes/Data/Dropbox", home: home), "/Volumes/Data/Dropbox")
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("~/Documents", home: home), "/Users/tester/Documents")
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("~", home: home), "/Users/tester")
+
+        var checked: [String] = []
+        let templates = FirstRunSourceTemplate.builtIn(home: home, exists: { checked.append($0); return true }, readable: { _ in true })
+        let dropbox = templates.first { $0.id == "dropbox" }
+        XCTAssertNotNil(dropbox)
+        XCTAssertTrue(checked.contains(FirstRunSourceTemplate.resolvedPath(SourcePreset.dropbox.spec.root, home: home)))
+        XCTAssertFalse(checked.contains { $0.hasPrefix("/Users/tester//") || $0.contains("/Users/tester/Volumes") })
+    }
+
     func testSpecMatchesTheAddSourceRPC() {
         let template = FirstRunSourceTemplate(
             id: "documents", title: "Documents", subtitle: "", symbol: "doc", slug: "documents", root: "~/Documents",

@@ -38,10 +38,19 @@ Pruning happens during descent, so excluded subtrees are never entered:
 
 ### 2. Materialize (`ingest/materialize.py`)
 
-Cloud placeholders are zero-byte stubs; *reading* one asks the provider to
-download it. Materialization is therefore metered by a `MaterializationBudget`
-capping files and bytes per run. Hitting the cap is not a failure — because
-ingest is idempotent, repeated bounded runs converge on the full corpus.
+Cloud placeholders are stubs (zero bytes from the old Dropbox client, dataless
+files with their real size from File Provider clients such as iCloud Drive and
+today's Dropbox); *reading* one asks the provider to download it. Materialization
+is therefore metered by a `MaterializationBudget` capping files and bytes per
+run. Hitting the cap is not a failure — because ingest is idempotent, repeated
+bounded runs converge on the full corpus.
+
+On macOS the budget is also enforced by the kernel: `ingest_source` turns the
+`IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES` I/O policy off for its thread, so a
+read of a dataless file anywhere else in the pipeline (an extractor, a hash)
+fails with `EDEADLK` instead of downloading, and the pipeline records that file
+as a placeholder. Only the materialize thread turns the policy back on, for the
+one budgeted read.
 
 A placeholder that was indexed before the sync client evicted it is skipped
 without a download while its `mtime` (and its size, when the stub reports one)

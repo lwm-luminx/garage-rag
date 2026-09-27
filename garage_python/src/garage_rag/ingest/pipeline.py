@@ -54,9 +54,14 @@ from garage_rag.ingest.gateway import (
     SourceContext,
     get_storage_gateway,
 )
-from garage_rag.ingest.materialize import MaterializationBudget, ensure_local
+from garage_rag.ingest.materialize import (
+    MaterializationBudget,
+    ensure_local,
+    refused_dataless_read,
+    refusing_dataless_reads,
+)
 from garage_rag.ingest.scanner import scan_source
-from garage_rag.ingest.walker import Candidate, WalkStats, default_exclude_prefixes, walk
+from garage_rag.ingest.walker import Candidate, SourceUnavailable, WalkStats, default_exclude_prefixes, walk
 
 log = logging.getLogger(__name__)
 
@@ -263,6 +268,20 @@ def ingest_one(
         )
         return
     except (ExtractionError, OSError) as exc:
+        if refused_dataless_read(exc):
+            # The kernel declined to download it: a placeholder the budget did not cover
+            # (materialization is off outside the materialize thread), not a broken file.
+            log.info("Placeholder file %s left in the cloud; no document written", candidate.uri)
+            counters.placeholders += 1
+            gateway.record_placeholder(
+                source_ctx.run_id,
+                source_ctx.slug,
+                candidate.uri,
+                candidate.mtime.timestamp(),
+                candidate.path.stem,
+                "not materialized",
+            )
+            return
         counters.note_error(f"{candidate.path.name}: {exc}")
         log.warning("Extraction failed for %s: %s", candidate.uri, exc)
         gateway.record_extract_failed(
@@ -423,7 +442,35 @@ def ingest_source(
     progress=None,
     is_cancelled=None,
 ) -> tuple[IngestCounters, WalkStats, MaterializationBudget]:
-    """Walk and index one source, recording coverage for reconciliation."""
+    """Walk and index one source, recording coverage for reconciliation.
+
+    Runs with dataless-file materialization off on this thread, so the only read that
+    can download a cloud placeholder is the budgeted one in ``materialize``.
+    """
+    with refusing_dataless_reads():
+        return _ingest_source(
+            session_factory,
+            source_slug,
+            gateway=gateway,
+            include_code=include_code,
+            limit=limit,
+            force=force,
+            progress=progress,
+            is_cancelled=is_cancelled,
+        )
+
+
+def _ingest_source(
+    session_factory=None,
+    source_slug: str = "",
+    *,
+    gateway: IngestStorageGateway | None = None,
+    include_code: bool = False,
+    limit: int | None = None,
+    force: bool = False,
+    progress=None,
+    is_cancelled=None,
+) -> tuple[IngestCounters, WalkStats, MaterializationBudget]:
     gw = get_storage_gateway(session_factory=session_factory, gateway=gateway)
 
     counters = IngestCounters()
@@ -455,6 +502,13 @@ def ingest_source(
     scan_result = scan_source(source_ctx, include_code=include_code)
     counters.total_items = scan_result.item_count
     counters.item_type = scan_result.item_type
+    if scan_result.details.get("root_problem"):
+        # A root that cannot be read would walk as empty and finish "complete" with nothing
+        # seen. That is not up to date; it is a failed run, and the previous scan's count stays.
+        problem = scan_result.error or "source root unavailable"
+        counters.note_error(problem)
+        _finalize(gw, run_id, source_slug, counters, budget, completed=False)
+        raise SourceUnavailable(problem)
     log.info(
         "Source scan completed for %r in %.2fs: found %d %s",
         source_slug,

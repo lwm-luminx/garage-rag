@@ -3,8 +3,9 @@
 LlamaXPCService's "Embedding Known Answers" self-test and //macapp/Tests/LlamaEngineTests embed
 the inputs below with the bundled nomic-embed-text Q2_K GGUF and compare against these vectors.
 The reference comes from llama.cpp's own `llama-embedding`, built for the CPU from the exact
-source //ext/llama_cpp pins, run on the exact GGUF //ext/nomic_embed pins, one input per run.
-That matches how LlamaCppEngine embeds:
+source //ext/llama_cpp pins, run on the exact GGUF //ext/nomic_embed pins, one input per run,
+on Apple silicon: the only CPU the app ships on, and the one the self-test runs on. That matches
+how LlamaCppEngine embeds:
 
 - tokenization with special tokens added and parsed (`common_tokenize(..., true, true)`, the
   engine's `tokenize(addSpecial: true, parseSpecial: true)`), so BERT's [CLS]/[SEP] frame the text;
@@ -16,8 +17,13 @@ That matches how LlamaCppEngine embeds:
     tools/llama/gen_known_answers.sh --metal --out x.json # the same on Metal, to compare
 
 `--compare FILE` prints the cosine of each vector against FILE's and fails below the tolerance
-stored there, which is how CI checks a regenerated reference and measures Metal against CPU.
-Standard library only; needs cmake and a C++ compiler.
+stored there (MIN_COSINE), which is how CI checks a regenerated reference and measures Metal
+and Linux x86-64 against it. Q2_K vectors are not bit-exact across backends: Metal keeps the
+activations in float where the CPU quantizes them to Q8_K, and the AVX2 and NEON kernels
+accumulate in different orders. Measured against the Apple silicon CPU reference, Metal on the
+same machine reaches 0.988 at worst and Linux x86-64 about 0.99, so the tolerance is 0.98:
+close enough that a broken tokenizer, pooling or normalization, which fall far below it, still
+fail. Standard library only; needs cmake and a C++ compiler.
 """
 
 from __future__ import annotations
@@ -71,9 +77,11 @@ ORDERINGS = [
     {"higher": ["query", "document"], "lower": ["query", "cat_a"]},
 ]
 
-# Metal and the CPU differ slightly: the CPU quantizes activations to Q8_K for its K-quant dot
-# products and Metal does not, and the two sum in different orders. See the tolerance note below.
-MIN_COSINE = 0.999
+# The cosine every backend and CPU architecture must reach against the reference. The Apple
+# silicon CPU is the reference; the same machine's Metal measured 0.988 at worst (Metal keeps
+# activations in float where the CPU quantizes them to Q8_K for Q2_K dot products) and Linux
+# x86-64 about 0.99 (AVX2 and NEON accumulate differently). A pipeline error gives far less.
+MIN_COSINE = 0.98
 MAX_NORM_ERROR = 1e-3
 
 
@@ -199,8 +207,10 @@ def generate(work: Path, metal: bool) -> dict[str, object]:
             "max_norm_error": MAX_NORM_ERROR,
             "why": (
                 "Not bit-exact: Metal keeps activations in float where the CPU quantizes them to "
-                "Q8_K for Q2_K dot products, and the backends sum in different orders. A broken "
-                "tokenizer, pooling or normalization drops the cosine far below 0.99."
+                "Q8_K for Q2_K dot products, and the backends and CPU architectures sum in "
+                "different orders. Against the Apple silicon CPU reference, Metal measured 0.988 "
+                "at worst and Linux x86-64 about 0.99. A broken tokenizer, pooling or "
+                "normalization drops the cosine far below that."
             ),
         },
         "orderings": ORDERINGS,
@@ -235,9 +245,12 @@ def render(known: dict[str, object]) -> str:
 
 
 def compare(produced: dict[str, object], reference_path: Path) -> int:
+    """Cosine of each produced vector against the reference's; 0 when all reach the file's tolerance."""
     reference = json.loads(reference_path.read_text())
     expected = {entry["id"]: entry["embedding"] for entry in reference["inputs"]}
     minimum = reference["tolerance"]["min_cosine"]
+    made = reference.get("generation", {})
+    print(f"reference: {made.get('backend', '?')} on {made.get('platform', '?')}")
     worst = 1.0
     for entry in produced["inputs"]:
         c = cosine(entry["embedding"], expected[entry["id"]])

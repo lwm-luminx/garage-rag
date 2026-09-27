@@ -151,6 +151,10 @@ final class AppState: ObservableObject {
     /// How the second half of a reset went (`finishDatabaseReset`), for the Database page. Kept apart
     /// from `lastCommandOutput`, which the next operation overwrites and no page shows any more.
     @Published private(set) var databaseResetOutcome: (succeeded: Bool, message: String)?
+    /// `finishDatabaseReset` is running: the Database page says so until `databaseResetOutcome`
+    /// arrives, since after "Skip setup" that second half starts from scratch (cluster, schema,
+    /// services) and can take a minute on a busy Mac.
+    @Published private(set) var isFinishingDatabaseReset = false
     private var hasLaunched = false
     private var hasTerminated = false
     /// Set once "Reset Database" has asked a new instance to start. From then on this instance's
@@ -614,8 +618,13 @@ final class AppState: ObservableObject {
     /// Second half of a reset, once Postgres has initialized a new cluster: apply the schema,
     /// start the gRPC and MCP services, and register the sources garage.json declares again.
     /// The setup assistant runs it from its first page after a reset, or in the background
-    /// when the user skips the assistant before that page gets this far.
-    func finishDatabaseReset() async {
+    /// when the user skips the assistant before that page gets this far; that path passes
+    /// `startingPostgres`, so the cluster's creation, the slowest stage, also counts as the
+    /// reset in progress on the Database page.
+    func finishDatabaseReset(startingPostgres: Bool = false) async {
+        isFinishingDatabaseReset = true
+        defer { isFinishingDatabaseReset = false }
+        if startingPostgres { await startPostgres() }
         // "Skip setup" can land here while the assistant's first start is still initializing the
         // cluster or applying the schema: wait for that to finish rather than calling the reset failed.
         await waitForPostgresToSettle()
@@ -654,6 +663,10 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000)
         }
     }
+
+    /// What the Database page shows while `finishDatabaseReset` runs.
+    static let databaseResetInProgressMessage =
+        "Finishing the database reset: creating the database, applying the schema and starting the services…"
 
     nonisolated static func databaseResetMessage(registeredSourceCount: Int) -> String {
         let sources = switch registeredSourceCount {

@@ -658,7 +658,7 @@ struct ModelsView: View {
             displayName: item.name,
             path: dl.path,
             contextSize: item.contextSize ?? LlamaModelLoadDefaults.contextSize,
-            gpuLayers: item.catalogItem?.defaultGpuLayers ?? LlamaModelLoadDefaults.gpuLayers
+            gpuLayers: LlamaModelLoadDefaults.gpuLayers
         )
         Task {
             await llama.loadModel(path: plan.path, alias: plan.alias, config: plan.config)

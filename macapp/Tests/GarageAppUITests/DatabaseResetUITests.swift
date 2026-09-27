@@ -95,8 +95,18 @@ final class DatabaseResetUITests: GarageUITestCase {
         // By identifier: the message is selectable text, which accessibility need not report as a
         // static text.
         let message = relaunched.descendants(matching: .any).matching(identifier: "database.resetOutcome").firstMatch
+        // Skip was enabled from the moment the assistant opened, so the second half of the reset
+        // starts only now, from scratch: the cluster, the schema, then the gRPC and MCP services,
+        // and only then the report. On a Mac running the whole suite that is longer than the 30 s
+        // this once allowed. So the page must first say the reset is under way (or be done), and
+        // the report then gets as long as the services got on the first launch.
+        let progress = relaunched.descendants(matching: .any).matching(identifier: "database.resetProgress").firstMatch
         XCTAssertTrue(
-            waitUntil(timeout: 30) { message.exists && self.shownText(of: message).hasPrefix("Database reset: a new") },
+            waitUntil(timeout: 30) { progress.exists || message.exists },
+            "the Database page shows neither the reset in progress nor its outcome"
+        )
+        XCTAssertTrue(
+            waitUntil(timeout: 120) { message.exists && self.shownText(of: message).hasPrefix("Database reset: a new") },
             "finishDatabaseReset did not report a new database (\(message.exists ? self.shownText(of: message) : "no message"))"
         )
         XCTAssertTrue(shownText(of: message).contains("declares no sources"), "the message does not say that no sources came back")

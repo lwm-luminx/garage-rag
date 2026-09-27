@@ -135,11 +135,25 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
-    func testPresetModelsInitialization() {
+    func testPresetModelsComeFromTheCatalog() {
+        // The presets are whatever models.json the loader finds; there is no hand-written list
+        // behind it, so without a catalog (as in this test bundle) the app offers none.
         let state = AppState()
-        XCTAssertFalse(state.presetModels.isEmpty)
-        XCTAssertTrue(state.presetModels.contains { $0.slug == "bge-m3" })
-        XCTAssertTrue(state.presetModels.contains { $0.slug == "nomic-embed-text" })
+        let catalog = GarageConfigLoader.loadModelPresets()
+        XCTAssertEqual(state.presetModels.map(\.slug), catalog.map(\.slug))
+        XCTAssertEqual(state.factDistilPresets.map(\.slug), GarageConfigLoader.loadFactDistilPresets().map(\.slug))
+        if !catalog.isEmpty {
+            XCTAssertTrue(state.presetModels.contains { $0.slug == "bge-m3" })
+            XCTAssertTrue(state.presetModels.contains { $0.slug == "nomic-embed-text" })
+        }
+    }
+
+    @MainActor
+    func testADatabaseResetIsNotBeingFinishedAtLaunch() {
+        let state = AppState()
+        XCTAssertFalse(state.isFinishingDatabaseReset)
+        XCTAssertNil(state.databaseResetOutcome)
+        XCTAssertTrue(AppState.databaseResetInProgressMessage.hasPrefix("Finishing the database reset"))
     }
 
     @MainActor

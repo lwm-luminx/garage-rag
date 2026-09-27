@@ -1,9 +1,12 @@
 """Detection of cloud placeholder (non-materialized) files.
 
 Cloud storage clients on macOS -- Dropbox, iCloud Drive, OneDrive -- leave
-zero-byte stubs on disk for files that live only in the cloud. They appear in
-directory listings with plausible names and modification times, which makes them
-indistinguishable from real files to a naive walker.
+stubs on disk for files that live only in the cloud. They appear in directory
+listings with plausible names and modification times, which makes them
+indistinguishable from real files to a naive walker. Clients built on the File
+Provider framework (iCloud Drive; Dropbox since macOS 12.5, under
+``~/Library/CloudStorage``) leave *dataless* files that report their real size;
+the older Dropbox client left zero-byte files with an extended attribute.
 
 This matters more than it sounds. *Reading* such a stub asks the provider to
 materialize it, so a bulk ingest over a large online-only folder silently turns
@@ -12,11 +15,13 @@ skip and *report* them instead of quietly triggering that.
 
 Three independent signals, because providers differ and none is sufficient alone:
 
-1. A provider-specific extended attribute. Dropbox sets
-   ``com.dropbox.placeholder``; iCloud uses ``com.apple.ubiquity.*``. This is the
-   only signal that catches Dropbox, which does *not* set the dataless flag.
+1. A provider-specific extended attribute. The pre-File-Provider Dropbox
+   client sets ``com.dropbox.placeholder``; iCloud uses ``com.apple.ubiquity.*``.
+   This is the only signal that catches that older Dropbox client, which does
+   *not* set the dataless flag.
 2. The macOS ``SF_DATALESS`` file flag, set by the File Provider framework.
-   Catches iCloud-style stubs, which can report a nonzero logical size.
+   Catches iCloud and File Provider Dropbox stubs, which report a nonzero
+   logical size.
 3. iCloud's ``.name.icloud`` sidecar naming convention.
 
 A zero-byte file with none of these is a genuinely empty file, which is a

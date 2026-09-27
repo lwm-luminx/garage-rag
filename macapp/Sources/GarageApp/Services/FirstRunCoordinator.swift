@@ -211,6 +211,14 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
         SourceSpec(slug: slug, root: root, kind: kind, corpusClass: corpusClass, trust: trust)
     }
 
+    /// A template root as a path on disk: `~` and `~/…` against `home`; an absolute root (the
+    /// Dropbox folder `info.json` names may sit on another volume) stays as it is.
+    static func resolvedPath(_ root: String, home: URL) -> String {
+        if root == "~" { return home.path }
+        if root.hasPrefix("~/") { return home.appendingPathComponent(String(root.dropFirst(2))).path }
+        return root
+    }
+
     /// The built-in templates, with availability resolved against the file
     /// system. `home`, `exists` and `readable` are injectable so tests can pin them.
     ///
@@ -226,20 +234,15 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
         exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
         readable: (String) -> Bool = FirstRunSourceTemplate.canListContents
     ) -> [FirstRunSourceTemplate] {
-        func path(_ relative: String) -> String {
-            home.appendingPathComponent(relative).path
-        }
-        /// Availability of a `~/…` root, resolved against `home`.
+        /// Availability of a root, `~/…` resolved against `home`, an absolute path as it is.
         func available(_ root: String) -> Bool {
-            let relative = root.hasPrefix("~/") ? String(root.dropFirst(2)) : root
-            return exists(path(relative))
+            exists(resolvedPath(root, home: home))
         }
         /// Wraps one of the shared `SourcePreset`s so the assistant can never
         /// disagree with the Sources/Status pages on a slug, root or class.
         func shared(_ preset: SourcePreset, subtitle: String, symbol: String) -> FirstRunSourceTemplate {
             if preset.spec.corpusClass == "communication", !assumeAvailable {
-                let relative = preset.spec.root.hasPrefix("~/") ? String(preset.spec.root.dropFirst(2)) : preset.spec.root
-                let canRead = readable(path(relative))
+                let canRead = readable(resolvedPath(preset.spec.root, home: home))
                 return FirstRunSourceTemplate(
                     id: preset.id,
                     title: preset.title,
@@ -522,8 +525,7 @@ final class FirstRunCoordinator: ObservableObject {
         // assistant, so the main window comes up on the new, unconfigured database.
         if resetStillPending {
             Task {
-                await appState.startPostgres()
-                await appState.finishDatabaseReset()
+                await appState.finishDatabaseReset(startingPostgres: true)
                 appState.resumeMaintenanceAfterFirstRun()
             }
             return

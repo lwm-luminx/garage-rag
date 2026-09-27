@@ -1,6 +1,5 @@
 import Foundation
 import PythonXPCService
-import ModelDownloadClient
 
 /// Represents a source registered in the configuration file or the Postgres database.
 public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
@@ -57,7 +56,7 @@ public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
-/// Represents a model preset loaded from configuration files, models.json manifest, or built-in presets catalog.
+/// Represents a model preset loaded from `models.json` (the fetched copy or the bundle's) or a configuration file.
 public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public var id: String { slug }
     public let name: String
@@ -170,18 +169,12 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         if let downloadModelId = downloadModelId, let downloadFile = downloadFile, !downloadModelId.isEmpty, !downloadFile.isEmpty {
             return "https://huggingface.co/\(downloadModelId)/resolve/main/\(downloadFile)"
         }
-        if let catalogItem = ModelPresetCatalog.item(forModelIdOrSlug: slug) {
-            return catalogItem.downloadUrl
-        }
         return nil
     }
 
     public var effectiveFilename: String? {
         if let downloadFile = downloadFile, !downloadFile.isEmpty {
             return downloadFile
-        }
-        if let catalogItem = ModelPresetCatalog.item(forModelIdOrSlug: slug) {
-            return catalogItem.filename
         }
         return nil
     }
@@ -275,256 +268,41 @@ public enum GarageConfigLoader {
         return paths
     }
 
-    /// Built-in fallback presets catalog.
-    public static let defaultPresets: [ModelPresetEntry] = [
-        ModelPresetEntry(
-            name: "BGE-M3 (Embeddings)",
-            modelId: "BAAI/bge-m3",
-            slug: "bge-m3",
-            modelRef: "bge-m3",
-            provider: "llama_xpc",
-            nativeDims: 1024,
-            defaultDims: 1024,
-            contextSize: 8192,
-            downloadModelId: "gpustack/bge-m3-GGUF",
-            downloadFile: "bge-m3-Q8_0.gguf",
-            sha256: "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167",
-            description: "Strong general-purpose multilingual embedding model with a long context window. A solid default for hybrid document search.",
-            useCases: ["Semantic search", "Hybrid retrieval", "Multilingual corpora"],
-            featured: true
-        ),
-        ModelPresetEntry(
-            name: "Nomic Embed Text",
-            modelId: "nomic-ai/nomic-embed-text-v1.5",
-            slug: "nomic-embed-text",
-            modelRef: "nomic-embed-text",
-            provider: "llama_xpc",
-            nativeDims: 768,
-            defaultDims: 768,
-            contextSize: 8192,
-            downloadModelId: "nomic-ai/nomic-embed-text-v1.5-GGUF",
-            downloadFile: "nomic-embed-text-v1.5.Q8_0.gguf",
-            sha256: "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7",
-            description: "Efficient English-focused embedding model with good accuracy per dimension. Fast to run on modest hardware.",
-            useCases: ["Semantic search", "Personal document archives"],
-            featured: true
-        ),
-        ModelPresetEntry(
-            name: "mxbai Embed XSmall",
-            modelId: "mixedbread-ai/mxbai-embed-xsmall-v1",
-            slug: "mxbai-embed-xsmall",
-            modelRef: "mxbai-embed-xsmall",
-            provider: "llama_xpc",
-            nativeDims: 384,
-            defaultDims: 384,
-            contextSize: 512,
-            downloadModelId: "mixedbread-ai/mxbai-embed-xsmall-v1",
-            downloadFile: "gguf/mxbai-embed-xsmall-v1-q8_0.gguf",
-            sha256: "21f9f06af9e4e895fcdcbf6c0d57ca1996fe22da54ecb6cc5f7733d785412d44",
-            description: "Compact, low-memory embedding model that's quick to download and embed with. Ideal for a lightweight first-time setup.",
-            useCases: ["Quick start / low-resource machines", "Semantic search"],
-            featured: true
-        ),
-        ModelPresetEntry(
-            name: "mxbai Embed Large",
-            modelId: "mixedbread-ai/mxbai-embed-large",
-            slug: "mxbai-embed-large",
-            modelRef: "mxbai-embed-large",
-            provider: "llama_xpc",
-            nativeDims: 1024,
-            defaultDims: 1024,
-            contextSize: 8192
-        ),
-        ModelPresetEntry(
-            name: "Embedding Gemma",
-            modelId: "google/embeddinggemma-2b",
-            slug: "embeddinggemma",
-            modelRef: "embeddinggemma",
-            provider: "llama_xpc",
-            nativeDims: 768,
-            defaultDims: 768,
-            contextSize: 8192,
-            downloadModelId: "unsloth/embeddinggemma-300m-GGUF",
-            downloadFile: "embeddinggemma-300M-Q8_0.gguf",
-            sha256: "a0f7b4e13c397a6e1b32c2de75b1f65a14c92ec524d5f674d94a4290a1c4969b"
-        ),
-        ModelPresetEntry(
-            name: "Snowflake Arctic Embed 2",
-            modelId: "Snowflake/snowflake-arctic-embed-m-v2.0",
-            slug: "snowflake-arctic-embed2",
-            modelRef: "snowflake-arctic-embed2",
-            provider: "llama_xpc",
-            nativeDims: 1024,
-            defaultDims: 1024,
-            contextSize: 8192,
-            downloadModelId: "ChristianAzinn/snowflake-arctic-embed-m-gguf",
-            downloadFile: "snowflake-arctic-embed-m-Q8_0.GGUF",
-            sha256: "670a415c5b42b1b317eb7116a154c08e7b7a69550d088f3b46520d8b3d0741a8"
-        ),
-        ModelPresetEntry(
-            name: "Qwen 3 Embedding 0.6B",
-            modelId: "Qwen/Qwen3-Embedding-0.6B",
-            slug: "qwen3-embedding-0.6b",
-            modelRef: "qwen3-embedding-0.6b",
-            provider: "llama_xpc",
-            nativeDims: 1024,
-            defaultDims: 1024,
-            contextSize: 8192
-        ),
-        ModelPresetEntry(
-            name: "Qwen 3 Embedding 4B",
-            modelId: "Qwen/Qwen3-Embedding-4B",
-            slug: "qwen3-embedding-4b",
-            modelRef: "qwen3-embedding-4b",
-            provider: "llama_xpc",
-            nativeDims: 2560,
-            defaultDims: 2560,
-            contextSize: 8192
-        ),
-        ModelPresetEntry(
-            name: "Qwen 3 Embedding 8B",
-            modelId: "Qwen/Qwen3-Embedding-8B",
-            slug: "qwen3-embedding-8b",
-            modelRef: "qwen3-embedding-8b",
-            provider: "llama_xpc",
-            nativeDims: 4096,
-            defaultDims: 4000,
-            contextSize: 32768
-        ),
-        ModelPresetEntry(
-            name: "Llama 3.2 1B (Instruct)",
-            modelId: "meta-llama/Llama-3.2-1B-Instruct",
-            slug: "llama-3.2-1b-instruct",
-            modelRef: "llama-3.2-1b-instruct",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192,
-            downloadModelId: "bartowski/Llama-3.2-1B-Instruct-GGUF",
-            downloadFile: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-            sha256: "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83"
-        ),
-        ModelPresetEntry(
-            name: "Llama 3.2 3B (Instruct)",
-            modelId: "meta-llama/Llama-3.2-3B-Instruct",
-            slug: "llama-3.2-3b-instruct",
-            modelRef: "llama-3.2-3b-instruct",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192,
-            downloadModelId: "bartowski/Llama-3.2-3B-Instruct-GGUF",
-            downloadFile: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
-            sha256: "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff"
-        ),
-        ModelPresetEntry(
-            name: "Qwen 2.5 7B (Coder)",
-            modelId: "Qwen/Qwen2.5-Coder-7B-Instruct",
-            slug: "qwen-2.5-coder-7b",
-            modelRef: "qwen-2.5-coder-7b",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 16384,
-            downloadModelId: "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
-            downloadFile: "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
-            sha256: "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6"
-        ),
-        ModelPresetEntry(
-            name: "Mistral 7B (Instruct)",
-            modelId: "mistralai/Mistral-7B-Instruct-v0.3",
-            slug: "mistral-7b-instruct",
-            modelRef: "mistral-7b-instruct",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192,
-            downloadModelId: "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
-            downloadFile: "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
-            sha256: "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6"
-        ),
-        ModelPresetEntry(
-            name: "DeepSeek R1 Distill Qwen 7B",
-            modelId: "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-            slug: "deepseek-r1-distill-qwen-7b",
-            modelRef: "deepseek-r1-distill-qwen-7b",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192,
-            downloadModelId: "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
-            downloadFile: "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
-            sha256: "731ece8d06dc7eda6f6572997feb9ee1258db0784827e642909d9b565641937b"
-        ),
-        ModelPresetEntry(
-            name: "NVIDIA Llama-Embed-Nemotron-8B",
-            modelId: "NVIDIA/Llama-Embed-Nemotron-8B",
-            slug: "llama-embed-nemotron-8b",
-            modelRef: "llama-embed-nemotron-8b",
-            provider: "llama_xpc",
-            nativeDims: 4096,
-            defaultDims: 4096,
-            contextSize: 8192,
-            downloadModelId: "mradermacher/llama-embed-nemotron-8b-GGUF",
-            downloadFile: "llama-embed-nemotron-8b.Q8_0.gguf",
-            sha256: "951f506d4d8c93c02abe586520076e61b4b8e5501f63bcda05cde610c102cf42"
-        ),
-        ModelPresetEntry(
-            name: "Microsoft Harrier-oss-v1-0.6b",
-            modelId: "microsoft/harrier-oss-v1-0.6b",
-            slug: "harrier-oss-v1-0.6b",
-            modelRef: "harrier-oss-v1-0.6b",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192
-        ),
-    ]
-
-    /// Built-in fallback presets for fact distillation (used when models.json is missing).
-    public static let defaultFactDistilPresets: [ModelPresetEntry] = [
-        ModelPresetEntry(
-            name: "Gemma 2 2B Instruct",
-            modelId: "google/gemma-2-2b-it",
-            slug: "gemma2-2b",
-            modelRef: "gemma2-2b",
-            provider: "llama_xpc",
-            nativeDims: nil,
-            defaultDims: nil,
-            contextSize: 8192,
-            downloadModelId: "bartowski/gemma-2-2b-it-GGUF",
-            downloadFile: "gemma-2-2b-it-Q4_K_M.gguf",
-            sha256: "e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787",
-            description: "Compact instruction-tuned model used to distill documents into atomic facts for the enrichment pipeline.",
-            useCases: ["Fact extraction / distillation"],
-            featured: true
-        ),
-    ]
-
-    /// Loads text-embedding model presets from models.json or configuration files.
+    /// Loads text-embedding model presets from `models.json`: `fileURL` when given, else the copy
+    /// the app last fetched from the website, else the copy in the bundle, else a configuration
+    /// file with a `models` array. There is no built-in list: `docs/.data/models.json` is the one
+    /// catalog, and the bundle carries it (`//docs:model_manifest`), so an empty result means no
+    /// file described any model.
     public static func loadModelPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
-        loadModelManifest(fileURL: fileURL).textEmbedding ?? defaultPresets
+        loadModelManifest(fileURL: fileURL).textEmbedding ?? []
     }
 
     /// Loads fact-distillation model presets (generative models used to glean facts
-    /// out of documents) from models.json's `fact_distil` section.
+    /// out of documents) from models.json's `fact_distil` section, from the same files.
     public static func loadFactDistilPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
-        loadModelManifest(fileURL: fileURL).factDistil ?? defaultFactDistilPresets
+        loadModelManifest(fileURL: fileURL).factDistil ?? []
     }
 
-    /// Resolves models.json (or a candidate config file) into its two preset
-    /// groups. Returns `nil` for a group that no source provided at all, so
-    /// callers can distinguish "found the file, group was empty" from
-    /// "never found a file" and fall back to built-in defaults only for the
-    /// latter.
-    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    /// The files `loadModelPresets` reads, in order: `fileURL`, then `Paths.modelsJSON`
+    /// (fetched copy, else the bundle's), then the configuration files.
+    static func modelManifestCandidates(fileURL: URL?) -> [URL] {
         var candidates: [URL] = []
         if let explicit = fileURL {
             candidates.append(explicit)
         }
         candidates.append(Paths.modelsJSON)
         candidates.append(contentsOf: candidateConfigFiles)
+        return candidates
+    }
 
+    /// Resolves models.json (or a candidate config file) into its two preset
+    /// groups. Returns `nil` for a group that no source provided at all.
+    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+        loadModelManifest(candidates: modelManifestCandidates(fileURL: fileURL))
+    }
+
+    /// The first of `candidates` that exists and decodes as a catalog, or `(nil, nil)`.
+    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
         for url in candidates {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             if let manifest = decodeModelManifest(from: url) {

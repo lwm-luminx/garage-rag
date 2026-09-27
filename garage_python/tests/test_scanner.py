@@ -590,3 +590,133 @@ def test_cli_scan_command(tmp_path: Path) -> None:
         assert parsed[0]["source_slug"] == "cli-scan-src"
         assert parsed[0]["item_count"] == 1
         assert parsed[0]["item_type"] == "files"
+
+
+# ---------------------------------------------------------------------------
+# 9. A root that cannot be read is an error, not an empty source
+# ---------------------------------------------------------------------------
+
+
+def _source(slug: str, root: str, *, kind: str = "filesystem", **fields) -> Source:
+    return Source(
+        slug=slug, kind=kind, root=root, default_class=CorpusClass.DOCUMENT, default_trust=TrustTier.AUTHORED, **fields
+    )
+
+
+def _deny_listing(monkeypatch: pytest.MonkeyPatch, denied: Path) -> None:
+    """Make ``os.scandir`` refuse ``denied`` the way the App Sandbox does for an ungranted folder."""
+    real_scandir = os.scandir
+
+    def scandir(path=".", *args, **kwargs):
+        if Path(path) == denied:
+            raise PermissionError(13, "Operation not permitted", str(path))
+        return real_scandir(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "scandir", scandir)
+
+
+def test_root_problem_tells_a_missing_root_from_a_denied_one(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from garage_rag.ingest.walker import root_problem
+
+    assert root_problem(tmp_path) is None
+    (tmp_path / "doc.txt").write_text("x", encoding="utf-8")
+    assert root_problem(tmp_path / "doc.txt") is None
+
+    missing = root_problem(tmp_path / "gone")
+    assert missing is not None and "does not exist" in missing
+
+    _deny_listing(monkeypatch, tmp_path)
+    denied = root_problem(tmp_path)
+    assert denied is not None and "permission denied" in denied and str(tmp_path) in denied
+
+
+def test_scan_source_reports_a_root_it_cannot_list(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    (tmp_path / "doc.txt").write_text("test", encoding="utf-8")
+    _deny_listing(monkeypatch, tmp_path)
+    for kind, item_type in (("filesystem", "files"), ("git", "files"), ("sqlite", "records"), ("maildir", "messages")):
+        src = _source(f"{kind}-src", str(tmp_path), kind=kind)
+        res = scan_source(src)
+        assert res.item_count == 0, kind
+        assert res.item_type == item_type, kind
+        assert res.error is not None and "permission denied" in res.error, kind
+        assert res.details["root_problem"] == res.error, kind
+
+
+def test_scan_source_reports_a_missing_root_for_every_kind(tmp_path: Path) -> None:
+    res = scan_source(_source("gone", str(tmp_path / "gone")))
+    assert res.item_count == 0
+    assert "does not exist" in (res.error or "")
+    assert res.details["root_problem"] == res.error
+
+
+def test_ingest_source_fails_instead_of_completing_an_unreadable_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from garage_rag.ingest.walker import SourceUnavailable
+
+    (tmp_path / "doc1.txt").write_text("Content 1", encoding="utf-8")
+    mock_source = MagicMock(spec=Source)
+    mock_source.id = 1
+    mock_source.slug = "denied"
+    mock_source.kind = "filesystem"
+    mock_source.root = str(tmp_path)
+    mock_source.default_class = CorpusClass.DOCUMENT
+    mock_source.default_trust = TrustTier.AUTHORED
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.one_or_none.return_value = mock_source
+    mock_session.get.return_value = mock_source
+    mock_session.__enter__.return_value = mock_session
+    factory = MagicMock(return_value=mock_session)
+
+    _deny_listing(monkeypatch, tmp_path)
+    with (
+        patch("garage_rag.attribute.resolver.ensure_self_author"),
+        patch("garage_rag.ingest.pipeline.ingest_one") as ingest_one,
+        patch("garage_rag.ingest.pipeline._finalize") as finalize,
+        patch("garage_rag.ingest.pipeline.walk") as walk,
+        pytest.raises(SourceUnavailable, match="permission denied"),
+    ):
+        ingest_source(factory, "denied")
+
+    ingest_one.assert_not_called()
+    walk.assert_not_called()
+    finalize.assert_called_once()
+    assert finalize.call_args.kwargs["completed"] is False
+    counters = finalize.call_args.args[3]
+    assert counters.failed == 1 and "permission denied" in counters.errors[0]
+    # The previous scan's count stays: nothing was persisted for this scan.
+    assert not any("expected_elements" in str(c) for c in mock_session.mock_calls)
+
+
+def test_cli_ingest_exits_nonzero_when_a_source_cannot_be_read(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from garage_rag.ingest.walker import SourceUnavailable
+
+    readable = _source("ok-src", str(tmp_path), id=1)
+    denied = _source("denied-src", str(tmp_path / "denied"), id=2)
+
+    def fake_ingest_source(factory, slug, **kwargs):
+        if slug == "denied-src":
+            raise SourceUnavailable(f"not readable: {denied.root} (permission denied)")
+        from garage_rag.ingest.materialize import MaterializationBudget
+        from garage_rag.ingest.pipeline import IngestCounters
+        from garage_rag.ingest.walker import WalkStats
+
+        return IngestCounters(), WalkStats(), MaterializationBudget()
+
+    with (
+        patch("garage_rag.db.engine.get_session_factory") as mock_factory,
+        patch("garage_rag.ingest.pipeline.ingest_source", side_effect=fake_ingest_source),
+    ):
+        mock_session = MagicMock()
+        # '*' lists the enabled sources: query(Source).filter_by(enabled=True).order_by(...).all()
+        enabled = mock_session.query.return_value.filter_by.return_value
+        enabled.order_by.return_value.all.return_value = [readable, denied]
+        mock_session.__enter__.return_value = mock_session
+        mock_factory.return_value = MagicMock(return_value=mock_session)
+
+        result = runner.invoke(app, ["ingest"])
+
+    assert result.exit_code == 1, result.output
+    assert "ingest: ok-src" in result.output
+    assert "denied-src: not readable" in result.output
+    assert "1 source(s) could not be read" in result.output

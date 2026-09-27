@@ -474,7 +474,22 @@ struct DatabaseView: View {
                         )
                 }
 
-                // After a reset, the relaunched instance says what it rebuilt, or what went wrong.
+                // After a reset, the relaunched instance says what it is still doing, then what it
+                // rebuilt, or what went wrong.
+                if appState.isFinishingDatabaseReset, appState.databaseResetOutcome == nil {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityHidden(true)
+                        Text(AppState.databaseResetInProgressMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("database.resetProgress")
+                    }
+                    .font(.caption)
+                    .padding(.leading, 36)
+                }
                 if let outcome = appState.databaseResetOutcome {
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: outcome.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")

@@ -11,6 +11,7 @@ from __future__ import annotations
 import fnmatch
 import logging
 import os
+import stat
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -29,6 +30,42 @@ from garage_rag.extract.placeholder import is_placeholder
 from garage_rag.ingest.classify import is_code_path
 
 log = logging.getLogger(__name__)
+
+
+class SourceUnavailable(OSError):
+    """The source root cannot be walked: it is missing, or this process may not read it.
+
+    Raised by the pipeline instead of reporting a run that saw nothing as complete, which
+    would read as "up to date" in the app and the CLI.
+    """
+
+
+def root_problem(root: Path) -> str | None:
+    """Why ``root`` cannot be walked, or None when it can.
+
+    A missing root and one this process may not list are told apart, because the remedy
+    differs: the sandboxed App Store build reads only folders the user granted, so
+    "permission denied" there means the grant did not reach this process.
+    """
+    try:
+        st = root.stat()
+    except FileNotFoundError:
+        return f"path does not exist: {root}"
+    except PermissionError:
+        return f"not readable: {root} (permission denied; this process has no access to it)"
+    except OSError as exc:
+        return f"not readable: {root} ({exc.strerror or exc})"
+    if stat.S_ISDIR(st.st_mode):
+        try:
+            with os.scandir(root):
+                pass
+        except PermissionError:
+            return f"not readable: {root} (permission denied; this process has no access to it)"
+        except OSError as exc:
+            return f"not readable: {root} ({exc.strerror or exc})"
+    elif not os.access(root, os.R_OK):
+        return f"not readable: {root} (permission denied; this process has no access to it)"
+    return None
 
 
 @dataclass
