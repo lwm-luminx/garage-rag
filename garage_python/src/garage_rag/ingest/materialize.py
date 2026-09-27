@@ -10,12 +10,29 @@ it fetched and what it deferred. Because ingest is idempotent, stopping at the
 budget is not a failure: the next run skips everything already indexed and
 spends its budget on the next slice, converging on the full corpus over several
 passes instead of one unbounded one.
+
+The budget only governs reads that go through :func:`materialize`. Any other read of
+a dataless file -- an extractor opened directly, a hash, a library peeking at a header
+-- would download it just the same, with no accounting. On macOS the kernel offers a
+switch for exactly this: the ``IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES`` I/O policy
+(``setiopolicy_np(3)``), which ``ls`` and Spotlight use to walk File Provider trees
+without pulling them down. With it *off*, opening a dataless file fails with
+``EDEADLK`` instead of blocking on a download. The pipeline runs with it off on its
+thread (:func:`refusing_dataless_reads`) and turns it on only inside the one thread
+that performs a budgeted download (:func:`allowing_dataless_reads`), so nothing else
+can start one. Elsewhere, and where the call is unavailable, both are no-ops.
 """
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.util
+import errno
 import logging
+import sys
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +47,79 @@ log = logging.getLogger(__name__)
 MAX_STALLED_READS = 4
 _stalled_reads: set[threading.Thread] = set()
 _stalled_lock = threading.Lock()
+
+# sys/resource.h: setiopolicy_np(int iotype, int scope, int policy).
+IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES = 3
+IOPOL_SCOPE_PROCESS = 0
+IOPOL_SCOPE_THREAD = 1
+IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT = 0  # the thread follows the process policy
+IOPOL_MATERIALIZE_DATALESS_FILES_OFF = 1
+IOPOL_MATERIALIZE_DATALESS_FILES_ON = 2
+
+# What a read of a dataless file raises while materialization is off. The kernel reports
+# EDEADLK; EAGAIN has been seen from providers that decline a fetch.
+DATALESS_REFUSED_ERRNOS: frozenset[int] = frozenset({errno.EDEADLK, errno.EAGAIN})
+
+
+def _load_iopolicy() -> tuple | None:
+    """Bind libc ``setiopolicy_np``/``getiopolicy_np``, or return None where they do not exist."""
+    if not sys.platform.startswith("darwin"):
+        return None
+    try:
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        setter, getter = libc.setiopolicy_np, libc.getiopolicy_np
+    except (OSError, AttributeError):  # pragma: no cover - platform dependent
+        return None
+    setter.argtypes = [ctypes.c_int, ctypes.c_int, ctypes.c_int]
+    setter.restype = ctypes.c_int
+    getter.argtypes = [ctypes.c_int, ctypes.c_int]
+    getter.restype = ctypes.c_int
+    return setter, getter
+
+
+_iopolicy = _load_iopolicy()
+
+
+def _set_thread_dataless_policy(policy: int) -> int | None:
+    """Set this thread's dataless-file policy; returns the previous one, or None when unavailable."""
+    if _iopolicy is None:
+        return None
+    setter, getter = _iopolicy
+    previous = getter(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD)
+    if previous < 0 or setter(IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, IOPOL_SCOPE_THREAD, policy) != 0:
+        log.debug("setiopolicy_np unavailable for the dataless policy (errno %d)", ctypes.get_errno())
+        return None
+    return previous
+
+
+@contextmanager
+def _thread_dataless_policy(policy: int) -> Iterator[None]:
+    previous = _set_thread_dataless_policy(policy)
+    try:
+        yield
+    finally:
+        if previous is not None:
+            _set_thread_dataless_policy(previous)
+
+
+def refusing_dataless_reads() -> Iterator[None]:
+    """Run the body with dataless-file materialization off for the current thread.
+
+    Inside, opening a placeholder raises ``OSError`` with an errno in
+    :data:`DATALESS_REFUSED_ERRNOS` instead of downloading it. Threads the body starts do
+    not inherit a thread-scoped policy, which is what lets the materialize thread opt back in.
+    """
+    return _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_OFF)
+
+
+def allowing_dataless_reads() -> Iterator[None]:
+    """Run the body with materialization on for the current thread: the budgeted download."""
+    return _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_ON)
+
+
+def refused_dataless_read(exc: BaseException) -> bool:
+    """Whether ``exc`` is the kernel declining to materialize a dataless file."""
+    return isinstance(exc, OSError) and exc.errno in DATALESS_REFUSED_ERRNOS
 
 
 def _stalled_count() -> int:
@@ -47,7 +137,8 @@ def _read_with_timeout(path: Path, timeout: float) -> int | None:
 
     def run() -> None:
         try:
-            outcome["size"] = _force_read(path)
+            with allowing_dataless_reads():
+                outcome["size"] = _force_read(path)
         except OSError as exc:
             outcome["error"] = exc
 

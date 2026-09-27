@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -792,6 +793,41 @@ def test_unmaterialized_placeholder_writes_no_document(tmp_path: Path):
     assert counters.placeholders == 1
     gateway.record_placeholder.assert_called_once()
     gateway.replace_document.assert_not_called()
+
+
+def test_a_read_the_kernel_refused_is_a_placeholder_not_a_failure(tmp_path: Path):
+    import errno
+
+    stub = tmp_path / "online-only.pdf"
+    stub.write_bytes(b"%PDF-1.4 dataless stand-in")
+    refused = OSError(errno.EDEADLK, "Resource deadlock avoided")
+    with patch("garage_rag.ingest.pipeline.extract", side_effect=refused):
+        gateway, counters = _ingest_one(tmp_path, _candidate(stub), ExistingDocStat(exists=False))
+
+    assert counters.placeholders == 1
+    assert counters.failed == 0
+    gateway.record_placeholder.assert_called_once()
+    gateway.record_extract_failed.assert_not_called()
+    gateway.replace_document.assert_not_called()
+
+
+def test_ingest_source_runs_with_dataless_reads_refused(tmp_path: Path):
+    entered: list[bool] = []
+
+    @contextmanager
+    def fake_guard():
+        entered.append(True)
+        yield
+
+    inner = MagicMock(return_value=(IngestCounters(), None, MaterializationBudget()))
+    with (
+        patch("garage_rag.ingest.pipeline.refusing_dataless_reads", fake_guard),
+        patch("garage_rag.ingest.pipeline._ingest_source", inner),
+    ):
+        ingest_source(gateway=MagicMock(), source_slug="src")
+
+    assert entered == [True]
+    inner.assert_called_once()
 
 
 def test_sql_record_placeholder_only_records_the_file_as_seen(tmp_path: Path):
