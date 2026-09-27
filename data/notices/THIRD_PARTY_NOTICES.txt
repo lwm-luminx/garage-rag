@@ -76,7 +76,7 @@ Components:
   typing-inspection 0.4.4
   uvicorn 0.52.4
   xlsxwriter 3.2.9
-  CPython 3.13.15
+  CPython 3.14.7
   PostgreSQL 18.6
   pgvector 0.8.6
   Apache AGE 1.8.0
@@ -9309,7 +9309,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 ====================================================================================================
-CPython 3.13.15
+CPython 3.14.7
 License: PSF-2.0 (and bundled third-party licenses)
 Homepage: https://www.python.org/
 ====================================================================================================
@@ -9401,7 +9401,7 @@ grants Licensee a nonexclusive, royalty-free, world-wide license to reproduce,
 analyze, test, perform and/or display publicly, prepare derivative works,
 distribute, and otherwise use Python alone or in any derivative version,
 provided, however, that PSF's License Agreement and PSF's notice of copyright,
-i.e., "Copyright (c) 2001-2024 Python Software Foundation; All Rights Reserved"
+i.e., "Copyright (c) 2001 Python Software Foundation; All Rights Reserved"
 are retained in Python alone or in any derivative version prepared by Licensee.
 
 3. In the event Licensee prepares a derivative work that is based on
@@ -9702,7 +9702,7 @@ PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2
       analyze, test, perform and/or display publicly, prepare derivative works,
       distribute, and otherwise use Python alone or in any derivative
       version, provided, however, that PSF's License Agreement and PSF's notice of
-      copyright, i.e., "Copyright © 2001-2024 Python Software Foundation; All Rights
+      copyright, i.e., "Copyright © 2001 Python Software Foundation; All Rights
       Reserved" are retained in Python alone or in any derivative version
       prepared by Licensee.
 
@@ -10730,6 +10730,43 @@ The file is distributed under the 2-Clause BSD License::
   THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
   (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
   THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+Zstandard bindings
+------------------
+
+Zstandard bindings in :file:`Modules/_zstd` and :file:`Lib/compression/zstd`
+are based on code from the
+`pyzstd library <https://github.com/Rogdham/pyzstd/>`_, copyright Ma Lin and
+contributors. The pyzstd code is distributed under the 3-Clause BSD License::
+
+  Copyright (c) 2020-present, Ma Lin and contributors.
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  1. Redistributions of source code must retain the above copyright notice, this
+     list of conditions and the following disclaimer.
+
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+
+  3. Neither the name of the copyright holder nor the names of its
+     contributors may be used to endorse or promote products derived from
+     this software without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+  DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+  FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+  DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+  SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+  CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+  OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 Unicode Character Database

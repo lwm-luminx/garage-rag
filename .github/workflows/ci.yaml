@@ -59,7 +59,7 @@ jobs:
         # uv.lock only resolves for macOS, so install from pyproject, as the
         # web-session hook does on Linux.
         run: |
-          uv venv --python 3.13 .venv
+          uv venv --python 3.14 .venv
           uv pip install --python .venv -e '.[dev]'
       - name: ruff
         run: |
@@ -82,7 +82,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Swift syntax gate (tree-sitter)
         run: |
-          uv venv --python 3.13 "$RUNNER_TEMP/venv"
+          uv venv --python 3.14 "$RUNNER_TEMP/venv"
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
 

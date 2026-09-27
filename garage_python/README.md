@@ -70,7 +70,7 @@ uv run pytest -q
 ```
 
 The lockfile resolves for macOS only; on Linux use
-`uv venv --python 3.13 .venv && uv pip install -e '.[dev]'`, then `.venv/bin/pytest -q`.
+`uv venv --python 3.14 .venv && uv pip install -e '.[dev]'`, then `.venv/bin/pytest -q`.
 `tests/test_postgres.py` runs against a real server when `GARAGE_TEST_DATABASE_URL` is set (see
 "Testing against Postgres" in `../CLAUDE.md`).
 

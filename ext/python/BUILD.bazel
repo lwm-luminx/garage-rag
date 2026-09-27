@@ -6,7 +6,7 @@ load("//bazel:codesign.bzl", "EXPECTED_SIGNING_IDENTITY", "HARDENED_RUNTIME_EXPE
 load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 configure_make(
-    name = "python_3_13",
+    name = "python_3_14",
     args = [
         "-e",
     ],
@@ -58,8 +58,8 @@ done
 
 # Raw install tree of the framework build (Python.framework/, bin/, include/).
 filegroup(
-    name = "python_3_13_install_dir",
-    srcs = [":python_3_13"],
+    name = "python_3_14_install_dir",
+    srcs = [":python_3_14"],
     output_group = "gen_dir",
 )
 
@@ -69,20 +69,20 @@ filegroup(
 # so exactly one interpreter is present in the process.
 cc_library(
     name = "python_headers",
-    hdrs = [":python_3_13_install_dir"],
-    includes = ["copy_python_3_13/python_3_13/Python.framework/Versions/3.13/include/python3.13"],
+    hdrs = [":python_3_14_install_dir"],
+    includes = ["copy_python_3_14/python_3_14/Python.framework/Versions/3.14/include/python3.14"],
     visibility = ["//visibility:public"],
 )
 
 copy_to_directory(
     name = "python_framework_raw",
-    srcs = [":python_3_13"],
+    srcs = [":python_3_14"],
     out = "python_framework_raw",
     exclude_srcs_patterns = [
         "**/Versions/*/lib/**",
         "**/Versions/*/lib",
-        "**/Versions/3.13/lib/**",
-        "**/Versions/3.13/lib",
+        "**/Versions/3.14/lib/**",
+        "**/Versions/3.14/lib",
         "**/Versions/Current/lib/**",
         "**/Versions/Current/lib",
         "**/lib/**",
@@ -93,18 +93,18 @@ copy_to_directory(
         # interpreters/tools inside a framework, so drop it before signing.
         "**/Versions/*/bin/**",
         "**/Versions/*/bin",
-        "**/Versions/3.13/bin/**",
-        "**/Versions/3.13/bin",
+        "**/Versions/3.14/bin/**",
+        "**/Versions/3.14/bin",
         "**/Versions/Current/bin/**",
         "**/Versions/Current/bin",
         "**/bin/**",
         "**/bin",
     ],
     include_srcs_patterns = [
-        "python_3_13/Python.framework/**",
+        "python_3_14/Python.framework/**",
     ],
     replace_prefixes = {
-        "python_3_13": "",
+        "python_3_14": "",
     },
 )
 

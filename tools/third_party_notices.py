@@ -61,12 +61,12 @@ class Component:
 NATIVE_COMPONENTS: tuple[Component, ...] = (
     Component(
         "CPython",
-        "3.13.15",
+        "3.14.7",
         "PSF-2.0 (and bundled third-party licenses)",
         "https://www.python.org/",
         (
-            f"{RAW}/python/cpython/v3.13.15/LICENSE",
-            f"{RAW}/python/cpython/v3.13.15/Doc/license.rst",
+            f"{RAW}/python/cpython/v3.14.7/LICENSE",
+            f"{RAW}/python/cpython/v3.14.7/Doc/license.rst",
         ),
     ),
     Component(
