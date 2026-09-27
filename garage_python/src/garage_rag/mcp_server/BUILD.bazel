@@ -2,13 +2,11 @@ load("@aspect_rules_py//py:defs.bzl", "py_binary", "py_library")
 
 py_binary(
     name = "garage-mcp",
-    srcs = [
-        "agent.py",
-        "server.py",
-    ],
+    srcs = ["server.py"],
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":mcp_server",
         # Owns garage_rag/__init__.py, whose libpq configure hook the bundled app
         # relies on; without it garage_rag is only a namespace package here.
         # Nothing in server.py imports it, so gazelle needs the keep.
