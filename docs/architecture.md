@@ -152,6 +152,42 @@ which also runs a disabled one. `garage facts prompts list` and
 Models page lists and edits them (the `ListFactPrompts` RPC reads them;
 `SetSetting facts.prompts` writes the list back).
 
+**Recipe: entities as facts.** Nothing constrains `fact_class` to `'fact'`, so an
+`entities` prompt asking for people, places, organizations, projects and events
+runs today with no code change — just a `facts.prompts` entry. Each mention
+becomes an ordinary, span-grounded fact (with an `attributes.name`/`kind`
+LangExtract attaches) and gets embedded like any other fact; nothing resolves
+repeated mentions into one entity or turns a relationship into an edge yet — see
+[`v1.5.md`](plans/v1.5.md) for where that's headed. Add to `~/.garage.json`:
+
+```json
+{
+  "facts": {
+    "prompts": [
+      {
+        "name": "entities",
+        "description": "Extract every named person, place, organization and event mentioned in this text. Quote each mention exactly as it appears; do not paraphrase. For each, give attributes: name (the full canonical name if the text states it, else the mention), and kind. For a person also give role if the text states one; for an event also give date if the text states one. Do not infer anything not stated.",
+        "examples": [
+          {
+            "text": "On 12 May 2019 Jane Doe of Acme Corp presented the Q2 roadmap at the Austin Convention Center.",
+            "extractions": [
+              {"class": "event", "text": "presented the Q2 roadmap", "attributes": {"name": "Q2 roadmap presentation", "date": "2019-05-12"}},
+              {"class": "person", "text": "Jane Doe", "attributes": {"name": "Jane Doe", "role": "presenter"}},
+              {"class": "organization", "text": "Acme Corp", "attributes": {"name": "Acme Corp"}},
+              {"class": "place", "text": "Austin Convention Center", "attributes": {"name": "Austin Convention Center", "kind": "venue"}}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Run `garage enrich-facts --prompt entities` and inspect the `facts` rows it
+produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
+building schema on top of what a given local model actually extracts.
+
 Only the local part of LangExtract is used, vendored as
 `enrich/langextract` (prompting, chunking, parsing and alignment). Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
