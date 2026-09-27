@@ -161,18 +161,26 @@ def http_client(
     timeout: float = 120.0,
     headers: Mapping[str, str] | None = None,
     settings: Settings | None = None,
+    uds: str | None = None,
 ) -> httpx.Client:
     """An ``httpx.Client`` for ``base_url``, after :func:`check_destination`.
 
     No proxies, no redirects, and every request is re-checked against the origin
-    of ``base_url``.
+    of ``base_url``. With ``uds`` (an absolute path) the client connects to that
+    Unix-domain socket instead of ``base_url``'s host, which then must be loopback:
+    a socket is on this machine, and the origin check still applies to every request.
     """
+    if uds is not None:
+        if not uds.startswith("/"):
+            raise EgressBlocked(f"{purpose}: socket path must be absolute: {uds!r}")
+        loopback_only = True
     check_destination(
         base_url, purpose=purpose, corpus_class=corpus_class, loopback_only=loopback_only, settings=settings
     )
     origin = _origin(base_url)
     assert origin is not None  # check_destination refused anything unparseable
     return httpx.Client(
+        transport=httpx.HTTPTransport(uds=uds) if uds is not None else None,
         base_url=base_url.rstrip("/"),
         timeout=timeout,
         headers=dict(headers or {}),

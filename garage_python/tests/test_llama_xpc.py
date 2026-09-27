@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import socket
+import socketserver
 import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
@@ -485,3 +486,77 @@ def test_model_management_is_not_an_http_operation(client: LlamaXPCClient, fake_
             call()
         assert info.value.status_code == 501
     assert fake_server.state.requests == []
+
+
+# ---- Unix-domain socket ------------------------------------------------------
+
+
+class _UnixHTTPServer(socketserver.ThreadingUnixStreamServer):
+    daemon_threads = True
+
+
+@pytest.fixture
+def socket_server() -> Iterator[tuple[str, FakeState]]:
+    """The fake llama-server on a Unix-domain socket, as the app's LlamaXPCService serves it."""
+    import shutil
+    import tempfile
+
+    state = FakeState()
+
+    class Handler(_Handler):
+        # A Unix peer has no (host, port) address for the default request log.
+        def address_string(self) -> str:
+            return "unix"
+
+    Handler.state = state
+    directory = tempfile.mkdtemp(prefix="garage-", dir=_short_temp_root())  # sun_path is short
+    path = f"{directory}/llama"
+    server = _UnixHTTPServer(path, Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield path, state
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def test_client_talks_to_the_socket_the_app_exports(
+    socket_server: tuple[str, FakeState], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path, state = socket_server
+    monkeypatch.setenv("GARAGE_LLAMA_SOCKET", path)
+    # Nothing listens on the TCP port; the request can only have reached the socket.
+    client = LlamaXPCClient(f"http://127.0.0.1:{_free_port()}", timeout=5.0)
+    assert client.backend.socket_path == path
+    assert client.health()["status"] == "ok"
+    assert state.requests[-1][:2] == ("GET", "/health")
+
+
+def test_socket_is_ignored_for_a_host_that_is_not_loopback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARAGE_LLAMA_SOCKET", "/tmp/garage-test/llama")
+    with pytest.raises(LlamaXPCError, match="loopback"):
+        LlamaXPCClient("http://gpu-box:8790")
+
+
+def test_relative_socket_path_is_not_used(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARAGE_LLAMA_SOCKET", "s/llama")
+    assert LlamaXPCClient("http://127.0.0.1:8790").backend.socket_path is None
+
+
+def test_unreachable_socket_names_the_socket(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARAGE_LLAMA_SOCKET", "/tmp/garage-no-such-dir/llama")
+    client = LlamaXPCClient("http://127.0.0.1:8790", timeout=2.0)
+    with pytest.raises(LlamaXPCError, match="unix:/tmp/garage-no-such-dir/llama") as info:
+        client.health()
+    assert info.value.status_code == 503
+
+
+def _short_temp_root() -> str:
+    """The temporary folder, or /tmp when its path leaves too little room in sun_path (104 bytes on macOS)."""
+    import tempfile
+
+    root = tempfile.gettempdir()
+    return root if len(root) <= 60 else "/tmp"

@@ -1,4 +1,5 @@
 import XCTest
+import PythonXPCService
 @testable import GarageApp
 
 final class PostgresServiceTests: XCTestCase {
@@ -25,7 +26,48 @@ final class PostgresServiceTests: XCTestCase {
         XCTAssertTrue(url.starts(with: "postgresql+psycopg://\(encodedUser):"))
         XCTAssertFalse(url.contains("postgres-superuser"))
         XCTAssertFalse(url.contains("postgres-master"))
-        XCTAssertTrue(url.contains("@localhost:14824/garage-rag"))
+        XCTAssertTrue(url.contains(Self.expectedLocation(service)))
+    }
+
+    /// The part of the URL after the credentials: the socket folder when the server has one, else localhost.
+    @MainActor
+    private static func expectedLocation(_ service: PostgresService) -> String {
+        guard let directory = service.socketDirectory else { return "@localhost:14824/garage-rag" }
+        let encoded = directory.addingPercentEncoding(
+            withAllowedCharacters: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+        ) ?? directory
+        return "@/garage-rag?host=\(encoded)&port=14824"
+    }
+
+    func testSocketURLNamesTheFolderAndThePort() throws {
+        let url = try GaragePostgresEndpoint.connectionURL(
+            password: "s3cr@t",
+            scheme: "postgresql",
+            socketDirectory: "/Users/me/Library/Group Containers/TEAM.group.x/s"
+        )
+        XCTAssertTrue(url.hasSuffix("@/garage-rag?host=%2FUsers%2Fme%2FLibrary%2FGroup%20Containers%2FTEAM.group.x%2Fs&port=14824"))
+        XCTAssertTrue(url.contains(":s3cr%40t@"))
+        let components = try XCTUnwrap(URLComponents(string: url))
+        XCTAssertEqual(components.queryItems?.first { $0.name == "host" }?.value, "/Users/me/Library/Group Containers/TEAM.group.x/s")
+    }
+
+    func testTCPURLWhenThereIsNoSocket() throws {
+        let url = try GaragePostgresEndpoint.connectionURL(password: "pw", socketDirectory: nil)
+        XCTAssertTrue(url.hasSuffix(":pw@localhost:14824/garage-rag"))
+        XCTAssertEqual(GaragePostgresEndpoint.clientArguments(socketDirectory: nil), ["-h", "localhost", "-p", "14824"])
+        XCTAssertEqual(GaragePostgresEndpoint.clientArguments(socketDirectory: "/s"), ["-h", "/s", "-p", "14824"])
+    }
+
+    func testSocketFolderIsQuotedAsOneListElement() {
+        XCTAssertEqual(PostgresService.quotedSetting("/a b/s"), "\"/a b/s\"")
+        XCTAssertEqual(PostgresService.quotedSetting("/a\"b,c"), "\"/a\"\"b,c\"")
+    }
+
+    func testSocketPathLimitIsSunPath() {
+        XCTAssertEqual(GarageSockets.maxPathLength, 103)
+        XCTAssertTrue(GarageSockets.fits(String(repeating: "a", count: 103)))
+        XCTAssertFalse(GarageSockets.fits(String(repeating: "a", count: 104)))
+        XCTAssertNil(GarageSockets.path(for: "grpc", in: URL(fileURLWithPath: "/" + String(repeating: "d", count: 110))))
     }
 
     @MainActor
@@ -61,12 +103,14 @@ final class PostgresServiceTests: XCTestCase {
         XCTAssertFalse(urlString.contains("psycopg"))
         XCTAssertFalse(urlString.contains("postgres-superuser"))
         XCTAssertFalse(urlString.contains("postgres-master"))
-        XCTAssertTrue(urlString.contains("@localhost:14824/garage-rag"))
+        XCTAssertTrue(urlString.contains(Self.expectedLocation(service)))
 
         XCTAssertEqual(url.scheme, "postgresql")
         XCTAssertEqual(url.user, encodedUser)
-        XCTAssertEqual(url.host, "localhost")
-        XCTAssertEqual(url.port, 14824)
+        if service.socketDirectory == nil {
+            XCTAssertEqual(url.host, "localhost")
+            XCTAssertEqual(url.port, 14824)
+        }
         XCTAssertEqual(url.path, "/garage-rag")
         XCTAssertEqual(url.absoluteString, urlString)
     }
@@ -125,6 +169,15 @@ final class PostgresServiceTests: XCTestCase {
 
         XCTAssertEqual(shown, "postgresql://garage:••••••@localhost:14824/garage")
         XCTAssertFalse(shown.contains("s3cr"))
+    }
+
+    func testSocketConnectionURLIsShownWithoutThePassword() throws {
+        let url = try XCTUnwrap(URL(string: "postgresql://garage:s3cr%40t@/garage?host=%2Ftmp%2Fs&port=14824"))
+
+        let shown = PostgresService.redactedConnectionString(url)
+
+        XCTAssertFalse(shown.contains("s3cr"))
+        XCTAssertTrue(shown.contains("garage:••••••@"))
     }
 
     func testConnectionURLWithoutAPasswordIsShownAsIs() throws {

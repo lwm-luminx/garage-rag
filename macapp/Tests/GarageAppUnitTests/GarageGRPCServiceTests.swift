@@ -18,6 +18,36 @@ final class GarageGRPCServiceTests: XCTestCase {
         XCTAssertTrue(grpcService.logs.isEmpty)
     }
 
+    @MainActor
+    func testAddressNamesTheSocketWhenThereIsOne() {
+        let grpcService = GarageGRPCService(postgres: PostgresService(), port: 50051)
+        if let socketPath = grpcService.socketPath {
+            XCTAssertTrue(socketPath.hasSuffix("/s/grpc"), socketPath)
+            XCTAssertEqual(grpcService.address, "unix:\(socketPath)")
+            XCTAssertEqual(grpcService.shortAddress, "a private socket")
+        } else {
+            XCTAssertEqual(grpcService.address, "127.0.0.1:50051")
+            XCTAssertEqual(grpcService.shortAddress, "127.0.0.1:50051")
+        }
+    }
+
+    func testHelperConfigurationNamesWhereTheServerListens() {
+        // The helpers read the socket first, then host and port (GarageXPCServiceBase.grpcTarget).
+        XCTAssertEqual(
+            GarageGRPCService.addressOptions(socketPath: "/tmp/s/grpc", host: "127.0.0.1", port: 50051),
+            [GarageXPCConfigurationKey.grpcSocket: "/tmp/s/grpc"]
+        )
+        XCTAssertEqual(
+            GarageGRPCService.addressOptions(socketPath: nil, host: "127.0.0.1", port: 50051),
+            [GarageXPCConfigurationKey.grpcHost: "127.0.0.1", GarageXPCConfigurationKey.grpcPort: "50051"]
+        )
+    }
+
+    func testTheHelpersTheAppConfiguresAreTheOnesWithoutAStartServer() {
+        // garage-xpc gets the same keys from startServer; llama and the downloader have no Python.
+        XCTAssertEqual(Set(XPCServiceManager.helpersConfiguredByTheApp), ["ingest-xpc", "embed-xpc", "mcp-server-xpc"])
+    }
+
     func testGarageGRPCStatusEquality() {
         XCTAssertEqual(GarageGRPCStatus.stopped, GarageGRPCStatus.stopped)
         XCTAssertEqual(GarageGRPCStatus.starting, GarageGRPCStatus.starting)

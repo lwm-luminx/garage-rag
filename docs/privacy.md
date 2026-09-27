@@ -35,7 +35,7 @@ The test parses every source file's AST, so a function-local or
 is exempt, and listed file by file rather than by pattern: the gRPC server and
 its generated stubs, the MCP server's uvicorn, and psycopg's connection to
 Postgres. The gRPC *client* of the app's facade is listed too, and checks its
-address with the guard (loopback only).
+address with the guard (loopback only), unless it is given the app's socket.
 
 ### Layer 2 — no cloud AI SDK
 
@@ -56,8 +56,9 @@ has them loads with a warning).
 
 - **loopback** — `localhost` or a literal loopback address (`127.0.0.0/8`,
   `::1`): the app's own `LlamaXPCService` on `embedding.llama_host` (default
-  `http://127.0.0.1:8790`, and required to be loopback), and Ollama or LM Studio
-  running on this Mac;
+  `http://127.0.0.1:8790`, and required to be loopback; in the app it is reached
+  on its socket or over NSXPC instead, see "Garage's own endpoints" below), and
+  Ollama or LM Studio running on this Mac;
 - **the configured model servers** — exactly the origins (scheme, host and port)
   of `embedding.ollama_host` and `embedding.lmstudio_host`, which may be another
   machine.
@@ -151,6 +152,43 @@ capped per run by `placeholders.limit` and `placeholders.max_bytes`. Every run r
 deferred; nothing is silently truncated. A stub that is not downloaded gets no
 document (the run counts it as a placeholder), and a file indexed before the sync
 client evicted it is skipped without a download while its stat still matches.
+
+## Garage's own endpoints
+
+The app's pieces talk to each other on this Mac: the Python pipeline to Postgres,
+the app and its workers to the `GarageService` gRPC facade, and the `llama_xpc`
+provider to `LlamaXPCService`. A loopback TCP port is reachable by every process
+of every account on the Mac, so none of these listen on one:
+
+- **Unix-domain sockets in an owner-only folder.** Postgres, gRPC and the
+  llama-server API listen in `s/` at the root of the App Group container
+  (`~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/s`, mode
+  0700): `.s.PGSQL.14824`, `grpc` and `llama`. Only this account's processes
+  can open them, and in the App Sandbox only processes entitled to the group
+  (the app, its XPC services and the `garage` / `garage-mcp` launchers). Postgres
+  still asks for its password (SCRAM), which lives in the group's Keychain.
+  A socket path must fit in 104 bytes; for a user name long enough to overflow
+  that, the affected endpoint falls back to its loopback port as before
+  (`GarageSockets`).
+- **Configuration changes need a vouched-for caller.** The gRPC methods that
+  write `garage.json` or an MCP client's config (`SetSetting`, the source and
+  model methods, `McpInstall`/`McpUninstall`), and `InitDb`, which runs the SQL
+  of a caller-named `schema_dir`, run only for a caller presenting
+  the app's per-launch token or arriving over that owner-only socket. A server
+  on a loopback TCP port with no token refuses them, so no other account on
+  the Mac can point `embedding.ollama_host` off-box and widen the allowlist.
+- **XPC peers must share the team.** Each XPC service puts a code-signing
+  requirement on its connections (`anchor apple generic and certificate
+  leaf[subject.OU]` = the team in its own signature), so only the app, its
+  other services and the launchers can call it. Ad-hoc and locally signed
+  builds have no team, and skip the check.
+- **Inference over NSXPC inside the app.** The XPC services that embed Python
+  send `llama_xpc` requests straight over their NSXPC connection to
+  `LlamaXPCService` (`garage_rag.inference.bridge`); the llama-server socket is
+  for the launchers and a `garage` run from a terminal.
+
+`GARAGE_LLAMA_HTTP_PORT` puts `LlamaXPCService` back on a loopback port, for
+debugging with tools that cannot use a socket.
 
 ## Serving over HTTP
 

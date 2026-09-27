@@ -1,6 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <!-- Google tag (gtag.js), on garagerag.app only: not on `jekyll serve` or a fork's copy of the site -->
+  <script>
+    if (location.hostname === 'garagerag.app' || location.hostname === 'www.garagerag.app') {
+      var gtagScript = document.createElement('script');
+      gtagScript.async = true;
+      gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-85TQVVK80M';
+      document.head.appendChild(gtagScript);
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-85TQVVK80M');
+    }
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {% assign in_support = false %}{% if page.url contains '/support/' %}{% assign in_support = true %}{% endif %}
@@ -61,6 +74,7 @@
         <a href="{{ '/support/faq.html' | relative_url }}">FAQ</a>
         <a href="{{ '/support/privacy-policy.html' | relative_url }}">Privacy Policy</a>
         <a href="{{ '/support/contact.html' | relative_url }}">Contact & Issues</a>
+        <a href="{{ '/about.html' | relative_url }}">About the Creator</a>
         <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">GitHub</a>
       </div>
     </div>

@@ -603,7 +603,8 @@ final class FirstRunCoordinator: ObservableObject {
         if Task.isCancelled { return }
 
         if appState.postgres.status == .running {
-            if Self.needsStart(appState.grpc.status) { try? await appState.grpc.start() }
+            // startBackend, not grpc.start(): it also hands the helpers the database and the backend's address.
+            if Self.needsStart(appState.grpc.status) { await appState.startBackend() }
             if Self.needsStart(appState.mcp.status) { try? await appState.mcp.start() }
         }
 

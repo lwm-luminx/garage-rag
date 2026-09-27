@@ -22,6 +22,7 @@ def embed_via_grpc(
     batch_size: int | None = None,
     grpc_host: str = "127.0.0.1",
     grpc_port: int = 50051,
+    grpc_socket: str | None = None,
 ) -> dict[str, Any]:
     """Fetch unembedded chunks via gRPC, compute embeddings locally, and persist vectors via gRPC.
 
@@ -35,7 +36,7 @@ def embed_via_grpc(
     # GarageClient opens a gRPC channel on first use; close it on the way out,
     # including on error. (try/finally rather than ``with`` so a spec'd mock
     # client in tests is the object the loop actually talks to.)
-    client = GarageClient(host=grpc_host, port=grpc_port, in_process=False)
+    client = GarageClient(host=grpc_host, port=grpc_port, in_process=False, socket_path=grpc_socket)
     try:
         total_embedded = _embed_loop(client, model_slug=model_slug, limit=limit, batch_size=batch_size)
     finally:

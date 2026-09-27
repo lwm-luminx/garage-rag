@@ -23,6 +23,29 @@ METADATA_KEY = "x-garage-token"
 # its llama_xpc model loaded; it only loads a model the app already knows by slug.
 UNAUTHENTICATED_METHODS = frozenset({"EnsureLlamaModel"})
 
+# Methods that write configuration: garage.json (sources, models, settings) or an MCP
+# client's config file, and ``InitDb``, which applies the SQL files of a caller-chosen
+# ``schema_dir`` with the database role. Changing ``embedding.ollama_host`` through
+# ``SetSetting`` widens the egress allowlist, and a schema directory of the caller's
+# choosing runs its SQL against the corpus, so these are answered only for a caller the
+# server can vouch for: one presenting the token, or one on the owner-only Unix socket. A
+# server on a loopback TCP port with no token (``garage grpc serve`` by hand) refuses
+# them with PERMISSION_DENIED, since any account on the machine can reach that port.
+CONFIG_CHANGING_METHODS = frozenset(
+    {
+        "InitDb",
+        "AddSource",
+        "RemoveSource",
+        "ImportSourcesToConfig",
+        "RegisterModel",
+        "SetDefaultModel",
+        "DropModel",
+        "SetSetting",
+        "McpInstall",
+        "McpUninstall",
+    }
+)
+
 
 def token_from_env() -> str | None:
     """The token in ``GARAGE_GRPC_TOKEN``, or None when it is unset or empty."""
@@ -36,3 +59,16 @@ def token_matches(presented: str | bytes | None, expected: str) -> bool:
         return False
     presented_bytes = presented.encode() if isinstance(presented, str) else presented
     return hmac.compare_digest(presented_bytes, expected.encode())
+
+
+def config_change_allowed(*, token_configured: bool, unix_socket: bool) -> bool:
+    """Whether a server answers config-changing methods for its callers.
+
+    With a token configured the interceptor authenticates every call. Without one, a
+    server bound to the owner-only Unix socket (and to nothing else) hears only from
+    processes of the same account, so the folder's mode is the check; a server on a TCP
+    port can vouch for nobody. This is decided from how the server was bound, not from
+    ``ServicerContext.peer()``: gRPC reports a Unix-socket client as ``unix:...`` on
+    Linux but not reliably on macOS, where the app runs.
+    """
+    return token_configured or unix_socket

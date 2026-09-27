@@ -73,7 +73,8 @@ public enum LlamaModelLoaderBridge {
     nonisolated(unsafe) private static var registeredWithPython = false
 
     /// Installs the standard NSXPC loader, on the handed-over LlamaXPCService endpoint (unless a
-    /// loader is set already), and registers the entry point with Python. Call once Python is ready; takes the GIL itself; later calls do nothing.
+    /// loader is set already), and registers the entry point with Python, along with
+    /// `LlamaInferenceBridge`. Call once Python is ready; takes the GIL itself; later calls do nothing.
     /// Returns false (and logs) when `garage_rag` cannot be imported, so the service still starts.
     @discardableResult
     public static func install() -> Bool {
@@ -95,6 +96,8 @@ public enum LlamaModelLoaderBridge {
             registeredWithPython = true
             lock.unlock()
             logger.info("llama model loader installed for Python")
+            // The same processes send llama_xpc requests over NSXPC rather than HTTP.
+            LlamaInferenceBridge.install()
             return true
         } catch {
             logger.error("Could not install the llama model loader: \(error.localizedDescription, privacy: .public)")

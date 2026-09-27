@@ -135,8 +135,7 @@ extension StatusView {
     private var grpcRow: some View {
         let row = ServiceRowPresentation.grpc(
             status: appState.grpc.status,
-            host: appState.grpc.host,
-            port: appState.grpc.port,
+            address: appState.grpc.shortAddress,
             lastTest: grpcTestResult.map { (isSuccess: $0.isSuccess, summary: $0.summary) }
         )
         let isExpanded = expandedServiceIds.contains(row.id)
@@ -165,7 +164,7 @@ extension StatusView {
 
             if isExpanded {
                 VStack(alignment: .leading, spacing: 8) {
-                    detailLine("Address", "\(appState.grpc.host):\(appState.grpc.port)", monospaced: true)
+                    detailLine("Address", appState.grpc.address, monospaced: true)
                     detailLine("Process", "The Python GarageService over gRPC: search, documents, sources, models, stats, and every operation the app runs.")
                     if let result = grpcTestResult {
                         testOutput(id: "grpc", isSuccess: result.isSuccess, summary: result.summary, durationMs: result.durationMs, details: result.details)

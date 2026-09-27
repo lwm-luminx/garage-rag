@@ -2,55 +2,86 @@ import Foundation
 import OSLog
 import Security
 
-private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCPeerRequirement")
+private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "XPCPeerRequirement")
 
-/// The code-signing requirement every Garage XPC listener puts on the processes that connect to it.
+/// The code-signing requirement every XPC service puts on the processes that connect to it.
 ///
-/// A bundled XPC service can only be looked up from inside the app bundle, but nothing checked who
-/// was on the other end once a connection existed: code injected into the app, or a debugger's
-/// target, got every service. The requirement pins the peer to Apple-issued signing (Developer ID,
-/// App Store or Apple Development) with this process's own team, so only the app, its sibling
-/// services and the launcher helpers, all signed by the same team, get through.
+/// A bundled XPC service can only be looked up by processes in its own app bundle, but that is all
+/// that stood between the services and anything else able to run code as the user. With this, a
+/// connection's messages are only delivered when the peer is signed by the same team as this
+/// service: the app, its other XPC services and the launcher helpers, all signed together.
 ///
-/// A process signed without a team (ad hoc, `local_signed`, tests) has nothing to pin, so its
-/// listeners take no requirement and behave as before.
+/// The requirement is `anchor apple generic and certificate leaf[subject.OU] = "<team>"`, with the
+/// team read from this process's own signature. It is used only when this process satisfies it
+/// itself, which is what makes it safe: the app and every service are signed the same way, so a
+/// requirement this service meets is one its siblings meet too. An ad-hoc or locally signed build
+/// (no team) and any signature the check cannot read go without one, as before, and say so in the log.
 public enum GarageXPCPeerRequirement {
-    /// The requirement string, or nil when this process carries no team identifier.
-    public static let requirement: String? = {
-        guard let team = teamIdentifier(), isPlainTeamIdentifier(team) else {
-            logger.info("No team identifier in this process's signature; XPC peers are not checked")
+    /// The requirement to set on incoming connections, or nil when this build cannot use one.
+    public static let current: String? = {
+        guard let team = ownTeamIdentifier() else {
+            logger.notice("No team identifier in this process's signature; XPC peers are not checked")
             return nil
         }
-        return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+        let requirement = GarageXPCPeerRequirement.requirement(forTeam: team)
+        guard selfSatisfies(requirement) else {
+            logger.error("This process does not satisfy \(requirement, privacy: .public); XPC peers are not checked")
+            return nil
+        }
+        logger.info("XPC peers must satisfy \(requirement, privacy: .public)")
+        return requirement
     }()
 
-    /// Puts `requirement` on a connection a listener has just been offered, before it is resumed, so
+    /// Puts `current` on a connection a listener has just been offered, before it is resumed, so
     /// a peer that does not satisfy it has its messages refused and the connection invalidated.
     ///
     /// It goes on each connection rather than on the listener: `NSXPCListener.service()` has no
     /// underlying connection until it is resumed, and `setConnectionCodeSigningRequirement(_:)` on it
     /// crashes the service at launch (SIGSEGV inside the setter).
     public static func apply(to connection: NSXPCConnection, serviceName: String) {
-        guard let requirement else { return }
+        guard let requirement = current else { return }
         connection.setCodeSigningRequirement(requirement)
         logger.debug("\(serviceName, privacy: .public): XPC peer pid \(connection.processIdentifier, privacy: .public) must satisfy \(requirement, privacy: .public)")
     }
 
-    /// The team identifier in this process's code signature, when it has one.
-    static func teamIdentifier() -> String? {
+    /// `anchor apple generic and certificate leaf[subject.OU] = "<team>"`. The team is validated
+    /// first (ten upper-case letters and digits), so it cannot change the requirement's meaning.
+    public static func requirement(forTeam team: String) -> String {
+        precondition(isTeamIdentifier(team), "not a team identifier: \(team)")
+        return "anchor apple generic and certificate leaf[subject.OU] = \"\(team)\""
+    }
+
+    public static func isTeamIdentifier(_ value: String) -> Bool {
+        value.utf8.count == 10 && value.utf8.allSatisfy { (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains($0) || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) }
+    }
+
+    private static func ownCode() -> SecCode? {
         var code: SecCode?
-        guard SecCodeCopySelf([], &code) == errSecSuccess, let code else { return nil }
+        guard SecCodeCopySelf([], &code) == errSecSuccess else { return nil }
+        return code
+    }
+
+    private static func ownTeamIdentifier() -> String? {
+        guard let code = ownCode() else { return nil }
         var staticCode: SecStaticCode?
         guard SecCodeCopyStaticCode(code, [], &staticCode) == errSecSuccess, let staticCode else { return nil }
         var info: CFDictionary?
         let flags = SecCSFlags(rawValue: kSecCSSigningInformation)
         guard SecCodeCopySigningInformation(staticCode, flags, &info) == errSecSuccess,
-              let info = info as? [String: Any] else { return nil }
-        return info[kSecCodeInfoTeamIdentifier as String] as? String
+              let dictionary = info as? [String: Any],
+              let team = dictionary[kSecCodeInfoTeamIdentifier as String] as? String,
+              isTeamIdentifier(team) else {
+            return nil
+        }
+        return team
     }
 
-    /// Team identifiers are ten uppercase letters and digits; anything else is not quoted into a requirement.
-    static func isPlainTeamIdentifier(_ team: String) -> Bool {
-        !team.isEmpty && team.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber) }
+    private static func selfSatisfies(_ text: String) -> Bool {
+        guard let code = ownCode() else { return false }
+        var requirement: SecRequirement?
+        guard SecRequirementCreateWithString(text as CFString, [], &requirement) == errSecSuccess, let requirement else {
+            return false
+        }
+        return SecCodeCheckValidity(code, [], requirement) == errSecSuccess
     }
 }
