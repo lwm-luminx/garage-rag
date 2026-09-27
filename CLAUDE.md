@@ -134,6 +134,11 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
   source on `windows-latest`, from the pins in `ext/*/*.MODULE.bazel` (read by
   `tools/windows/fetch_ext.py`), with each project's own MSVC build rather than Bazel. It then runs
   `test_postgres.py` on the built interpreter against the built server.
+- **`.github/workflows/known-answers.yaml`** (on changes under `ext/llama_cpp`, `ext/nomic_embed`,
+  `tools/llama`) rebuilds `llama-embedding` and regenerates the nomic-embed Q2_K reference vectors
+  (`tools/llama/known_answers.py`). The reference is the Apple silicon CPU job; Metal is held to
+  `MIN_COSINE` (0.999) against it, and a Linux x86-64 job only to the cross-architecture 0.98,
+  because the Q2_K kernels of the two ISAs land near 0.99 of each other.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 

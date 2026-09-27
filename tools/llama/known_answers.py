@@ -3,8 +3,9 @@
 LlamaXPCService's "Embedding Known Answers" self-test and //macapp/Tests/LlamaEngineTests embed
 the inputs below with the bundled nomic-embed-text Q2_K GGUF and compare against these vectors.
 The reference comes from llama.cpp's own `llama-embedding`, built for the CPU from the exact
-source //ext/llama_cpp pins, run on the exact GGUF //ext/nomic_embed pins, one input per run.
-That matches how LlamaCppEngine embeds:
+source //ext/llama_cpp pins, run on the exact GGUF //ext/nomic_embed pins, one input per run,
+on Apple silicon: the only CPU the app ships on, and the one the self-test runs on. That matches
+how LlamaCppEngine embeds:
 
 - tokenization with special tokens added and parsed (`common_tokenize(..., true, true)`, the
   engine's `tokenize(addSpecial: true, parseSpecial: true)`), so BERT's [CLS]/[SEP] frame the text;
@@ -16,8 +17,13 @@ That matches how LlamaCppEngine embeds:
     tools/llama/gen_known_answers.sh --metal --out x.json # the same on Metal, to compare
 
 `--compare FILE` prints the cosine of each vector against FILE's and fails below the tolerance
-stored there, which is how CI checks a regenerated reference and measures Metal against CPU.
-Standard library only; needs cmake and a C++ compiler.
+stored there, which is how CI checks a regenerated reference and measures Metal against the
+CPU. The reference is only meaningful on the CPU it was made on: the Q2_K dot products of
+x86-64 (AVX2) and Apple silicon (NEON) accumulate differently and land near 0.99 of each other,
+so a Linux run passes `--cross-architecture` and compares at the looser
+CROSS_ARCHITECTURE_MIN_COSINE, enough to catch a broken tokenizer, pooling or normalization,
+which fall far below that. Standard library only;
+needs cmake and a C++ compiler.
 """
 
 from __future__ import annotations
@@ -73,8 +79,13 @@ ORDERINGS = [
 
 # Metal and the CPU differ slightly: the CPU quantizes activations to Q8_K for its K-quant dot
 # products and Metal does not, and the two sum in different orders. See the tolerance note below.
+# This is the tolerance for the same machine's Metal against its CPU, and for a rebuilt CPU
+# reference against the committed one; another CPU architecture is farther (see the docstring).
 MIN_COSINE = 0.999
 MAX_NORM_ERROR = 1e-3
+# What a run on another CPU architecture (the workflow's Linux x86-64 job) must reach: the Q2_K
+# kernels differ per ISA and give about 0.99, while a pipeline error gives far less.
+CROSS_ARCHITECTURE_MIN_COSINE = 0.98
 
 
 def _cmake_flags(metal: bool) -> list[str]:
@@ -199,8 +210,10 @@ def generate(work: Path, metal: bool) -> dict[str, object]:
             "max_norm_error": MAX_NORM_ERROR,
             "why": (
                 "Not bit-exact: Metal keeps activations in float where the CPU quantizes them to "
-                "Q8_K for Q2_K dot products, and the backends sum in different orders. A broken "
-                "tokenizer, pooling or normalization drops the cosine far below 0.99."
+                "Q8_K for Q2_K dot products, and the backends sum in different orders. Holds on "
+                "the CPU architecture of 'generation.platform'; another architecture's Q2_K "
+                "kernels land near 0.99. A broken tokenizer, pooling or normalization drops the "
+                "cosine far below 0.99."
             ),
         },
         "orderings": ORDERINGS,
@@ -234,10 +247,17 @@ def render(known: dict[str, object]) -> str:
     return text
 
 
-def compare(produced: dict[str, object], reference_path: Path) -> int:
+def compare(produced: dict[str, object], reference_path: Path, min_cosine: float | None = None) -> int:
+    """Cosine of each produced vector against the reference's; 0 when all reach the tolerance.
+
+    The tolerance is the reference file's, or `min_cosine` when given (`--cross-architecture`
+    passes CROSS_ARCHITECTURE_MIN_COSINE).
+    """
     reference = json.loads(reference_path.read_text())
     expected = {entry["id"]: entry["embedding"] for entry in reference["inputs"]}
-    minimum = reference["tolerance"]["min_cosine"]
+    minimum = min_cosine if min_cosine is not None else reference["tolerance"]["min_cosine"]
+    made = reference.get("generation", {})
+    print(f"reference: {made.get('backend', '?')} on {made.get('platform', '?')}")
     worst = 1.0
     for entry in produced["inputs"]:
         c = cosine(entry["embedding"], expected[entry["id"]])
@@ -263,13 +283,23 @@ def main() -> int:
     parser.add_argument(
         "--compare", type=Path, help="compare against this known-answers file"
     )
+    parser.add_argument(
+        "--cross-architecture",
+        action="store_true",
+        help=(
+            "this CPU is not the reference's architecture: compare at "
+            f"{CROSS_ARCHITECTURE_MIN_COSINE} instead of the file's tolerance"
+        ),
+    )
     args = parser.parse_args()
     produced = generate(args.work, args.metal)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(render(produced))
     print(f"wrote {args.out}")
     if args.compare:
-        return compare(produced, args.compare)
+        return compare(
+            produced, args.compare, CROSS_ARCHITECTURE_MIN_COSINE if args.cross_architecture else None
+        )
     return 0
 
 

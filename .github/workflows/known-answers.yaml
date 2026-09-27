@@ -3,10 +3,14 @@
 # ext/nomic_embed/known_answers.json holds llama.cpp's vectors for a few fixed inputs, from the
 # llama.cpp source //ext/llama_cpp pins and the GGUF //ext/nomic_embed pins. This workflow
 # rebuilds llama-embedding and regenerates them:
-# - `cpu` (Linux x86-64) is the canonical reference; it fails when the committed file no longer
-#   matches, and uploads what it produced, which is the file to commit after bumping a pin;
-# - `macos` repeats it on Apple silicon, on the CPU and on Metal, and checks both against the
-#   reference, which is the evidence for the tolerance the self-test uses.
+# - `macos (cpu)` (Apple silicon, the only CPU the app ships on) is the canonical reference; it
+#   fails when the committed file no longer matches, and uploads what it produced, which is the
+#   file to commit after bumping a pin;
+# - `macos (metal)` repeats it on Metal and checks it against the reference (the committed file,
+#   else the CPU job's), which is the evidence for the tolerance the self-test uses;
+# - `linux` (x86-64) checks the same against the reference with the cross-architecture tolerance:
+#   Q2_K kernels differ per ISA and land near 0.99 of each other, so it catches a broken pipeline
+#   (far below that) without holding another architecture to the same-machine tolerance.
 on:
   push:
     paths:
@@ -24,8 +28,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  cpu:
-    runs-on: ubuntu-latest
+  reference:
+    name: macos (cpu)
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
       - name: Generate on the CPU
@@ -38,32 +43,37 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: known-answers-linux-cpu
+          name: known-answers-macos-cpu
           path: ${{ runner.temp }}/known_answers.json
 
-  macos:
-    needs: cpu
-    runs-on: macos-latest
+  compare:
+    needs: reference
     strategy:
       fail-fast: false
       matrix:
-        backend: [cpu, metal]
+        include:
+          - name: macos (metal)
+            os: macos-latest
+            flags: --metal
+          - name: linux
+            os: ubuntu-latest
+            flags: --cross-architecture
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: actions/download-artifact@v4
         with:
-          name: known-answers-linux-cpu
+          name: known-answers-macos-cpu
           path: ${{ runner.temp }}/reference
       - name: Generate and compare against the reference
         run: |
           reference=ext/nomic_embed/known_answers.json
           [ -f "$reference" ] || reference="$RUNNER_TEMP/reference/known_answers.json"
-          flag=""
-          [ "${{ matrix.backend }}" = metal ] && flag="--metal"
-          tools/llama/gen_known_answers.sh $flag --work "$RUNNER_TEMP/ka" \
+          tools/llama/gen_known_answers.sh ${{ matrix.flags }} --work "$RUNNER_TEMP/ka" \
             --out "$RUNNER_TEMP/known_answers.json" --compare "$reference"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: known-answers-macos-${{ matrix.backend }}
+          name: known-answers-${{ matrix.os == 'ubuntu-latest' && 'linux-cpu' || 'macos-metal' }}
           path: ${{ runner.temp }}/known_answers.json
