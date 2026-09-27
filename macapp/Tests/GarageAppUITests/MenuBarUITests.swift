@@ -4,14 +4,6 @@ import XCTest
 /// main window. Quick search is only handed on to the Search page here; results need a model.
 final class MenuBarUITests: GarageUITestCase {
 
-    /// Clicks Garage's menu bar item and waits for its popover.
-    private func openPopover(file: StaticString = #filePath, line: UInt = #line) {
-        let item = app.statusItems.firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 15), "Garage has no menu bar item", file: file, line: line)
-        item.click()
-        XCTAssertTrue(element(identifier: "menubar.services").waitForExistence(timeout: 10), "the menu bar item did not open its popover", file: file, line: line)
-    }
-
     /// With the database and the MCP server up, the services row folds into "All systems go", and
     /// the activity line says there is nothing to index yet, with Ingest Now off.
     func testPopoverSummarizesAnEmptyCorpus() throws {

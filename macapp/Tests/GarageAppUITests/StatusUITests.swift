@@ -1,3 +1,4 @@
+import Darwin
 import XCTest
 
 /// The Status page's sections on a new, empty corpus: Health lists what is missing and each row
@@ -130,5 +131,56 @@ final class StatusUITests: GarageUITestCase {
         XCTAssertEqual(details.label, "Show Ingest details")
         click(details)
         XCTAssertTrue(waitUntil(timeout: 10) { details.label == "Hide Ingest details" }, "the details button did not change to Hide")
+    }
+
+    /// Automatic Updates moved from Sources to Status, under Library. Scheduled maintenance is off on
+    /// a test launch, so its launch-time toggle is disabled; nothing is switched.
+    func testAutomaticUpdatesSitOnStatus() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "status")
+
+        XCTAssertTrue(element(text: "Automatic Updates").waitForExistence(timeout: 15), "Status has no Automatic Updates")
+        let atLaunch = element(identifier: "status.maintenance.atLaunch")
+        XCTAssertTrue(atLaunch.exists, "Automatic Updates has no launch-time toggle")
+        XCTAssertFalse(atLaunch.isEnabled, "the launch-time toggle is enabled with scheduled updates off")
+        XCTAssertTrue(element(text: "Keep every source up to date").exists, "Automatic Updates has no schedule toggle")
+
+        open(section: "sources")
+        XCTAssertTrue(element(identifier: "sources.addFolder").waitForExistence(timeout: 15), "Sources did not open")
+        XCTAssertFalse(element(text: "Automatic Updates").exists, "Sources still shows Automatic Updates")
+        XCTAssertFalse(element(identifier: "sources.maintenance.atLaunch").exists, "Sources still has the launch-time toggle")
+    }
+
+    /// The Index Manager row says how it listens: without remote access on its socket, or on its
+    /// port when the socket path is too long for `sun_path` (as it can be under a test's temporary folder).
+    func testIndexManagerSaysHowItListens() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "status")
+
+        let socket = dataDirectory.appendingPathComponent("s/grpc", isDirectory: false).path
+        let address = sockaddr_un()
+        let onSocket = socket.utf8.count < MemoryLayout.size(ofValue: address.sun_path)
+        let expected = onSocket ? "Without remote access" : ":\(Self.grpcPort)"
+        XCTAssertTrue(
+            element(textContaining: expected).waitForExistence(timeout: 60),
+            "the Index Manager row does not say \"\(expected)\""
+        )
+    }
+
+    /// A helper's Test and Restart are icon buttons that still read as Test and Restart.
+    func testHelperRowsKeepTheirButtonNames() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "status")
+
+        let test = element(identifier: "status.service.ingest-xpc.test")
+        let restart = element(identifier: "status.service.ingest-xpc.restart")
+        XCTAssertTrue(test.waitForExistence(timeout: 30), "the ingest helper row has no Test button")
+        XCTAssertTrue(restart.exists, "the ingest helper row has no Restart button")
+        XCTAssertEqual(test.label, "Test", "the Test icon button has no name for VoiceOver")
+        XCTAssertEqual(restart.label, "Restart", "the Restart icon button has no name for VoiceOver")
+        XCTAssertEqual(element(identifier: "status.service.grpc.test").label, "Test", "the Index Manager's Test icon button has no name")
     }
 }
