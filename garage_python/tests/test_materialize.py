@@ -153,3 +153,23 @@ def test_refused_dataless_read_recognises_the_kernel_errnos():
     assert mat.refused_dataless_read(OSError(errno.EAGAIN, "Resource temporarily unavailable"))
     assert not mat.refused_dataless_read(OSError(errno.ENOENT, "No such file"))
     assert not mat.refused_dataless_read(ValueError("not an OSError"))
+
+
+def test_refused_dataless_read_sees_through_extractor_wrapping():
+    """PDF, Office and image extractors re-raise the read error as ExtractionError."""
+    import errno
+
+    from garage_rag.extract.base import ExtractionError
+
+    def wrapped(inner: BaseException) -> BaseException:
+        try:
+            try:
+                raise inner
+            except OSError as exc:
+                raise ExtractionError(f"unreadable: {exc}") from exc
+        except ExtractionError as outer:
+            return outer
+
+    assert mat.refused_dataless_read(wrapped(OSError(errno.EDEADLK, "Resource deadlock avoided")))
+    assert not mat.refused_dataless_read(wrapped(OSError(errno.EIO, "I/O error")))
+    assert not mat.refused_dataless_read(ExtractionError("no cause at all"))

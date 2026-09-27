@@ -122,8 +122,19 @@ def allowing_dataless_reads() -> Iterator[None]:
 
 
 def refused_dataless_read(exc: BaseException) -> bool:
-    """Whether ``exc`` is the kernel declining to materialize a dataless file."""
-    return isinstance(exc, OSError) and exc.errno in DATALESS_REFUSED_ERRNOS
+    """Whether ``exc`` is the kernel declining to materialize a dataless file.
+
+    Extractors wrap the read's ``OSError`` in an ``ExtractionError`` (``raise ... from exc``),
+    so the cause and context chain is searched, not just the exception itself.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, OSError) and current.errno in DATALESS_REFUSED_ERRNOS:
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 def _stalled_count() -> int:
