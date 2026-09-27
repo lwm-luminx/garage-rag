@@ -11,7 +11,8 @@
 # app's PythonXPCService.framework. `version` needs no database, so no app is started and no
 # Keychain is read. It also checks that PythonXPCService's code is only in the app's framework:
 # `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
-# service binary defines the framework's types.
+# service binary defines the framework's types. Every versioned framework in Contents/Frameworks
+# keeps its links (Versions/Current and the top-level entries), which App Store validation needs.
 set -euo pipefail
 
 archive="$1"
@@ -36,6 +37,27 @@ fail() {
 }
 pass() {
     echo "[PASS] $*"
+}
+
+check_framework_links() {
+    local fw="$1" name
+    name="$(basename "$fw")"
+    [ -d "$fw/Versions" ] || return 0
+    if [ ! -L "$fw/Versions/Current" ]; then
+        fail "$name: Versions/Current is not a symlink"
+        return
+    fi
+    local entry top ok=1
+    for entry in "$fw/Versions/Current"/*; do
+        top="$fw/$(basename "$entry")"
+        # Entries with no top-level counterpart (_CodeSignature, Python's bin) need no link.
+        [ -e "$top" ] || [ -L "$top" ] || [ "$(basename "$entry")" = "${name%.framework}" ] || continue
+        if [ ! -L "$top" ] || [ "$(readlink "$top")" != "Versions/Current/$(basename "$entry")" ]; then
+            fail "$name: $(basename "$entry") is not a symlink to Versions/Current/$(basename "$entry")"
+            ok=0
+        fi
+    done
+    [ "$ok" = 1 ] && pass "$name: Versions/Current and its top-level entries are symlinks"
 }
 
 check_forwarder() {
@@ -102,6 +124,9 @@ check_forwarder garage garage.app
 check_forwarder garage-mcp garage-mcp.app
 check_helper garage me.rickmark.garage-rag.garage-cli
 check_helper garage-mcp me.rickmark.garage-rag.mcp-server-cli
+for fw in "$app"/Contents/Frameworks/*.framework; do
+    check_framework_links "$fw"
+done
 
 # No stray bare launchers left in Contents/MacOS: the app's executable and the two forwarders only.
 for entry in "$app/Contents/MacOS"/*; do
