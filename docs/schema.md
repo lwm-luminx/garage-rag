@@ -246,7 +246,9 @@ Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
 `https://garagerag.app/.data/models.json`; the app fetches it at launch, keeps the
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog
-change therefore reaches installed apps without a release.
+change therefore reaches installed apps without a release. Reference embeddings of
+fixed inputs are kept apart from it, keyed by slug, in
+`docs/.data/model_test_vectors.json`, so the catalog the app fetches stays small.
 
 Truncation is only sound for MRL-trained models, so `supports_mrl` is declared
 per model rather than assumed. A CHECK constraint refuses to register an
