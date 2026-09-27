@@ -168,7 +168,7 @@ EOF
     export API_PRIVATE_KEYS_DIR="$work/private_keys"
 fi
 
-# 2. Install each profile under its UUID, where xcodebuild looks, and map bundle IDs to names.
+# 2. Install each profile under its UUID, where xcodebuild looks, and map bundle IDs to UUIDs.
 profile_dirs=(
     "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
     "$HOME/Library/MobileDevice/Provisioning Profiles"
@@ -184,7 +184,9 @@ for entry in "${profiles[@]}"; do
         [[ -f "$dir/$uuid.provisionprofile" ]] || cp "$file" "$dir/$uuid.provisionprofile"
     done
     echo "    $bundle_id: $name ($uuid)"
-    mapping+=("$bundle_id=$name")
+    # By UUID, not name: an older profile of the same name (for a previous distribution
+    # certificate) left in the folder would otherwise be picked and fail the export.
+    mapping+=("$bundle_id=$uuid")
 done
 
 # 3. Export. Bundle IDs contain dots, which plutil reads as key paths, so Python writes the plist.

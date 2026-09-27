@@ -290,8 +290,9 @@ the portal with App Groups enabled); with manual signing the Distribute App shee
 and each helper and asks for a profile for each: `GarageMacAppConnect` for `Garage.app`,
 `GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`.
 `//macapp/package:upload_appstore` writes its `ExportOptions.plist` with the same three in its
-`provisioningProfiles` map, read from the files' `Name`; a new helper bundle needs a `--profile`
-there too.
+`provisioningProfiles` map, by each file's `UUID` rather than its name, since an older profile of
+the same name for a previous distribution certificate may still be installed; a new helper bundle
+needs a `--profile` there too.
 
 Each helper App ID (developer portal → Identifiers → App IDs, platform macOS) needs the **App
 Groups** capability with `group.me.rickmark.garage-rag` assigned; the portal writes the

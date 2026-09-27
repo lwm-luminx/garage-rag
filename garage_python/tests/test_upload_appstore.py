@@ -189,9 +189,9 @@ def test_export_options_name_every_bundles_store_profile(tmp_path: Path) -> None
     assert options["signingCertificate"] == "Apple Distribution"
     assert options["teamID"] == "DWVXMLB45Y"
     assert options["provisioningProfiles"] == {
-        "me.rickmark.garage-rag": "GarageMacAppConnect",
-        "me.rickmark.garage-rag.garage-cli": "GarageRAGAppStoreCLI",
-        "me.rickmark.garage-rag.mcp-server-cli": "GarageRAGAppStoreMCP",
+        "me.rickmark.garage-rag": "UUID-APP",
+        "me.rickmark.garage-rag.garage-cli": "UUID-CLI",
+        "me.rickmark.garage-rag.mcp-server-cli": "UUID-MCP",
     }
     installed = tmp_path / "home" / "Library" / "Developer" / "Xcode" / "UserData" / "Provisioning Profiles"
     assert sorted(p.name for p in installed.iterdir()) == [
