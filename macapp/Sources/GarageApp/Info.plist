@@ -28,7 +28,5 @@
 	<string>Garage needs access to your Downloads folder to index files.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Garage needs access to your Desktop folder to index files.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 </dict>
 </plist>
