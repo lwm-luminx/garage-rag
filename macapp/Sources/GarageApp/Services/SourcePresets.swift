@@ -38,19 +38,21 @@ struct SourcePreset: Identifiable, Hashable, Sendable {
         title: "Desktop",
         spec: SourceSpec(slug: "desktop", root: "~/Desktop", kind: "filesystem", corpusClass: "document", trust: "authored")
     )
+    /// Rooted where Dropbox keeps its folder on this Mac (`DropboxFolder`), `~/Dropbox` when there is
+    /// none, so the Sources menu still offers it.
     static let dropbox = SourcePreset(
         title: "Dropbox",
-        spec: SourceSpec(slug: "dropbox", root: "~/Dropbox", kind: "filesystem", corpusClass: "document", trust: "authored")
+        spec: SourceSpec(slug: "dropbox", root: DropboxFolder.locate() ?? "~/Dropbox", kind: "filesystem", corpusClass: "document", trust: "authored")
     )
 
     /// Every preset, for the Sources page menu.
     static let all: [SourcePreset] = [messages, mail, documents, downloads, desktop, dropbox]
 
-    /// The first-run quick-add set. Dropbox only when the folder exists; checked
+    /// The first-run quick-add set. Dropbox only when its folder was found; checked
     /// once per launch, not on every render of the Status page.
     static let quickAdd: [SourcePreset] = {
         var presets = [documents, messages]
-        if FileManager.default.fileExists(atPath: GarageAppGroup.expandingTilde(in: dropbox.spec.root)) {
+        if DropboxFolder.locate() != nil {
             presets.append(dropbox)
         }
         return presets
