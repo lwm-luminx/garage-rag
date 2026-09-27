@@ -30,23 +30,6 @@ public enum LogLevelFilter: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
-/// Filter options for log output streams (stdout vs stderr).
-public enum LogStreamFilter: String, CaseIterable, Identifiable, Sendable {
-    case all = "All Streams"
-    case stdout = "stdout"
-    case stderr = "stderr"
-
-    public var id: String { rawValue }
-
-    public func matches(_ stream: LogLine.Stream) -> Bool {
-        switch self {
-        case .all: return true
-        case .stdout: return stream == .stdout
-        case .stderr: return stream == .stderr
-        }
-    }
-}
-
 /// A comprehensive, sortable, and filterable table view for log entries.
 public struct LogTableView: View {
     public let lines: [LogLine]
@@ -55,7 +38,6 @@ public struct LogTableView: View {
 
     @State private var searchText = ""
     @State private var levelFilter: LogLevelFilter = .all
-    @State private var streamFilter: LogStreamFilter = .all
     @State private var selectedLineIDs = Set<UUID>()
     @State private var sortOrder = [KeyPathComparator(\LogLine.date, order: .forward)]
     @State private var showDetailInspector = false
@@ -102,6 +84,8 @@ public struct LogTableView: View {
                 Divider()
                 detailInspectorView(for: line)
             }
+            Divider()
+            statusBar
         }
         .onChange(of: filterKey, initial: true) {
             let matches = matchingLines
@@ -151,16 +135,6 @@ public struct LogTableView: View {
             .frame(width: 140)
             .accessibilityIdentifier("logs.level")
 
-            // Stream Picker
-            Picker("Stream", selection: $streamFilter) {
-                ForEach(LogStreamFilter.allCases) { stream in
-                    Text(stream.rawValue).tag(stream)
-                }
-            }
-            .pickerStyle(.menu)
-            .controlSize(.small)
-            .frame(width: 120)
-
             if hasActiveFilters {
                 Button("Reset Filters") {
                     resetFilters()
@@ -170,43 +144,68 @@ public struct LogTableView: View {
             }
 
             Spacer()
-
-            // Count Badge
-            Text("\(matchCount) of \(lines.count) entries")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .monospacedDigit()
-                .accessibilityIdentifier("logs.count")
-
-            // Actions
-            HStack(spacing: 6) {
-                Button(action: copyLogsToClipboard) {
-                    Label(selectedLineIDs.isEmpty ? "Copy All" : "Copy Selected", systemImage: "doc.on.doc")
-                }
-                .controlSize(.small)
-                .help("Copy log entries to clipboard")
-
-                Toggle(isOn: $showDetailInspector) {
-                    Label("Details", systemImage: "sidebar.trailing")
-                }
-                .toggleStyle(.button)
-                .controlSize(.small)
-                .help("Toggle log entry detail inspector")
-
-                if let onClear = onClear {
-                    Button(action: onClear) {
-                        Label("Clear", systemImage: "trash")
-                    }
-                    .controlSize(.small)
-                    .disabled(lines.isEmpty)
-                    .help("Clear logs for this source")
-                    .accessibilityIdentifier("logs.clear")
-                }
-            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(Color.primary.opacity(0.02))
+    }
+
+    // MARK: - Status Bar
+
+    /// The counts and the actions on the table, under it like Finder's status bar: what the
+    /// table shows of the source, and Copy, Details and Clear beside it.
+    private var statusBar: some View {
+        HStack(spacing: 6) {
+            Text(countText)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .monospacedDigit()
+                .lineLimit(1)
+                .accessibilityIdentifier("logs.count")
+
+            Spacer()
+
+            Button(action: copyLogsToClipboard) {
+                Label(selectedLineIDs.isEmpty ? "Copy All" : "Copy Selected", systemImage: "doc.on.doc")
+            }
+            .controlSize(.small)
+            .disabled(lines.isEmpty)
+            .help("Copy log entries to clipboard")
+
+            Toggle(isOn: $showDetailInspector) {
+                Label("Details", systemImage: "sidebar.trailing")
+            }
+            .toggleStyle(.button)
+            .controlSize(.small)
+            .help("Toggle log entry detail inspector")
+
+            if let onClear = onClear {
+                Button(action: onClear) {
+                    Label("Clear", systemImage: "trash")
+                }
+                .controlSize(.small)
+                .disabled(lines.isEmpty)
+                .help("Clear logs for this source")
+                .accessibilityIdentifier("logs.clear")
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Color.primary.opacity(0.02))
+    }
+
+    /// "312 of 4000 entries", and when the table is capped, how many of the matches it shows.
+    var countText: String {
+        Self.countText(shown: visibleLines.count, matching: matchCount, total: lines.count)
+    }
+
+    static func countText(shown: Int, matching: Int, total: Int) -> String {
+        let entries = matching == 1 && total == 1 ? "entry" : "entries"
+        var text = "\(matching) of \(total) \(entries)"
+        if shown < matching {
+            text += ", showing the latest \(shown)"
+        }
+        return text
     }
 
     // MARK: - Main Content
@@ -227,15 +226,6 @@ public struct LogTableView: View {
             )
         } else {
             tableContent
-            if matchCount > visibleLines.count {
-                Text("Showing the latest \(visibleLines.count) of \(matchCount) matching entries. Filter to find older ones.")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 4)
-                    .accessibilityIdentifier("logs.capped")
-            }
         }
     }
 
@@ -376,13 +366,12 @@ public struct LogTableView: View {
     // MARK: - Helpers & State
 
     private var hasActiveFilters: Bool {
-        !searchText.isEmpty || levelFilter != .all || streamFilter != .all
+        !searchText.isEmpty || levelFilter != .all
     }
 
     private func resetFilters() {
         searchText = ""
         levelFilter = .all
-        streamFilter = .all
     }
 
     /// Everything `filteredLines` depends on. Lines are keyed by count and last id
@@ -392,7 +381,6 @@ public struct LogTableView: View {
         let lastLineID: UUID?
         let searchText: String
         let levelFilter: LogLevelFilter
-        let streamFilter: LogStreamFilter
         let sortOrder: [KeyPathComparator<LogLine>]
     }
 
@@ -402,7 +390,6 @@ public struct LogTableView: View {
             lastLineID: lines.last?.id,
             searchText: searchText,
             levelFilter: levelFilter,
-            streamFilter: streamFilter,
             sortOrder: sortOrder
         )
     }
@@ -425,10 +412,6 @@ public struct LogTableView: View {
 
         if levelFilter != .all {
             result = result.filter { levelFilter.matches($0.level) }
-        }
-
-        if streamFilter != .all {
-            result = result.filter { streamFilter.matches($0.stream) }
         }
 
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
