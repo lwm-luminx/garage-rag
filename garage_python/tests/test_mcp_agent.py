@@ -173,11 +173,43 @@ class TestPrompt:
         assert '{"tool": "<name>", "arguments": {...}}' in messages[0]["content"]
         assert messages[1]["content"] == "Question: when do widgets ship?"
 
-    def test_describe_tools_lists_name_description_and_schema(self) -> None:
+    def test_describe_tools_is_one_line_per_tool(self) -> None:
         tools, _ = _tools()
         text = describe_tools(tools)
-        assert text.startswith("- rag_search: rag_search does things\n  arguments: {")
-        assert "- rag_stats:" in text
+        assert text.splitlines() == [
+            "- rag_search(): rag_search does things",
+            "- rag_get_document(): rag_get_document does things",
+            "- rag_stats(): rag_stats does things",
+        ]
+
+    def test_server_tools_read_as_signatures(self) -> None:
+        lines = describe_tools(tools_from_server(mcp)).splitlines()
+        search = next(line for line in lines if line.startswith("- rag_search("))
+        # Required arguments are bare, optional ones carry ?, enums (through list-or-scalar) are spelled out.
+        assert search.startswith('- rag_search(query, limit?, corpus_class?: "document" | "code" | "communication", ')
+        assert 'trust?: "authored" | "reference" | "received"' in search
+        # The search mode and the document length are the agent's to choose, not the model's.
+        assert "mode" not in search
+        document = next(line for line in lines if line.startswith("- rag_get_document("))
+        assert document.startswith("- rag_get_document(document_id?, location?): ")
+        # Only the first sentence of each description: rag_stats' "useful before searching" is left out.
+        stats = next(line for line in lines if line.startswith("- rag_stats("))
+        assert stats == "- rag_stats(): Summarize corpus size, composition, and embedding coverage."
+        # No JSON schema in the prompt.
+        assert '"properties"' not in "\n".join(lines)
+
+    def test_owner_is_named_when_configured(self) -> None:
+        tools, _ = _tools()
+        system = build_agent_messages("q", tools, owner="Rick Mark")[0]["content"]
+        assert 'The user is Rick Mark; "authored" documents and the author Rick Mark are theirs.' in system
+        assert "The user is" not in build_agent_messages("q", tools)[0]["content"]
+        assert "The user is" not in build_agent_messages("q", tools, owner="  ")[0]["content"]
+
+    def test_prompt_maps_questions_to_filters(self) -> None:
+        tools, _ = _tools()
+        system = build_agent_messages("q", tools)[0]["content"]
+        assert '{"tool": "rag_search", "arguments": {"query": "BMW", "corpus_class": "communication"}}' in system
+        assert "Hits carry no date" in system
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +342,19 @@ class TestRunAgent:
         messages = model.complete.call_args_list[1].args[0]
         assert messages[-1]["content"].startswith("Error: there is no tool named 'rag_delete_everything'")
         assert "rag_search" in messages[-1]["content"]
+
+    def test_document_reads_ask_for_no_more_than_fits(self) -> None:
+        tools, runners = _tools()
+        model = _model(
+            [_call("rag_get_document", document_id=10), _call("rag_get_document", document_id=10, max_chars=900), "ok"]
+        )
+        result = run_agent("q", tools, model, search_first=False)
+        assert [c.args[0] for c in runners["rag_get_document"].call_args_list] == [
+            {"max_chars": agent.TOOL_RESULT_CHARS, "document_id": 10},
+            {"max_chars": 900, "document_id": 10},
+        ]
+        # The step list keeps what the model asked for.
+        assert result.steps[0].arguments == {"document_id": 10}
 
     def test_tool_failure_is_reported_to_the_model(self) -> None:
         tools, _ = _tools(document=MagicMock(side_effect=ValueError("no such document: 99")))
@@ -464,6 +509,7 @@ class TestRagAgentTool:
         with (
             patch("garage_rag.mcp_server.server.LocalChatModel", return_value=model) as model_cls,
             patch("garage_rag.mcp_server.server._agent.run_agent", return_value=expected) as run,
+            patch("garage_rag.mcp_server.server.get_settings", return_value=MagicMock(self_name="Rick Mark")),
         ):
             result = rag_agent(question="q", max_steps=3, max_tokens=100, temperature=0.5, search_first=True)
         assert result is expected
@@ -472,4 +518,10 @@ class TestRagAgentTool:
         assert args[0] == "q"
         assert [t.name for t in args[1]] == list(AGENT_TOOL_NAMES)
         assert args[2] is model
-        assert kwargs == {"max_steps": 3, "max_tokens": 100, "temperature": 0.5, "search_first": True}
+        assert kwargs == {
+            "max_steps": 3,
+            "max_tokens": 100,
+            "temperature": 0.5,
+            "search_first": True,
+            "owner": "Rick Mark",
+        }

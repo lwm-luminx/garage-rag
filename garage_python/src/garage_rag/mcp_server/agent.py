@@ -68,7 +68,7 @@ talked to, what they wrote, when something happened or what they decided is a qu
 for the tools. Never say you have no access to personal information or past \
 conversations; you do, through the tools. Nothing about the corpus is known to you \
 except what the tools return.
-
+{owner}
 Work in steps. To use a tool, reply with exactly one JSON object and nothing else:
 {{"tool": "<name>", "arguments": {{...}}}}
 You will get the tool's result as the next message. Search first; open a document with \
@@ -80,9 +80,27 @@ When you have what you need, reply with the answer in plain prose (no JSON). Nam
 documents you relied on by their title or location. If the corpus does not contain the \
 answer, say that you found nothing about it in their files instead of guessing.
 
-Tools:
+Tools (arguments in parentheses; ? marks an optional one):
 {tools}
+
+Which tool to use:
+- Anything about the user's life, work, people, mail or files: rag_search.
+- Talking, writing or meeting with someone ("when did I last talk to BMW?"): rag_search \
+with corpus_class "communication", for example
+  {{"tool": "rag_search", "arguments": {{"query": "BMW", "corpus_class": "communication"}}}}
+- What the user wrote, thought or decided: rag_search with trust "authored".
+- Documents by one person: rag_search with author set to their name; rag_list_authors lists the names.
+- The whole document behind a hit: rag_get_document with the hit's document_id.
+- What is indexed, and how much: rag_list_sources or rag_stats.
+
+Each rag_search hit has document_id, title, location (the file path), corpus_class, \
+trust_tier, authors and text (an excerpt). Hits carry no date: a date is known only \
+when it appears in the text, the title or the location.
 """
+
+# Arguments the model is not shown: it gains nothing from choosing them. They are still
+# accepted, and validated, when a model passes one anyway.
+_HIDDEN_ARGUMENTS = {"rag_search": frozenset({"mode"}), "rag_get_document": frozenset({"max_chars"})}
 
 NO_ANSWER_TEXT = "The model kept asking for tools instead of answering. Try a more specific question."
 
@@ -204,19 +222,60 @@ def _simplify_property(spec: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def describe_tools(tools: list[AgentTool]) -> str:
-    """The tool section of the system prompt: one block per tool with its JSON schema."""
-    blocks = []
-    for tool in tools:
-        blocks.append(
-            f"- {tool.name}: {tool.description}\n  arguments: {json.dumps(tool.parameters, separators=(',', ':'))}"
-        )
-    return "\n".join(blocks)
+    """The tool section of the system prompt: one line per tool, its arguments and what it does.
+
+    Small models follow a short signature far better than a JSON schema, so each argument
+    is its name, its allowed values when it has an enum and ``?`` when it is optional,
+    and the description is the tool's first sentence.
+    """
+    return "\n".join(f"- {tool.name}({_signature(tool)}): {_first_sentence(tool.description)}" for tool in tools)
 
 
-def build_agent_messages(question: str, tools: list[AgentTool]) -> list[dict[str, str]]:
-    """The opening messages: the system prompt with the tools, then the question."""
+def _signature(tool: AgentTool) -> str:
+    hidden = _HIDDEN_ARGUMENTS.get(tool.name, frozenset())
+    required = set(tool.parameters.get("required") or ())
+    parts = []
+    for name, spec in (tool.parameters.get("properties") or {}).items():
+        if name in hidden:
+            continue
+        values = _enum_values(spec)
+        part = f"{name}{'' if name in required else '?'}"
+        if values:
+            part += ": " + " | ".join(f'"{v}"' for v in values)
+        parts.append(part)
+    return ", ".join(parts)
+
+
+def _enum_values(spec: Mapping[str, Any]) -> list[Any]:
+    """The allowed values of an argument, through the list-or-scalar ``anyOf`` the filters use."""
+    if "enum" in spec:
+        return list(spec["enum"])
+    for option in spec.get("anyOf") or []:
+        values = _enum_values(option.get("items") or option)
+        if values:
+            return values
+    return []
+
+
+def _first_sentence(text: str) -> str:
+    match = re.match(r"(.+?[.!?])(\s|$)", text)
+    return match.group(1) if match else text
+
+
+def build_agent_messages(question: str, tools: list[AgentTool], *, owner: str = "") -> list[dict[str, str]]:
+    """The opening messages: the system prompt with the tools, then the question.
+
+    ``owner`` is the corpus owner's name (``identity.self_name``), so the model can tie
+    "I" to an author and to the ``authored`` tier.
+    """
+    owner_line = (
+        f'The user is {owner}; "authored" documents and the author {owner} are theirs.\n' if owner.strip() else ""
+    )
     return [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT.format(tools=describe_tools(tools))},
+        {
+            "role": "system",
+            "content": AGENT_SYSTEM_PROMPT.format(tools=describe_tools(tools), owner=owner_line),
+        },
         {"role": "user", "content": f"Question: {question}"},
     ]
 
@@ -383,6 +442,7 @@ def run_agent(
     max_tokens: int | None = None,
     temperature: float | None = None,
     search_first: bool = True,
+    owner: str = "",
 ) -> AgentResult:
     """Ask ``model`` the question with ``tools`` to call, and return its answer.
 
@@ -397,7 +457,7 @@ def run_agent(
     """
     communications_allowed = egress.allows_communications(model.host)
     by_name = {tool.name: tool for tool in tools}
-    messages = build_agent_messages(question, tools)
+    messages = build_agent_messages(question, tools, owner=owner)
     steps: list[AgentStep] = []
     citations: list[AgentCitation] = []
     seen_documents: set[int] = set()
@@ -430,6 +490,9 @@ def run_agent(
             )
             return
         to_run = restrict_for_host(name, arguments, communications_allowed=communications_allowed)
+        if name == "rag_get_document":
+            # Ask for no more text than fits in the result, so its ``truncated`` flag tells the truth.
+            to_run = {"max_chars": TOOL_RESULT_CHARS, **to_run}
         try:
             result = tool.run(to_run)
         except Exception as exc:  # the model's mistake to read and correct, or a corpus error to report

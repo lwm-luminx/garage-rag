@@ -687,6 +687,7 @@ def rag_agent(
         max_tokens=max_tokens,
         temperature=temperature,
         search_first=search_first,
+        owner=get_settings().self_name,
     )
 
 

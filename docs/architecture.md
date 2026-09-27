@@ -253,8 +253,10 @@ class through the guard, which refuses a communication for a host that is not
 loopback (see `docs/privacy.md`).
 
 `rag_agent` (`mcp_server/agent.py`) lets the model drive instead: it gets the
-five read-only tools above, described with their input schemas in the system
-prompt, and calls them by replying with one JSON object
+five read-only tools above, each as a one-line signature in the system prompt
+(arguments, their allowed values, the description's first sentence; small models
+follow that better than a JSON schema), with a short guide from kinds of question to
+tools and filters and the owner's name from `identity.self_name`, and calls them by replying with one JSON object
 (`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
 user turn, and a reply that is not a tool call is the answer. Calls travel in the
 conversation rather than as the OpenAI `tools` field because the app's llama engine
