@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -276,9 +277,12 @@ def list_facts(
         ),
         params,
     ).mappings()
-    facts = [
-        FactRow(**{**row, "attributes": row["attributes"] or {}, "extractor": row["extractor"] or ""}) for row in rows
-    ]
+    facts = []
+    for row in rows:
+        values: dict[str, Any] = dict(row)
+        values["attributes"] = row["attributes"] or {}
+        values["extractor"] = row["extractor"] or ""
+        facts.append(FactRow(**values))
 
     total = session.execute(text(f"SELECT count(*) {joins} {where(filtered)}"), params).scalar_one()
     classes = [

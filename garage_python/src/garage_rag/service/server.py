@@ -182,7 +182,7 @@ def _grpc_errors[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
     if inspect.isgeneratorfunction(handler):
 
         @functools.wraps(handler)
-        def stream_wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        def stream_wrapper(*args: P.args, **kwargs: P.kwargs) -> Iterator[Any]:
             context = cast(grpc.ServicerContext, args[2] if len(args) > 2 else kwargs["context"])
             try:
                 yield from cast(Iterator[Any], handler(*args, **kwargs))
