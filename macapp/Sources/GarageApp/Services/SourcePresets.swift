@@ -39,24 +39,27 @@ struct SourcePreset: Identifiable, Hashable, Sendable {
         spec: SourceSpec(slug: "desktop", root: "~/Desktop", kind: "filesystem", corpusClass: "document", trust: "authored")
     )
     /// Rooted where Dropbox keeps its folder on this Mac (`DropboxFolder`), `~/Dropbox` when there is
-    /// none, so the Sources menu still offers it.
-    static let dropbox = SourcePreset(
-        title: "Dropbox",
-        spec: SourceSpec(slug: "dropbox", root: DropboxFolder.locate() ?? "~/Dropbox", kind: "filesystem", corpusClass: "document", trust: "authored")
-    )
+    /// none, so the Sources menu still offers it. Computed, not stored: in the sandbox the folder
+    /// cannot be seen until the home folder is granted, and the setup assistant reads the presets
+    /// again after the grant (`refreshAccess`). `DropboxFolder.locate` remembers a folder once found.
+    static var dropbox: SourcePreset {
+        SourcePreset(
+            title: "Dropbox",
+            spec: SourceSpec(slug: "dropbox", root: DropboxFolder.locate() ?? "~/Dropbox", kind: "filesystem", corpusClass: "document", trust: "authored")
+        )
+    }
 
     /// Every preset, for the Sources page menu.
-    static let all: [SourcePreset] = [messages, mail, documents, downloads, desktop, dropbox]
+    static var all: [SourcePreset] { [messages, mail, documents, downloads, desktop, dropbox] }
 
-    /// The first-run quick-add set. Dropbox only when its folder was found; checked
-    /// once per launch, not on every render of the Status page.
-    static let quickAdd: [SourcePreset] = {
+    /// The first-run quick-add set. Dropbox only when its folder was found.
+    static var quickAdd: [SourcePreset] {
         var presets = [documents, messages]
         if DropboxFolder.locate() != nil {
             presets.append(dropbox)
         }
         return presets
-    }()
+    }
 }
 
 extension AppState {

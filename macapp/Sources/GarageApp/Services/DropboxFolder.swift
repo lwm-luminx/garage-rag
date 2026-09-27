@@ -28,15 +28,26 @@ enum DropboxFolder {
         return abbreviatingHome(found, home: homePath)
     }
 
-    /// `locate` against the real home folder and disk.
+    /// `locate` against the real home folder and disk. A folder once found is remembered for the
+    /// rest of the launch (it does not move); "not found" is probed again on every call, because in
+    /// the sandbox the folder only becomes visible once the user grants the home folder.
     static func locate() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        if let found {
+            return found
+        }
         let home = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
-        return locate(
+        found = locate(
             home: home,
             exists: { FileManager.default.fileExists(atPath: $0) },
             infoJSON: { try? Data(contentsOf: home.appendingPathComponent(".dropbox/info.json")) }
         )
+        return found
     }
+
+    private static let lock = NSLock()
+    private nonisolated(unsafe) static var found: String?
 
     /// The `path` of each account in `info.json` (`{"personal": {"path": ...}, "business": {...}}`),
     /// personal first.
