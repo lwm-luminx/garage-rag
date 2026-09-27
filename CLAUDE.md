@@ -155,8 +155,9 @@ The bundled Postgres has two externals: `//ext/postgres` (18, the default) and `
 (19 beta). Pick one with `--//ext:postgres_version=19` (or `--config=pg19`). Everything downstream
 depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/`libpq_dylib` aliases, never on a
 version package directly. Each package carries its own sandbox patch: `ext/postgres/appstore.patch`
-(18; adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written
-to be proposed upstream) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
+(18; adds `--enable-appstore`, passed only in the store configuration: a flock() interlock on the data
+directory and pthread semaphores, written to be proposed upstream; other configurations build the stock
+System V code) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
 ported); a change to one usually needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
