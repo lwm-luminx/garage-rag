@@ -599,16 +599,16 @@ final class StatusPagePresentationTests: XCTestCase {
     }
 
     func testGRPCOnItsWayUpOrDownIsChecking() {
-        let starting = ServiceRowPresentation.grpc(status: .starting, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let starting = ServiceRowPresentation.grpc(status: .starting, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(starting.state, .checking)
         XCTAssertEqual(starting.detail, "Starting with the database…")
 
-        let stopping = ServiceRowPresentation.grpc(status: .stopping, host: "127.0.0.1", port: 50051, lastTest: nil)
+        let stopping = ServiceRowPresentation.grpc(status: .stopping, address: "127.0.0.1:50051", lastTest: nil)
         XCTAssertEqual(stopping.state, .checking)
         XCTAssertEqual(stopping.detail, "Stopping…")
 
         // A test result only speaks for a running backend.
-        let stoppedAfterATest = ServiceRowPresentation.grpc(status: .stopped, host: "127.0.0.1", port: 50051, lastTest: (isSuccess: false, summary: "old"))
+        let stoppedAfterATest = ServiceRowPresentation.grpc(status: .stopped, address: "127.0.0.1:50051", lastTest: (isSuccess: false, summary: "old"))
         XCTAssertFalse(stoppedAfterATest.detailIsError)
         XCTAssertTrue(stoppedAfterATest.detail.hasPrefix("Starts with the database."), stoppedAfterATest.detail)
     }
