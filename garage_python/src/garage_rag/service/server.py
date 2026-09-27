@@ -10,6 +10,7 @@ command also calls.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import inspect
 import json
@@ -1444,22 +1445,53 @@ def _bind_unix_socket(server: grpc.Server, socket_path: str) -> None:
     second Garage, or an older build still running): unlinking it would take the
     path from under that server's clients, so the bind fails instead. Anything
     else at the path is left alone and the bind fails too.
+
+    The probe, the unlink and the bind run under an exclusive lock on the file
+    beside the socket (``<socket_path>.lock``), so two servers recovering the
+    same stale socket at once take turns: the second sees the first's live
+    socket and fails, instead of unlinking it after both probes found the old
+    one dead.
     """
     path = Path(socket_path)
     if not path.is_absolute():
         raise ValueError(f"gRPC socket path must be absolute: {socket_path!r}")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    with _socket_recovery_lock(path):
+        try:
+            if stat.S_ISSOCK(path.lstat().st_mode):
+                if _unix_socket_is_stale(socket_path):
+                    path.unlink()
+                else:
+                    raise RuntimeError(
+                        f"another server is listening on the gRPC socket {socket_path}; not binding over it"
+                    )
+        except FileNotFoundError:
+            pass
+        if not server.add_insecure_port(f"unix:{socket_path}"):
+            raise RuntimeError(f"could not bind the gRPC socket {socket_path}")
+        path.chmod(0o600)
+
+
+@contextlib.contextmanager
+def _socket_recovery_lock(socket_path: Path) -> Iterator[None]:
+    """Holds ``<socket_path>.lock`` exclusively across probe, unlink and bind.
+
+    The lock file is left in place: it lives in the owner-only socket folder and
+    any process on the path takes the same one, so removing it would let a
+    third server lock a fresh inode while another still holds the old one.
+    """
+    import fcntl  # advisory file lock, not a network client
+
+    lock_path = socket_path.with_name(socket_path.name + ".lock")
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
     try:
-        if stat.S_ISSOCK(path.lstat().st_mode):
-            if _unix_socket_is_stale(socket_path):
-                path.unlink()
-            else:
-                raise RuntimeError(f"another server is listening on the gRPC socket {socket_path}; not binding over it")
-    except FileNotFoundError:
-        pass
-    if not server.add_insecure_port(f"unix:{socket_path}"):
-        raise RuntimeError(f"could not bind the gRPC socket {socket_path}")
-    path.chmod(0o600)
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _unix_socket_is_stale(socket_path: str) -> bool:
