@@ -32,6 +32,15 @@ public enum GarageXPCPeerRequirement {
         return requirement
     }()
 
+    /// Puts `current` on `listener`, so a peer that does not satisfy it is refused before
+    /// `listener(_:shouldAcceptNewConnection:)` sees it; the delegate pins each accepted connection
+    /// too. Nothing to do in a build without a requirement.
+    public static func apply(to listener: NSXPCListener, serviceName: String) {
+        guard let requirement = current else { return }
+        listener.setConnectionCodeSigningRequirement(requirement)
+        logger.info("\(serviceName, privacy: .public): XPC peers must satisfy \(requirement, privacy: .public)")
+    }
+
     /// `anchor apple generic and certificate leaf[subject.OU] = "<team>"`. The team is validated
     /// first (ten upper-case letters and digits), so it cannot change the requirement's meaning.
     public static func requirement(forTeam team: String) -> String {

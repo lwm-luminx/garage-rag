@@ -77,7 +77,7 @@ For detailed architectural and design specifications, see:
 ### Prerequisites
 
 - [Aspect CLI](https://aspect.build/docs/cli/install) or [Bazel](https://bazel.build/) (v8+)
-- Python 3.13+ (when running outside the Bazel hermetic toolchains)
+- Python 3.14+ (when running outside the Bazel hermetic toolchains)
 - PostgreSQL with `pgvector` (or use the embedded instance provided by `GarageApp`)
 - An embedding server: the app's built-in llama.cpp engine (provider `llama_xpc`, available while
   Garage is running), or [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)

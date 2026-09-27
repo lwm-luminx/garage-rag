@@ -35,9 +35,9 @@ bazel_dep(name = "rules_python", version = "2.3.3")
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
     is_default = True,
-    python_version = "3.13",
+    python_version = "3.14",
 )
-use_repo(python, "python_3_13")
+use_repo(python, "python_3_14")
 
 multitool = use_extension("@rules_multitool//multitool:extension.bzl", "multitool")
 multitool.hub(lockfile = "//tools:tools.lock.json")
@@ -47,7 +47,7 @@ use_repo(multitool, "multitool")
 # Hermetic Python interpreter (python-build-standalone, via aspect_rules_py).
 interpreters = use_extension("@aspect_rules_py//py:extensions.bzl", "python_interpreters")
 interpreters.toolchain(
-    python_version = "3.13",
+    python_version = "3.14",
 )
 use_repo(interpreters, "python_interpreters")
 

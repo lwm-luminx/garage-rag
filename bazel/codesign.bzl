@@ -237,7 +237,7 @@ fix_macho() {
     dylib_id="$(otool -D "$file" 2>/dev/null | tail -n +2 | head -n 1 || true)"
     if [ -n "$dylib_id" ]; then
         if [[ "$dylib_id" == *"/Python.framework/"* ]] || [[ "$file" == *"/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -id "@rpath/Python.framework/Versions/3.13/Python" "$file" 2>/dev/null || true
+            /usr/bin/install_name_tool -id "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
         elif [[ "$dylib_id" == /Users/* ]] || [[ "$dylib_id" == */_bazel* ]] || [[ "$dylib_id" == /sandbox/* ]] || [[ "$dylib_id" == ./* ]] || [[ "$dylib_id" == /* && "$dylib_id" != /usr/lib/* && "$dylib_id" != /System/* && "$dylib_id" != /Library/* ]]; then
             /usr/bin/install_name_tool -id "@rpath/$(basename "$file")" "$file" 2>/dev/null || true
         fi
@@ -256,7 +256,7 @@ fix_macho() {
                 /usr/bin/install_name_tool -change "$dep" "@executable_path/../Python" "$file" 2>/dev/null || true
             fi
         elif [[ "$dep" == *"/Python.framework/"* ]] && [[ "$dep" != "@rpath/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -change "$dep" "@rpath/Python.framework/Versions/3.13/Python" "$file" 2>/dev/null || true
+            /usr/bin/install_name_tool -change "$dep" "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
         elif [[ "$dep" == /DLC/* ]]; then
             /usr/bin/install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$file" 2>/dev/null || true
         elif [[ "$dep" == ./* ]]; then

@@ -39,9 +39,25 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 VENV="$REPO/garage_python/.venv"
+# The venv runs the CPython release the app bundles (ext/python), not whatever 3.14 is on the
+# machine: an old uv's 3.14 is a release candidate that current pydantic cannot import under.
+VENV_PYTHON="$(sed -n 's/.*strip_prefix = "Python-\([0-9.]*\)".*/\1/p' "$REPO/ext/python/python.MODULE.bazel")"
+VENV_PYTHON="${VENV_PYTHON:-3.14}"
+# A venv left by an older hook runs another interpreter; recreate it rather than keep using it.
+if [ -x "$VENV/bin/python" ] &&
+  [ "$("$VENV/bin/python" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null)" != "$VENV_PYTHON" ]; then
+  log "replacing $VENV: it is not python $VENV_PYTHON"
+  rm -rf "$VENV"
+fi
 if [ ! -x "$VENV/bin/pytest" ] || [ ! -x "$VENV/bin/ruff" ]; then
-  log "creating $VENV (python 3.13, package + dev extras)"
-  uv venv --quiet --python 3.13 "$VENV"
+  log "creating $VENV (python $VENV_PYTHON, package + dev extras)"
+  if ! uv venv --quiet --clear --python "$VENV_PYTHON" "$VENV" 2>/dev/null; then
+    # An older uv has no download for a newer CPython release.
+    log "upgrading uv to find python $VENV_PYTHON"
+    python3 -m pip install --quiet --user --upgrade uv 2>/dev/null || pip install --quiet --upgrade uv
+    export PATH="$HOME/.local/bin:$PATH"
+    uv venv --quiet --clear --python "$VENV_PYTHON" "$VENV"
+  fi
 fi
 # uv.lock only resolves for macOS (pyproject [tool.uv].environments), so install the
 # project directly instead of `uv sync`. No-op when everything is already present.
