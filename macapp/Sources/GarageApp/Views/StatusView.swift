@@ -179,24 +179,48 @@ struct StatusView: View {
         return GroupBox("Library") {
             VStack(alignment: .leading, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    // The symbol and the actions share the title's line, centred on it; the bar
-                    // and the lines under it start where the title does.
+                    // The symbol and the actions are centred on the headline block (title, bar and
+                    // detail), which keeps its height as a run goes; the current item and the stage
+                    // trail come and go under it, at the title's indent.
                     HStack(alignment: .center, spacing: 10) {
                         MenuBarSymbolCircle(symbol: headline.symbol, tint: headline.tint, isActive: headline.isActive)
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(headline.title)
-                                .font(.system(size: 15, weight: .semibold))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .accessibilityIdentifier("status.library.title")
-                            if let percent = headline.percent {
-                                Text(percent)
-                                    .font(.system(size: 13))
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(headline.title)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .accessibilityIdentifier("status.library.title")
+                                if let percent = headline.percent {
+                                    Text(percent)
+                                        .font(.system(size: 13))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            if headline.isIndeterminate {
+                                ProgressView()
+                                    .progressViewStyle(.linear)
+                                    .controlSize(.small)
+                            } else if let progress = headline.progress {
+                                ProgressView(value: progress)
+                                    .progressViewStyle(.linear)
+                                    .controlSize(.small)
+                            }
+                            if let detail = headline.detail {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(headline.detailIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                                     .monospacedDigit()
-                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("status.library.detail")
                             }
                         }
+
                         Spacer(minLength: 12)
+
                         HStack(spacing: 8) {
                             if indexing.isRunning || appState.isFetchingStats {
                                 ProgressView().controlSize(.small)
@@ -205,38 +229,22 @@ struct StatusView: View {
                         }
                     }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        if headline.isIndeterminate {
-                            ProgressView()
-                                .progressViewStyle(.linear)
-                                .controlSize(.small)
-                        } else if let progress = headline.progress {
-                            ProgressView(value: progress)
-                                .progressViewStyle(.linear)
-                                .controlSize(.small)
+                    if headline.currentItem != nil || (indexing.isRunning && headline.stage != nil) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            if let item = headline.currentItem {
+                                Text(item)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            if indexing.isRunning, let stage = headline.stage {
+                                MenuBarStageTrail(stages: indexing.stageTrail, current: stage)
+                                    .padding(.top, 2)
+                            }
                         }
-                        if let detail = headline.detail {
-                            Text(detail)
-                                .font(.caption)
-                                .foregroundStyle(headline.detailIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                                .monospacedDigit()
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                                .accessibilityIdentifier("status.library.detail")
-                        }
-                        if let item = headline.currentItem {
-                            Text(item)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        if indexing.isRunning, let stage = headline.stage {
-                            MenuBarStageTrail(stages: indexing.stageTrail, current: stage)
-                                .padding(.top, 2)
-                        }
+                        .padding(.leading, 36)
                     }
-                    .padding(.leading, 36)
                 }
 
                 if appState.postgres.status == .running, appState.corpusStats.lastUpdated != nil {
