@@ -264,7 +264,7 @@ class TestRunAgent:
         tools, runners = _tools()
         model = _model([_call("rag_search", query="widgets", limit=3), "Widgets ship on Tuesdays (User Guide)."])
 
-        result = run_agent("when do widgets ship?", tools, model, max_tokens=200, temperature=0.1)
+        result = run_agent("when do widgets ship?", tools, model, search_first=False, max_tokens=200, temperature=0.1)
 
         assert isinstance(result, AgentResult)
         assert result.answer == "Widgets ship on Tuesdays (User Guide)."
@@ -296,7 +296,7 @@ class TestRunAgent:
     def test_citations_are_one_per_document_across_steps(self) -> None:
         tools, _ = _tools(search=lambda args: _search_result(_hit(10), _hit(11), _hit(10)))
         model = _model([_call("rag_search", query="a"), _call("rag_get_document", document_id=10), "Done."])
-        result = run_agent("q", tools, model)
+        result = run_agent("q", tools, model, search_first=False)
         assert [c.document_id for c in result.citations] == [10, 11]
         assert result.citations[0].snippet == "Widgets ship on Tuesdays."
         assert [s.summary for s in result.steps] == ["Searched for “a”: 3 hits", "Read User Guide"]
@@ -304,7 +304,7 @@ class TestRunAgent:
     def test_unknown_tool_is_reported_to_the_model(self) -> None:
         tools, _ = _tools()
         model = _model([_call("rag_delete_everything"), "I cannot do that."])
-        result = run_agent("q", tools, model)
+        result = run_agent("q", tools, model, search_first=False)
         assert result.answer == "I cannot do that."
         assert [(s.tool, s.ok) for s in result.steps] == [("rag_delete_everything", False)]
         messages = model.complete.call_args_list[1].args[0]
@@ -314,7 +314,7 @@ class TestRunAgent:
     def test_tool_failure_is_reported_to_the_model(self) -> None:
         tools, _ = _tools(document=MagicMock(side_effect=ValueError("no such document: 99")))
         model = _model([_call("rag_get_document", document_id=99), "There is no document 99."])
-        result = run_agent("q", tools, model)
+        result = run_agent("q", tools, model, search_first=False)
         assert result.steps[0].ok is False
         assert result.steps[0].summary == "rag_get_document failed: no such document: 99"
         messages = model.complete.call_args_list[1].args[0]
@@ -324,7 +324,7 @@ class TestRunAgent:
     def test_step_limit_forces_an_answer(self) -> None:
         tools, runners = _tools()
         model = _model([_call("rag_search", query="a"), _call("rag_search", query="b"), "Final."])
-        result = run_agent("q", tools, model, max_steps=2)
+        result = run_agent("q", tools, model, search_first=False, max_steps=2)
         assert result.answer == "Final."
         assert runners["rag_search"].call_count == 2
         messages = model.complete.call_args_list[2].args[0]
@@ -333,14 +333,14 @@ class TestRunAgent:
     def test_a_model_that_never_answers_gets_a_stock_reply(self) -> None:
         tools, _ = _tools()
         model = _model([_call("rag_search", query="a"), _call("rag_search", query="b")])
-        result = run_agent("q", tools, model, max_steps=1)
+        result = run_agent("q", tools, model, search_first=False, max_steps=1)
         assert result.answer == NO_ANSWER_TEXT
         assert len(result.steps) == 1
 
     def test_token_counts_are_none_when_the_server_reports_none(self) -> None:
         tools, _ = _tools()
         model = _model(["Plain answer."], tokens=False)
-        result = run_agent("q", tools, model)
+        result = run_agent("q", tools, model, search_first=False)
         assert result.prompt_tokens is None
         assert result.completion_tokens is None
         assert result.steps == []
@@ -358,7 +358,7 @@ class TestRunAgent:
             ],
             host="http://nas.local:11434",
         )
-        result = run_agent("q", tools, model)
+        result = run_agent("q", tools, model, search_first=False)
         runners["rag_search"].assert_called_once_with({"query": "a", "corpus_class": ["document", "code"]})
         assert result.steps[1].ok is False
         assert result.steps[1].summary == "rag_get_document: a communication stays on this machine"
@@ -374,7 +374,7 @@ class TestRunAgent:
         with patch("garage_rag.mcp_server.server._retrieve", return_value=([], "bge-m3")) as retrieve:
             # A limit outside the schema is the model's mistake and comes back as an error.
             model = _model([_call("rag_search", query="a", limit=500), _call("rag_search", query="a", limit="5"), "ok"])
-            result = run_agent("q", tools, model)
+            result = run_agent("q", tools, model, search_first=False)
         assert result.steps[0].ok is False
         assert "limit" in result.steps[0].summary
         # A string "5" is coerced the way tools/call coerces it, and defaults are filled in.
@@ -384,6 +384,65 @@ class TestRunAgent:
         assert result.steps[1].ok is True
 
 
+class TestSearchFirst:
+    """By default the question is searched before the model speaks (gemma2-2b otherwise
+    answers "I don't have access to personal information" without calling a tool)."""
+
+    def test_the_question_is_searched_before_the_model_replies(self) -> None:
+        tools, runners = _tools()
+        model = _model(["You last wrote to BMW on 3 May (Doc 10)."])
+
+        result = run_agent("When did I last talk to BMW", tools, model)
+
+        runners["rag_search"].assert_called_once_with(
+            {"query": "When did I last talk to BMW", "limit": agent.FIRST_SEARCH_LIMIT}
+        )
+        assert result.answer == "You last wrote to BMW on 3 May (Doc 10)."
+        assert [(s.tool, s.ok) for s in result.steps] == [("rag_search", True)]
+        assert [c.document_id for c in result.citations] == [10]
+        # The model's first turn already holds the call and its hits, as if it had made it.
+        messages = model.complete.call_args_list[0].args[0]
+        assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
+        assert json.loads(messages[2]["content"])["tool"] == "rag_search"
+        assert "Widgets ship on Tuesdays." in messages[3]["content"]
+
+    def test_the_opening_search_does_not_use_up_a_step(self) -> None:
+        tools, runners = _tools()
+        model = _model([_call("rag_search", query="BMW"), "Answer."])
+        result = run_agent("q", tools, model, max_steps=1)
+        assert result.answer == "Answer."
+        assert runners["rag_search"].call_count == 2
+        assert [s.n for s in result.steps] == [1, 2]
+
+    def test_off_box_host_opening_search_skips_communications(self) -> None:
+        tools, runners = _tools()
+        model = _model(["Answer."], host="http://nas.local:11434")
+        run_agent("q", tools, model)
+        runners["rag_search"].assert_called_once_with(
+            {"query": "q", "limit": agent.FIRST_SEARCH_LIMIT, "corpus_class": ["document", "code"]}
+        )
+
+    def test_a_failed_opening_search_still_reaches_the_model(self) -> None:
+        tools, _ = _tools(search=MagicMock(side_effect=RuntimeError("no embedding model")))
+        model = _model(["I could not search."])
+        result = run_agent("q", tools, model)
+        assert result.steps[0].ok is False
+        assert model.complete.call_args_list[0].args[0][-1]["content"].startswith("Error from rag_search")
+
+    def test_skipped_without_a_search_tool(self) -> None:
+        tools, _ = _tools()
+        tools = [t for t in tools if t.name != "rag_search"]
+        model = _model(["Plain answer."])
+        result = run_agent("q", tools, model)
+        assert result.steps == []
+
+    def test_the_prompt_says_the_corpus_is_the_users_own(self) -> None:
+        tools, _ = _tools()
+        system = build_agent_messages("q", tools)[0]["content"]
+        assert "Never say you have no access to personal information" in system
+        assert '"I", "me" or "my"' in system
+
+
 # ---------------------------------------------------------------------------
 # the MCP tool
 # ---------------------------------------------------------------------------
@@ -391,7 +450,13 @@ class TestRagAgentTool:
     def test_registered(self) -> None:
         tool = next(t for t in mcp._tool_manager.list_tools() if t.name == "rag_agent")
         assert tool.parameters["required"] == ["question"]
-        assert set(tool.parameters["properties"]) == {"question", "max_steps", "max_tokens", "temperature"}
+        assert set(tool.parameters["properties"]) == {
+            "question",
+            "max_steps",
+            "max_tokens",
+            "temperature",
+            "search_first",
+        }
 
     def test_runs_the_loop_on_the_local_model(self) -> None:
         model = MagicMock()
@@ -400,11 +465,11 @@ class TestRagAgentTool:
             patch("garage_rag.mcp_server.server.LocalChatModel", return_value=model) as model_cls,
             patch("garage_rag.mcp_server.server._agent.run_agent", return_value=expected) as run,
         ):
-            result = rag_agent(question="q", max_steps=3, max_tokens=100, temperature=0.5)
+            result = rag_agent(question="q", max_steps=3, max_tokens=100, temperature=0.5, search_first=True)
         assert result is expected
         model_cls.assert_called_once_with()
         args, kwargs = run.call_args
         assert args[0] == "q"
         assert [t.name for t in args[1]] == list(AGENT_TOOL_NAMES)
         assert args[2] is model
-        assert kwargs == {"max_steps": 3, "max_tokens": 100, "temperature": 0.5}
+        assert kwargs == {"max_steps": 3, "max_tokens": 100, "temperature": 0.5, "search_first": True}

@@ -263,6 +263,11 @@ works on Ollama and LM Studio too. Arguments are validated against the tool's ow
 schema, as `tools/call` validates them, and an error goes back to the model to
 correct. The result carries the answer, the steps (`AgentStep`) and one
 `AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+By default (`search_first`) the question goes to `rag_search` before the model's
+first reply, and the model starts from those hits, shown as a call it already made:
+small models such as gemma2-2b otherwise read "when did I last talk to BMW?" as a
+question about their training and answer that they have no access to personal
+information. The system prompt also tells the model the corpus is the user's own.
 Its content rule: when the model host is not loopback, `rag_search` is restricted
 to documents and code and `rag_get_document` refuses a communication. `garage ask` is the
 CLI front door to both tools, with `--json` for the app.
