@@ -86,11 +86,12 @@ notarize "$archive"
 
 # 2. Staple it, and zip the stapled copy.
 staple "$app"
-mkdir -p dist
+# Both files are made in $work and move into dist/ only once everything has passed, so a failed
+# run never leaves a file under a release name.
 zip="dist/Garage-$version.zip"
 pkg="dist/GarageInstaller_arm64.pkg"
 rm -f "$zip" "$pkg"
-ditto -c -k --keepParent "$app" "$zip"
+ditto -c -k --keepParent "$app" "$work/$(basename "$zip")"
 
 # 3. The installer, from the stapled app. It is not relocatable, so it always installs to
 #    /Applications rather than "updating" a copy of Garage it finds elsewhere on the disk.
@@ -99,11 +100,15 @@ plutil -replace 0.BundleIsRelocatable -bool NO "$work/component.plist"
 pkgbuild --root "$work/root" --component-plist "$work/component.plist" \
     --install-location /Applications --identifier "$identifier" --version "$version" \
     --sign "$installer_identity" --timestamp \
-    "$pkg"
+    "$work/$(basename "$pkg")"
 
 # 4. Notarize and staple the installer.
-notarize "$pkg"
-staple "$pkg"
+notarize "$work/$(basename "$pkg")"
+staple "$work/$(basename "$pkg")"
+
+mkdir -p dist
+mv "$work/$(basename "$zip")" "$zip"
+mv "$work/$(basename "$pkg")" "$pkg"
 
 cat <<EOF
 
