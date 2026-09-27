@@ -607,10 +607,13 @@ final class AppState: ObservableObject {
     /// Second half of a reset, once Postgres has initialized a new cluster: apply the schema,
     /// start the gRPC and MCP services, and register the sources garage.json declares again.
     /// The setup assistant runs it from its first page after a reset, or in the background
-    /// when the user skips the assistant before that page gets this far.
-    func finishDatabaseReset() async {
+    /// when the user skips the assistant before that page gets this far; that path passes
+    /// `startingPostgres`, so the cluster's creation, the slowest stage, also counts as the
+    /// reset in progress on the Database page.
+    func finishDatabaseReset(startingPostgres: Bool = false) async {
         isFinishingDatabaseReset = true
         defer { isFinishingDatabaseReset = false }
+        if startingPostgres { await startPostgres() }
         // "Skip setup" can land here while the assistant's first start is still initializing the
         // cluster or applying the schema: wait for that to finish rather than calling the reset failed.
         await waitForPostgresToSettle()

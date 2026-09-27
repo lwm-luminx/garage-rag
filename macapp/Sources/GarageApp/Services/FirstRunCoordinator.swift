@@ -525,8 +525,7 @@ final class FirstRunCoordinator: ObservableObject {
         // assistant, so the main window comes up on the new, unconfigured database.
         if resetStillPending {
             Task {
-                await appState.startPostgres()
-                await appState.finishDatabaseReset()
+                await appState.finishDatabaseReset(startingPostgres: true)
                 appState.resumeMaintenanceAfterFirstRun()
             }
             return
