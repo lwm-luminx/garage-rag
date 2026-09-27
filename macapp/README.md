@@ -237,10 +237,10 @@ runs `xcrun altool --validate-app` and `--upload-app`, and leaves the uploaded
 `dist/Garage-<version>-<build>-AppStore.pkg`. `-- --validate-only` stops after validation and
 `-- --export-only` after the export, which needs no credentials. It authenticates with an App Store
 Connect API key (Users and Access → Integrations → Team Keys, role Developer or App Manager), kept
-in the login keychain. It uses an item labelled `ASC API Key (<LocalHostName>)` if one is there (as
-other App Store Connect tools save it; `GARAGE_ASC_KEYCHAIN_LABEL` names another), reading the key
-from the .p8 text, its base64 or JSON, and the IDs from JSON or the item's attributes. Otherwise
-store it once:
+in the login keychain. It uses the item the `asc` App Store Connect CLI saves for this Mac (account
+`asc:credential:<LocalHostName>`, with the key and issuer IDs in its kind field as
+`asc:metadata:{"key_id":…,"issuer_id":…}`), or one labelled `ASC API Key (<LocalHostName>)`;
+`GARAGE_ASC_KEYCHAIN_ACCOUNT` or `GARAGE_ASC_KEYCHAIN_LABEL` names another. Without one, store it once:
 
 ```bash
 security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \

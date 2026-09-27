@@ -47,29 +47,34 @@ case "$1" in
     cms) cat "$4" ;;
     find-generic-password)
         [[ -z "${NO_KEY:-}" ]] || exit 44
-        # $ITEM picks the stored item: this script's own (default), or a labelled one whose
-        # secret is hex (as `security -w` prints multi-line data) or JSON.
+        # $ITEM picks the stored item: this script's own (default); the `asc` CLI's, found by
+        # account, with its IDs in the kind field ("asc") or without them ("bare"), whose secret
+        # is hex, as `security -w` prints multi-line data; or a labelled one holding JSON ("json").
         case "${ITEM:-service}" in
             service) [[ "$2 $3" == "-s me.rickmark.garage-rag.asc-api-key" ]] || exit 44 ;;
-            *) [[ "$2 $3" == "-l ASC API Key (rickmark-m4)" ]] || exit 44 ;;
+            asc|bare) [[ "$2 $3" == "-a asc:credential:rickmark-m4" ]] || exit 44 ;;
+            json) [[ "$2 $3" == "-l ASC API Key (rickmark-m4)" ]] || exit 44 ;;
         esac
         if [[ "$*" == *" -w"* ]]; then
             case "${ITEM:-service}" in
                 service) printf '%s' "$KEY" | base64 | tr -d '\n' ;;
-                hex) printf '%s' "$KEY" | od -An -tx1 | tr -d ' \n' ;;
+                asc|bare) printf '%s' "$KEY" | od -An -tx1 | tr -d ' \n' ;;
                 json) python3 -c 'import json, os
 print(json.dumps({"key_id": "KEY123", "issuer_id": "issuer-uuid", "private_key": os.environ["KEY"]}))' ;;
             esac
         else
             echo 'keychain: "/Users/rick/Library/Keychains/login.keychain-db"'
             echo 'attributes:'
-            if [[ "${ITEM:-service}" == service ]]; then
-                echo '    "acct"<blob>="KEY123"'
-                echo '    "icmt"<blob>="issuer-uuid"'
-            else
-                echo '    "acct"<blob>="rickmark"'
-                echo '    "labl"<blob>="ASC API Key (rickmark-m4)"'
-            fi
+            case "${ITEM:-service}" in
+                service)
+                    echo '    "acct"<blob>="KEY123"'
+                    echo '    "icmt"<blob>="issuer-uuid"' ;;
+                asc)
+                    echo '    "acct"<blob>="asc:credential:rickmark-m4"'
+                    echo '    "desc"<blob>="asc:metadata:{"key_id":"KEY123","issuer_id":"issuer-uuid"}"' ;;
+                bare) echo '    "acct"<blob>="asc:credential:rickmark-m4"' ;;
+                json) echo '    "labl"<blob>="ASC API Key (rickmark-m4)"' ;;
+            esac
         fi ;;
     *) exit 1 ;;
 esac
@@ -243,8 +248,15 @@ def test_reads_a_json_item_labelled_for_this_mac(tmp_path: Path) -> None:
     assert any("--apiKey KEY123 --apiIssuer issuer-uuid" in c for c in calls)
 
 
-def test_a_labelled_item_without_ids_takes_them_from_the_environment(tmp_path: Path) -> None:
-    result, calls, _ = _run(tmp_path, "--validate-only", ITEM="hex")
+def test_reads_the_asc_clis_item_and_its_metadata(tmp_path: Path) -> None:
+    result, calls, _ = _run(tmp_path, "--validate-only", ITEM="asc")
+    assert result.returncode == 0, result.stderr
+    assert "key found" in calls
+    assert any("--apiKey KEY123 --apiIssuer issuer-uuid" in c for c in calls)
+
+
+def test_an_item_without_ids_takes_them_from_the_environment(tmp_path: Path) -> None:
+    result, calls, _ = _run(tmp_path, "--validate-only", ITEM="bare")
     assert result.returncode != 0
     assert "GARAGE_ASC_KEY_ID and GARAGE_ASC_ISSUER_ID" in result.stderr
     assert not _steps(calls)
@@ -253,7 +265,7 @@ def test_a_labelled_item_without_ids_takes_them_from_the_environment(tmp_path: P
     result, calls, _ = _run(
         tmp_path / "again",
         "--validate-only",
-        ITEM="hex",
+        ITEM="bare",
         GARAGE_ASC_KEY_ID="KEY123",
         GARAGE_ASC_ISSUER_ID="issuer-uuid",
     )

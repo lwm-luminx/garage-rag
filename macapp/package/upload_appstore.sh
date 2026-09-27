@@ -16,8 +16,8 @@
 # can also upload by hand.
 #
 # The API key (App Store Connect → Users and Access → Integrations → Team Keys, role Developer or
-# App Manager) is read from the login keychain: an item labelled "ASC API Key (<LocalHostName>)",
-# as other App Store Connect tools save it, or GARAGE_ASC_KEYCHAIN_LABEL, or one stored with:
+# App Manager) is read from the login keychain: the item the `asc` CLI saves for this Mac (account
+# asc:credential:<LocalHostName>), or GARAGE_ASC_KEYCHAIN_ACCOUNT / _LABEL, or one stored with:
 #
 #   security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \
 #       -a <KEY ID> -j <ISSUER ID> -w "$(base64 < AuthKey_<KEY ID>.p8)"
@@ -83,25 +83,33 @@ if [[ "$mode" != "export" ]]; then
             die "GARAGE_ASC_KEY_PATH needs GARAGE_ASC_KEY_ID and GARAGE_ASC_ISSUER_ID"
         cp "$GARAGE_ASC_KEY_PATH" "$work/private_keys/AuthKey_$key_id.p8"
     else
-        # This script's own item, else one labelled "ASC API Key (<this Mac's name>)", as other
-        # App Store Connect tools save it; GARAGE_ASC_KEYCHAIN_LABEL names another.
-        label="${GARAGE_ASC_KEYCHAIN_LABEL:-}"
-        if [[ -n "$label" ]]; then
-            item=(-l "$label")
-        elif security find-generic-password -s "$KEYCHAIN_SERVICE" >/dev/null 2>&1; then
-            item=(-s "$KEYCHAIN_SERVICE")
+        # This script's own item, else the one the `asc` App Store Connect CLI saves for this Mac
+        # (account "asc:credential:<LocalHostName>", IDs in its kind field as
+        # asc:metadata:{"key_id":…,"issuer_id":…}), else one labelled "ASC API Key (<name>)".
+        # GARAGE_ASC_KEYCHAIN_ACCOUNT or GARAGE_ASC_KEYCHAIN_LABEL names another.
+        host="$(scutil --get LocalHostName 2>/dev/null || hostname -s)"
+        if [[ -n "${GARAGE_ASC_KEYCHAIN_ACCOUNT:-}" ]]; then
+            candidates=("-a|$GARAGE_ASC_KEYCHAIN_ACCOUNT")
+        elif [[ -n "${GARAGE_ASC_KEYCHAIN_LABEL:-}" ]]; then
+            candidates=("-l|$GARAGE_ASC_KEYCHAIN_LABEL")
         else
-            label="ASC API Key ($(scutil --get LocalHostName 2>/dev/null || hostname -s))"
-            item=(-l "$label")
+            candidates=("-s|$KEYCHAIN_SERVICE" "-a|asc:credential:$host" "-l|ASC API Key ($host)")
         fi
-        attributes="$(security find-generic-password "${item[@]}" 2>/dev/null)" ||
-            die "no App Store Connect API key in the keychain (looked for $KEYCHAIN_SERVICE and '$label'); store it once with:
+        item=() attributes=""
+        for candidate in "${candidates[@]}"; do
+            if attributes="$(security find-generic-password "${candidate%%|*}" "${candidate#*|}" 2>/dev/null)"; then
+                item=("${candidate%%|*}" "${candidate#*|}")
+                break
+            fi
+        done
+        [[ ${#item[@]} -gt 0 ]] ||
+            die "no App Store Connect API key in the keychain (looked for: ${candidates[*]}); store it once with:
   security add-generic-password -U -s $KEYCHAIN_SERVICE -a <KEY ID> -j <ISSUER ID> -w \"\$(base64 < AuthKey_<KEY ID>.p8)\""
         secret="$(security find-generic-password "${item[@]}" -w)" ||
             die "could not read the API key from the keychain item ${item[*]}"
         # The secret may be the .p8 itself, its base64, the hex `security` prints for multi-line
-        # data, or JSON carrying the key and its IDs. The IDs come from the environment, then
-        # the JSON, then the item's account (key ID) and comment or description (issuer ID).
+        # data, or JSON carrying the key and its IDs. The IDs come from the environment, then that
+        # JSON or an asc:metadata: attribute, then the item's account (key ID) and comment (issuer ID).
         ids="$(umask 077 && KEY_ID="$key_id" ISSUER_ID="$issuer_id" SECRET="$secret" ATTRIBUTES="$attributes" \
             /usr/bin/python3 - "$work/private_keys" <<'EOF'
 import base64, binascii, json, os, re, sys
@@ -118,6 +126,10 @@ key = None
 if secret.startswith("{"):
     fields = {k.lower().replace("_", "").replace("-", ""): v for k, v in json.loads(secret).items() if isinstance(v, str)}
     key = next((pem(v) for v in fields.values() if pem(v)), None)
+    if key is None:
+        # Some tools keep the key file and store only its path.
+        path = next((v for v in fields.values() if v.endswith(".p8") and os.path.isfile(os.path.expanduser(v))), None)
+        key = pem(open(os.path.expanduser(path)).read()) if path else None
 else:
     key = pem(secret)
 if key is None:
@@ -129,6 +141,10 @@ if key is None:
     sys.exit("the keychain item holds no recognizable .p8 private key")
 
 attrs = dict(re.findall(r'^\s*"(\w+)"<blob>="(.*)"$', os.environ["ATTRIBUTES"], re.M))
+for value in attrs.values():
+    if value.startswith("asc:metadata:"):
+        meta = json.loads(value.removeprefix("asc:metadata:"))
+        fields.update({k.lower().replace("_", "").replace("-", ""): v for k, v in meta.items() if isinstance(v, str)})
 uuid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 key_id = os.environ["KEY_ID"] or fields.get("keyid") or fields.get("apikey") or ""
 if not key_id and re.fullmatch(r"[A-Z0-9]{4,}", attrs.get("acct", "")):
