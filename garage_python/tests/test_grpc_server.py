@@ -165,6 +165,80 @@ def test_grpc_socket_is_not_taken_from_a_running_server(socket_dir):
         first.stop(grace=None)
 
 
+def test_grpc_socket_recovery_waits_for_the_lock(socket_dir):
+    """Probe, unlink and bind run under ``<socket>.lock``, so a server recovering the path holds off another."""
+    import fcntl
+    import os
+    import stat
+    import threading
+
+    path = os.path.join(socket_dir, "grpc")
+    lock_fd = os.open(path + ".lock", os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
+    bound = threading.Event()
+    result: list = []
+
+    def bind() -> None:
+        result.append(create_grpc_server(socket_path=path))
+        bound.set()
+
+    thread = threading.Thread(target=bind, daemon=True)
+    thread.start()
+    try:
+        assert not bound.wait(0.5), "the bind went ahead while another process held the recovery lock"
+        assert not os.path.exists(path)
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        assert bound.wait(10)
+        assert stat.S_ISSOCK(os.lstat(path).st_mode)
+    finally:
+        os.close(lock_fd)
+        thread.join(10)
+        for server, _ in result:
+            server.stop(grace=None)
+
+
+def test_grpc_socket_recovery_race_leaves_one_live_server(socket_dir):
+    """Two servers recovering the same stale socket at once: one binds, the other refuses, nobody unlinks a live one."""
+    import os
+    import socket
+    import threading
+
+    from garage_rag.service.client import GarageClient
+
+    path = os.path.join(socket_dir, "grpc")
+    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stale.bind(path)
+    stale.close()
+
+    outcomes: list = []
+    barrier = threading.Barrier(2)
+
+    def race() -> None:
+        barrier.wait()
+        try:
+            server, _ = create_grpc_server(socket_path=path)
+            server.start()
+            outcomes.append(server)
+        except RuntimeError as error:
+            outcomes.append(error)
+
+    threads = [threading.Thread(target=race) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(30)
+    servers = [outcome for outcome in outcomes if not isinstance(outcome, Exception)]
+    errors = [outcome for outcome in outcomes if isinstance(outcome, Exception)]
+    try:
+        assert len(servers) == 1, outcomes
+        assert len(errors) == 1 and "another server is listening" in str(errors[0]), outcomes
+        with GarageClient(socket_path=path) as client:
+            assert client.ping("survivor").message == "survivor"
+    finally:
+        for server in servers:
+            server.stop(grace=None)
+
+
 def test_grpc_socket_path_must_be_absolute():
     with pytest.raises(ValueError, match="absolute"):
         create_grpc_server(socket_path="relative/grpc")
