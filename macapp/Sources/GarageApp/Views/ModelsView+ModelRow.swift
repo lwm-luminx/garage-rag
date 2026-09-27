@@ -219,12 +219,17 @@ extension ModelsView {
 
         if isDownloaded, let dl = downloadedInfo {
             if isLoaded {
-                Button("Unload") {
+                Button {
                     pendingUnloadAlias = item.slug
                     showUnloadConfirmation = true
+                } label: {
+                    Label("Unload", systemImage: "eject.fill")
+                        .labelStyle(.iconOnly)
                 }
                 .controlSize(.small)
                 .disabled(llama.isBusy)
+                .help("Unload the model from the built-in engine")
+                .accessibilityIdentifier("models.row.\(item.slug).unload")
             } else {
                 Button("Load") {
                     loadDownloadedModel(item: item, dlInfo: dl)

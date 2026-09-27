@@ -169,6 +169,11 @@ final class AppState: ObservableObject {
     private(set) var hasHandedOffToRelaunch = false
     private var scheduledMaintenanceTask: Task<Void, Never>?
     private var pendingMaintenanceTask: Task<Void, Never>?
+    /// `startBackend`'s hand-over of the database URL and the backend's address to the helpers,
+    /// which the launch run of automatic updates waits for: until the ingest and embed helpers
+    /// have taken their configuration, a scan started at launch fails against helpers that have
+    /// no database yet.
+    private var helperConfigurationTask: Task<Void, Never>?
     private var queuedSourceScanTask: Task<Void, Never>?
     /// Maintenance came due while the setup assistant was open; run it when it closes.
     private(set) var isMaintenanceDeferredForFirstRun = false
@@ -329,7 +334,7 @@ final class AppState: ObservableObject {
     func startBackend() async {
         try? await grpc.start()
         guard grpc.status == .running, let options = try? grpc.helperConfiguration() else { return }
-        Task { [xpcServices] in
+        helperConfigurationTask = Task { [xpcServices] in
             await xpcServices.configureHelpers(options)
         }
     }
@@ -1551,15 +1556,22 @@ final class AppState: ObservableObject {
         lastCommandSucceeded = ingestSucceeded && backfillSucceeded && factsSucceeded
     }
 
-    /// The "also run when Garage starts" option: once per launch, after the database is up and the
-    /// gRPC backend the scan goes through is listening. The setup assistant, when it is open, holds
-    /// the run until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
+    /// The "also run when Garage starts" option: once per launch, after every system is go: the
+    /// database is up, the gRPC backend the scan goes through is listening, and the helpers have
+    /// taken the database URL and the backend's address (`startBackend`), since a run kicked off
+    /// before that fails in the ingest helper. The setup assistant, when it is open, holds the run
+    /// until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
     /// garage.json registers right after start shares the run rather than starting its own.
     func runMaintenanceAtLaunchIfEnabled() {
         guard maintenanceAtLaunchPending, postgres.status == .running else { return }
         maintenanceAtLaunchPending = false
         guard scheduledMaintenanceEnabled, maintenanceRunsAtLaunch else { return }
-        scheduleDebouncedMaintenanceTrigger()
+        let configured = helperConfigurationTask
+        Task { [weak self] in
+            await configured?.value
+            guard let self, self.postgres.status == .running, self.grpc.status == .running else { return }
+            self.scheduleDebouncedMaintenanceTrigger()
+        }
     }
 
     /// Kicks off ingest + embedding backfill for all sources when the user has enabled

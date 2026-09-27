@@ -64,11 +64,11 @@ The sidebar starts with **Status**, followed by three groups:
 
 - **Status** — the page to check first.
   - **Health** reads "All systems go", or lists each problem (the database stopped or needing a schema update, the MCP server down, missing disk access, a source that can't be read, no sources or embedding model yet) with the button that fixes it and a link to its page.
-  - **Library** shows how much of your library is read, indexed and gleaned for facts, with **Update Everything** or **Stop**; while it updates it shows the current stage and the Scan › Read › Index › Glean trail. Below it are the source, document, chunk, indexed and fact figures.
-  - **Index Manager** shows the background service that runs search and indexing jobs, and what it is doing. **Helper Services** lists every helper process (Built-in Engine runs the models Garage hosts itself) with **Test**, **Restart** and a chevron for its status report, self tests and crash report. **Service Output**, folded at the bottom, holds their log.
+  - **Library** shows how much of your library is read, indexed and gleaned for facts, with an **Update Everything** button (circling arrows; **Stop** while a run is on, hover for the tooltip); while it updates it shows the current stage and the Scan › Read › Index › Glean trail. Below it are the source, document, chunk, indexed and fact figures, then the **Automatic Updates** box.
+  - **Index Manager** shows the background service that runs search and indexing jobs, and what it is doing. **Helper Services** lists every helper process (Built-in Engine runs the models Garage hosts itself) with **Test** (a flask), **Restart** (its icon turns yellow when the helper fails a test and red when it cannot be reached) and a chevron for its status report, self tests and crash report. **Service Output**, folded at the bottom, holds their log.
 - **Configuration**
   - **Sources** — one row per source with its state ("24 items to go", "Up to date", "Needs permission to read this folder") and **Scan & Ingest**, which turns into **Cancel** while the source is queued or running. Anything that cannot be read is listed at the top with the button that fixes it. New sources come from location cards, **Add Folder…** or **Custom Source…**.
-  - **Models** — three tabs. **Overall** says whether search is ready and which distillation model is set. **Embedding** lists your embedding models and the presets you can add. **Distillation** picks the fact model and edits the fact prompts. The Providers box's **Built-in engine** row lists the models the built-in engine has loaded, each with **Unload**.
+  - **Models** — three tabs. **Overall** says whether search is ready and which distillation model is set. **Embedding** lists your embedding models and the presets you can add. **Distillation** picks the fact model and edits the fact prompts. The Providers box's **Built-in engine** row lists the models the built-in engine has loaded, each with **Unload** (the eject symbol).
   - **MCP Server** — whether the local server is up, the assistants connected to it (**Connect**, **Update**, **Disconnect**), and **Try It** to call the tools the way an assistant does.
 - **Data** — **Documents**, **Facts** and **Search** browse and query what has been indexed.
 - **Advanced**
@@ -140,7 +140,7 @@ Ingest is safe to re-run. Unchanged files are skipped without being read, a file
 <h3 id="keeping-up-to-date">Keeping the Index Up to Date</h3>
 
 - **Update Everything** on the Sources page scans and ingests every source, embeds the new chunks with every model, then gleans facts from documents that have not been distilled yet. **Stop** ends it at the current step.
-- **Automatic Updates** on the same page scans, ingests and embeds on a schedule, and optionally once when Garage starts.
+- **Automatic Updates**, under Library on the Status page, scans, ingests and embeds on a schedule, and optionally once when Garage starts, as soon as every service is up.
 - From the terminal: `garage scan`, `garage ingest`, `garage backfill`, then `garage enrich-facts --stale-only`.
 
 ---

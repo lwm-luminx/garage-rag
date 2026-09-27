@@ -77,7 +77,7 @@ enum BugReportDiagnosticsCollector {
     private static func services(appState: AppState) -> DiagnosticSection {
         var fields = [
             DiagnosticField("MCP server", describe(appState.mcp.status, port: appState.mcp.port, httpEnabled: appState.mcp.httpEnabled)),
-            DiagnosticField("gRPC server", describe(appState.grpc.status, address: appState.grpc.shortAddress)),
+            DiagnosticField("gRPC server", describe(appState.grpc.status, address: appState.grpc.address)),
         ]
         for service in appState.xpcServices.services {
             var state = service.state.title

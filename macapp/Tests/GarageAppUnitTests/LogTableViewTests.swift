@@ -74,15 +74,14 @@ final class LogTableViewTests: XCTestCase {
         XCTAssertFalse(LogLevelFilter.warningsAndErrors.matches(.debug))
     }
 
-    func testLogStreamFilterMatching() {
-        XCTAssertTrue(LogStreamFilter.all.matches(.stdout))
-        XCTAssertTrue(LogStreamFilter.all.matches(.stderr))
-
-        XCTAssertTrue(LogStreamFilter.stdout.matches(.stdout))
-        XCTAssertFalse(LogStreamFilter.stdout.matches(.stderr))
-
-        XCTAssertTrue(LogStreamFilter.stderr.matches(.stderr))
-        XCTAssertFalse(LogStreamFilter.stderr.matches(.stdout))
+    func testStatusBarCountText() {
+        XCTAssertEqual(LogTableView.countText(shown: 0, matching: 0, total: 0), "0 of 0 entries")
+        XCTAssertEqual(LogTableView.countText(shown: 1, matching: 1, total: 1), "1 of 1 entry")
+        XCTAssertEqual(LogTableView.countText(shown: 3, matching: 3, total: 12), "3 of 12 entries")
+        XCTAssertEqual(
+            LogTableView.countText(shown: 500, matching: 4000, total: 4000),
+            "4000 of 4000 entries, showing the latest 500"
+        )
     }
 
     func testLogTableViewFilteredLines() {
