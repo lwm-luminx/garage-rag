@@ -218,9 +218,11 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
 
 - **Walk** (`ingest/walker.py`) — stats candidates without opening them; pruning happens during
   descent so excluded subtrees are never entered.
-- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (e.g. Dropbox online-only
-  stubs) are zero-byte; reading one triggers a download, so this is budget-metered
-  (`MaterializationBudget`). Idempotent ingest means hitting the budget cap is fine, not a failure.
+- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (Dropbox and iCloud online-only
+  stubs; dataless under File Provider) download when read, so this is budget-metered
+  (`MaterializationBudget`), and on macOS the dataless-file I/O policy is off for the pipeline's
+  thread so only the materialize thread can start a download. Idempotent ingest means hitting the
+  budget cap is fine, not a failure.
 - **Extract** (`extract/`) — dispatch by extension with lazy imports (Markdown/`text.py`,
   PDF/`pdf.py` with `pypdf`→`pdfplumber` per-page escalation, Office/`office.py`,
   images/`image.py` via Tesseract only, in-process through libtesseract's C API (`extract/tesseract.py`
