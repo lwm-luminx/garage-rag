@@ -29,6 +29,8 @@ struct ModelsView: View {
     @State var showUnloadConfirmation: Bool = false
     @State var pendingUnloadAlias: String? = nil
     @State var settingFactsModelSlug: String? = nil
+    /// The slug "Use for Inference" is setting, or "" while Follow Distillation clears it.
+    @State var settingInferenceModelSlug: String? = nil
     @State var registeringPresetSlug: String? = nil
     /// The model an Embed started from this page runs for, or "*" for Embed All; nil while no
     /// run was started here (a run started elsewhere, such as Update Everything, covers every model).
@@ -88,11 +90,12 @@ struct ModelsView: View {
 
     // MARK: - Body
 
-    /// The page's three tabs: a glance at everything, then one page per kind of model.
+    /// The page's tabs: a glance at everything, then one page per kind of model.
     enum Page: String, CaseIterable, Identifiable {
         case overall = "Overall"
         case embedding = "Embedding"
         case distillation = "Distillation"
+        case inference = "Inference"
 
         var id: Self { self }
     }
@@ -111,7 +114,7 @@ struct ModelsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 360)
+                .frame(width: 440)
                 .accessibilityIdentifier("models.tab")
 
                 HStack(spacing: 8) {
@@ -158,6 +161,8 @@ struct ModelsView: View {
                         if !appState.enrichFacts.logs.isEmpty {
                             AnyView(enrichFactsOutputBox)
                         }
+                    case .inference:
+                        AnyView(inferenceSection)
                     }
                 }
                 .padding(20)
@@ -303,7 +308,7 @@ struct ModelsView: View {
         GroupBox("Fact Distillation Model") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 8) {
-                    Text("A small instruction-tuned model that gleans atomic facts from each document and answers rag_ask over MCP. One model is in use at a time.")
+                    Text("A small instruction-tuned model that gleans atomic facts from each document. It also answers rag_ask over MCP unless the Inference tab names another model. One model is in use at a time.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -352,6 +357,96 @@ struct ModelsView: View {
         Task {
             await appState.setFactsModel(item.slug, provider: item.provider.cliValue)
             settingFactsModelSlug = nil
+        }
+    }
+
+    // MARK: - Inference
+
+    /// The `inference_models` presets tagged for inference, those that call tools first.
+    var inferenceModelItems: [UnifiedModelItem] {
+        let presets = appState.inferencePresets.filter(\.isForInference)
+        return (presets.filter(\.toolCalling) + presets.filter { !$0.toolCalling })
+            .map { UnifiedModelItem(preset: $0) }
+    }
+
+    /// The inference model garage.json names, when it is not one of the presets on the page.
+    var unlistedInferenceModel: String? {
+        guard let slug = appState.inferenceModel,
+              !appState.inferencePresets.contains(where: { $0.slug == slug }) else { return nil }
+        return slug
+    }
+
+    var inferenceSection: some View {
+        GroupBox("Inference Model") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(inferenceSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+
+                    Button {
+                        useForInference(slug: nil, provider: nil)
+                    } label: {
+                        if settingInferenceModelSlug == "" {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Text("Follow Distillation")
+                        }
+                    }
+                    .disabled(appState.inferenceModel == nil || settingInferenceModelSlug != nil || notReady)
+                    .help("Clears inference.model in garage.json so rag_ask uses the distillation model")
+                    .accessibilityIdentifier("models.inference.followDistillation")
+                }
+
+                if let unlisted = unlistedInferenceModel {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                        Text("garage.json names \(unlisted) via \(appState.inferenceProvider ?? appState.factsProvider), which is not one of the presets below.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if inferenceModelItems.isEmpty {
+                    emptyState(
+                        symbol: "bubble.left.and.text.bubble.right",
+                        title: "No inference presets",
+                        detail: "models.json lists no models tagged for inference. rag_ask uses the distillation model."
+                    )
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(inferenceModelItems) { item in
+                            modelRow(role: .inference, item: item)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// Says which model answers chat, and whether it is the distillation model.
+    var inferenceSummary: String {
+        let lead = "The model that answers rag_ask and rag_generate over MCP. Models marked TOOLS can call Garage's tools."
+        if let chosen = appState.inferenceModel {
+            return "\(lead) In use: \(chosen)."
+        }
+        return "\(lead) None is chosen, so the distillation model (\(appState.factsModel)) answers."
+    }
+
+    /// Sets `inference.*` to a model, or with a nil slug clears it to follow the distillation model.
+    func useForInference(slug: String?, provider: String?) {
+        settingInferenceModelSlug = slug ?? ""
+        Task {
+            if let slug {
+                await appState.setInferenceModel(slug, provider: provider ?? GarageConfigLoader.defaultFactsProvider)
+            } else {
+                await appState.setInferenceModel(nil)
+            }
+            settingInferenceModelSlug = nil
         }
     }
 

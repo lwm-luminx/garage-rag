@@ -79,6 +79,10 @@ final class AppState: ObservableObject {
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
     @Published private(set) var factsProvider: String = GarageConfigLoader.defaultFactsProvider
+    /// The `inference` section: the chat model `rag_ask` / `rag_generate` use. nil follows the
+    /// distillation model, which is how a fresh install (the setup assistant asks only for that) runs.
+    @Published private(set) var inferenceModel: String?
+    @Published private(set) var inferenceProvider: String?
     /// The effective fact-extraction prompts (`ListFactPrompts`): the built-in default and `facts.prompts`.
     @Published private(set) var factPrompts: [FactPromptItem] = []
     /// `facts.prompts` as configured, a JSON array; edits are applied to it and written back whole.
@@ -367,6 +371,25 @@ final class AppState: ObservableObject {
         let facts = GarageConfigLoader.loadFactsSettings()
         self.factsModel = facts.model
         self.factsProvider = facts.provider
+        let inference = GarageConfigLoader.loadInferenceSettings()
+        self.inferenceModel = inference.model
+        self.inferenceProvider = inference.provider
+    }
+
+    /// The model that answers chat: `inference.model`, else the distillation model.
+    var effectiveInferenceModel: String { inferenceModel ?? factsModel }
+
+    /// Points `rag_ask` / `rag_generate` at a model, or with nil clears `inference.*` so chat
+    /// follows the distillation model again.
+    @discardableResult
+    func setInferenceModel(_ slug: String?, provider: String = GarageConfigLoader.defaultFactsProvider) async -> Bool {
+        let succeeded = await runOperation { grpc in
+            let model = try await grpc.setSetting("inference.model", to: slug ?? "")
+            let chosen = try await grpc.setSetting("inference.provider", to: slug == nil ? "" : provider)
+            return [model.summary, chosen.summary].joined(separator: "\n")
+        }
+        fetchFactsSettings()
+        return succeeded
     }
 
     /// Points `enrich-facts` / `rag_ask` at a model: sets `facts.model`, then `facts.provider`.

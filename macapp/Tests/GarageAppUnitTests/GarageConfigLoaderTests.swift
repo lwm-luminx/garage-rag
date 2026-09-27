@@ -500,6 +500,25 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(facts.provider, "llama_xpc")
     }
 
+    func testInferenceSettingsFollowDistillationUntilAModelIsNamed() throws {
+        func load(_ json: String) throws -> (model: String?, provider: String?) {
+            let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_inference_\(UUID().uuidString).json")
+            try json.data(using: .utf8)!.write(to: url)
+            defer { try? FileManager.default.removeItem(at: url) }
+            return GarageConfigLoader.loadInferenceSettings(fileURL: url)
+        }
+
+        // No section, an empty model, or a provider alone: chat follows the distillation model.
+        XCTAssertNil(try load(#"{"facts": {"model": "granite-4.1-3b"}}"#).model)
+        XCTAssertNil(try load(#"{"inference": {"model": "  ", "provider": "ollama"}}"#).model)
+        XCTAssertNil(try load(#"{"inference": {"provider": "ollama"}}"#).provider)
+
+        let named = try load(#"{"inference": {"model": "qwen3-4b-instruct-2507", "provider": "lmstudio"}}"#)
+        XCTAssertEqual(named.model, "qwen3-4b-instruct-2507")
+        XCTAssertEqual(named.provider, "lmstudio")
+        XCTAssertNil(try load(#"{"inference": {"model": "gpt-oss-20b"}}"#).provider)
+    }
+
     func testWithoutAManifestThereAreNoPresets() {
         // No hand-written list stands in for models.json: when none of the candidate files exists,
         // the loader offers nothing rather than a copy that could disagree with the catalog.

@@ -241,7 +241,8 @@ trimmed to ~1,200 characters), and asks the model to answer from them citing
 `[n]`; the result carries the answer plus one `Citation` per excerpt so a client
 can resolve `[n]` back to a document. `rag_generate` is the same model with a raw
 prompt and no retrieval. The model is `LocalChatModel` (`enrich/generation.py`),
-built from `facts.provider` / `facts.model`, which posts to `/v1/chat/completions`
+built from `inference.provider` / `inference.model` (or `facts.provider` /
+`facts.model` while `inference.model` is empty), which posts to `/v1/chat/completions`
 through the [inference client](#local-inference-client): `llama_xpc` to the
 app's `LlamaXPCService` on `llama_host` (the `model` field of each request
 selects among the models the engine holds), `ollama` to the Ollama server on

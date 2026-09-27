@@ -290,6 +290,28 @@
         }
       }
     },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named as facts.model is. Empty (the default) uses facts.model, since a distillation model answers questions too; set it to chat with a larger or tool-calling model while a small one distills facts.",
+          "default": ""
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "",
+            "llama_xpc",
+            "ollama",
+            "lmstudio"
+          ],
+          "description": "Which inference server runs inference.model, as facts.provider does for facts.model. Empty uses facts.provider.",
+          "default": ""
+        }
+      }
+    },
     "sources": {
       "type": "array",
       "description": "Sources to index. Declared sources are re-applied on every run; sources present only in the database are left untouched.",
