@@ -154,8 +154,10 @@ See `macapp/README.md` for why Postgres can't just use the Homebrew build (it ba
 The bundled Postgres has two externals: `//ext/postgres` (18, the default) and `//ext/postgres19`
 (19 beta). Pick one with `--//ext:postgres_version=19` (or `--config=pg19`). Everything downstream
 depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/`libpq_dylib` aliases, never on a
-version package directly. Each package carries its own `sysv_shmem.patch`; a change to one patch
-usually needs porting to the other.
+version package directly. Each package carries its own sandbox patch: `ext/postgres/appstore.patch`
+(18; adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written
+to be proposed upstream) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
+ported); a change to one usually needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
 line matching the selected major (`ext/age/pg18`, `ext/age/pg19`). `001_extensions.sql` creates it
