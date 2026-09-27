@@ -156,6 +156,16 @@ py_test(
 )
 
 py_test(
+    name = "test_mcp_stdio",
+    srcs = ["test_mcp_stdio.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/mcp_server",  # keep: run as a child process
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_mcp_server",
     srcs = ["test_mcp_server.py"],
     deps = [
