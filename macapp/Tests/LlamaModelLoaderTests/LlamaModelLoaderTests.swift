@@ -19,7 +19,7 @@ final class LlamaModelResolverTests: XCTestCase {
         catalog = root.appendingPathComponent("models.json")
         let json: [String: Any] = [
             "text_embedding": [
-                ["slug": "bge-m3", "name": "BGE-M3", "model_ref": "bge-m3", "download_file": "bge-m3-Q8_0.gguf", "context_size": 8192, "native_dims": 1024],
+                ["slug": "bge-m3", "name": "BGE-M3", "model_id": "BAAI/bge-m3", "model_ref": "bge-m3", "download_file": "bge-m3-Q8_0.gguf", "context_size": 8192, "native_dims": 1024],
                 ["slug": "mxbai-embed-xsmall", "name": "mxbai xsmall", "download_file": "gguf/mxbai-embed-xsmall-v1-q8_0.gguf", "context_size": 512],
                 ["slug": "renamed", "name": "Renamed", "model_ref": "renamed-ref", "download_file": "renamed.gguf"],
             ],
@@ -72,6 +72,14 @@ final class LlamaModelResolverTests: XCTestCase {
     func testAnEntryIsFoundByModelRef() throws {
         _ = try touch("renamed.gguf")
         XCTAssertEqual(try resolver.resolve(alias: "renamed-ref").alias, "renamed-ref")
+    }
+
+    func testAnEntryIsFoundByModelID() throws {
+        // A llama_xpc registration whose model_ref is the provider-side id, as the add-model form suggests.
+        _ = try touch("bge-m3-Q8_0.gguf")
+        let plan = try resolver.resolve(alias: "BAAI/bge-m3")
+        XCTAssertEqual(plan.displayName, "BGE-M3")
+        XCTAssertTrue(plan.path.hasSuffix("bge-m3-Q8_0.gguf"), plan.path)
     }
 
     func testAMissingDownloadSaysWhatToDownload() {
