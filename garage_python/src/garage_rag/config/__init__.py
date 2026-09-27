@@ -450,6 +450,22 @@ class Settings(BaseModel):
             "use. Communications are only ever sent to a loopback host."
         ),
     )
+    inference_model: str = Field(
+        default="",
+        description=(
+            "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named "
+            "as facts.model is. Empty (the default) uses facts.model, since a distillation model "
+            "answers questions too; set it to chat with a larger or tool-calling model while a "
+            "small one distills facts."
+        ),
+    )
+    inference_provider: Literal["", "llama_xpc", "ollama", "lmstudio"] = Field(
+        default="",
+        description=(
+            "Which inference server runs inference.model, as facts.provider does for facts.model. "
+            "Empty uses facts.provider."
+        ),
+    )
     fact_prompts: list[FactPrompt] = Field(
         default_factory=list,
         description=(
@@ -557,6 +573,10 @@ SECTIONS: dict[str, dict[str, str]] = {
         "model": "fact_model",
         "provider": "fact_provider",
         "prompts": "fact_prompts",
+    },
+    "inference": {
+        "model": "inference_model",
+        "provider": "inference_provider",
     },
 }
 

@@ -8,11 +8,12 @@ import ModelDownloadClient
 // from that state sit on the right, and a chevron opens the file, hash and table details.
 
 extension ModelsView {
-    /// Whether a row is an embedding model (registered in the database, with a vector table) or a
-    /// fact-distillation preset (loaded on demand, one in use at a time).
+    /// Whether a row is an embedding model (registered in the database, with a vector table), a
+    /// fact-distillation preset or an inference preset (both loaded on demand, one in use at a time).
     enum ModelRowRole {
         case embedding
         case distillation
+        case inference
     }
 
     /// The one line a row says about its model, and how it is drawn.
@@ -184,6 +185,14 @@ extension ModelsView {
             StatusBadge("CHAT ONLY", tint: .orange)
                 .help("Tagged for inference (chat, rag_ask) but not for distilling facts")
         }
+        if role == .inference, appState.effectiveInferenceModel == item.slug {
+            StatusBadge("IN USE", tint: .green)
+                .help(appState.inferenceModel == nil ? "The distillation model, which answers chat while inference.model is empty" : "inference.model in garage.json")
+        }
+        if role == .inference, item.presetEntry?.toolCalling == true {
+            StatusBadge("TOOLS", tint: .purple)
+                .help("Calls tools, such as Garage's MCP tools")
+        }
         if item.provider != .llamaXPC {
             StatusBadge(item.provider.displayName.uppercased(), tint: item.provider == .ollama ? .orange : .teal)
         }
@@ -249,6 +258,21 @@ extension ModelsView {
             .controlSize(.small)
             .disabled(isFactsModel || settingFactsModelSlug != nil || notReady)
             .help("Sets facts.model to \(item.slug) and facts.provider to \(item.provider.cliValue) in garage.json")
+        case .inference:
+            let isInferenceModel = appState.inferenceModel == item.slug
+            let isSetting = settingInferenceModelSlug == item.slug
+            Button {
+                useForInference(slug: item.slug, provider: item.provider.cliValue)
+            } label: {
+                if isSetting {
+                    ProgressView().controlSize(.mini)
+                } else {
+                    Text("Use for Inference")
+                }
+            }
+            .controlSize(.small)
+            .disabled(isInferenceModel || settingInferenceModelSlug != nil || notReady)
+            .help("Sets inference.model to \(item.slug) and inference.provider to \(item.provider.cliValue) in garage.json")
         }
 
         rowMenu(role: role, item: item, downloadedInfo: downloadedInfo)
