@@ -228,6 +228,25 @@ def test_grpc_socket_replaces_a_stale_socket_but_nothing_else(socket_dir):
         assert handle.read() == "keep me"
 
 
+def test_grpc_socket_is_not_taken_from_a_running_server(socket_dir):
+    """Two Garages (or an old and a new build) overlapping must not steal each other's socket."""
+    import os
+
+    from garage_rag.service.client import GarageClient
+
+    path = os.path.join(socket_dir, "grpc")
+    first, _ = create_grpc_server(socket_path=path)
+    first.start()
+    try:
+        with pytest.raises(RuntimeError, match="another server is listening"):
+            create_grpc_server(socket_path=path)
+        # The first server still answers on its socket.
+        with GarageClient(socket_path=path) as client:
+            assert client.ping("still here").message == "still here"
+    finally:
+        first.stop(grace=None)
+
+
 def test_grpc_socket_path_must_be_absolute():
     with pytest.raises(ValueError, match="absolute"):
         create_grpc_server(socket_path="relative/grpc")
