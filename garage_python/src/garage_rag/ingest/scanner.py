@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from garage_rag.attribute.git import git_executable
 from garage_rag.config import (
     DEFAULT_EXCLUDE_DIRS,
     expand_home,
@@ -267,10 +268,13 @@ def scan_git(
 
 
 def _count_tracked_files(root: Path) -> int | None:
-    """``git ls-files`` count, or None when ``root`` is not a git work tree."""
+    """``git ls-files`` count, or None when ``root`` is not a git work tree or git can't run."""
+    git = git_executable()
+    if git is None:
+        return None
     try:
         proc = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "-z"],
+            [git, "-C", str(root), "ls-files", "-z"],
             capture_output=True,
             check=False,
             timeout=10,
