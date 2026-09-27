@@ -10,7 +10,7 @@ redirect_from:
 
 **Effective Date:** September 24, 2026  
 **Application:** Garage & GarageApp  
-**Developer:** Rick Mark
+**Developer:** Rick Mark-Penwell
 
 ---
 
