@@ -46,8 +46,8 @@ def pytest_unconfigure(config):
         manifest = Path(target)
     elif os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"):
         manifest = Path(os.environ["TEST_UNDECLARED_OUTPUTS_DIR"]) / "runtime_files.txt"
-    elif config.cache is not None:
-        manifest = config.cache.mkdir("garage") / "runtime_files.txt"
+    elif (cache := getattr(config, "cache", None)) is not None:
+        manifest = cache.mkdir("garage") / "runtime_files.txt"
     else:  # the cacheprovider plugin is disabled (-p no:cacheprovider)
         return
     manifest.parent.mkdir(parents=True, exist_ok=True)
