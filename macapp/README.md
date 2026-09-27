@@ -51,6 +51,7 @@ aspect run //:install                    # installs the .pkg locally
 aspect run //macapp/package:notarize_all # the release: notarized, stapled zip and .pkg in dist/
 aspect build //macapp:xcarchive          # //macapp:GarageStore.xcarchive
 aspect run //macapp:xcarchive_open       # copies the archive into Xcode's Archives folder and opens it
+aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release  # export, validate, upload to TestFlight
 
 # Smoke test of the embedded Python runtime, exactly as the XPC services start it
 aspect run //macapp/Sources/PythonXPCService:python_embed_smoke -- /path/to/Garage.app
@@ -227,7 +228,25 @@ the app, `macapp/GarageRAGAppStoreCLI.provisionprofile` for `Contents/Helpers/ga
 `macapp/GarageRAGAppStoreMCP.provisionprofile` for `Contents/Helpers/garage-mcp.app` (one per
 bundle identifier; see "Provisioning profiles" below for how Organizer picks them). Run
 Validate App first so Xcode confirms it re-signs the nested code (Postgres in `Resources/`, the
-site-packages extensions, `Python.framework`, the two helper bundles). To run a store build on
+site-packages extensions, `Python.framework`, the two helper bundles).
+
+`aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release` does the same
+without Organizer: it exports the archive with `xcodebuild -exportArchive` (manual signing, Apple
+Distribution, the three store profiles, which it installs into Xcode's profile folder first), then
+runs `xcrun altool --validate-app` and `--upload-app`, and leaves the uploaded
+`dist/Garage-<version>-<build>-AppStore.pkg`. `-- --validate-only` stops after validation and
+`-- --export-only` after the export, which needs no credentials. It authenticates with an App Store
+Connect API key (Users and Access → Integrations → Team Keys, role Developer or App Manager), kept
+in the login keychain; store it once:
+
+```bash
+security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \
+    -a <KEY ID> -j <ISSUER ID> -w "$(base64 < AuthKey_<KEY ID>.p8)"
+```
+
+`GARAGE_ASC_KEY_ID`, `GARAGE_ASC_ISSUER_ID` and `GARAGE_ASC_KEY_PATH` (the `.p8`) override the item.
+The export signs with the Apple Distribution and Mac Installer Distribution keys, so the keychain may
+ask once to let `codesign` and `productbuild` use them: answer **Always Allow**. To run a store build on
 another Mac, add that Mac to the development profiles in the developer portal and replace the files.
 
 `--config=appstore` is a fastbuild, so it shares the `//ext` builds (Postgres, ICU, Python,
@@ -266,9 +285,10 @@ identifier: `me.rickmark.garage-rag`, `.garage-cli` and `.mcp-server-cli`. With 
 signing it matches them by bundle identifier from the team's profiles (the App IDs must exist in
 the portal with App Groups enabled); with manual signing the Distribute App sheet lists the app
 and each helper and asks for a profile for each: `GarageMacAppConnect` for `Garage.app`,
-`GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`. There is no
-`ExportOptions.plist` export path in this repository; if one is added, its `provisioningProfiles`
-map must name all three bundle identifiers.
+`GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`.
+`//macapp/package:upload_appstore` writes its `ExportOptions.plist` with the same three in its
+`provisioningProfiles` map, read from the files' `Name`; a new helper bundle needs a `--profile`
+there too.
 
 Each helper App ID (developer portal → Identifiers → App IDs, platform macOS) needs the **App
 Groups** capability with `group.me.rickmark.garage-rag` assigned; the portal writes the
