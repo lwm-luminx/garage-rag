@@ -81,9 +81,9 @@ class TestTheCommittedCatalog:
         # An ISO 3166-1 alpha-2 code, not a region: the app groups codes into US / EU / CN / other.
         document = json.loads(MODELS_JSON.read_text())
         for entry in document["text_embedding"] + document["inference_models"]:
-            origin = entry.get("origin") or {}
-            assert origin.get("organization"), entry["slug"]
-            country = origin.get("country", "")
+            assert "origin" not in entry, entry["slug"]
+            assert entry.get("maker"), entry["slug"]
+            country = entry.get("country_of_origin", "")
             assert len(country) == 2 and country.isascii() and country.isupper(), entry["slug"]
             assert isinstance(entry.get("tool_calling", False), bool), entry["slug"]
 

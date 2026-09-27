@@ -64,8 +64,10 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     /// The model's page, where its license and model card can be read. The catalog names it;
     /// without that, a Hugging Face repository id in `modelId` points at its page there.
     public let modelCardURLString: String?
-    /// Who made the model and where (`origin` in models.json).
-    public let origin: ModelOrigin?
+    /// Who made the model (`maker`, e.g. "IBM").
+    public let maker: String?
+    /// Where its maker is based, as an ISO 3166-1 alpha-2 code (`country_of_origin`, e.g. "US").
+    public let countryOfOrigin: String?
     public let slug: String
     public let modelRef: String?
     public let provider: String?
@@ -91,7 +93,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case name
         case modelId = "model_id"
         case modelCardURLString = "model_card_url"
-        case origin
+        case maker
+        case countryOfOrigin = "country_of_origin"
         case slug
         case modelRef = "model_ref"
         case provider
@@ -112,7 +115,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name: String,
         modelId: String? = nil,
         modelCardURLString: String? = nil,
-        origin: ModelOrigin? = nil,
+        maker: String? = nil,
+        countryOfOrigin: String? = nil,
         slug: String,
         modelRef: String? = nil,
         provider: String? = "llama_xpc",
@@ -131,7 +135,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.name = name
         self.modelId = modelId
         self.modelCardURLString = modelCardURLString
-        self.origin = origin
+        self.maker = maker
+        self.countryOfOrigin = countryOfOrigin
         self.slug = slug
         self.modelRef = modelRef ?? slug
         self.provider = provider
@@ -153,7 +158,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name = try container.decode(String.self, forKey: .name)
         modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
         modelCardURLString = try container.decodeIfPresent(String.self, forKey: .modelCardURLString)
-        origin = try container.decodeIfPresent(ModelOrigin.self, forKey: .origin)
+        maker = try container.decodeIfPresent(String.self, forKey: .maker)
+        countryOfOrigin = try container.decodeIfPresent(String.self, forKey: .countryOfOrigin)
         slug = try container.decode(String.self, forKey: .slug)
         let decodedModelRef = try container.decodeIfPresent(String.self, forKey: .modelRef)
         modelRef = decodedModelRef ?? slug
@@ -205,6 +211,16 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         return tags.contains("distillation")
     }
 
+    /// The origin badge: US, EU, CN or the country code; nil when the catalog names no country.
+    public var originRegion: String? {
+        ModelOriginRegion.region(for: countryOfOrigin)
+    }
+
+    /// "IBM, US" or "Mistral AI, FR", for the origin badge's tooltip.
+    public var originSummary: String {
+        [maker, countryOfOrigin].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+    }
+
     public var isEmbeddingModel: Bool {
         if let dims = defaultDims ?? nativeDims, dims > 0 {
             return true
@@ -214,34 +230,20 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     }
 }
 
-/// Who made a catalogued model: the organization and its ISO 3166-1 alpha-2 country code.
-public struct ModelOrigin: Hashable, Sendable, Codable {
-    public let organization: String?
-    public let country: String?
-
-    public init(organization: String? = nil, country: String? = nil) {
-        self.organization = organization
-        self.country = country
-    }
-
+/// Groups a model's country of origin (an ISO 3166-1 alpha-2 code) for its badge.
+public enum ModelOriginRegion {
     /// EU member states, grouped as one region.
     static let euCountries: Set<String> = [
         "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
         "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
     ]
 
-    /// The badge the Models page and setup assistant show: US, EU, CN, or the country code
-    /// itself for anywhere else; nil when the catalog names no country.
-    public var region: String? {
+    /// US, EU, CN, or the country code itself for anywhere else; nil for no usable code.
+    public static func region(for country: String?) -> String? {
         guard let code = country?.trimmingCharacters(in: .whitespaces).uppercased(), code.count == 2 else {
             return nil
         }
-        return Self.euCountries.contains(code) ? "EU" : code
-    }
-
-    /// "IBM, US" or "Mistral AI, FR", for the badge's tooltip.
-    public var summary: String {
-        [organization, country].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
+        return euCountries.contains(code) ? "EU" : code
     }
 }
 

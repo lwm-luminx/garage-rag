@@ -250,7 +250,7 @@ change therefore reaches installed apps without a release. It has two lists:
 `text_embedding`, and `inference_models` for the generative models, each tagged
 `inference` (chat, `rag_ask`), `distillation` (`enrich-facts`) or both; the app still
 reads the list's older name, `fact_distil`, as distillation models. Every entry names its
-maker as `origin` (`organization`, and `country` as an ISO 3166-1 alpha-2 code), which
+`maker` (e.g. `IBM`) and `country_of_origin` (an ISO 3166-1 alpha-2 code, e.g. `US`), which
 the app shows as a US, EU, CN or country-code badge; `tool_calling: true` marks a
 model trained to call tools, which can drive Garage's MCP tools. Reference embeddings of
 fixed inputs are kept apart from it, keyed by slug, in

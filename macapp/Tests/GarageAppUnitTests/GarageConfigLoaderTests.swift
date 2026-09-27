@@ -379,11 +379,11 @@ final class GarageConfigLoaderTests: XCTestCase {
         let json = """
         {
             "text_embedding": [
-                {"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024, "origin": {"organization": "BAAI", "country": "CN"}}
+                {"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024, "maker": "BAAI", "country_of_origin": "CN"}
             ],
             "inference_models": [
-                {"name": "Granite", "slug": "granite-4.1-8b", "tool_calling": true, "origin": {"organization": "IBM", "country": "US"}},
-                {"name": "Mistral", "slug": "mistral-small", "origin": {"organization": "Mistral AI", "country": "fr"}},
+                {"name": "Granite", "slug": "granite-4.1-8b", "tool_calling": true, "maker": "IBM", "country_of_origin": "US"},
+                {"name": "Mistral", "slug": "mistral-small", "maker": "Mistral AI", "country_of_origin": "fr"},
                 {"name": "Legacy", "slug": "legacy"}
             ]
         }
@@ -392,18 +392,19 @@ final class GarageConfigLoaderTests: XCTestCase {
         try json.data(using: .utf8)!.write(to: tempURL)
         defer { try? FileManager.default.removeItem(at: tempURL) }
 
-        XCTAssertEqual(GarageConfigLoader.loadModelPresets(fileURL: tempURL).first?.origin?.region, "CN")
+        XCTAssertEqual(GarageConfigLoader.loadModelPresets(fileURL: tempURL).first?.originRegion, "CN")
         let facts = Dictionary(uniqueKeysWithValues: GarageConfigLoader.loadInferencePresets(fileURL: tempURL).map { ($0.slug, $0) })
-        XCTAssertEqual(facts["granite-4.1-8b"]?.origin?.region, "US")
-        XCTAssertEqual(facts["granite-4.1-8b"]?.origin?.summary, "IBM, US")
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originRegion, "US")
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originSummary, "IBM, US")
         XCTAssertTrue(facts["granite-4.1-8b"]?.toolCalling ?? false)
         // An EU member state is grouped as EU, whatever the case of its code.
-        XCTAssertEqual(facts["mistral-small"]?.origin?.region, "EU")
+        XCTAssertEqual(facts["mistral-small"]?.originRegion, "EU")
         XCTAssertFalse(facts["mistral-small"]?.toolCalling ?? true)
         // An entry from before the fields existed still decodes, with neither badge.
-        XCTAssertNil(facts["legacy"]?.origin)
+        XCTAssertNil(facts["legacy"]?.maker)
+        XCTAssertNil(facts["legacy"]?.originRegion)
         XCTAssertFalse(facts["legacy"]?.toolCalling ?? true)
-        XCTAssertEqual(ModelOrigin(country: "GB").region, "GB")
+        XCTAssertEqual(ModelOriginRegion.region(for: "GB"), "GB")
     }
 
     func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {

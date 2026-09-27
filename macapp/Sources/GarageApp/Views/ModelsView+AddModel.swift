@@ -61,10 +61,10 @@ extension ModelsView {
                         StatusBadge("TOOLS", tint: .purple)
                             .help("Trained to call tools, so it can use Garage's MCP tools")
                     }
-                    if let origin = preset.origin, let region = origin.region {
+                    if let region = preset.originRegion {
                         StatusBadge(region, tint: .secondary)
-                            .help("Made by \(origin.summary)")
-                            .accessibilityLabel("Origin \(origin.summary)")
+                            .help("Made by \(preset.originSummary)")
+                            .accessibilityLabel("Origin \(preset.originSummary)")
                     }
                     let presetProvider = ModelProvider.from(string: preset.provider)
                     if presetProvider != .llamaXPC {
