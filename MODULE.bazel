@@ -73,6 +73,28 @@ uv.project(
     lock = "//garage_python:uv.lock",
     pyproject = "//garage_python:pyproject.toml",
 )
+
+# grpcio publishes no free-threaded (cp314t) wheels, so the 3.14t build compiles its sdist. The
+# pep517 build action carries none of the Apple toolchain's environment, and the cc wrapper refuses
+# to run without DEVELOPER_DIR; name the selected Xcode (xcode-select -p) explicitly.
+uv.override_package(
+    name = "grpcio",
+    env = {
+        "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
+        "SDKROOT": "/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+        "GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS": "16",
+    },
+    lock = "//garage_python:uv.lock",
+)
+
+# protobuf's only native wheel is cp310-abi3, which the hub still selects for a cp314t interpreter,
+# and CPython 3.14t still loads `.abi3.so`: importing google._upb._message segfaults the
+# free-threaded interpreter. Drop the extension so protobuf falls back to its pure-Python backend.
+uv.override_package(
+    name = "protobuf",
+    exclude_glob = ["google/_upb/**"],
+    lock = "//garage_python:uv.lock",
+)
 use_repo(uv, "pypi")
 
 register_toolchains("@uv//:all")
