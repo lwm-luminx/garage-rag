@@ -28,6 +28,7 @@ struct StatusView: View {
             VStack(alignment: .leading, spacing: 20) {
                 healthSection
                 indexingSection
+                automaticUpdatesSection
                 indexManagerSection
                 servicesSection
                 serviceOutputSection
@@ -177,61 +178,72 @@ struct StatusView: View {
         let headline = indexing.headline
         return GroupBox("Library") {
             VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 10) {
-                    MenuBarSymbolCircle(symbol: headline.symbol, tint: headline.tint, isActive: headline.isActive)
+                VStack(alignment: .leading, spacing: 3) {
+                    // The symbol and the actions are centred on the headline block (title, bar and
+                    // detail), which keeps its height as a run goes; the current item and the stage
+                    // trail come and go under it, at the title's indent.
+                    HStack(alignment: .center, spacing: 10) {
+                        MenuBarSymbolCircle(symbol: headline.symbol, tint: headline.tint, isActive: headline.isActive)
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(alignment: .firstTextBaseline, spacing: 6) {
-                            Text(headline.title)
-                                .font(.system(size: 15, weight: .semibold))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                                .accessibilityIdentifier("status.library.title")
-                            if let percent = headline.percent {
-                                Text(percent)
-                                    .font(.system(size: 13))
+                        VStack(alignment: .leading, spacing: 3) {
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text(headline.title)
+                                    .font(.system(size: 15, weight: .semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .accessibilityIdentifier("status.library.title")
+                                if let percent = headline.percent {
+                                    Text(percent)
+                                        .font(.system(size: 13))
+                                        .monospacedDigit()
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            if headline.isIndeterminate {
+                                ProgressView()
+                                    .progressViewStyle(.linear)
+                                    .controlSize(.small)
+                            } else if let progress = headline.progress {
+                                ProgressView(value: progress)
+                                    .progressViewStyle(.linear)
+                                    .controlSize(.small)
+                            }
+                            if let detail = headline.detail {
+                                Text(detail)
+                                    .font(.caption)
+                                    .foregroundStyle(headline.detailIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
                                     .monospacedDigit()
-                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .textSelection(.enabled)
+                                    .accessibilityIdentifier("status.library.detail")
                             }
                         }
-                        if headline.isIndeterminate {
-                            ProgressView()
-                                .progressViewStyle(.linear)
-                                .controlSize(.small)
-                        } else if let progress = headline.progress {
-                            ProgressView(value: progress)
-                                .progressViewStyle(.linear)
-                                .controlSize(.small)
-                        }
-                        if let detail = headline.detail {
-                            Text(detail)
-                                .font(.caption)
-                                .foregroundStyle(headline.detailIsError ? AnyShapeStyle(Color.red) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                                .monospacedDigit()
-                                .fixedSize(horizontal: false, vertical: true)
-                                .textSelection(.enabled)
-                                .accessibilityIdentifier("status.library.detail")
-                        }
-                        if let item = headline.currentItem {
-                            Text(item)
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        if indexing.isRunning, let stage = headline.stage {
-                            MenuBarStageTrail(stages: indexing.stageTrail, current: stage)
-                                .padding(.top, 2)
+
+                        Spacer(minLength: 12)
+
+                        HStack(spacing: 8) {
+                            if indexing.isRunning || appState.isFetchingStats {
+                                ProgressView().controlSize(.small)
+                            }
+                            indexingAction(indexing.action)
                         }
                     }
 
-                    Spacer(minLength: 12)
-
-                    HStack(spacing: 8) {
-                        if indexing.isRunning || appState.isFetchingStats {
-                            ProgressView().controlSize(.small)
+                    if headline.currentItem != nil || (indexing.isRunning && headline.stage != nil) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            if let item = headline.currentItem {
+                                Text(item)
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.tertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            if indexing.isRunning, let stage = headline.stage {
+                                MenuBarStageTrail(stages: indexing.stageTrail, current: stage)
+                                    .padding(.top, 2)
+                            }
                         }
-                        indexingAction(indexing.action)
+                        .padding(.leading, 36)
                     }
                 }
 
@@ -274,27 +286,73 @@ struct StatusView: View {
             .controlSize(.small)
             .accessibilityIdentifier("status.addSource")
         case .updateEverything(let enabled):
-            Button("Update Everything") {
+            // Icon buttons, as the service rows have: the box's title and detail already say
+            // what the library is, so the actions only need their symbols and a tooltip.
+            Button {
                 Task { await appState.updateEverything() }
+            } label: {
+                Label("Update Everything", systemImage: "arrow.triangle.2.circlepath")
+                    .labelStyle(.iconOnly)
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .disabled(!enabled)
-            .help("Scan and read every source, index the new chunks with every model, then glean facts from the new documents")
+            .help("Update Everything: scan and read every source, index the new chunks with every model, then glean facts from the new documents")
             .accessibilityIdentifier("status.updateEverything")
         case .stop(let isStopping):
-            Button(isStopping ? "Stopping…" : "Stop") {
+            Button {
                 // cancelAll stops a backfill or distillation only when a whole-pipeline run started
                 // it; one started from Models has its own runner to cancel.
                 appState.cancelAll()
                 appState.backfill.cancel()
                 appState.enrichFacts.cancel()
+            } label: {
+                if isStopping {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("Stop", systemImage: "stop.fill")
+                        .labelStyle(.iconOnly)
+                }
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
             .tint(.red)
             .disabled(isStopping)
+            .help(isStopping ? "Stopping…" : "Stop the run after its current step")
+            .accessibilityLabel(isStopping ? "Stopping" : "Stop")
             .accessibilityIdentifier("status.stop")
+        }
+    }
+
+    // MARK: - Automatic updates
+
+    /// Under Library, since a scheduled run is the same scan, read and index that Update Everything
+    /// starts by hand, and the models and facts it covers are not the Sources page's alone.
+    private var automaticUpdatesSection: some View {
+        GroupBox("Automatic Updates") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 16) {
+                    Toggle("Keep every source up to date", isOn: $appState.scheduledMaintenanceEnabled)
+                    Picker("Every", selection: $appState.scheduledMaintenanceInterval) {
+                        Text("15 minutes").tag(TimeInterval(15 * 60))
+                        Text("hour").tag(TimeInterval(60 * 60))
+                        Text("6 hours").tag(TimeInterval(6 * 60 * 60))
+                        Text("24 hours").tag(TimeInterval(24 * 60 * 60))
+                    }
+                    .fixedSize()
+                    .disabled(!appState.scheduledMaintenanceEnabled)
+                }
+                Toggle("Also run when Garage starts", isOn: $appState.maintenanceRunsAtLaunch)
+                    .disabled(!appState.scheduledMaintenanceEnabled)
+                    .help("Run once after launch, as soon as the database, the backend and the helpers are all up, instead of waiting a whole interval for the first run.")
+                    .accessibilityIdentifier("status.maintenance.atLaunch")
+                Text("Each run scans and ingests every source, then embeds the new chunks with every registered model. Otherwise the first run starts after the chosen interval; a source added meanwhile is scanned as soon as the current run ends.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(8)
         }
     }
 

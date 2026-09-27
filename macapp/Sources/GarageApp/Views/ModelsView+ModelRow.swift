@@ -228,12 +228,17 @@ extension ModelsView {
         // is no engine slot to load into or free.
         if isDownloaded, item.provider != .imageXPC, let dl = downloadedInfo {
             if isLoaded {
-                Button("Unload") {
+                Button {
                     pendingUnloadAlias = item.slug
                     showUnloadConfirmation = true
+                } label: {
+                    Label("Unload", systemImage: "eject.fill")
+                        .labelStyle(.iconOnly)
                 }
                 .controlSize(.small)
                 .disabled(llama.isBusy)
+                .help("Unload the model from the built-in engine")
+                .accessibilityIdentifier("models.row.\(item.slug).unload")
             } else {
                 Button("Load") {
                     loadDownloadedModel(item: item, dlInfo: dl)

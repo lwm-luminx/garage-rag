@@ -876,13 +876,16 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
-    func testUpdatesAtLaunchWaitForTheDatabase() {
+    func testUpdatesAtLaunchWaitForTheDatabase() async {
         let state = AppState()
         // Called before any launch and with the database down, it must neither start a run nor fail.
         state.runMaintenanceAtLaunchIfEnabled()
+        // The run is gated on the backend and the helpers too; give a wrongly scheduled one time to show.
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
 
         XCTAssertFalse(state.isScanning)
         XCTAssertFalse(state.isUpdatingEverything)
         XCTAssertFalse(state.hasCancellableWork)
+        XCTAssertFalse(state.isMaintenanceRunning, "a launch run started with the database and the backend down")
     }
 }

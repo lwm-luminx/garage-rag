@@ -46,7 +46,6 @@ struct SourcesView: View {
                 activitySection
                 sourcesSection
                 addSourceSection
-                automaticUpdatesSection
                 ingestOutputSection
             }
             .padding(20)
@@ -1037,36 +1036,6 @@ struct SourcesView: View {
             _ = appState.testVolumeAccess()
             addFolderError = problems.isEmpty ? nil : problems.joined(separator: "\n")
             busy = false
-        }
-    }
-
-    // MARK: - Automatic updates
-
-    private var automaticUpdatesSection: some View {
-        GroupBox("Automatic Updates") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 16) {
-                    Toggle("Keep every source up to date", isOn: $appState.scheduledMaintenanceEnabled)
-                    Picker("Every", selection: $appState.scheduledMaintenanceInterval) {
-                        Text("15 minutes").tag(TimeInterval(15 * 60))
-                        Text("hour").tag(TimeInterval(60 * 60))
-                        Text("6 hours").tag(TimeInterval(6 * 60 * 60))
-                        Text("24 hours").tag(TimeInterval(24 * 60 * 60))
-                    }
-                    .fixedSize()
-                    .disabled(!appState.scheduledMaintenanceEnabled)
-                }
-                Toggle("Also run when Garage starts", isOn: $appState.maintenanceRunsAtLaunch)
-                    .disabled(!appState.scheduledMaintenanceEnabled)
-                    .help("Run once as soon as the database is up after launch, instead of waiting a whole interval for the first run.")
-                    .accessibilityIdentifier("sources.maintenance.atLaunch")
-                Text("Each run scans and ingests every source, then embeds the new chunks with every registered model. Otherwise the first run starts after the chosen interval; a source added meanwhile is scanned as soon as the current run ends.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
         }
     }
 
