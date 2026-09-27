@@ -64,12 +64,16 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     /// The model's page, where its license and model card can be read. The catalog names it;
     /// without that, a Hugging Face repository id in `modelId` points at its page there.
     public let modelCardURLString: String?
+    /// Who made the model and where (`origin` in models.json).
+    public let origin: ModelOrigin?
     public let slug: String
     public let modelRef: String?
     public let provider: String?
     public let nativeDims: Int?
     public let defaultDims: Int?
     public let contextSize: Int?
+    /// The model was trained to call tools, so it can drive Garage's MCP tools.
+    public let toolCalling: Bool
     public let downloadModelId: String?
     public let downloadFile: String?
     public let sha256: String?
@@ -84,12 +88,14 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case name
         case modelId = "model_id"
         case modelCardURLString = "model_card_url"
+        case origin
         case slug
         case modelRef = "model_ref"
         case provider
         case nativeDims = "native_dims"
         case defaultDims = "default_dims"
         case contextSize = "context_size"
+        case toolCalling = "tool_calling"
         case downloadModelId = "download_model_id"
         case downloadFile = "download_file"
         case sha256
@@ -102,12 +108,14 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name: String,
         modelId: String? = nil,
         modelCardURLString: String? = nil,
+        origin: ModelOrigin? = nil,
         slug: String,
         modelRef: String? = nil,
         provider: String? = "llama_xpc",
         nativeDims: Int? = nil,
         defaultDims: Int? = nil,
         contextSize: Int? = 8192,
+        toolCalling: Bool = false,
         downloadModelId: String? = nil,
         downloadFile: String? = nil,
         sha256: String? = nil,
@@ -118,12 +126,14 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.name = name
         self.modelId = modelId
         self.modelCardURLString = modelCardURLString
+        self.origin = origin
         self.slug = slug
         self.modelRef = modelRef ?? slug
         self.provider = provider
         self.nativeDims = nativeDims
         self.defaultDims = defaultDims
         self.contextSize = contextSize
+        self.toolCalling = toolCalling
         self.downloadModelId = downloadModelId
         self.downloadFile = downloadFile
         self.sha256 = sha256
@@ -137,6 +147,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         name = try container.decode(String.self, forKey: .name)
         modelId = try container.decodeIfPresent(String.self, forKey: .modelId)
         modelCardURLString = try container.decodeIfPresent(String.self, forKey: .modelCardURLString)
+        origin = try container.decodeIfPresent(ModelOrigin.self, forKey: .origin)
         slug = try container.decode(String.self, forKey: .slug)
         let decodedModelRef = try container.decodeIfPresent(String.self, forKey: .modelRef)
         modelRef = decodedModelRef ?? slug
@@ -144,6 +155,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         nativeDims = try container.decodeIfPresent(Int.self, forKey: .nativeDims)
         defaultDims = try container.decodeIfPresent(Int.self, forKey: .defaultDims)
         contextSize = try container.decodeIfPresent(Int.self, forKey: .contextSize) ?? 8192
+        toolCalling = try container.decodeIfPresent(Bool.self, forKey: .toolCalling) ?? false
         downloadModelId = try container.decodeIfPresent(String.self, forKey: .downloadModelId)
         downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
@@ -185,6 +197,37 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         }
         let lower = (name + " " + slug).lowercased()
         return lower.contains("embed") || lower.contains("bge") || lower.contains("arctic")
+    }
+}
+
+/// Who made a catalogued model: the organization and its ISO 3166-1 alpha-2 country code.
+public struct ModelOrigin: Hashable, Sendable, Codable {
+    public let organization: String?
+    public let country: String?
+
+    public init(organization: String? = nil, country: String? = nil) {
+        self.organization = organization
+        self.country = country
+    }
+
+    /// EU member states, grouped as one region.
+    static let euCountries: Set<String> = [
+        "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+        "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+    ]
+
+    /// The badge the Models page and setup assistant show: US, EU, CN, or the country code
+    /// itself for anywhere else; nil when the catalog names no country.
+    public var region: String? {
+        guard let code = country?.trimmingCharacters(in: .whitespaces).uppercased(), code.count == 2 else {
+            return nil
+        }
+        return Self.euCountries.contains(code) ? "EU" : code
+    }
+
+    /// "IBM, US" or "Mistral AI, FR", for the badge's tooltip.
+    public var summary: String {
+        [organization, country].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
     }
 }
 

@@ -57,6 +57,15 @@ extension ModelsView {
                     if preset.effectiveDims > 0 {
                         StatusBadge("\(preset.effectiveDims) DIMS", tint: .blue)
                     }
+                    if preset.toolCalling {
+                        StatusBadge("TOOLS", tint: .purple)
+                            .help("Trained to call tools, so it can use Garage's MCP tools")
+                    }
+                    if let origin = preset.origin, let region = origin.region {
+                        StatusBadge(region, tint: .secondary)
+                            .help("Made by \(origin.summary)")
+                            .accessibilityLabel("Origin \(origin.summary)")
+                    }
                     let presetProvider = ModelProvider.from(string: preset.provider)
                     if presetProvider != .llamaXPC {
                         StatusBadge(presetProvider.displayName.uppercased(), tint: presetProvider == .ollama ? .orange : .teal)

@@ -355,6 +355,37 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(factDistilPresets.contains { $0.slug == "bge-m3" })
     }
 
+    func testPresetsCarryOriginAndToolCalling() throws {
+        let json = """
+        {
+            "text_embedding": [
+                {"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024, "origin": {"organization": "BAAI", "country": "CN"}}
+            ],
+            "fact_distil": [
+                {"name": "Granite", "slug": "granite-4.1-8b", "tool_calling": true, "origin": {"organization": "IBM", "country": "US"}},
+                {"name": "Mistral", "slug": "mistral-small", "origin": {"organization": "Mistral AI", "country": "fr"}},
+                {"name": "Legacy", "slug": "legacy"}
+            ]
+        }
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_models_origin_\(UUID().uuidString).json")
+        try json.data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        XCTAssertEqual(GarageConfigLoader.loadModelPresets(fileURL: tempURL).first?.origin?.region, "CN")
+        let facts = Dictionary(uniqueKeysWithValues: GarageConfigLoader.loadFactDistilPresets(fileURL: tempURL).map { ($0.slug, $0) })
+        XCTAssertEqual(facts["granite-4.1-8b"]?.origin?.region, "US")
+        XCTAssertEqual(facts["granite-4.1-8b"]?.origin?.summary, "IBM, US")
+        XCTAssertTrue(facts["granite-4.1-8b"]?.toolCalling ?? false)
+        // An EU member state is grouped as EU, whatever the case of its code.
+        XCTAssertEqual(facts["mistral-small"]?.origin?.region, "EU")
+        XCTAssertFalse(facts["mistral-small"]?.toolCalling ?? true)
+        // An entry from before the fields existed still decodes, with neither badge.
+        XCTAssertNil(facts["legacy"]?.origin)
+        XCTAssertFalse(facts["legacy"]?.toolCalling ?? true)
+        XCTAssertEqual(ModelOrigin(country: "GB").region, "GB")
+    }
+
     func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {
         // A pre-grouping models.json (flat array) has no fact_distil section at all, and there is
         // no built-in list to fall back on: models.json is the one catalog.

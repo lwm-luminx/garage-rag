@@ -68,6 +68,16 @@ class TestTheCommittedCatalog:
             assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), entry["slug"]
             assert not entry.get("native_dims"), f"{entry['slug']} is generative, not an embedding model"
 
+    def test_every_entry_names_its_origin(self) -> None:
+        # An ISO 3166-1 alpha-2 code, not a region: the app groups codes into US / EU / CN / other.
+        document = json.loads(MODELS_JSON.read_text())
+        for entry in document["text_embedding"] + document["fact_distil"]:
+            origin = entry.get("origin") or {}
+            assert origin.get("organization"), entry["slug"]
+            country = origin.get("country", "")
+            assert len(country) == 2 and country.isascii() and country.isupper(), entry["slug"]
+            assert isinstance(entry.get("tool_calling", False), bool), entry["slug"]
+
     def test_qwen3_keeps_its_ollama_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(MANIFEST_ENV, raising=False)
         assert resolve_spec("qwen3-embedding-0.6b").model_ref == "qwen3-embedding-0.6b"

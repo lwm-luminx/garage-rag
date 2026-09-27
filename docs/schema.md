@@ -246,7 +246,10 @@ Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
 `https://garagerag.app/.data/models.json`; the app fetches it at launch, keeps the
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog
-change therefore reaches installed apps without a release. Reference embeddings of
+change therefore reaches installed apps without a release. Every entry names its
+maker as `origin` (`organization`, and `country` as an ISO 3166-1 alpha-2 code), which
+the app shows as a US, EU, CN or country-code badge; `tool_calling: true` marks a
+model trained to call tools, which can drive Garage's MCP tools. Reference embeddings of
 fixed inputs are kept apart from it, keyed by slug, in
 `docs/.data/model_test_vectors.json`, so the catalog the app fetches stays small.
 
