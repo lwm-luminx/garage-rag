@@ -79,7 +79,7 @@ keeps them on the pytest wrapper rather than the stock rule.
 There is also a `uv`-managed venv at `garage_python/.venv` for running things directly with
 `pytest`/`python` outside Bazel when iterating quickly — the Bazel targets remain the source of truth
 for CI. A fresh clone has none. Create it with `uv sync` in `garage_python/` (the lockfile resolves
-for macOS). On Linux use `uv venv --python 3.13 .venv && uv pip install -e '.[dev]'`, which is what the
+for macOS). On Linux use `uv venv --python 3.14 .venv && uv pip install -e '.[dev]'`, which is what the
 web-session hook runs.
 
 ### Testing against Postgres
@@ -469,7 +469,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
 
 ## Conventions worth knowing
 
-- Python 3.13 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
+- Python 3.14 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
   `>=3.13,<3.15`). Ruff for lint/format (`E,F,I,UP,B,SIM`, 120-col lines); `ty` for type checking.
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail

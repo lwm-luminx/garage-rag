@@ -40,8 +40,8 @@ fi
 
 VENV="$REPO/garage_python/.venv"
 if [ ! -x "$VENV/bin/pytest" ] || [ ! -x "$VENV/bin/ruff" ]; then
-  log "creating $VENV (python 3.13, package + dev extras)"
-  uv venv --quiet --python 3.13 "$VENV"
+  log "creating $VENV (python 3.14, package + dev extras)"
+  uv venv --quiet --python 3.14 "$VENV"
 fi
 # uv.lock only resolves for macOS (pyproject [tool.uv].environments), so install the
 # project directly instead of `uv sync`. No-op when everything is already present.

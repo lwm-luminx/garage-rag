@@ -127,24 +127,24 @@ copy_to_directory(
 copy_to_directory(
     name = "site-python-only",
     srcs = [
-        "//ext/python:python_3_13",
+        "//ext/python:python_3_14",
     ],
     exclude_srcs_patterns = [
         "**/test/**",
         "**/test",
-        # Build-time only (Makefile, libpython3.13.a, python.o): never loaded by the embedded
+        # Build-time only (Makefile, libpython3.14.a, python.o): never loaded by the embedded
         # interpreter, and the static library alone is dead weight in the bundle.
-        "**/config-3.13-darwin/**",
-        "**/config-3.13-darwin",
+        "**/config-3.14-darwin/**",
+        "**/config-3.14-darwin",
     ],
     # The real version directory, not Versions/Current: whether that symlink is walked depends on
     # the configuration (the rules_xcodeproj build does not), and when it is not, nothing matches
     # and site-python ships without the standard library.
     include_srcs_patterns = [
-        "ext/python/python_3_13/Python.framework/Versions/3.13/lib/python3.13/**",
+        "ext/python/python_3_14/Python.framework/Versions/3.14/lib/python3.14/**",
     ],
     replace_prefixes = {
-        "ext/python/python_3_13/Python.framework/Versions/3.13/lib/python3.13": "",
+        "ext/python/python_3_14/Python.framework/Versions/3.14/lib/python3.14": "",
     },
 )
 
