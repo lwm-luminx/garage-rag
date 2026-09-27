@@ -236,7 +236,7 @@ struct StatusHealth: Equatable {
                         section: .mcp, fix: .testMCP
                     ))
                 }
-            case .starting, .stopping:
+            case .starting, .stopping, .stdio:
                 break
             }
         }

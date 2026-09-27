@@ -1,0 +1,246 @@
+diff --git a/apple/internal/macos_rules.bzl b/apple/internal/macos_rules.bzl
+index 0a2eb67..55b47db 100644
+--- a/apple/internal/macos_rules.bzl
++++ b/apple/internal/macos_rules.bzl
+@@ -2977,6 +2977,12 @@ An `apple_bundle_version` target that represents the version for this target. Se
+     ],
+ )
+ 
++def _versioned_contents(rule_descriptor):
++    """The version directory a versioned framework's binary is in, with a trailing slash, or ""."""
++    if rule_descriptor.bundle_locations.bundle_version:
++        return rule_descriptor.bundle_locations.bundle_relative_contents + "/"
++    return ""
++
+ def _macos_framework_impl(ctx):
+     """Experimental implementation of macos_framework."""
+     rule_descriptor = rule_support.rule_descriptor(
+@@ -3044,7 +3050,8 @@ def _macos_framework_impl(ctx):
+ 
+     extra_linkopts = [
+         "-dynamiclib",
+-        "-Wl,-install_name,@rpath/{name}{extension}/{name}".format(
++        "-Wl,-install_name,@rpath/{name}{extension}/{contents}{name}".format(
++            contents = _versioned_contents(rule_descriptor),
+             extension = bundle_extension,
+             name = bundle_name,
+         ),
+@@ -3337,7 +3344,8 @@ def _macos_dynamic_framework_impl(ctx):
+ 
+     extra_linkopts = [
+         "-dynamiclib",
+-        "-Wl,-install_name,@rpath/{name}{extension}/{name}".format(
++        "-Wl,-install_name,@rpath/{name}{extension}/{contents}{name}".format(
++            contents = _versioned_contents(rule_descriptor),
+             extension = bundle_extension,
+             name = bundle_name,
+         ),
+diff --git a/apple/internal/partials/resources.bzl b/apple/internal/partials/resources.bzl
+index 961c864..2eaf1ad 100644
+--- a/apple/internal/partials/resources.bzl
++++ b/apple/internal/partials/resources.bzl
+@@ -110,6 +110,9 @@ def _merge_root_infoplists(
+         **kwargs
+     )
+ 
++    # A versioned bundle (a macOS framework) keeps its Info.plist in Versions/<v>/Resources.
++    if rule_descriptor.bundle_locations.bundle_version:
++        return [(processor.location.resource, None, depset(direct = files))]
+     return [(processor.location.content, None, depset(direct = files))]
+ 
+ def _locales_requested(*, build_setting_locales_to_include, locales_to_include, config_vars):
+diff --git a/apple/internal/processor.bzl b/apple/internal/processor.bzl
+index 20457c9..c706570 100644
+--- a/apple/internal/processor.bzl
++++ b/apple/internal/processor.bzl
+@@ -223,6 +223,34 @@ def _archive_paths(
+         ),
+     }
+ 
++def _versioned_bundle_symlinks(*, bundle_path, dests, version, version_path):
++    """Returns the links of a versioned bundle: Versions/Current and one per top-level entry.
++
++    Args:
++      bundle_path: The path of the bundle in the archive.
++      dests: The archive paths files and zips are placed at.
++      version: The bundle version, e.g. "A".
++      version_path: The path of the version directory in the archive.
++
++    Returns:
++      A list of structs with the `dest` of each link in the archive and its relative `target`.
++    """
++    prefix = version_path + "/"
++    entries = {}
++    for dest in dests:
++        if not dest.startswith(prefix):
++            continue
++        entry = dest[len(prefix):].split("/", 1)[0]
++        if entry and entry != "_CodeSignature":
++            entries[entry] = None
++    symlinks = [struct(dest = paths.join(bundle_path, "Versions", "Current"), target = version)]
++    for entry in sorted(entries.keys()):
++        symlinks.append(struct(
++            dest = paths.join(bundle_path, entry),
++            target = paths.join("Versions", "Current", entry),
++        ))
++    return symlinks
++
+ def _bundle_partial_outputs_files(
+         *,
+         actions,
+@@ -315,6 +343,13 @@ def _bundle_partial_outputs_files(
+         tree_artifact_is_enabled = tree_artifact_is_enabled,
+     )
+ 
++    # In a versioned bundle everything, headers and modules included, lives in the version
++    # directory; the top level only has links into it.
++    bundle_version = rule_descriptor.bundle_locations.bundle_version
++    bundle_path = location_to_paths[_LOCATION_ENUM.bundle]
++    if bundle_version:
++        location_to_paths[_LOCATION_ENUM.bundle] = location_to_paths[_LOCATION_ENUM.content]
++
+     platform_type = platform_prerequisites.platform_type
+     invalid_top_level_dirs = _invalid_top_level_directories_for_platform(
+         platform_type = platform_type,
+@@ -380,6 +415,15 @@ def _bundle_partial_outputs_files(
+                 target_path = paths.join(location_to_paths[location], parent_dir or "")
+                 control_zips.append(struct(src = source.path, dest = target_path))
+ 
++    bundle_symlinks = []
++    if bundle_version:
++        bundle_symlinks = _versioned_bundle_symlinks(
++            bundle_path = bundle_path,
++            dests = [f.dest for f in control_files] + [z.dest for z in control_zips],
++            version = bundle_version,
++            version_path = location_to_paths[_LOCATION_ENUM.content],
++        )
++
+     post_processor = ipa_post_processor
+     post_processor_path = ""
+ 
+@@ -389,6 +433,7 @@ def _bundle_partial_outputs_files(
+     control = struct(
+         bundle_merge_files = control_files,
+         bundle_merge_zips = control_zips,
++        bundle_symlinks = bundle_symlinks,
+         output = output_file.path,
+         code_signing_commands = codesigning_command or "",
+         post_processor = post_processor_path,
+diff --git a/apple/internal/rule_support.bzl b/apple/internal/rule_support.bzl
+index c307b84..319a42c 100644
+--- a/apple/internal/rule_support.bzl
++++ b/apple/internal/rule_support.bzl
+@@ -46,6 +46,7 @@ _CODESIGNING_EXCEPTIONS = struct(
+ def _describe_bundle_locations(
+         archive_relative = "",
+         bundle_relative_contents = "",
++        bundle_version = "",
+         contents_relative_app_clips = "AppClips",
+         contents_relative_binary = "",
+         contents_relative_extensions = "Extensions",
+@@ -54,10 +55,17 @@ def _describe_bundle_locations(
+         contents_relative_resources = "",
+         contents_relative_watch = "Watch",
+         contents_relative_xpc_service = "XPCServices"):
+-    """Creates a descriptor of locations for different types of artifacts within an Apple bundle."""
++    """Creates a descriptor of locations for different types of artifacts within an Apple bundle.
++
++    `bundle_version` makes a versioned bundle, the layout macOS frameworks use (see Apple's
++    "Anatomy of Framework Bundles"): `bundle_relative_contents` must then be
++    `Versions/<bundle_version>`, everything bundled goes under it, and the bundler adds the
++    `Versions/Current` link and a top-level link to `Versions/Current/<entry>` for each entry.
++    """
+     return struct(
+         archive_relative = archive_relative,
+         bundle_relative_contents = bundle_relative_contents,
++        bundle_version = bundle_version,
+         contents_relative_app_clips = contents_relative_app_clips,
+         contents_relative_binary = contents_relative_binary,
+         contents_relative_extensions = contents_relative_extensions,
+@@ -141,6 +149,15 @@ _DEFAULT_MACOS_BUNDLE_LOCATIONS = _describe_bundle_locations(
+     contents_relative_resources = "Resources",
+ )
+ 
++# macOS frameworks are versioned: code in Versions/A, Info.plist and resources in
++# Versions/A/Resources, with Versions/Current and top-level links. The Mac App Store rejects a
++# flat (iOS style) framework inside an app (ITMS-90291, ITMS-90292).
++_MACOS_FRAMEWORK_BUNDLE_LOCATIONS = _describe_bundle_locations(
++    bundle_relative_contents = "Versions/A",
++    bundle_version = "A",
++    contents_relative_resources = "Resources",
++)
++
+ # Kernel extensions on iOS are not bundled in the same way as other Apple artifacts.
+ _DEFAULT_IOS_KERNEL_EXTENSION_BUNDLE_LOCATIONS = _describe_bundle_locations(
+     bundle_relative_contents = "",
+@@ -486,6 +503,7 @@ _RULE_TYPE_DESCRIPTORS = {
+         apple_product_type.framework: _describe_rule_type(
+             allowed_device_families = ["mac"],
+             bundle_extension = ".framework",
++            bundle_locations = _MACOS_FRAMEWORK_BUNDLE_LOCATIONS,
+             bundle_package_type = bundle_package_type.framework,
+             codesigning_exceptions = _CODESIGNING_EXCEPTIONS.sign_with_provisioning_profile,
+             product_type = apple_product_type.framework,
+diff --git a/tools/bundletool/bundletool.py b/tools/bundletool/bundletool.py
+index b10f5c9..ade13dd 100644
+--- a/tools/bundletool/bundletool.py
++++ b/tools/bundletool/bundletool.py
+@@ -41,6 +41,11 @@ following keys:
+       into the bundle; and "dest", the path inside the bundle where the ZIPs
+       contents should be placed. The destination path is relative to
+       `bundle_path`.
++  bundle_symlinks: A list of dictionaries representing symbolic links to be
++      added to the bundle, such as a versioned framework's Versions/Current.
++      Each dictionary contains two fields: "dest", the path of the link inside
++      the bundle, relative to `bundle_path`; and "target", the (relative) path
++      the link points to.
+   output: The path to the uncompressed ZIP archive that should be created with
+       the merged bundle contents.
+   root_merge_zips: A list of dictionaries representing the ZIP archives whose
+@@ -109,6 +114,7 @@ class Bundler(object):
+     bundle_merge_files = self._control.get('bundle_merge_files', [])
+     bundle_merge_zips = self._control.get('bundle_merge_zips', [])
+     root_merge_zips = self._control.get('root_merge_zips', [])
++    bundle_symlinks = self._control.get('bundle_symlinks', [])
+     compress = self._control.get('compress', False)
+ 
+     with zipfile.ZipFile(output_path, 'w', allowZip64 = True) as out_zip:
+@@ -124,6 +130,13 @@ class Bundler(object):
+       for z in root_merge_zips:
+         self._add_zip_contents(z['src'], z['dest'], out_zip, compress)
+ 
++      for s in bundle_symlinks:
++        dest = os.path.normpath(os.path.join(bundle_path, s['dest']))
++        self._write_entry(
++            dest=dest, data=s['target'].encode('utf-8'), is_symlink=True,
++            out_zip=out_zip,
++            compress=compress)
++
+     with zipfile.ZipFile(output_path, 'r') as test_zip:
+       badfile = test_zip.testzip()
+       if badfile:
+diff --git a/tools/bundletool/bundletool_experimental.py b/tools/bundletool/bundletool_experimental.py
+index c66bd7e..0204355 100644
+--- a/tools/bundletool/bundletool_experimental.py
++++ b/tools/bundletool/bundletool_experimental.py
+@@ -38,6 +38,10 @@ following keys:
+       fields: "src", the path of the archive whose contents should be merged
+       into the bundle; and "dest", the path inside the bundle where the ZIPs
+       contents should be placed.
++  bundle_symlinks: A list of dictionaries representing symbolic links to be
++      added to the bundle, such as a versioned framework's Versions/Current.
++      Each dictionary contains two fields: "dest", the path of the link inside
++      the bundle; and "target", the (relative) path the link points to.
+   code_signing_commands: An optional list of shell commands that should be
+       executed to sign the bundle.
+   output: The path to the directory (which will be created/cleared) that will
+@@ -166,6 +170,9 @@ class Bundler(object):
+       self._add_files(f['src'], f['dest'], f.get('executable', False),
+                       output_path)
+ 
++    for s in self._control.get('bundle_symlinks', []):
++      self._write_symlink(s['dest'], s['target'], output_path)
++
+     os.chmod(output_path, 0o755)
+ 
+     post_processor = self._control.get('post_processor')

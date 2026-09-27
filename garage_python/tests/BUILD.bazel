@@ -144,6 +144,31 @@ py_test(
 )
 
 py_test(
+    name = "test_launcher_scripts",
+    srcs = ["test_launcher_scripts.py"],
+    data = [
+        "//macapp/Sources/GarageCLI:garage",  # keep
+        "//macapp/Sources/GarageMCPCLI:garage-mcp",  # keep
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_mcp_agent",
+    srcs = ["test_mcp_agent.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/mcp_server",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_mcp_install",
     srcs = ["test_mcp_install.py"],
     deps = [
@@ -152,6 +177,16 @@ py_test(
         "//garage_python/src/garage_rag/mcp_server",
         "@pypi//pytest",
         "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_mcp_stdio",
+    srcs = ["test_mcp_stdio.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/mcp_server",  # keep: run as a child process
+        "@pypi//pytest",
     ],
 )
 
@@ -664,6 +699,17 @@ py_test(
         ":conftest",
         "//garage_python/src/garage_rag/inference",
         "//garage_python/src/garage_rag/xpc",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_upload_appstore",
+    srcs = ["test_upload_appstore.py"],
+    data = ["//macapp/package:upload_appstore.sh"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
         "@pypi//pytest",
     ],
 )

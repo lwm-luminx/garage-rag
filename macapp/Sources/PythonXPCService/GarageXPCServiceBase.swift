@@ -37,15 +37,15 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     private let launchDate = Date()
 
     private let stateLock = NSLock()
-    private var _lifecycle: Lifecycle = .bootstrapping
-    private var _configuration: [String: String] = [:]
-    private var _lastTestResults: [GarageXPCTestResult] = []
-    private var _lastTestRun: Date?
-    private var _bootstrapError: String?
-    private var _isRunningTests = false
-    private var _servicesRegistered = false
+    private final var _lifecycle: Lifecycle = .bootstrapping
+    private final var _configuration: [String: String] = [:]
+    private final var _lastTestResults: [GarageXPCTestResult] = []
+    private final var _lastTestRun: Date?
+    private final var _bootstrapError: String?
+    private final var _isRunningTests = false
+    private final var _servicesRegistered = false
     /// The anonymous listener behind `anonymousListenerEndpoint()`, kept for the life of the process.
-    private var _anonymousListener: NSXPCListener?
+    private final var _anonymousListener: NSXPCListener?
 
     public init(
         serviceName: String,
@@ -145,7 +145,6 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     public func run() -> Never {
         let listener = NSXPCListener.service()
         listener.delegate = self
-        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         logger.info("\(self.serviceName, privacy: .public): resuming NSXPCListener")
         listener.resume()
         dispatchMain()
@@ -163,14 +162,13 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
         let listener = NSXPCListener.anonymous()
         listener.delegate = self
-        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         listener.resume()
         _anonymousListener = listener
         logger.info("\(self.serviceName, privacy: .public): anonymous NSXPCListener resumed")
         return listener.endpoint
     }
 
-    private func bootstrapOnHostThread() {
+    private final func bootstrapOnHostThread() {
         if usesPython {
             ensurePythonReady()
         }
@@ -215,7 +213,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
     }
 
-    private func registerServicesIfNeeded() {
+    private final func registerServicesIfNeeded() {
         stateLock.lock()
         let already = _servicesRegistered
         _servicesRegistered = true
@@ -225,7 +223,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
     }
 
-    private func recomputeLifecycle() {
+    private final func recomputeLifecycle() {
         stateLock.lock()
         let tests = _lastTestResults
         let bootstrapError = _bootstrapError
@@ -436,9 +434,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
 
         // Only processes signed by this build's team (the app, the other services, the launchers) may
         // talk to the service; messages from anything else are dropped and the connection invalidated.
-        if let requirement = GarageXPCPeerRequirement.current {
-            newConnection.setCodeSigningRequirement(requirement)
-        }
+        GarageXPCPeerRequirement.apply(to: newConnection, serviceName: serviceName)
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: GarageXPCLogReceiverProtocol.self)
         newConnection.exportedInterface = exportedInterface

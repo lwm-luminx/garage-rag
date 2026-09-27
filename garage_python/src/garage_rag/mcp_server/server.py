@@ -42,6 +42,8 @@ from garage_rag.db.models import (
     Source,
 )
 from garage_rag.enrich.generation import LocalChatModel
+from garage_rag.mcp_server import agent as _agent
+from garage_rag.mcp_server.agent import AgentResult
 from garage_rag.net import egress
 from garage_rag.search.hybrid import SearchHit, corpus_overview
 from garage_rag.search.hybrid import search as run_search
@@ -644,6 +646,30 @@ def rag_generate(
     messages.append({"role": "user", "content": prompt})
     text = model.chat(messages, max_tokens=max_tokens, temperature=temperature)
     return GenerateResult(text=text, model=model.model_ref, provider=model.provider)
+
+
+@mcp.tool()
+def rag_agent(
+    question: Annotated[str, Field(description="Natural-language question to answer from the corpus.")],
+    max_steps: Annotated[
+        int, Field(ge=1, le=12, description="Tool calls the model may make before it has to answer.")
+    ] = _agent.DEFAULT_MAX_STEPS,
+    max_tokens: Annotated[int, Field(ge=16, le=4096, description="Cap on each model reply.")] = 768,
+    temperature: Annotated[float, Field(ge=0.0, le=2.0, description="Sampling temperature.")] = 0.2,
+) -> AgentResult:
+    """Answer a question by letting the local model search and read the corpus itself.
+
+    The model named by facts.model on facts.provider gets this server's read-only
+    tools (rag_search, rag_get_document, rag_list_sources, rag_list_authors,
+    rag_stats) to call, in a loop, until it answers; the result carries the
+    answer, the steps it took and the documents it saw. Use rag_ask for one
+    retrieval and a cited answer, rag_agent when the question needs more than one
+    look. Runs on the local model, so nothing leaves the machine; an off-box
+    Ollama or LM Studio host never receives a communication.
+    """
+    model = LocalChatModel()
+    tools = _agent.tools_from_server(mcp)
+    return _agent.run_agent(question, tools, model, max_steps=max_steps, max_tokens=max_tokens, temperature=temperature)
 
 
 # Names that ``ipaddress`` cannot classify; every 127.x.x.x literal is handled

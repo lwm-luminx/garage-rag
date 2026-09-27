@@ -375,7 +375,8 @@ schema --publish`) and committed at `docs/.data/garage.schema.json`, which the s
 `https://garagerag.app/.data/garage.schema.json` (every config's `$schema`) — **regenerate it whenever a
 setting is added, renamed, or documented**; a test enforces every field is documented. The `facts`
 section (`facts.model`, `facts.provider`: `llama_xpc` | `ollama` | `lmstudio`) names the model behind
-`enrich-facts` and the `rag_ask`/`rag_generate` MCP tools; `garage config set SECTION.KEY VALUE` /
+`enrich-facts`, and `inference.model` / `inference.provider` the one behind the `rag_ask`/`rag_generate`
+MCP tools (empty: the facts model answers); `garage config set SECTION.KEY VALUE` /
 `garage config get SECTION.KEY` edit and read single settings without touching the JSON by hand.
 `facts.prompts` (`config/fact_prompts.py`) lists named LangExtract prompts, merged by name with the
 built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), each fact records its
@@ -441,9 +442,11 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   never Python) posts a distributed notification that makes every running Garage quit as its Quit
   menu item does, and waits for it; use it before a UI test run, which refuses to share the Mac
   with a running Garage.
-- `GarageMCPService` owns a separate long-lived `garage-mcp` HTTP process at
-  `127.0.0.1:8787/mcp`; Claude Desktop/Code instead spawn their own stdio `garage-mcp` via `garage
-  mcp-install`, so both transports coexist.
+- MCP clients use stdio by default: the MCP page registers the bundled `garage-mcp` launcher
+  (`McpInstall` with `stdio`), and each assistant spawns its own. `GarageMCPService` can also run a
+  long-lived `garage-mcp` HTTP process at `127.0.0.1:8787/mcp`, the app's only TCP listener, but only
+  once the user starts it (`garage.mcp.httpEnabled`; an upgrade with an HTTP registration keeps it
+  on). While it is off, an HTTP registration shows as out of date and Update rewrites it to stdio.
 - `LlamaXPCService` hosts llama.cpp itself (`macapp/Sources/LlamaEngine`, statically linked from
   `//ext/llama_cpp`, Metal + Accelerate) and serves it two ways: NSXPC for the app (load/unload,
   health, test calls, and `handleServerRequest`, which the Python in the other XPC services calls through
@@ -494,9 +497,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   service process paired with a `*Client` module (`IngestClient`, `LlamaClient`,
   `ModelDownloadClient`, `ImageEmbedClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
-  gRPC bridge to the Python `garage_rag` package. Every listener, the service one and the
-  anonymous ones, carries `GarageXPCPeerRequirement`: a peer must be Apple-signed with the
-  listener's own team. A process signed without a team (ad hoc, tests) checks nothing.
+  gRPC bridge to the Python `garage_rag` package. Every connection a listener accepts, from the service
+  listener and the anonymous ones, carries `GarageXPCPeerRequirement` (set on the connection in
+  `listener(_:shouldAcceptNewConnection:)`, never on the listener: on `NSXPCListener.service()` that
+  crashes the service at launch): a peer must be Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
 - The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
   process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
   sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each

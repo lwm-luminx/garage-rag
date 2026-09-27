@@ -56,6 +56,14 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(FirstRunReadiness.hasBlockingFailure(withMcpFailure), "an MCP port clash must not trap the user on page one")
     }
 
+    func testReadinessLeavesOutMcpWhenHTTPIsOff() {
+        let checks = FirstRunReadiness.checks(
+            postgres: .running, pendingMigrations: [], isApplyingMigrations: false, grpc: .running, mcp: .stopped, mcpHTTPEnabled: false
+        )
+        XCTAssertEqual(checks.map(\.id), ["postgres", "schema", "grpc"])
+        XCTAssertTrue(FirstRunReadiness.isReady(checks))
+    }
+
     func testReadinessTracksPendingMigrations() {
         let pending = FirstRunReadiness.checks(
             postgres: .needsMigration, pendingMigrations: ["001.sql", "002.sql"], isApplyingMigrations: false, grpc: .stopped, mcp: .stopped

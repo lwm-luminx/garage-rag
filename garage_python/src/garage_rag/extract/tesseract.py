@@ -7,9 +7,10 @@ thread keeps one initialised engine, so the model loads once.
 
 In the app, ``PythonXPCService.framework`` links libtesseract, so it is already
 loaded (:func:`garage_rag.native.loaded_library`) and its English data sits in the
-framework's ``tessdata`` folder, beside the ``Frameworks`` folder that holds the
-library. Elsewhere (a venv) the dynamic linker's search finds the library, and
-Tesseract's own default (or ``TESSDATA_PREFIX``) finds the data.
+framework's ``tessdata`` folder: in ``Resources`` beside the ``Frameworks`` folder that holds
+the library (the versioned layout the app ships), or beside ``Frameworks`` itself (a flat
+one). Elsewhere (a venv) the dynamic linker's search finds the library, and Tesseract's own
+default (or ``TESSDATA_PREFIX``) finds the data.
 """
 
 from __future__ import annotations
@@ -59,8 +60,11 @@ def _find_library() -> str:
 def _datapath(library: str) -> str | None:
     """The framework's ``tessdata`` for a library in its ``Frameworks`` folder, else None
     (Tesseract's own default, or ``TESSDATA_PREFIX``)."""
-    tessdata = Path(library).parent.parent / "tessdata"
-    return str(tessdata) if (tessdata / f"{LANGUAGE}.traineddata").is_file() else None
+    version = Path(library).parent.parent
+    for tessdata in (version / "Resources" / "tessdata", version / "tessdata"):
+        if (tessdata / f"{LANGUAGE}.traineddata").is_file():
+            return str(tessdata)
+    return None
 
 
 _lib_lock = threading.Lock()
