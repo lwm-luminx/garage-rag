@@ -680,3 +680,14 @@ py_test(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "test_upload_appstore",
+    srcs = ["test_upload_appstore.py"],
+    data = ["//macapp/package:upload_appstore.sh"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)

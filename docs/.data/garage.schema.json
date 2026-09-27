@@ -197,7 +197,7 @@
       "properties": {
         "model": {
           "type": "string",
-          "description": "Slug or alias of the local model used for fact distillation ('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. For llama_xpc this is the alias the app loaded the model under (the 'fact_distil' preset slug); for ollama it is the Ollama model name; for lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b').",
+          "description": "Slug or alias of the local model used for fact distillation ('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. For llama_xpc this is the alias the app loaded the model under (the 'inference_models' preset slug); for ollama it is the Ollama model name; for lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b').",
           "default": "gemma2-2b"
         },
         "provider": {
@@ -287,6 +287,28 @@
           },
           "description": "Fact-extraction prompts for 'garage enrich-facts', each a name, a description (the instructions), few-shot examples and an optional scope. Merged by name with the built-in 'default' prompt: an entry named 'default' overrides it (fields left out keep the built-in's; enabled false turns it off), and any other entry is added. Every enabled prompt that applies to a document runs; 'garage facts prompts list' shows the result.",
           "default": []
+        }
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named as facts.model is. Empty (the default) uses facts.model, since a distillation model answers questions too; set it to chat with a larger or tool-calling model while a small one distills facts.",
+          "default": ""
+        },
+        "provider": {
+          "type": "string",
+          "enum": [
+            "",
+            "llama_xpc",
+            "ollama",
+            "lmstudio"
+          ],
+          "description": "Which inference server runs inference.model, as facts.provider does for facts.model. Empty uses facts.provider.",
+          "default": ""
         }
       }
     },

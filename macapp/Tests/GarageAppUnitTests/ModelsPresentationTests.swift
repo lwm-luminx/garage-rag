@@ -193,8 +193,8 @@ final class ModelsPresentationTests: XCTestCase {
 
     // MARK: - Tabs
 
-    func testTheTabsAreOverallEmbeddingDistillationInOrder() {
-        XCTAssertEqual(ModelsView.Page.allCases.map(\.rawValue), ["Overall", "Embedding", "Distillation"])
+    func testTheTabsAreOverallEmbeddingDistillationInferenceInOrder() {
+        XCTAssertEqual(ModelsView.Page.allCases.map(\.rawValue), ["Overall", "Embedding", "Distillation", "Inference"])
     }
 
     func testProviderFromTheConfigString() {

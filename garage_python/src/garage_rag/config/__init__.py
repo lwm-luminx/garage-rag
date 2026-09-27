@@ -436,7 +436,7 @@ class Settings(BaseModel):
             "Slug or alias of the local model used for fact distillation "
             "('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. "
             "For llama_xpc this is the alias the app loaded the model under (the "
-            "'fact_distil' preset slug); for ollama it is the Ollama model name; for "
+            "'inference_models' preset slug); for ollama it is the Ollama model name; for "
             "lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b')."
         ),
     )
@@ -448,6 +448,22 @@ class Settings(BaseModel):
             "'ollama' is the Ollama server on embedding.ollama_host; 'lmstudio' is the "
             "LM Studio server on embedding.lmstudio_host, which loads the model on first "
             "use. Communications are only ever sent to a loopback host."
+        ),
+    )
+    inference_model: str = Field(
+        default="",
+        description=(
+            "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named "
+            "as facts.model is. Empty (the default) uses facts.model, since a distillation model "
+            "answers questions too; set it to chat with a larger or tool-calling model while a "
+            "small one distills facts."
+        ),
+    )
+    inference_provider: Literal["", "llama_xpc", "ollama", "lmstudio"] = Field(
+        default="",
+        description=(
+            "Which inference server runs inference.model, as facts.provider does for facts.model. "
+            "Empty uses facts.provider."
         ),
     )
     fact_prompts: list[FactPrompt] = Field(
@@ -557,6 +573,10 @@ SECTIONS: dict[str, dict[str, str]] = {
         "model": "fact_model",
         "provider": "fact_provider",
         "prompts": "fact_prompts",
+    },
+    "inference": {
+        "model": "inference_model",
+        "provider": "inference_provider",
     },
 }
 

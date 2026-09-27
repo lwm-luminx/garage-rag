@@ -131,7 +131,7 @@ redirect_from:
       <li><code>rag_stats</code>: Overview of indexed document counts, chunk counts, and registered embedding models.</li>
       <li><code>rag_list_sources</code>: List all configured knowledge sources and their sync status.</li>
       <li><code>rag_list_authors</code>: List the people the corpus attributes documents to.</li>
-      <li><code>rag_ask</code>: Answer a question from retrieved excerpts with a local model (<code>facts.provider</code> / <code>facts.model</code>), citing them as <code>[n]</code>. Garage sends nothing off the machine; the answer goes back to the agent that asked.</li>
+      <li><code>rag_ask</code>: Answer a question from retrieved excerpts with a local model (<code>inference.model</code>, or <code>facts.model</code> when that is empty), citing them as <code>[n]</code>. Garage sends nothing off the machine; the answer goes back to the agent that asked.</li>
       <li><code>rag_agent</code>: Let the same local model search and read the corpus itself with the tools above, in a loop, and answer; the result lists the steps it took and the documents it saw. This is what "Ask Garage" in the menu bar runs.</li>
       <li><code>rag_generate</code>: Send a raw prompt to the same local model, with no retrieval.</li>
     </ul>

@@ -375,7 +375,8 @@ schema --publish`) and committed at `docs/.data/garage.schema.json`, which the s
 `https://garagerag.app/.data/garage.schema.json` (every config's `$schema`) — **regenerate it whenever a
 setting is added, renamed, or documented**; a test enforces every field is documented. The `facts`
 section (`facts.model`, `facts.provider`: `llama_xpc` | `ollama` | `lmstudio`) names the model behind
-`enrich-facts` and the `rag_ask`/`rag_generate` MCP tools; `garage config set SECTION.KEY VALUE` /
+`enrich-facts`, and `inference.model` / `inference.provider` the one behind the `rag_ask`/`rag_generate`
+MCP tools (empty: the facts model answers); `garage config set SECTION.KEY VALUE` /
 `garage config get SECTION.KEY` edit and read single settings without touching the JSON by hand.
 `facts.prompts` (`config/fact_prompts.py`) lists named LangExtract prompts, merged by name with the
 built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), each fact records its
