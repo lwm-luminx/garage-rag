@@ -13,6 +13,11 @@ package(default_visibility = ["//visibility:public"])
 # for it.
 # gazelle:exclude workspace_status.sh
 
+# version_framework.sh is macos_versioned_framework's ipa_post_processor (macos_framework.bzl),
+# run by rules_apple on the framework bundle, not a runnable target of its own.
+# gazelle:exclude version_framework.sh
+exports_files(["version_framework.sh"])
+
 # Generates bazel/preset.bazelrc (imported by //.bazelrc). Regenerate with
 # `bazel run //bazel:preset.update`.
 bazelrc_preset(

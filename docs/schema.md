@@ -258,9 +258,18 @@ Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
 `https://garagerag.app/.data/models.json`; the app fetches it at launch, keeps the
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog
-change therefore reaches installed apps without a release.
+change therefore reaches installed apps without a release. Its lists are
+`text_embedding`, `image_embedding` (below), and `inference_models` for the generative models, each tagged
+`inference` (chat, `rag_ask`), `distillation` (`enrich-facts`) or both; the app still
+reads the list's older name, `fact_distil`, as distillation models. Every entry names its
+`maker` (e.g. `IBM`), `country_of_origin` (an ISO 3166-1 alpha-2 code, e.g. `DE`) and
+`origin_zone` (`US`, `EU`, `CN`, `UK`, `CH` or `OTHER`, e.g. `EU` for `DE`), which the app
+shows as a badge and a test holds to the country; `tool_calling: true` marks a
+model trained to call tools, which can drive Garage's MCP tools. Reference embeddings of
+fixed inputs are kept apart from it, keyed by slug, in
+`docs/.data/model_test_vectors.json`, so the catalog the app fetches stays small.
 
-The catalog has three sections. `text_embedding` and `fact_distil` entries name
+The catalog has three sections. `text_embedding` and `inference_models` entries name
 one GGUF (`download_model_id`, `download_file`, `sha256`). `image_embedding`
 entries (`modality: image`, provider `image_xpc`) describe a CLIP-style model as
 Core ML packages: `image_model` and `text_model` (the `.mlpackage` folder names

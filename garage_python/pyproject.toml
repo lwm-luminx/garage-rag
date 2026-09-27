@@ -16,9 +16,9 @@ dependencies = [
     "pypdf>=6.16",
     "pdfplumber>=0.11.10",
     # Not imported directly: pulled in transitively by pdfminer-six (pdfplumber).
-    # Pinned without recorded reason since the initial import; keep the ceiling
-    # until someone verifies 44+ against it.
-    "cryptography<44.0.0",
+    # The old <44 ceiling had no recorded reason and blocked the free-threaded
+    # build: 43.x has no cp314t wheels and does not build from source there.
+    "cryptography>=44",
     "python-docx>=1.2",
     "python-pptx>=1.0.2",
     "openpyxl>=3.1.5",
@@ -63,6 +63,16 @@ dev = [
     "tree-sitter>=0.25",
     "tree-sitter-swift>=0.7",
 ]
+# aspect_rules_py builds sdists into wheels with `build` and `setuptools`, resolved from uv.lock
+# and from the hub's dependency group. grpcio ships no free-threaded (cp314t) wheels, so the 3.14t
+# build compiles it from source. The Bazel group below pulls this extra in.
+build-tools = ["build", "setuptools"]
+
+[dependency-groups]
+# The @pypi hub's group (`--@pypi//dep_group=garage_rag` in .bazelrc). Without a
+# [dependency-groups] table the hub derives it from the project alone; declaring one replaces that,
+# so it names the project itself, plus the sdist build tools.
+garage_rag = ["garage_rag[build-tools]"]
 
 [project.scripts]
 garage = "garage_rag.cli:main_cli"

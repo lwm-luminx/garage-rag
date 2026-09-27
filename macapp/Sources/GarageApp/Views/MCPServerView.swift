@@ -103,7 +103,7 @@ struct MCPServerView: View {
     }
 
     private var clientRows: [ClientItem] {
-        appState.mcp.detectedClients.map { ClientItem(client: $0, row: MCPClientRowPresentation(client: $0, endpoint: appState.mcp.endpoint)) }
+        appState.mcp.detectedClients.map { ClientItem(client: $0, row: MCPClientRowPresentation(client: $0, endpoint: appState.mcp.registrationEndpoint)) }
     }
 
     private var headline: MCPServerHeadline {
@@ -112,7 +112,8 @@ struct MCPServerView: View {
             test: appState.mcp.lastTestResult,
             isTesting: appState.mcp.isTesting,
             isDatabaseRunning: appState.postgres.status == .running,
-            connectedCount: appState.mcp.detectedClients.filter(\.isRegistered).count
+            connectedCount: appState.mcp.detectedClients.filter(\.isRegistered).count,
+            httpEnabled: appState.mcp.httpEnabled
         )
     }
 
@@ -545,8 +546,10 @@ struct MCPServerView: View {
 
     // MARK: - Actions
 
+    /// Starting the server turns HTTP on for later launches too; stopping it turns HTTP off.
     private func startServer() {
         busy = true
+        appState.mcp.setHTTPEnabled(true)
         Task {
             if appState.postgres.status != .running {
                 await appState.startPostgres()
@@ -559,6 +562,7 @@ struct MCPServerView: View {
 
     private func stopServer() {
         busy = true
+        appState.mcp.setHTTPEnabled(false)
         Task {
             await appState.mcp.stop()
             busy = false

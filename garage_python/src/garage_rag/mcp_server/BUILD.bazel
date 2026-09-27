@@ -6,6 +6,7 @@ py_binary(
     imports = ["../.."],
     visibility = ["//visibility:public"],
     deps = [
+        ":mcp_server",
         # Owns garage_rag/__init__.py, whose libpq configure hook the bundled app
         # relies on; without it garage_rag is only a namespace package here.
         # Nothing in server.py imports it, so gazelle needs the keep.
@@ -27,6 +28,7 @@ py_library(
     name = "mcp_server",
     srcs = [
         "__init__.py",
+        "agent.py",
         "install.py",
         "server.py",
     ],

@@ -95,7 +95,7 @@ alias(
 
 alias(
     name = "python",
-    actual = "//ext/python:python_3_14",
+    actual = "//ext/python:python_3_14t",
     visibility = ["//visibility:public"],
 )
 

@@ -77,6 +77,27 @@ public enum GarageSockets {
         return directory
     }
 
+    /// Runs `body` holding an exclusive `flock` on `<path>.lock`, the file beside the socket.
+    ///
+    /// Stale-socket recovery (`removeStaleSocket` and then the bind) is one critical section under
+    /// it, so two processes recovering the same socket take turns and the second sees the first's
+    /// live socket instead of unlinking it after both probes found the old one dead. The Python
+    /// gRPC server takes the same lock for its socket. The lock file stays in place: every process
+    /// on the path must lock the same inode, and it lives in the owner-only socket folder.
+    public static func withRecoveryLock<T>(at path: String, _ body: () throws -> T) throws -> T {
+        let lockPath = path + ".lock"
+        let fd = open(lockPath, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
+        guard fd >= 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { close(fd) }
+        guard flock(fd, LOCK_EX) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        defer { flock(fd, LOCK_UN) }
+        return try body()
+    }
+
     /// Removes a socket file a crashed listener left behind, so a new one can bind. Only removes sockets.
     public static func removeStaleSocket(at path: String) {
         var info = stat()

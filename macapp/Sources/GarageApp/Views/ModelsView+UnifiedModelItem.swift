@@ -122,7 +122,7 @@ extension ModelsView {
 // MARK: - UnifiedModelItem from a preset
 extension ModelsView.UnifiedModelItem {
     /// Wraps a `models.json` preset that has no database registration (e.g. a
-    /// `fact_distil` entry) so the download / load helpers can treat it like a row.
+    /// `inference_models` entry) so the download / load helpers can treat it like a row.
     /// Declared in an extension to keep the struct's memberwise initializer.
     init(preset: ModelPresetEntry) {
         self.init(

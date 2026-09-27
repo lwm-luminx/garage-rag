@@ -402,8 +402,9 @@ struct FirstRunSelectDataPage: View {
 
     private var coordinator: FirstRunCoordinator { appState.firstRun }
 
-    // Three columns at the assistant's width (MainWindowSizing.assistantSize).
-    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: 12, alignment: .top)]
+    // Three columns at the assistant's width (MainWindowSizing.assistantSize), also when a mouse makes
+    // the scroll bar take its ~15 pt: 920 less the sidebar and padding leaves about 620 pt.
+    private let columns = [GridItem(.adaptive(minimum: 190, maximum: 320), spacing: 12, alignment: .top)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -808,6 +809,15 @@ struct FirstRunSelectModelsPage: View {
                         if let ctx = preset.contextSize, ctx > 0 {
                             FirstRunBadge(text: "\(ctx) CTX", tint: .secondary)
                         }
+                        if preset.toolCalling {
+                            FirstRunBadge(text: "TOOLS", tint: .purple)
+                                .help("Trained to call tools, so it can use Garage's MCP tools")
+                        }
+                        if let region = preset.originRegion {
+                            FirstRunBadge(text: region, tint: .secondary)
+                                .help("Made by \(preset.originSummary)")
+                                .accessibilityLabel("Origin \(preset.originSummary)")
+                        }
                         if registered {
                             FirstRunBadge(text: "REGISTERED", tint: .teal)
                         }
@@ -860,7 +870,10 @@ struct FirstRunSetupAgentPage: View {
                 FirstRunErrorBanner(message: error)
             }
 
-            serverCard
+            // With HTTP off (the default) there is no server to run: assistants start `garage-mcp`.
+            if appState.mcp.httpEnabled {
+                serverCard
+            }
 
             FirstRunSectionTitle(
                 title: "Installed assistants",

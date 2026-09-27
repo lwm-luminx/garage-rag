@@ -160,6 +160,42 @@ which also runs a disabled one. `garage facts prompts list` and
 Models page lists and edits them (the `ListFactPrompts` RPC reads them;
 `SetSetting facts.prompts` writes the list back).
 
+**Recipe: entities as facts.** Nothing constrains `fact_class` to `'fact'`, so an
+`entities` prompt asking for people, places, organizations, projects and events
+runs today with no code change — just a `facts.prompts` entry. Each mention
+becomes an ordinary, span-grounded fact (with an `attributes.name`/`kind`
+LangExtract attaches) and gets embedded like any other fact; nothing resolves
+repeated mentions into one entity or turns a relationship into an edge yet — see
+[`v1.5.md`](plans/v1.5.md) for where that's headed. Add to `~/.garage.json`:
+
+```json
+{
+  "facts": {
+    "prompts": [
+      {
+        "name": "entities",
+        "description": "Extract every named person, place, organization and event mentioned in this text. Quote each mention exactly as it appears; do not paraphrase. For each, give attributes: name (the full canonical name if the text states it, else the mention), and kind. For a person also give role if the text states one; for an event also give date if the text states one. Do not infer anything not stated.",
+        "examples": [
+          {
+            "text": "On 12 May 2019 Jane Doe of Acme Corp presented the Q2 roadmap at the Austin Convention Center.",
+            "extractions": [
+              {"class": "event", "text": "presented the Q2 roadmap", "attributes": {"name": "Q2 roadmap presentation", "date": "2019-05-12"}},
+              {"class": "person", "text": "Jane Doe", "attributes": {"name": "Jane Doe", "role": "presenter"}},
+              {"class": "organization", "text": "Acme Corp", "attributes": {"name": "Acme Corp"}},
+              {"class": "place", "text": "Austin Convention Center", "attributes": {"name": "Austin Convention Center", "kind": "venue"}}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Run `garage enrich-facts --prompt entities` and inspect the `facts` rows it
+produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
+building schema on top of what a given local model actually extracts.
+
 Only the local part of LangExtract is used, vendored as
 `enrich/langextract` (prompting, chunking, parsing and alignment). Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
@@ -205,7 +241,7 @@ the `garage` CLI) or HTTP (`garage mcp-serve`, or the macOS app's MCP helper).
 Every tool returns a dataclass, because under MCP 2.0
 dataclass returns map field-for-field while scalars and lists get wrapped in
 `{"result": ...}`. `rag_search`, `rag_get_document`, `rag_list_sources`,
-`rag_list_authors` and `rag_stats` read the corpus; `rag_ask` and
+`rag_list_authors` and `rag_stats` read the corpus; `rag_ask`, `rag_agent` and
 `rag_generate` also generate text, entirely on a local model.
 
 `rag_ask` runs the same retrieval as `rag_search`, numbers the excerpts (each
@@ -213,7 +249,8 @@ trimmed to ~1,200 characters), and asks the model to answer from them citing
 `[n]`; the result carries the answer plus one `Citation` per excerpt so a client
 can resolve `[n]` back to a document. `rag_generate` is the same model with a raw
 prompt and no retrieval. The model is `LocalChatModel` (`enrich/generation.py`),
-built from `facts.provider` / `facts.model`, which posts to `/v1/chat/completions`
+built from `inference.provider` / `inference.model` (or `facts.provider` /
+`facts.model` while `inference.model` is empty), which posts to `/v1/chat/completions`
 through the [inference client](#local-inference-client): `llama_xpc` to the
 app's `LlamaXPCService` on `llama_host` (the `model` field of each request
 selects among the models the engine holds), `ollama` to the Ollama server on
@@ -221,7 +258,21 @@ selects among the models the engine holds), `ollama` to the Ollama server on
 through the egress guard. None is a cloud API; retrieved communications may
 appear in the prompt but never leave the machine: `rag_ask` runs each excerpt's
 class through the guard, which refuses a communication for a host that is not
-loopback (see `docs/privacy.md`). `garage ask` is the
+loopback (see `docs/privacy.md`).
+
+`rag_agent` (`mcp_server/agent.py`) lets the model drive instead: it gets the
+five read-only tools above, described with their input schemas in the system
+prompt, and calls them by replying with one JSON object
+(`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
+user turn, and a reply that is not a tool call is the answer. Calls travel in the
+conversation rather than as the OpenAI `tools` field because the app's llama engine
+renders the chat template from role/content pairs alone, and the one format then
+works on Ollama and LM Studio too. Arguments are validated against the tool's own
+schema, as `tools/call` validates them, and an error goes back to the model to
+correct. The result carries the answer, the steps (`AgentStep`) and one
+`AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+Its content rule: when the model host is not loopback, `rag_search` is restricted
+to documents and code and `rag_get_document` refuses a communication. `garage ask` is the
 CLI front door to both tools, with `--json` for the app.
 
 ## Idempotency

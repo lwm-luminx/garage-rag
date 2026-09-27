@@ -80,8 +80,10 @@ The sidebar starts with **Status**, followed by three groups:
 For automated pipelines or terminal workflows, the `garage` CLI communicates with the database. The app includes it at `/Applications/Garage.app/Contents/MacOS/garage` (with `garage-mcp` beside it); when a command needs the database and Garage is not running, it opens the app in the background and uses its database, with no password to configure. The same commands ship in the `garage_rag` Python package for use against any PostgreSQL with pgvector.
 
 ```bash
-# Put the app's launcher on your PATH (optional)
-alias garage=/Applications/Garage.app/Contents/MacOS/garage
+# Put the launchers on your PATH (optional). The copies find Garage wherever it is installed.
+sudo mkdir -p /usr/local/bin
+sudo cp /Applications/Garage.app/Contents/Resources/launchers/garage \
+        /Applications/Garage.app/Contents/Resources/launchers/garage-mcp /usr/local/bin/
 
 # Write a configuration file with every setting at its default (./garage.json; --user for ~/.garage.json)
 garage config init
@@ -185,7 +187,7 @@ Garage can distill each document into short, self-contained facts, each tied to 
 
 <h2 id="mcp-integration">5. Model Context Protocol (MCP) Integration</h2>
 
-Garage implements the **Model Context Protocol (MCP) 2.0**, allowing AI assistants to query your local knowledge base with `rag_search`, `rag_get_document`, `rag_list_sources`, `rag_list_authors`, `rag_stats`, `rag_ask` and `rag_generate`.
+Garage implements the **Model Context Protocol (MCP) 2.0**, allowing AI assistants to query your local knowledge base with `rag_search`, `rag_get_document`, `rag_list_sources`, `rag_list_authors`, `rag_stats`, `rag_ask`, `rag_agent` and `rag_generate`.
 
 The easiest way to connect an assistant is the **MCP Server** page: each assistant Garage finds has a **Connect** button.
 

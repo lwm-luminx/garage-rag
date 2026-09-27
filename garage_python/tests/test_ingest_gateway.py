@@ -357,15 +357,24 @@ def test_ingest_gateway_via_live_grpc_server(grpc_server, tmp_path: Path):
         assert ctx.source_id == 1
         assert ctx.slug == "live-grpc-src"
 
-        # 2. persist_scan over live gRPC
+        # 2. persist_scan over live gRPC. The details are what the sqlite scanner records for a
+        # Messages source: lists and a nested table as well as counts, which the request used to
+        # carry as a string-to-int map and so refused with "'list' object cannot be interpreted
+        # as an integer".
         scan_result = SourceScanResult(
             source_slug="live-grpc-src",
             kind="filesystem",
             root=tmp_path,
             item_count=1,
             item_type="files",
+            details={"databases_count": 1, "databases": ["chat.db"], "tables": {"message": 3}, "ok": True},
         )
-        gateway.persist_scan("live-grpc-src", scan_result)
+        with patch("garage_rag.ingest.scanner.persist_scan_result") as persisted:
+            gateway.persist_scan("live-grpc-src", scan_result)
+        stored = persisted.call_args.args[1]
+        assert stored.details == {"databases_count": 1, "databases": ["chat.db"], "tables": {"message": 3}, "ok": True}
+        assert stored.item_count == 1
+        assert stored.error is None
 
         # 3. check_stat over live gRPC (no Document row yet)
         stat = gateway.check_stat("live-grpc-src", "doc.txt")

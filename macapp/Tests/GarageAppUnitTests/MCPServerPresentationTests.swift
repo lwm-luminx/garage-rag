@@ -59,6 +59,15 @@ final class MCPServerPresentationTests: XCTestCase {
         XCTAssertEqual(headline.detail, "Assistants reach Garage through this server once they're connected.")
     }
 
+    func testStoppedServerWithHTTPOffIsTheNormalStdioState() {
+        let headline = MCPServerHeadline(status: .stopped, test: nil, isTesting: false, isDatabaseRunning: true, connectedCount: 2, httpEnabled: false)
+        XCTAssertEqual(headline.title, "HTTP off")
+        XCTAssertEqual(headline.symbol, "terminal")
+        XCTAssertTrue(headline.isActive)
+        XCTAssertFalse(headline.detailIsError)
+        XCTAssertFalse(MCPServerHeadline(status: .stopped, test: nil, isTesting: false, isDatabaseRunning: true, connectedCount: 0, httpEnabled: false).isActive)
+    }
+
     func testFailedServerShowsItsError() {
         let headline = MCPServerHeadline(status: .failed("port in use"), test: nil, isTesting: false, isDatabaseRunning: true, connectedCount: 0)
         XCTAssertEqual(headline.title, "Couldn't start")
@@ -78,6 +87,19 @@ final class MCPServerPresentationTests: XCTestCase {
     func testStdioEntryWithoutAURLIsConnected() {
         let row = MCPClientRowPresentation(client: client(registered: true, url: nil), endpoint: endpoint)
         XCTAssertEqual(row.state, .connected)
+    }
+
+    func testHTTPEntryNeedsUpdatingWhenHTTPIsOff() {
+        let row = MCPClientRowPresentation(client: client(registered: true, url: "http://127.0.0.1:8787/mcp"), endpoint: nil)
+        XCTAssertEqual(row.state, .outdated(registeredURL: "http://127.0.0.1:8787/mcp"))
+        XCTAssertEqual(row.actionTitle, "Update")
+        XCTAssertEqual(row.status, "Points at http://127.0.0.1:8787/mcp, but the HTTP server is off")
+    }
+
+    func testStdioEntryIsConnectedWhenHTTPIsOff() {
+        let row = MCPClientRowPresentation(client: client(registered: true, url: nil), endpoint: nil)
+        XCTAssertEqual(row.state, .connected)
+        XCTAssertNil(row.actionTitle)
     }
 
     func testRegisteredAtAnOldPortNeedsUpdating() {

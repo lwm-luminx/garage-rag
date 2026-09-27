@@ -11,7 +11,9 @@
 # app's PythonXPCService.framework. `version` needs no database, so no app is started and no
 # Keychain is read. It also checks that PythonXPCService's code is only in the app's framework:
 # `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
-# service binary defines the framework's types.
+# service binary defines the framework's types. Every versioned framework in Contents/Frameworks
+# is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
+# validation needs.
 set -euo pipefail
 
 archive="$1"
@@ -38,6 +40,30 @@ pass() {
     echo "[PASS] $*"
 }
 
+check_framework_links() {
+    local fw="$1" name
+    name="$(basename "$fw")"
+    if [ ! -d "$fw/Versions" ]; then
+        fail "$name: flat framework (no Versions); the Mac App Store needs the versioned layout"
+        return
+    fi
+    if [ ! -L "$fw/Versions/Current" ]; then
+        fail "$name: Versions/Current is not a symlink"
+        return
+    fi
+    local entry top ok=1
+    for entry in "$fw/Versions/Current"/*; do
+        top="$fw/$(basename "$entry")"
+        # Entries with no top-level counterpart (_CodeSignature, Python's bin) need no link.
+        [ -e "$top" ] || [ -L "$top" ] || [ "$(basename "$entry")" = "${name%.framework}" ] || continue
+        if [ ! -L "$top" ] || [ "$(readlink "$top")" != "Versions/Current/$(basename "$entry")" ]; then
+            fail "$name: $(basename "$entry") is not a symlink to Versions/Current/$(basename "$entry")"
+            ok=0
+        fi
+    done
+    [ "$ok" = 1 ] && pass "$name: Versions/Current and its top-level entries are symlinks"
+}
+
 check_forwarder() {
     local name="$1" helper="$2"
     local link="$app/Contents/MacOS/$name"
@@ -59,7 +85,9 @@ check_forwarder() {
         fail "$name: forwarder is a Mach-O, not a script"
     fi
     head -n 1 "$script" | grep -q '^#!/bin/sh' || fail "$name: forwarder does not start with #!/bin/sh"
-    grep -q "Helpers/$helper/Contents/MacOS" "$script" || fail "$name: forwarder does not name Helpers/$helper"
+    # The forwarder names its helper as Helpers/$name.app, with name="<helper>" set above it.
+    { grep -q "^name=\"${helper%.app}\"$" "$script" && grep -qF 'Helpers/$name.app/Contents/MacOS' "$script"; } ||
+        fail "$name: forwarder does not name Helpers/$helper"
     pass "$name: Contents/MacOS/$name -> Resources/launchers/$name, forwarding to Helpers/$helper"
 }
 
@@ -102,6 +130,9 @@ check_forwarder garage garage.app
 check_forwarder garage-mcp garage-mcp.app
 check_helper garage me.rickmark.garage-rag.garage-cli
 check_helper garage-mcp me.rickmark.garage-rag.mcp-server-cli
+for fw in "$app"/Contents/Frameworks/*.framework; do
+    check_framework_links "$fw"
+done
 
 # No stray bare launchers left in Contents/MacOS: the app's executable and the two forwarders only.
 for entry in "$app/Contents/MacOS"/*; do

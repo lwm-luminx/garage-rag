@@ -15,13 +15,25 @@ struct MCPServerHeadline: Equatable {
     /// - Parameters:
     ///   - test: the last check that the server answers; ignored unless the server is running.
     ///   - connectedCount: assistants registered with the server, which reach it only while it runs.
+    ///   - httpEnabled: whether the app serves HTTP at all; off, a stopped server is the normal state.
     init(
         status: GarageMCPStatus,
         test: MCPTestResult?,
         isTesting: Bool,
         isDatabaseRunning: Bool,
-        connectedCount: Int
+        connectedCount: Int,
+        httpEnabled: Bool = true
     ) {
+        if status == .stopped && !httpEnabled {
+            self.init(
+                symbol: "terminal",
+                tint: .green,
+                isActive: connectedCount > 0,
+                title: "HTTP off",
+                detail: "Connected assistants start Garage themselves and talk to it over stdio; no port is open. Start the HTTP server only for an assistant that needs an address."
+            )
+            return
+        }
         switch status {
         case .running:
             if isTesting {
@@ -108,10 +120,18 @@ struct MCPClientRowPresentation: Equatable {
     /// The row's button: Connect, Update, or nothing when it is connected (Disconnect is in its menu).
     let actionTitle: String?
 
-    init(client: MCPClientConfig, endpoint: URL) {
+    /// - Parameter endpoint: the HTTP address assistants are registered at, or nil when HTTP is off
+    ///   and they run `garage-mcp` over stdio; an HTTP entry is then out of date.
+    init(client: MCPClientConfig, endpoint: URL?) {
         symbol = Self.symbol(for: client.id)
         if client.isRegistered {
-            if let url = client.registeredURL, !Self.sameEndpoint(url, endpoint) {
+            if let url = client.registeredURL, endpoint == nil {
+                state = .outdated(registeredURL: url)
+                tint = .orange
+                isActive = true
+                status = "Points at \(url), but the HTTP server is off"
+                actionTitle = "Update"
+            } else if let url = client.registeredURL, let endpoint, !Self.sameEndpoint(url, endpoint) {
                 state = .outdated(registeredURL: url)
                 tint = .orange
                 isActive = true

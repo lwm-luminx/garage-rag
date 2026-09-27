@@ -153,6 +153,7 @@ struct StatusView: View {
         case .applyMigrations:
             Task { await appState.applyMigrations() }
         case .startMCP:
+            appState.mcp.setHTTPEnabled(true)
             Task { try? await appState.mcp.start() }
         case .testMCP:
             Task { await appState.mcp.testServerConnection() }
