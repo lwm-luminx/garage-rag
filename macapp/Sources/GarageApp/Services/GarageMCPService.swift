@@ -541,8 +541,8 @@ final class GarageMCPService: ObservableObject {
     /// How long a `tools/call` may take. Reading the corpus answers in well under a second; a
     /// generating tool (`rag_ask`, `rag_agent`) runs the local model, whose first token can be tens
     /// of seconds away while it loads, so callers of those pass a longer allowance.
-    static let toolCallTimeout: TimeInterval = 10
-    static let generationTimeout: TimeInterval = 300
+    nonisolated static let toolCallTimeout: TimeInterval = 10
+    nonisolated static let generationTimeout: TimeInterval = 300
 
     func executeToolCall(
         toolName: String,
