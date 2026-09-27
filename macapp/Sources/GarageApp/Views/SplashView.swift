@@ -69,6 +69,12 @@ struct AppVersionInfo: Equatable {
         )
     }
 
+    /// Whether the splash offers the Patreon link. The App Store build leaves it out: a link to an
+    /// outside payment for a tip breaks App Review guideline 3.1.1 on most storefronts.
+    var offersDonationLink: Bool {
+        distribution != .appStore
+    }
+
     /// e.g. "Version 0.9 (build 42) · Developer ID", "Version 0.9", or "Development build".
     var displayString: String {
         guard let distribution else { return versionString }
@@ -164,19 +170,21 @@ struct SplashView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
 
-            Text("If Garage saves you time, please consider supporting its development.")
-                .fixedSize(horizontal: false, vertical: true)
-                .foregroundStyle(.secondary)
+            if version.offersDonationLink {
+                Text("If Garage saves you time, please consider supporting its development.")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(.secondary)
 
-            Button {
-                openURL(SplashLinks.patreon)
-            } label: {
-                Label("Support Rick on Patreon", systemImage: "heart")
+                Button {
+                    openURL(SplashLinks.patreon)
+                } label: {
+                    Label("Support Rick on Patreon", systemImage: "heart")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.pink)
+                .controlSize(.large)
+                .accessibilityIdentifier("splash.patreon")
             }
-            .buttonStyle(.borderedProminent)
-            .tint(.pink)
-            .controlSize(.large)
-            .accessibilityIdentifier("splash.patreon")
         }
     }
 
