@@ -405,6 +405,8 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertNil(facts["legacy"]?.originRegion)
         XCTAssertFalse(facts["legacy"]?.toolCalling ?? true)
         XCTAssertEqual(ModelOriginRegion.region(for: "GB"), "GB")
+        // A stated compliance zone wins over the one derived from the country.
+        XCTAssertEqual(ModelPresetEntry(name: "M", countryOfOrigin: "GB", complianceZone: "uk", slug: "m").originRegion, "UK")
     }
 
     func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {
