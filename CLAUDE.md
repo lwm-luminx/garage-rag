@@ -124,7 +124,8 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
 
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: the `python` job (ruff and the whole venv pytest suite, with a Postgres service),
-    `swiftcheck`, `format`, `gazelle` and `buildifier`.
+    `python-freethreaded` (the same suite on free-threaded CPython 3.14t, informational until the
+    app ships on it), `swiftcheck`, `format`, `gazelle` and `buildifier`.
   - On macOS: `lint`, which analyzes Apple targets.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
