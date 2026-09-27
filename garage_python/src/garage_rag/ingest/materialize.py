@@ -102,6 +102,7 @@ def _thread_dataless_policy(policy: int) -> Iterator[None]:
             _set_thread_dataless_policy(previous)
 
 
+@contextmanager
 def refusing_dataless_reads() -> Iterator[None]:
     """Run the body with dataless-file materialization off for the current thread.
 
@@ -109,12 +110,15 @@ def refusing_dataless_reads() -> Iterator[None]:
     :data:`DATALESS_REFUSED_ERRNOS` instead of downloading it. Threads the body starts do
     not inherit a thread-scoped policy, which is what lets the materialize thread opt back in.
     """
-    return _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_OFF)
+    with _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_OFF):
+        yield
 
 
+@contextmanager
 def allowing_dataless_reads() -> Iterator[None]:
     """Run the body with materialization on for the current thread: the budgeted download."""
-    return _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_ON)
+    with _thread_dataless_policy(IOPOL_MATERIALIZE_DATALESS_FILES_ON):
+        yield
 
 
 def refused_dataless_read(exc: BaseException) -> bool:
