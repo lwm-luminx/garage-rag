@@ -74,6 +74,9 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public let contextSize: Int?
     /// The model was trained to call tools, so it can drive Garage's MCP tools.
     public let toolCalling: Bool
+    /// What an `inference_models` entry is good for: "inference" (chat, rag_ask), "distillation"
+    /// (gleaning facts), or both. Nil for an embedding model or a legacy `fact_distil` entry.
+    public let tags: [String]?
     public let downloadModelId: String?
     public let downloadFile: String?
     public let sha256: String?
@@ -96,6 +99,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case defaultDims = "default_dims"
         case contextSize = "context_size"
         case toolCalling = "tool_calling"
+        case tags
         case downloadModelId = "download_model_id"
         case downloadFile = "download_file"
         case sha256
@@ -116,6 +120,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         defaultDims: Int? = nil,
         contextSize: Int? = 8192,
         toolCalling: Bool = false,
+        tags: [String]? = nil,
         downloadModelId: String? = nil,
         downloadFile: String? = nil,
         sha256: String? = nil,
@@ -134,6 +139,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.defaultDims = defaultDims
         self.contextSize = contextSize
         self.toolCalling = toolCalling
+        self.tags = tags
         self.downloadModelId = downloadModelId
         self.downloadFile = downloadFile
         self.sha256 = sha256
@@ -156,6 +162,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         defaultDims = try container.decodeIfPresent(Int.self, forKey: .defaultDims)
         contextSize = try container.decodeIfPresent(Int.self, forKey: .contextSize) ?? 8192
         toolCalling = try container.decodeIfPresent(Bool.self, forKey: .toolCalling) ?? false
+        tags = try container.decodeIfPresent([String].self, forKey: .tags)
         downloadModelId = try container.decodeIfPresent(String.self, forKey: .downloadModelId)
         downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
         sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
@@ -189,6 +196,13 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
             return downloadFile
         }
         return nil
+    }
+
+    /// Whether the model is good for distilling facts: tagged "distillation", or untagged, as every
+    /// entry of the older `fact_distil` list was a distillation model.
+    public var isForDistillation: Bool {
+        guard let tags else { return true }
+        return tags.contains("distillation")
     }
 
     public var isEmbeddingModel: Bool {
@@ -276,15 +290,22 @@ public struct GarageConfigFile: Codable {
 }
 
 /// The on-disk shape of `models.json`: presets grouped by what they're used for,
-/// rather than one flat list. `text_embedding` feeds the embedding model
-/// picker; `fact_distil` feeds the (generative) fact-distillation model picker.
+/// rather than one flat list. `text_embedding` feeds the embedding model picker;
+/// `inference_models` holds the generative models, each tagged for inference, distillation or
+/// both. `fact_distil` is the older name of that list, still read when `inference_models` is absent.
 private struct ModelsManifest: Codable {
     let textEmbedding: [ModelPresetEntry]?
+    let inferenceModels: [ModelPresetEntry]?
     let factDistil: [ModelPresetEntry]?
 
     enum CodingKeys: String, CodingKey {
         case textEmbedding = "text_embedding"
+        case inferenceModels = "inference_models"
         case factDistil = "fact_distil"
+    }
+
+    var inference: [ModelPresetEntry]? {
+        inferenceModels ?? factDistil
     }
 }
 
@@ -320,10 +341,14 @@ public enum GarageConfigLoader {
         loadModelManifest(fileURL: fileURL).textEmbedding ?? []
     }
 
-    /// Loads fact-distillation model presets (generative models used to glean facts
-    /// out of documents) from models.json's `fact_distil` section, from the same files.
+    /// Loads every generative model preset (models.json's `inference_models`), from the same files.
+    public static func loadInferencePresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
+        loadModelManifest(fileURL: fileURL).inference ?? []
+    }
+
+    /// Loads the inference presets tagged for fact distillation (gleaning facts out of documents).
     public static func loadFactDistilPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
-        loadModelManifest(fileURL: fileURL).factDistil ?? []
+        loadInferencePresets(fileURL: fileURL).filter(\.isForDistillation)
     }
 
     /// The files `loadModelPresets` reads, in order: `fileURL`, then `Paths.modelsJSON`
@@ -340,12 +365,12 @@ public enum GarageConfigLoader {
 
     /// Resolves models.json (or a candidate config file) into its two preset
     /// groups. Returns `nil` for a group that no source provided at all.
-    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    private static func loadModelManifest(fileURL: URL?) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?) {
         loadModelManifest(candidates: modelManifestCandidates(fileURL: fileURL))
     }
 
     /// The first of `candidates` that exists and decodes as a catalog, or `(nil, nil)`.
-    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?) {
+    static func loadModelManifest(candidates: [URL]) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?) {
         for url in candidates {
             guard FileManager.default.fileExists(atPath: url.path) else { continue }
             if let manifest = decodeModelManifest(from: url) {
@@ -363,14 +388,14 @@ public enum GarageConfigLoader {
         return !(manifest.textEmbedding ?? []).isEmpty
     }
 
-    private static func decodeModelManifest(from url: URL) -> (textEmbedding: [ModelPresetEntry]?, factDistil: [ModelPresetEntry]?)? {
+    private static func decodeModelManifest(from url: URL) -> (textEmbedding: [ModelPresetEntry]?, inference: [ModelPresetEntry]?)? {
         guard let data = try? Data(contentsOf: url) else { return nil }
         let decoder = JSONDecoder()
 
-        // 1. Current models.json shape: presets grouped by use (text_embedding / fact_distil).
+        // 1. Current models.json shape: presets grouped by use (text_embedding / inference_models).
         if let manifest = try? decoder.decode(ModelsManifest.self, from: data),
-           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.factDistil ?? []).isEmpty {
-            return (manifest.textEmbedding, manifest.factDistil)
+           !(manifest.textEmbedding ?? []).isEmpty || !(manifest.inference ?? []).isEmpty {
+            return (manifest.textEmbedding, manifest.inference)
         }
 
         // 2. Legacy flat array of ModelPresetEntry (pre-grouping models.json).

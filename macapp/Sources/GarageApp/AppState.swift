@@ -72,7 +72,9 @@ final class AppState: ObservableObject {
     @Published var autoStartPostgres = true
     @Published private(set) var lmStudioTokenConfigured = false
     @Published private(set) var presetModels: [ModelPresetEntry] = []
-    /// Generative presets (models.json `fact_distil`) offered for fact distillation / `rag_ask`.
+    /// Every generative preset (models.json `inference_models`), for chat, `rag_ask` and distillation.
+    @Published private(set) var inferencePresets: [ModelPresetEntry] = []
+    /// The inference presets tagged for fact distillation, which the setup assistant offers.
     @Published private(set) var factDistilPresets: [ModelPresetEntry] = []
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
@@ -344,7 +346,8 @@ final class AppState: ObservableObject {
 
     func fetchPresetModels() {
         self.presetModels = GarageConfigLoader.loadModelPresets()
-        self.factDistilPresets = GarageConfigLoader.loadFactDistilPresets()
+        self.inferencePresets = GarageConfigLoader.loadInferencePresets()
+        self.factDistilPresets = inferencePresets.filter(\.isForDistillation)
         fetchFactsSettings()
     }
 

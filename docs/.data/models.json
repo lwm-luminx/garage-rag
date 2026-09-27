@@ -226,74 +226,6 @@
       "featured": false
     },
     {
-      "name": "Qwen 2.5 Coder 7B",
-      "model_id": "Qwen/Qwen2.5-Coder-7B-Instruct",
-      "model_card_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
-      "origin": {
-        "organization": "Alibaba (Qwen)",
-        "country": "CN"
-      },
-      "slug": "qwen-2.5-coder-7b",
-      "model_ref": "qwen-2.5-coder-7b",
-      "provider": "llama_xpc",
-      "context_size": 16384,
-      "tool_calling": true,
-      "download_model_id": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
-      "download_file": "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
-      "sha256": "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
-      "description": "Instruction-tuned chat/coding model, useful for summarizing and answering questions over retrieved passages.",
-      "use_cases": [
-        "Chat / Q&A",
-        "Code assistance"
-      ],
-      "featured": false
-    },
-    {
-      "name": "Mistral 7B Instruct v0.3",
-      "model_id": "mistralai/Mistral-7B-Instruct-v0.3",
-      "model_card_url": "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3",
-      "origin": {
-        "organization": "Mistral AI",
-        "country": "FR"
-      },
-      "slug": "mistral-7b-instruct-v0.3",
-      "model_ref": "mistral-7b-instruct-v0.3",
-      "provider": "llama_xpc",
-      "context_size": 8192,
-      "tool_calling": true,
-      "download_model_id": "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
-      "download_file": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
-      "sha256": "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6",
-      "description": "General-purpose instruction-tuned chat model for answering questions over retrieved passages.",
-      "use_cases": [
-        "Chat / Q&A"
-      ],
-      "featured": false
-    },
-    {
-      "name": "DeepSeek R1 Distill Qwen 7B",
-      "model_id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-      "model_card_url": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
-      "origin": {
-        "organization": "DeepSeek",
-        "country": "CN"
-      },
-      "slug": "deepseek-r1-distill-qwen-7b",
-      "model_ref": "deepseek-r1-distill-qwen-7b",
-      "provider": "llama_xpc",
-      "context_size": 8192,
-      "tool_calling": false,
-      "download_model_id": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
-      "download_file": "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
-      "sha256": "731ece8d06dc7eda6f6572997feb9ee1258db0784827e642909d9b565641937b",
-      "description": "Reasoning-focused distilled chat model, useful for more involved question answering over retrieved passages.",
-      "use_cases": [
-        "Chat / Q&A",
-        "Reasoning"
-      ],
-      "featured": false
-    },
-    {
       "name": "NVIDIA Llama-Embed-Nemotron-8B",
       "model_id": "NVIDIA/Llama-Embed-Nemotron-8B",
       "model_card_url": "https://huggingface.co/nvidia/llama-embed-nemotron-8b",
@@ -336,7 +268,7 @@
       "featured": false
     }
   ],
-  "fact_distil": [
+  "inference_models": [
     {
       "name": "Gemma 2 2B Instruct",
       "model_id": "google/gemma-2-2b-it",
@@ -348,6 +280,10 @@
       "slug": "gemma2-2b",
       "model_ref": "gemma2-2b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 8192,
       "tool_calling": false,
       "download_model_id": "bartowski/gemma-2-2b-it-GGUF",
@@ -370,6 +306,10 @@
       "slug": "llama-3.2-1b-instruct",
       "model_ref": "llama-3.2-1b-instruct",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 8192,
       "tool_calling": true,
       "download_model_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
@@ -393,6 +333,10 @@
       "slug": "llama-3.2-3b-instruct",
       "model_ref": "llama-3.2-3b-instruct",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 8192,
       "tool_calling": true,
       "download_model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
@@ -416,6 +360,10 @@
       "slug": "qwen3-4b-instruct-2507",
       "model_ref": "qwen3-4b-instruct-2507",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
@@ -440,6 +388,10 @@
       "slug": "phi-4-mini-instruct",
       "model_ref": "phi-4-mini-instruct",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
@@ -463,6 +415,10 @@
       "slug": "gemma3-4b",
       "model_ref": "gemma3-4b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": false,
       "download_model_id": "bartowski/google_gemma-3-4b-it-GGUF",
@@ -486,6 +442,10 @@
       "slug": "granite-4.1-3b",
       "model_ref": "granite-4.1-3b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "ibm-granite/granite-4.1-3b-GGUF",
@@ -510,6 +470,10 @@
       "slug": "granite-4.1-8b",
       "model_ref": "granite-4.1-8b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "ibm-granite/granite-4.1-8b-GGUF",
@@ -534,6 +498,10 @@
       "slug": "llama-3.1-8b-instruct",
       "model_ref": "llama-3.1-8b-instruct",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
@@ -558,6 +526,10 @@
       "slug": "gemma3-12b",
       "model_ref": "gemma3-12b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": false,
       "download_model_id": "bartowski/google_gemma-3-12b-it-GGUF",
@@ -581,6 +553,9 @@
       "slug": "gpt-oss-20b",
       "model_ref": "gpt-oss-20b",
       "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
       "context_size": 32768,
       "tool_calling": true,
       "download_model_id": "ggml-org/gpt-oss-20b-GGUF",
@@ -589,7 +564,6 @@
       "description": "OpenAI's open-weight mixture-of-experts reasoning model (12 GB), built for agentic tool use. Fast for its size; needs 24 GB or more.",
       "use_cases": [
         "Chat / Q&A",
-        "Fact extraction / distillation",
         "Tool calling",
         "Reasoning"
       ],
@@ -606,6 +580,10 @@
       "slug": "mistral-small-3.2-24b-instruct",
       "model_ref": "mistral-small-3.2-24b-instruct",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 16384,
       "tool_calling": true,
       "download_model_id": "bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF",
@@ -630,6 +608,10 @@
       "slug": "qwen3-30b-a3b-instruct-2507",
       "model_ref": "qwen3-30b-a3b-instruct-2507",
       "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
       "context_size": 32768,
       "tool_calling": true,
       "download_model_id": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
@@ -640,6 +622,85 @@
         "Chat / Q&A",
         "Fact extraction / distillation",
         "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Qwen 2.5 Coder 7B",
+      "model_id": "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen2.5-Coder-7B-Instruct",
+      "origin": {
+        "organization": "Alibaba (Qwen)",
+        "country": "CN"
+      },
+      "slug": "qwen-2.5-coder-7b",
+      "model_ref": "qwen-2.5-coder-7b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
+      "download_file": "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
+      "sha256": "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
+      "description": "Instruction-tuned chat/coding model, useful for summarizing and answering questions over retrieved passages.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Code assistance"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Mistral 7B Instruct v0.3",
+      "model_id": "mistralai/Mistral-7B-Instruct-v0.3",
+      "model_card_url": "https://huggingface.co/mistralai/Mistral-7B-Instruct-v0.3",
+      "origin": {
+        "organization": "Mistral AI",
+        "country": "FR"
+      },
+      "slug": "mistral-7b-instruct-v0.3",
+      "model_ref": "mistral-7b-instruct-v0.3",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 8192,
+      "tool_calling": true,
+      "download_model_id": "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
+      "download_file": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
+      "sha256": "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6",
+      "description": "General-purpose instruction-tuned chat model for answering questions over retrieved passages.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation"
+      ],
+      "featured": false
+    },
+    {
+      "name": "DeepSeek R1 Distill Qwen 7B",
+      "model_id": "deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+      "model_card_url": "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B",
+      "origin": {
+        "organization": "DeepSeek",
+        "country": "CN"
+      },
+      "slug": "deepseek-r1-distill-qwen-7b",
+      "model_ref": "deepseek-r1-distill-qwen-7b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
+      "context_size": 8192,
+      "tool_calling": false,
+      "download_model_id": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+      "download_file": "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+      "sha256": "731ece8d06dc7eda6f6572997feb9ee1258db0784827e642909d9b565641937b",
+      "description": "Reasoning-focused distilled chat model, useful for more involved question answering over retrieved passages.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Reasoning"
       ],
       "featured": false
     }
