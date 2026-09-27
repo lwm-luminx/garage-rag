@@ -355,16 +355,9 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(factDistilPresets.contains { $0.slug == "bge-m3" })
     }
 
-    func testLoadFactDistilPresetsFallbackToDefaultWhenFileMissing() {
-        let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_models_\(UUID().uuidString).json")
-        let presets = GarageConfigLoader.loadFactDistilPresets(fileURL: fakeURL)
-        XCTAssertTrue(presets.contains { $0.slug == "gemma2-2b" })
-    }
-
-    func testLoadFactDistilPresetsFromLegacyFlatArrayFallsBackToDefault() throws {
-        // A pre-grouping models.json (flat array) has no fact_distil section at
-        // all; loadFactDistilPresets should still offer the built-in default
-        // rather than silently returning nothing.
+    func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {
+        // A pre-grouping models.json (flat array) has no fact_distil section at all, and there is
+        // no built-in list to fall back on: models.json is the one catalog.
         let json = """
         [
             {
@@ -389,7 +382,7 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(embeddingPresets[0].slug, "bge-m3")
 
         let factDistilPresets = GarageConfigLoader.loadFactDistilPresets(fileURL: tempURL)
-        XCTAssertTrue(factDistilPresets.contains { $0.slug == "gemma2-2b" })
+        XCTAssertTrue(factDistilPresets.isEmpty)
     }
 
     func testLoadFactsSettingsDefaultsWhenSectionAbsent() throws {
@@ -453,10 +446,29 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(facts.provider, "llama_xpc")
     }
 
-    func testLoadModelPresetsFallbackToDefault() {
+    func testWithoutAManifestThereAreNoPresets() {
+        // No hand-written list stands in for models.json: when none of the candidate files exists,
+        // the loader offers nothing rather than a copy that could disagree with the catalog.
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_models_\(UUID().uuidString).json")
-        let presets = GarageConfigLoader.loadModelPresets(fileURL: fakeURL)
-        XCTAssertFalse(presets.isEmpty)
+        let manifest = GarageConfigLoader.loadModelManifest(candidates: [fakeURL])
+        XCTAssertNil(manifest.textEmbedding)
+        XCTAssertNil(manifest.factDistil)
+    }
+
+    func testTheBundledCatalogIsTheFallback() {
+        // The app's fallback is the models.json in its bundle (Paths.modelsJSON), read right after
+        // the caller's file and before any garage.json.
+        let explicit = URL(fileURLWithPath: "/tmp/explicit_models.json")
+        let candidates = GarageConfigLoader.modelManifestCandidates(fileURL: explicit)
+        XCTAssertEqual(candidates.first, explicit)
+        XCTAssertEqual(candidates.dropFirst().first, Paths.modelsJSON)
+        XCTAssertEqual(Array(candidates.dropFirst(2)), GarageConfigLoader.candidateConfigFiles)
+    }
+
+    func testTheCommittedCatalogCarriesThePresetsTheAppOnceHardCoded() throws {
+        // The models the Swift fallback used to list by hand are in docs/.data/models.json, so
+        // dropping the list lost none of them.
+        let presets = GarageConfigLoader.loadModelPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(presets.contains { $0.slug == "bge-m3" })
         XCTAssertTrue(presets.contains { $0.slug == "nomic-embed-text" })
         XCTAssertTrue(presets.contains { $0.slug == "mxbai-embed-xsmall" })
@@ -465,9 +477,25 @@ final class GarageConfigLoaderTests: XCTestCase {
             XCTAssertEqual(mxbai.sha256, "21f9f06af9e4e895fcdcbf6c0d57ca1996fe22da54ecb6cc5f7733d785412d44")
             XCTAssertTrue(mxbai.featured)
         }
-
         let featuredSlugs = Set(presets.filter { $0.featured }.map(\.slug))
         XCTAssertEqual(featuredSlugs, ["bge-m3", "nomic-embed-text", "mxbai-embed-xsmall"])
+
+        let factDistil = GarageConfigLoader.loadFactDistilPresets(fileURL: try committedCatalogURL())
+        XCTAssertTrue(factDistil.contains { $0.slug == "gemma2-2b" })
+    }
+
+    /// docs/.data/models.json, from the test bundle's resources or Bazel's runfiles.
+    private func committedCatalogURL() throws -> URL {
+        let candidates = [
+            Bundle(for: Self.self).url(forResource: "models", withExtension: "json"),
+            ProcessInfo.processInfo.environment["TEST_SRCDIR"].map {
+                URL(fileURLWithPath: $0).appendingPathComponent("_main/docs/.data/models.json")
+            },
+        ].compactMap { $0 }
+        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            throw XCTSkip("docs/.data/models.json is not in this test's runfiles")
+        }
+        return url
     }
 
     func testEmbeddingVectorStatsCalculation() {

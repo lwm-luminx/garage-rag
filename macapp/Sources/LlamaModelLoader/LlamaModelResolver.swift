@@ -1,5 +1,4 @@
 import Foundation
-import ModelDownloadClient
 import PythonXPCService
 
 /// The settings a llama.cpp model is loaded with when nobody chose others: the Models page's
@@ -79,8 +78,8 @@ public enum LlamaModelLoaderError: LocalizedError, Equatable {
 }
 
 /// Finds the GGUF and load settings for a model alias (its slug), the way the Models page does:
-/// the `models.json` catalog entry's `download_file` and `context_size`, then the curated download
-/// catalog (`ModelPresetCatalog`), then a file in the models folder named after the alias.
+/// the `models.json` catalog entry's `download_file` and `context_size`, else a file in the models
+/// folder named after the alias.
 public struct LlamaModelResolver: Sendable {
     /// One model of `models.json`, reduced to what a load needs.
     public struct CatalogEntry: Decodable, Equatable, Sendable {
@@ -187,14 +186,12 @@ public struct LlamaModelResolver: Sendable {
         guard !trimmed.isEmpty else { throw LlamaModelLoaderError.unknownModel(alias: alias) }
 
         let entry = entry(for: trimmed)
-        let curated = ModelPresetCatalog.item(forModelIdOrSlug: trimmed)
-        let name = entry?.name ?? curated?.name ?? trimmed
+        let name = entry?.name ?? trimmed
         let contextSize = entry?.contextSize ?? LlamaModelLoadDefaults.contextSize
-        let gpuLayers = curated?.defaultGpuLayers ?? LlamaModelLoadDefaults.gpuLayers
+        let gpuLayers = LlamaModelLoadDefaults.gpuLayers
 
-        // The file the Models page would download for this model (preset first, as it does).
-        let expectedFile = nonEmpty(entry?.downloadFile) ?? nonEmpty(curated?.filename)
-        if let expectedFile {
+        // The file the Models page would download for this model.
+        if let expectedFile = nonEmpty(entry?.downloadFile) {
             if let path = downloadedPath(for: expectedFile) {
                 return LlamaModelLoadPlan(alias: trimmed, displayName: name, path: path,
                                           contextSize: contextSize, gpuLayers: gpuLayers)
