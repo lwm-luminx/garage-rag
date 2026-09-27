@@ -22,7 +22,8 @@ SCRIPT = repo_root() / "macapp" / "package" / "notarize_release.sh"
 pytestmark = pytest.mark.skipif(not Path("/usr/bin/python3").exists(), reason="the script reads JSON with it")
 
 # Each stand-in appends one line per call to $CALLS. ditto -x unpacks a Garage.app; notarytool
-# answers with $NOTARY_STATUS; stapler marks the file it staples so later steps can see it.
+# answers the app with $NOTARY_STATUS and the installer with $PKG_NOTARY_STATUS; stapler marks what it
+# staples (a file inside an app, a line appended to a file) so later steps can see it.
 STUBS = {
     "xcrun": r"""#!/bin/bash
 echo "xcrun $*" >>"$CALLS"
@@ -30,10 +31,11 @@ case "$1 $2" in
     "notarytool submit")
         echo "notarized $(basename "$3")" >>"$CALLS"
         n=$(grep -c "^xcrun notarytool submit" "$CALLS")
-        echo "{\"id\": \"sub-$n\", \"status\": \"$NOTARY_STATUS\", \"message\": \"done\"}" ;;
+        status="$NOTARY_STATUS"; [[ "$3" == *.pkg ]] && status="$PKG_NOTARY_STATUS"
+        echo "{\"id\": \"sub-$n\", \"status\": \"$status\", \"message\": \"done\"}" ;;
     "notarytool log") echo "log for $3" ;;
-    "stapler staple") if [[ -d "$3" ]]; then touch "$3/stapled"; else touch "$3.stapled"; fi ;;
-    "stapler validate") [[ -e "$3/stapled" || -e "$3.stapled" ]] ;;
+    "stapler staple") if [[ -d "$3" ]]; then touch "$3/stapled"; else echo stapled >>"$3"; fi ;;
+    "stapler validate") [[ -e "$3/stapled" ]] || grep -q stapled "$3" ;;
     *) exit 1 ;;
 esac
 """,
@@ -68,7 +70,9 @@ esac
 }
 
 
-def _run(tmp_path: Path, status: str = "Accepted") -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
+def _run(
+    tmp_path: Path, status: str = "Accepted", pkg_status: str = "Accepted"
+) -> tuple[subprocess.CompletedProcess[str], list[str], Path]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     for name, body in STUBS.items():
@@ -87,6 +91,7 @@ def _run(tmp_path: Path, status: str = "Accepted") -> tuple[subprocess.Completed
         "BUILD_WORKSPACE_DIRECTORY": str(checkout),
         "CALLS": str(calls),
         "NOTARY_STATUS": status,
+        "PKG_NOTARY_STATUS": pkg_status,
         "TMPDIR": str(tmp_path),
     }
     args = [
@@ -103,8 +108,8 @@ def _run(tmp_path: Path, status: str = "Accepted") -> tuple[subprocess.Completed
     return result, calls.read_text().splitlines(), checkout
 
 
-def _index(calls: list[str], prefix: str) -> int:
-    matches = [i for i, line in enumerate(calls) if line.startswith(prefix)]
+def _index(calls: list[str], prefix: str, suffix: str = "") -> int:
+    matches = [i for i, line in enumerate(calls) if line.startswith(prefix) and line.endswith(suffix)]
     assert len(matches) == 1, f"expected one call starting {prefix!r}, got {matches} in {calls}"
     return matches[0]
 
@@ -114,16 +119,16 @@ def test_staples_the_app_before_building_the_installer(tmp_path: Path) -> None:
     assert result.returncode == 0, result.stderr
 
     notarize_app = _index(calls, "notarized GarageApp.zip")
-    staple_app = _index(calls, "xcrun stapler staple " + str(tmp_path))
+    staple_app = _index(calls, "xcrun stapler staple ", suffix="/root/Garage.app")
     build_pkg = _index(calls, "packaged ")
     notarize_pkg = _index(calls, "notarized GarageInstaller_arm64.pkg")
-    staple_pkg = _index(calls, "xcrun stapler staple dist/GarageInstaller_arm64.pkg")
+    staple_pkg = _index(calls, "xcrun stapler staple ", suffix="/GarageInstaller_arm64.pkg")
     assert notarize_app < staple_app < build_pkg < notarize_pkg < staple_pkg
 
     assert calls[build_pkg] == "packaged app-stapled=yes"
     assert _index(calls, "zipped app-stapled=yes") < build_pkg
     assert (checkout / "dist" / "Garage-1.5.zip").exists()
-    assert (checkout / "dist" / "GarageInstaller_arm64.pkg.stapled").exists()
+    assert "stapled" in (checkout / "dist" / "GarageInstaller_arm64.pkg").read_text()
     assert "sub-1" in result.stdout
     assert "sub-2" in result.stdout
 
@@ -146,3 +151,12 @@ def test_a_rejected_app_stops_before_the_installer(tmp_path: Path) -> None:
     assert "log for sub-1" in result.stderr
     assert not any(line.startswith(("pkgbuild", "xcrun stapler")) for line in calls)
     assert not (checkout / "dist" / "GarageInstaller_arm64.pkg").exists()
+
+
+def test_a_rejected_installer_leaves_nothing_under_a_release_name(tmp_path: Path) -> None:
+    result, calls, checkout = _run(tmp_path, pkg_status="Invalid")
+    assert result.returncode != 0
+    assert "not accepted (Invalid)" in result.stderr
+    assert not any(line.startswith("xcrun stapler staple") and line.endswith(".pkg") for line in calls)
+    assert not (checkout / "dist" / "GarageInstaller_arm64.pkg").exists()
+    assert not (checkout / "dist" / "Garage-1.5.zip").exists()
