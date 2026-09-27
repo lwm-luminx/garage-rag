@@ -97,7 +97,8 @@ enum FirstRunReadiness {
         pendingMigrations: [String],
         isApplyingMigrations: Bool,
         grpc: GarageGRPCStatus,
-        mcp: GarageMCPStatus
+        mcp: GarageMCPStatus,
+        mcpHTTPEnabled: Bool = true
     ) -> [FirstRunServiceCheck] {
         let database: FirstRunServiceCheck.State = switch postgres {
         case .stopped: .pending
@@ -133,7 +134,7 @@ enum FirstRunReadiness {
         case .failed(let message): .failed(message)
         }
 
-        return [
+        var checks = [
             FirstRunServiceCheck(
                 id: "postgres",
                 title: "Database",
@@ -152,13 +153,17 @@ enum FirstRunReadiness {
                 detail: "Starting the service that runs ingest, search and models",
                 state: grpcState
             ),
-            FirstRunServiceCheck(
+        ]
+        // With HTTP off there is no server to wait for: assistants start `garage-mcp` themselves.
+        if mcpHTTPEnabled {
+            checks.append(FirstRunServiceCheck(
                 id: "mcp",
                 title: "MCP server",
                 detail: "Starting the local MCP endpoint your assistants connect to",
                 state: mcpState
-            ),
-        ]
+            ))
+        }
+        return checks
     }
 
     /// Everything the rest of the assistant depends on is up. The MCP server
@@ -566,7 +571,8 @@ final class FirstRunCoordinator: ObservableObject {
             pendingMigrations: appState.postgres.pendingMigrations,
             isApplyingMigrations: appState.isApplyingMigrations,
             grpc: appState.grpc.status,
-            mcp: appState.mcp.status
+            mcp: appState.mcp.status,
+            mcpHTTPEnabled: appState.mcp.httpEnabled
         )
     }
 
@@ -605,7 +611,7 @@ final class FirstRunCoordinator: ObservableObject {
         if appState.postgres.status == .running {
             // startBackend, not grpc.start(): it also hands the helpers the database and the backend's address.
             if Self.needsStart(appState.grpc.status) { await appState.startBackend() }
-            if Self.needsStart(appState.mcp.status) { try? await appState.mcp.start() }
+            if Self.needsStart(appState.mcp.status) { try? await appState.mcp.startIfEnabled() }
         }
 
         // Wait for the required services to settle, polling because each one
@@ -942,6 +948,7 @@ final class FirstRunCoordinator: ObservableObject {
         guard let appState else { return }
         isWorking = true
         defer { isWorking = false }
+        appState.mcp.setHTTPEnabled(true)
         if appState.postgres.status != .running {
             await appState.startPostgres()
         } else {

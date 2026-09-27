@@ -76,8 +76,16 @@ class GarageUITestCase: XCTestCase {
 
     /// Launches Garage on this test's data folder and waits for its main window (or, with
     /// `firstRunCompleted: false`, the setup assistant).
+    ///
+    /// `mcpHTTP` turns on the app's HTTP MCP server, which is off by default; the MCP page's tests
+    /// and Try It need it.
     @discardableResult
-    func launchApp(showSplash: Bool = false, firstRunCompleted: Bool = true, automaticMaintenance: Bool = false) throws -> XCUIApplication {
+    func launchApp(
+        showSplash: Bool = false,
+        firstRunCompleted: Bool = true,
+        automaticMaintenance: Bool = false,
+        mcpHTTP: Bool = true
+    ) throws -> XCUIApplication {
         let app = try makeApplication()
         app.launchArguments = [
             "--data-directory", dataDirectory.path,
@@ -87,6 +95,7 @@ class GarageUITestCase: XCTestCase {
             // source, which makes the source a test just added busy (not removable) until it ends.
             "-scheduledMaintenanceEnabled", automaticMaintenance ? "YES" : "NO",
             "-scheduledMaintenanceRunsAtLaunch", "NO",
+            "-garage.mcp.httpEnabled", mcpHTTP ? "YES" : "NO",
             // Start from a clean window each time rather than the last run's restored state.
             "-ApplePersistenceIgnoreState", "YES",
         ] + additionalLaunchArguments

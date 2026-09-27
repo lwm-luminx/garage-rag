@@ -341,7 +341,7 @@ final class AppState: ObservableObject {
             }
             if postgres.status == .running {
                 // Each daemon starts independently: an MCP failure must not keep the gRPC backend down.
-                try? await mcp.start()
+                try? await mcp.startIfEnabled()
                 await startBackend()
             }
             await fetchRegisteredModels()
@@ -638,7 +638,7 @@ final class AppState: ObservableObject {
                 throw PostgresError.other("Postgres did not start with the new database; see the Database page.")
             }
             await startBackend()
-            try? await mcp.start()
+            try? await mcp.startIfEnabled()
             let synced = await runOperation { try await $0.syncSources().message }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -691,7 +691,7 @@ final class AppState: ObservableObject {
             await fetchCorpusStats()
             if postgres.status == .running {
                 if mcp.status == .stopped {
-                    try? await mcp.start()
+                    try? await mcp.startIfEnabled()
                 }
                 if grpc.status == .stopped {
                     await startBackend()
@@ -710,7 +710,7 @@ final class AppState: ObservableObject {
             await postgres.refreshPendingMigrations()
             guard postgres.status == .running else { return }
             if mcp.status == .stopped {
-                try? await mcp.start()
+                try? await mcp.startIfEnabled()
             }
             if grpc.status == .stopped {
                 await startBackend()
