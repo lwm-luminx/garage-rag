@@ -126,7 +126,7 @@ from garage_rag.service.auth import (
     CONFIG_CHANGING_METHODS,
     METADATA_KEY,
     UNAUTHENTICATED_METHODS,
-    peer_is_on_unix_socket,
+    config_change_allowed,
     token_from_env,
     token_matches,
 )
@@ -268,8 +268,9 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
     """Refuse a config-changing method to a caller the server cannot vouch for.
 
     See :data:`garage_rag.service.auth.CONFIG_CHANGING_METHODS`: with no token
-    configured, only a peer on the owner-only Unix socket may change configuration.
-    Applied outside ``_grpc_errors`` so its abort is not re-mapped.
+    configured, only a server bound to the owner-only Unix socket answers them
+    (``GarageRpcServicer.callers_vouched_for``). Applied outside ``_grpc_errors`` so
+    its abort is not re-mapped.
     """
     name = cast(Any, handler).__name__
     assert name in CONFIG_CHANGING_METHODS, name
@@ -278,8 +279,7 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
     def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
         servicer = cast("GarageRpcServicer", args[0])
         context = cast(grpc.ServicerContext, args[2] if len(args) > 2 else kwargs["context"])
-        # The peer is looked up only when it decides: a context built by hand may not have one.
-        if not servicer.token_configured and not peer_is_on_unix_socket(context.peer()):
+        if not servicer.callers_vouched_for:
             context.abort(
                 grpc.StatusCode.PERMISSION_DENIED,
                 f"{name} changes configuration; it needs the {METADATA_KEY} token or the Unix socket",
@@ -293,11 +293,13 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
 class GarageRpcServicer(GarageServiceServicer):
     """gRPC servicer implementing ``GarageService``."""
 
-    def __init__(self, stop_event: threading.Event | None = None, *, token_configured: bool = True) -> None:
+    def __init__(self, stop_event: threading.Event | None = None, *, callers_vouched_for: bool = True) -> None:
         self.stop_event = stop_event or threading.Event()
-        # Whether the per-launch token guards this server (see ``_config_change``). A
-        # servicer built directly, as the in-process client and the tests do, is trusted.
-        self.token_configured = token_configured
+        # Whether every caller of this server is one it can vouch for (see
+        # ``_config_change``): the per-launch token guards it, or it is bound to the
+        # owner-only Unix socket. A servicer built directly, as the in-process client and
+        # the tests do, is trusted.
+        self.callers_vouched_for = callers_vouched_for
 
     # -----------------------------------------------------------------------
     # System / Lifecycle
@@ -1509,7 +1511,10 @@ def create_grpc_server(
         # years-long Messages thread outgrows gRPC's 4 MiB default.
         options=[("grpc.max_receive_message_length", MAX_REQUEST_BYTES)],
     )
-    servicer = GarageRpcServicer(stop_event=stop_event, token_configured=token is not None)
+    servicer = GarageRpcServicer(
+        stop_event=stop_event,
+        callers_vouched_for=config_change_allowed(token_configured=token is not None, unix_socket=bool(socket_path)),
+    )
     add_GarageServiceServicer_to_server(servicer, server)
 
     if socket_path:

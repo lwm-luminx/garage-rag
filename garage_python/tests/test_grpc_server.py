@@ -193,13 +193,11 @@ def test_every_config_changing_method_is_guarded():
     assert not hasattr(GarageRpcServicer.PersistDocument, "__garage_config_change__")
 
 
-def test_config_change_allowed_by_token_or_unix_peer():
-    assert config_change_allowed("ipv4:127.0.0.1:50000", token_configured=True)
-    assert config_change_allowed("unix:", token_configured=False)
-    assert config_change_allowed("unix:/tmp/s/grpc", token_configured=False)
-    assert not config_change_allowed("ipv4:127.0.0.1:50000", token_configured=False)
-    assert not config_change_allowed("ipv6:[::1]:50000", token_configured=False)
-    assert not config_change_allowed(None, token_configured=False)
+def test_config_change_allowed_by_token_or_unix_socket():
+    assert config_change_allowed(token_configured=True, unix_socket=False)
+    assert config_change_allowed(token_configured=False, unix_socket=True)
+    assert config_change_allowed(token_configured=True, unix_socket=True)
+    assert not config_change_allowed(token_configured=False, unix_socket=False)
 
 
 def test_config_changes_are_refused_on_tcp_without_the_token(grpc_server):

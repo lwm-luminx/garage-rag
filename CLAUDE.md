@@ -276,8 +276,8 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   call but `EnsureLlamaModel` must carry it as `x-garage-token` metadata or gets `UNAUTHENTICATED`
   (`service/auth.py`; `GarageClient` and the app's `GarageGRPCAuth` send it). Without a token, the
   config-changing methods (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`, MCP
-  install/uninstall, and `InitDb`, whose `schema_dir` names SQL to run; `@_config_change` on the handler) answer only a peer on the Unix socket and
-  give a TCP caller `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
+  install/uninstall, and `InitDb`, whose `schema_dir` names SQL to run; `@_config_change` on the handler) are answered only by a server bound to the Unix socket; a server on a
+  TCP port gives `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
 
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction

@@ -46,10 +46,6 @@ CONFIG_CHANGING_METHODS = frozenset(
     }
 )
 
-# ``ServicerContext.peer()`` for a caller on a Unix-domain socket (``unix:`` followed by
-# the client's own path, usually none); TCP callers read ``ipv4:...`` / ``ipv6:...``.
-UNIX_PEER_PREFIX = "unix:"
-
 
 def token_from_env() -> str | None:
     """The token in ``GARAGE_GRPC_TOKEN``, or None when it is unset or empty."""
@@ -65,15 +61,14 @@ def token_matches(presented: str | bytes | None, expected: str) -> bool:
     return hmac.compare_digest(presented_bytes, expected.encode())
 
 
-def peer_is_on_unix_socket(peer: str | None) -> bool:
-    """Whether ``peer`` (a ``ServicerContext.peer()`` string) came in over a Unix-domain socket."""
-    return bool(peer) and peer.startswith(UNIX_PEER_PREFIX)
+def config_change_allowed(*, token_configured: bool, unix_socket: bool) -> bool:
+    """Whether a server answers config-changing methods for its callers.
 
-
-def config_change_allowed(peer: str | None, *, token_configured: bool) -> bool:
-    """Whether a config-changing method may run for this caller.
-
-    With a token configured the interceptor has already authenticated the call;
-    without one, only a caller on the owner-only Unix socket is trusted.
+    With a token configured the interceptor authenticates every call. Without one, a
+    server bound to the owner-only Unix socket (and to nothing else) hears only from
+    processes of the same account, so the folder's mode is the check; a server on a TCP
+    port can vouch for nobody. This is decided from how the server was bound, not from
+    ``ServicerContext.peer()``: gRPC reports a Unix-socket client as ``unix:...`` on
+    Linux but not reliably on macOS, where the app runs.
     """
-    return token_configured or peer_is_on_unix_socket(peer)
+    return token_configured or unix_socket

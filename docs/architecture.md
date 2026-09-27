@@ -331,9 +331,11 @@ configuration (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`,
 `McpInstall`, `McpUninstall`, and `InitDb`, whose `schema_dir` names SQL the
 server runs) are stricter, because `SetSetting embedding.ollama_host` widens
 the egress allowlist and a caller's schema directory runs against the corpus: with no token they are
-answered only to a peer on the owner-only Unix socket, and a caller on a
-loopback TCP port gets `PERMISSION_DENIED` (`_config_change` in
-`service/server.py`). This keeps other local processes from driving
+answered only by a server bound to the owner-only Unix socket, whose folder mode
+admits this account alone, and a server on a loopback TCP port refuses them with
+`PERMISSION_DENIED` (`_config_change` in `service/server.py`; the decision is made
+from the server's binding, not from `ServicerContext.peer()`, which macOS gRPC does
+not report as `unix:` the way Linux does). This keeps other local processes from driving
 configuration until the app reaches the server over XPC, with code-signing
 checks and no socket.
 
