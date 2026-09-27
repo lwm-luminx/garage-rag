@@ -143,6 +143,14 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
+    func testADatabaseResetIsNotBeingFinishedAtLaunch() {
+        let state = AppState()
+        XCTAssertFalse(state.isFinishingDatabaseReset)
+        XCTAssertNil(state.databaseResetOutcome)
+        XCTAssertTrue(AppState.databaseResetInProgressMessage.hasPrefix("Finishing the database reset"))
+    }
+
+    @MainActor
     func testVolumeAccessPassesSourcePaths() {
         let mockStore = MockVolumeBookmarkStore()
         let mockFS = MockFileSystemAccessor()

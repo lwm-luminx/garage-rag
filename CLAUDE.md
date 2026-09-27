@@ -385,7 +385,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   which would stop the new instance's Postgres by pid file and XPC services by executable name). It
   calls `terminate:` from the run loop, not from a main-actor task, where AppKit's wait for a
   `.terminateLater` reply deadlocks. The new instance waits for the old one to exit, then initializes a
-  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`).
+  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`;
+  the Database page shows `isFinishingDatabaseReset` as a progress line until the outcome arrives).
 - Postgres is stopped with SIGINT (fast shutdown), never SIGTERM: a smart shutdown waits on the XPC
   services' pooled connections until the grace period ends in SIGKILL, leaving no shutdown checkpoint.
 - `OperationRunner` runs app operations as gRPC calls (`GarageGRPCService+Operations.swift`) with a
