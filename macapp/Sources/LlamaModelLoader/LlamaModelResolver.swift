@@ -86,6 +86,8 @@ public struct LlamaModelResolver: Sendable {
         public let slug: String
         public let name: String?
         public let modelRef: String?
+        /// The provider-side id (`BAAI/bge-m3`), which the add-model form suggests as a `model_ref`.
+        public let modelID: String?
         public let downloadFile: String?
         public let contextSize: Int?
 
@@ -93,6 +95,7 @@ public struct LlamaModelResolver: Sendable {
             case slug
             case name
             case modelRef = "model_ref"
+            case modelID = "model_id"
             case downloadFile = "download_file"
             case contextSize = "context_size"
         }
@@ -174,10 +177,13 @@ public struct LlamaModelResolver: Sendable {
         }
     }
 
-    /// The catalog entry for `alias`: by slug, else by `model_ref`.
+    /// The catalog entry for `alias`: by slug, else by `model_ref`, else by `model_id` (a
+    /// registration may name the model the provider's way, as the add-model form suggests).
     public func entry(for alias: String) -> CatalogEntry? {
         let entries = catalogEntries()
-        return entries.first { $0.slug == alias } ?? entries.first { $0.modelRef == alias }
+        return entries.first { $0.slug == alias }
+            ?? entries.first { $0.modelRef == alias }
+            ?? entries.first { $0.modelID == alias }
     }
 
     /// The load plan for `alias`, or an error that says what to download.
