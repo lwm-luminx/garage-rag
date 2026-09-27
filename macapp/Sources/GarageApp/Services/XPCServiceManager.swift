@@ -572,6 +572,39 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
+    /// The Python helpers that learn of the database and the gRPC backend only from the app:
+    /// the backend helper gets both with `startServer`, and the others used to hear of them with
+    /// their first job, so until then their Database Connection and gRPC Connection self tests
+    /// were skipped.
+    public static let helpersConfiguredByTheApp = ["ingest-xpc", "embed-xpc", "mcp-server-xpc"]
+
+    /// Hands `options` (`GarageGRPCService.helperConfiguration`) to each of
+    /// `helpersConfiguredByTheApp` and re-runs its self tests, so the status page shows whether the
+    /// helper reaches the database and the backend. A helper that cannot be reached is logged and
+    /// skipped; `refresh` reports it in its own row.
+    public func configureHelpers(_ options: [String: String]) async {
+        for serviceId in Self.helpersConfiguredByTheApp {
+            guard let service = resolveService(serviceId) else { continue }
+            let bundleId = service.bundleId
+            do {
+                let (accepted, message): (Bool, String?) = try await Self.performCommonCall(bundleId: bundleId, timeoutNanoseconds: Self.statusCallTimeout) { proxy, relay in
+                    proxy.updateConfiguration(options) { accepted, message in
+                        relay.resume(returning: (accepted, message))
+                    }
+                }
+                guard accepted else {
+                    appendLog("[\(service.name)] Did not take the configuration: \(message ?? "no reason given")", stream: .stderr, source: service.id, level: .warning)
+                    continue
+                }
+                appendLog("[\(service.name)] Configured with the database and the backend's address", source: service.id, level: .info)
+            } catch {
+                appendLog("[\(service.name)] Could not be configured: \(error.localizedDescription)", stream: .stderr, source: service.id, level: .warning)
+                continue
+            }
+            _ = await runServiceSelfTests(serviceId: service.id)
+        }
+    }
+
     /// Re-runs the in-service self tests of a helper and mirrors the outcome into `diagnosticResults`.
     @discardableResult
     public func runServiceSelfTests(serviceId: String) async -> GarageXPCStatusReport? {
@@ -652,7 +685,10 @@ public final class XPCServiceManager: ObservableObject {
         }
 
         var summary = "\(passedCount) of \(total) self tests passed"
-        if skippedCount > 0 { summary += " (\(skippedCount) skipped)" }
+        if skippedCount > 0 {
+            let names = report.tests.filter { $0.status == .skipped }.map(\.name).joined(separator: ", ")
+            summary += " (\(skippedCount) skipped: \(names))"
+        }
         let errorMessage = failed.isEmpty ? nil : failed.map { "\($0.name): \($0.errorMessage ?? $0.summary)" }.joined(separator: "; ")
 
         return ServiceDiagnosticTestResult(

@@ -466,6 +466,12 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.
+- Every Python helper runs its self tests at bootstrap, before it has any configuration, so the
+  Database Connection and gRPC Connection tests of the ingest, embed and MCP helpers are skipped
+  then. `AppState.startBackend` therefore pushes the database URL and the backend's address to
+  them (`XPCServiceManager.configureHelpers`, over `updateConfiguration`) once the gRPC server
+  listens and re-runs their tests; the backend helper gets the same keys from `startServer`. A
+  test still skipped is named in the Status page's row ("7 passed, 1 skipped (Model File)").
 - Each `*XPCService` (`GarageEmbedXPCService`, `GarageIngestXPCService`, `LlamaXPCService`,
   `ModelDownloadXPCService`, `PythonXPCService`, …) is a separate XPC service process paired with a
   `*Client` module (`IngestClient`, `LlamaClient`, `ModelDownloadClient`, `MCPServerClient`) — this

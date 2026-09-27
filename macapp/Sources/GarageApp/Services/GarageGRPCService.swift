@@ -119,6 +119,27 @@ final class GarageGRPCService: ObservableObject {
         return env
     }
 
+    /// What every Python helper needs to reach the database and this server: the settings the
+    /// backend was started with, plus where it listens. `AppState.startBackend` pushes it to the
+    /// ingest, embed and MCP helpers (`XPCServiceManager.configureHelpers`) once the server is up,
+    /// so their Database Connection and gRPC Connection self tests check the real thing instead
+    /// of being skipped for want of configuration, as they were when the helpers only heard of
+    /// the database with their first job.
+    func helperConfiguration() throws -> [String: String] {
+        var options = try environment()
+        options.merge(Self.addressOptions(socketPath: socketPath, host: host, port: port)) { _, new in new }
+        return options
+    }
+
+    /// The configuration keys that name where the server listens: the socket when there is one,
+    /// else host and port (`GarageXPCServiceBase.grpcTarget` reads them in that order).
+    nonisolated static func addressOptions(socketPath: String?, host: String, port: Int) -> [String: String] {
+        if let socketPath {
+            return [GarageXPCConfigurationKey.grpcSocket: socketPath]
+        }
+        return [GarageXPCConfigurationKey.grpcHost: host, GarageXPCConfigurationKey.grpcPort: String(port)]
+    }
+
     private func startLogPolling() {
         logPollTask?.cancel()
         logPollTask = Task { [weak self, client] in

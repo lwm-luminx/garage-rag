@@ -313,6 +313,17 @@ final class AppState: ObservableObject {
         Task { await startPostgres() }
     }
 
+    /// Starts the gRPC backend and, once it listens, hands the ingest, embed and MCP helpers the
+    /// database URL and its address (`XPCServiceManager.configureHelpers`), off this task so the
+    /// pages fill without waiting on the helpers' self tests.
+    func startBackend() async {
+        try? await grpc.start()
+        guard grpc.status == .running, let options = try? grpc.helperConfiguration() else { return }
+        Task { [xpcServices] in
+            await xpcServices.configureHelpers(options)
+        }
+    }
+
     func startPostgres() async {
         do {
             try await postgres.start()
@@ -327,7 +338,7 @@ final class AppState: ObservableObject {
             if postgres.status == .running {
                 // Each daemon starts independently: an MCP failure must not keep the gRPC backend down.
                 try? await mcp.start()
-                try? await grpc.start()
+                await startBackend()
             }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -617,7 +628,7 @@ final class AppState: ObservableObject {
             guard postgres.status == .running else {
                 throw PostgresError.other("Postgres did not start with the new database; see the Database page.")
             }
-            try? await grpc.start()
+            await startBackend()
             try? await mcp.start()
             let synced = await runOperation { try await $0.syncSources().message }
             await fetchRegisteredModels()
@@ -670,7 +681,7 @@ final class AppState: ObservableObject {
                     try? await mcp.start()
                 }
                 if grpc.status == .stopped {
-                    try? await grpc.start()
+                    await startBackend()
                 }
             }
             lastCommandSucceeded = true
@@ -689,7 +700,7 @@ final class AppState: ObservableObject {
                 try? await mcp.start()
             }
             if grpc.status == .stopped {
-                try? await grpc.start()
+                await startBackend()
             }
         }
     }
