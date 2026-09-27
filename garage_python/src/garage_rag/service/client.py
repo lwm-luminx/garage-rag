@@ -111,6 +111,10 @@ class _InProcessServicerContext:
     def is_active(self) -> bool:
         return True
 
+    def peer(self) -> str:
+        """The caller is this process; gRPC would answer ``unix:`` or ``ipv4:...``."""
+        return "inprocess:"
+
 
 class _CallDetails(NamedTuple):
     method: str
