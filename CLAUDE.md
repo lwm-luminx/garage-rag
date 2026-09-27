@@ -144,7 +144,11 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
   `tools/llama`) rebuilds `llama-embedding` and regenerates the nomic-embed Q2_K reference vectors
   (`tools/llama/known_answers.py`). The reference is the Apple silicon CPU job; Metal and a Linux
   x86-64 job are held to `MIN_COSINE` (0.98) against it, because Q2_K is not bit-exact across
-  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99.
+  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99. LlamaXPCService's "Embedding
+  Known Answers" self-test and `//macapp/Tests/LlamaEngineTests` compare `LlamaCppEngine` against the
+  reference (`LlamaKnownAnswers`). The reference, `ext/nomic_embed/known_answers.json`, is not
+  committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
+  `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 

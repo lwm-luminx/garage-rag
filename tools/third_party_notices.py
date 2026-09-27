@@ -137,6 +137,14 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         (f"{RAW}/tesseract-ocr/tessdata_fast/4.1.0/LICENSE",),
     ),
     Component(
+        "nomic-embed-text v1.5 (Q2_K GGUF, LlamaXPCService known-answer self-test)",
+        "1.5",
+        "Apache-2.0",
+        "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
+        # Neither Hugging Face repository carries a LICENSE file; both declare apache-2.0.
+        ("https://www.apache.org/licenses/LICENSE-2.0.txt",),
+    ),
+    Component(
         "Leptonica",
         "1.87.0",
         "BSD-2-Clause",
