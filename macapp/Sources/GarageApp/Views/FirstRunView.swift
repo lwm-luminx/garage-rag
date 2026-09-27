@@ -402,8 +402,9 @@ struct FirstRunSelectDataPage: View {
 
     private var coordinator: FirstRunCoordinator { appState.firstRun }
 
-    // Three columns at the assistant's width (MainWindowSizing.assistantSize).
-    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: 12, alignment: .top)]
+    // Three columns at the assistant's width (MainWindowSizing.assistantSize), also when a mouse makes
+    // the scroll bar take its ~15 pt: 920 less the sidebar and padding leaves about 620 pt.
+    private let columns = [GridItem(.adaptive(minimum: 190, maximum: 320), spacing: 12, alignment: .top)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
