@@ -176,18 +176,6 @@ final class ModelDownloadService: ObservableObject {
     // MARK: - Download Actions
 
     @discardableResult
-    func startDownload(item: ModelCatalogItem, authToken: String? = nil) async -> Bool {
-        return await startDownload(
-            url: item.downloadUrl,
-            filename: item.filename,
-            modelId: item.id,
-            expectedSize: item.sizeBytes,
-            sha256: item.sha256,
-            authToken: authToken
-        )
-    }
-
-    @discardableResult
     func startDownload(
         url: String,
         filename: String? = nil,
