@@ -85,9 +85,9 @@
   }
 
   // A pre-release newer than the latest release (GitHub's "latest" never is one) gets its own
-  // box under the download panel, which stays hidden while there is none. The cutoff is the newest
-  // full release in either reply, so a failed "latest" lookup can't bring back an old test build;
-  // with no full release in sight at all, the box stays hidden.
+  // strip in the hero, under the main download button, which stays hidden while there is none.
+  // The cutoff is the newest full release in either reply, so a failed "latest" lookup can't bring
+  // back an old test build; with no full release in sight at all, the strip stays hidden.
   function applyPrerelease(releases, latest) {
     var box = byId('download-alpha');
     if (!box) { return; }
@@ -111,8 +111,8 @@
     var name = alpha.name || ('Garage ' + (alpha.tag_name || '').replace(/^v/, ''));
     var date = formatDate(alpha.published_at);
     var size = formatSize(installer.size);
-    byId('download-alpha-title').textContent =
-      'Try ' + name + (date ? ', released ' + date : '') + (size ? ' (' + size + ')' : '');
+    byId('download-alpha-title').textContent = 'Try ' + name;
+    byId('download-alpha-meta').textContent = [date, size].filter(Boolean).join(' · ');
     box.hidden = false;
   }
 
