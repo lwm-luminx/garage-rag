@@ -1,15 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=G-85TQVVK80M"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-
-    gtag('config', 'G-85TQVVK80M');
-  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {% assign in_support = false %}{% if page.url contains '/support/' %}{% assign in_support = true %}{% endif %}
@@ -17,6 +8,7 @@
   <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first, nothing leaves the machine.{% endif %}">
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
   <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
+  <script src="{{ '/assets/analytics.js' | relative_url }}"></script>
 </head>
 <body>
 
@@ -72,9 +64,18 @@
         <a href="{{ '/support/contact.html' | relative_url }}">Contact & Issues</a>
         <a href="{{ '/about.html' | relative_url }}">About the Creator</a>
         <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">GitHub</a>
+        <a href="{{ '/support/privacy-policy.html#website-analytics' | relative_url }}" id="analytics-settings">Analytics Settings</a>
       </div>
     </div>
   </footer>
+
+  <div id="analytics-consent" class="consent-banner" role="region" aria-label="Analytics consent" hidden>
+    <p>May this website use Google Analytics to count visits? It sets cookies and sends Google the pages you read. The Garage app never does this. <a href="{{ '/support/privacy-policy.html#website-analytics' | relative_url }}">Details</a></p>
+    <div class="consent-actions">
+      <button type="button" id="analytics-decline" class="btn btn-secondary">Decline</button>
+      <button type="button" id="analytics-allow" class="btn btn-primary">Allow</button>
+    </div>
+  </div>
 
   <script>
     // Quick search filter for cards and FAQs if input present
