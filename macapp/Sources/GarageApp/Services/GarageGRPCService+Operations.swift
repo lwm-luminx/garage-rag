@@ -212,15 +212,19 @@ extension GarageGRPCService {
         case all
     }
 
-    func mcpInstall(scope: McpInstallScope, host: String, port: Int, force: Bool = false) async throws -> Garage_McpInstallResponse {
+    /// With `stdio`, the entry runs the bundled `garage-mcp` launcher; otherwise it is the HTTP address.
+    func mcpInstall(scope: McpInstallScope, host: String, port: Int, stdio: Bool = false, force: Bool = false) async throws -> Garage_McpInstallResponse {
         var request = Garage_McpInstallRequest()
         switch scope {
         case .target(let key): request.target = key
         case .path(let path): request.path = path
         case .all: request.all = true
         }
-        request.host = host
-        request.port = Int32(port)
+        request.stdio = stdio
+        if !stdio {
+            request.host = host
+            request.port = Int32(port)
+        }
         request.force = force
         return try await call { try await $0.mcpInstall(request, callOptions: $1) }
     }

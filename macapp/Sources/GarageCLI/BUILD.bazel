@@ -4,7 +4,10 @@ load("//bazel:launcher_app.bzl", "garage_launcher_app")
 # this BUILD file is the forwarder that becomes Garage.app/Contents/MacOS/garage.
 exports_files(
     ["garage"],
-    visibility = ["//macapp:__subpackages__"],
+    visibility = [
+        "//garage_python/tests:__pkg__",
+        "//macapp:__subpackages__",
+    ],
 )
 
 garage_launcher_app(

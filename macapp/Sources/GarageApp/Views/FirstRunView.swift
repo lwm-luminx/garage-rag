@@ -860,7 +860,10 @@ struct FirstRunSetupAgentPage: View {
                 FirstRunErrorBanner(message: error)
             }
 
-            serverCard
+            // With HTTP off (the default) there is no server to run: assistants start `garage-mcp`.
+            if appState.mcp.httpEnabled {
+                serverCard
+            }
 
             FirstRunSectionTitle(
                 title: "Installed assistants",

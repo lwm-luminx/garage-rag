@@ -189,8 +189,11 @@ final class MenuBarStatusTests: XCTestCase {
 
     @MainActor
     func testReadsAFreshAppStateAsStoppedAndIdle() {
-        let status = MenuBarStatus(appState: AppState())
-        XCTAssertEqual(status, MenuBarStatus(database: .stopped, mcp: .stopped, activity: .idle))
+        let appState = AppState()
+        let status = MenuBarStatus(appState: appState)
+        // The MCP row follows the HTTP choice this Mac's defaults already hold.
+        let mcp: MenuBarStatus.Server = appState.mcp.httpEnabled ? .stopped : .stdio(clients: appState.mcp.detectedClients.filter(\.isRegistered).count)
+        XCTAssertEqual(status, MenuBarStatus(database: .stopped, mcp: mcp, activity: .idle))
     }
 
     @MainActor
@@ -221,6 +224,16 @@ final class MenuBarStatusTests: XCTestCase {
         XCTAssertFalse(MenuBarStatus(database: .running, mcp: .starting).allSystemsGo)
         XCTAssertFalse(MenuBarStatus(database: .stopped, mcp: .running(clients: 1)).allSystemsGo)
         XCTAssertFalse(MenuBarStatus(database: .needsMigration, mcp: .running(clients: 1)).allSystemsGo)
+    }
+
+    func testStdioWithHTTPOffIsAllSystemsGo() {
+        let status = MenuBarStatus(database: .running, mcp: .stdio(clients: 2))
+        XCTAssertTrue(status.allSystemsGo)
+        XCTAssertEqual(status.allSystemsGoDetail, "Database running · 2 assistants connected")
+        XCTAssertEqual(MenuBarStatus(database: .running, mcp: .stdio(clients: 0)).allSystemsGoDetail, "Database running · no assistants connected")
+        XCTAssertEqual(status.summary.title, "All systems go")
+        XCTAssertEqual(status.mcpDetail, "Over stdio · 2 assistants connected")
+        XCTAssertFalse(MenuBarStatus(database: .stopped, mcp: .stdio(clients: 1)).allSystemsGo)
     }
 
     func testIdleOnARunningDatabaseHasNoSecondStatusDot() {

@@ -73,6 +73,8 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   `garage mcp-install --stdio` registrations and the docs name: symlinks to
   `Resources/launchers/garage` and `garage-mcp`, `/bin/sh` forwarders that `exec` the helper
   bundle's executable (`Contents/Helpers/garage.app/Contents/MacOS/garage`) by its real path.
+  A forwarder copied out of the app (onto the PATH) finds Garage by bundle identifier instead,
+  through Launch Services and then Spotlight (`test_launcher_scripts.py`).
   Three constraints pick this shape. Codesign treats every file in `Contents/MacOS` as nested code
   that must carry its own signature, which a script cannot, but it seals a symlink there as a
   symlink (`link_launchers.sh`, the app's `ipa_post_processor`, creates the two links before

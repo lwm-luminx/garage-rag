@@ -441,9 +441,11 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   never Python) posts a distributed notification that makes every running Garage quit as its Quit
   menu item does, and waits for it; use it before a UI test run, which refuses to share the Mac
   with a running Garage.
-- `GarageMCPService` owns a separate long-lived `garage-mcp` HTTP process at
-  `127.0.0.1:8787/mcp`; Claude Desktop/Code instead spawn their own stdio `garage-mcp` via `garage
-  mcp-install`, so both transports coexist.
+- MCP clients use stdio by default: the MCP page registers the bundled `garage-mcp` launcher
+  (`McpInstall` with `stdio`), and each assistant spawns its own. `GarageMCPService` can also run a
+  long-lived `garage-mcp` HTTP process at `127.0.0.1:8787/mcp`, the app's only TCP listener, but only
+  once the user starts it (`garage.mcp.httpEnabled`; an upgrade with an HTTP registration keeps it
+  on). While it is off, an HTTP registration shows as out of date and Update rewrites it to stdio.
 - `LlamaXPCService` hosts llama.cpp itself (`macapp/Sources/LlamaEngine`, statically linked from
   `//ext/llama_cpp`, Metal + Accelerate) and serves it two ways: NSXPC for the app (load/unload,
   health, test calls, and `handleServerRequest`, which the Python in the other XPC services calls through

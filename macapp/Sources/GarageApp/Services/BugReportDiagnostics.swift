@@ -76,7 +76,7 @@ enum BugReportDiagnosticsCollector {
 
     private static func services(appState: AppState) -> DiagnosticSection {
         var fields = [
-            DiagnosticField("MCP server", describe(appState.mcp.status, port: appState.mcp.port)),
+            DiagnosticField("MCP server", describe(appState.mcp.status, port: appState.mcp.port, httpEnabled: appState.mcp.httpEnabled)),
             DiagnosticField("gRPC server", describe(appState.grpc.status, address: appState.grpc.shortAddress)),
         ]
         for service in appState.xpcServices.services {
@@ -104,9 +104,9 @@ enum BugReportDiagnosticsCollector {
             .joined(separator: ", ")
     }
 
-    private static func describe(_ status: GarageMCPStatus, port: Int) -> String {
+    private static func describe(_ status: GarageMCPStatus, port: Int, httpEnabled: Bool) -> String {
         switch status {
-        case .stopped: "Stopped"
+        case .stopped: httpEnabled ? "Stopped" : "HTTP off (assistants use stdio)"
         case .starting: "Starting"
         case .running: "Running on port \(port)"
         case .stopping: "Stopping"
