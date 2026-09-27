@@ -3,6 +3,11 @@ description: Garage is a local-first personal RAG and knowledge indexing app for
 url: "https://garagerag.app"
 baseurl: ""
 
+# The public TestFlight invitation for the App Store build (https://testflight.apple.com/join/...).
+# While it is empty, /testflight.html says testing hasn't opened, asks search engines not to index
+# it, and nothing else on the site links to it. Set it here and every entry point appears.
+testflight_url: "https://testflight.apple.com/join/fjCMVpjK"
+
 # Build settings
 markdown: kramdown
 kramdown:
