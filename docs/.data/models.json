@@ -330,6 +330,156 @@
         "Fact extraction / distillation"
       ],
       "featured": false
+    },
+    {
+      "name": "Qwen 3 4B Instruct 2507",
+      "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507",
+      "slug": "qwen3-4b-instruct-2507",
+      "model_ref": "qwen3-4b-instruct-2507",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
+      "download_file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+      "description": "Small, fast Qwen3 instruct model (2.5 GB) with reliable tool calling and structured output. Runs comfortably on any Apple silicon Mac.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Phi-4 Mini Instruct",
+      "model_id": "microsoft/Phi-4-mini-instruct",
+      "model_card_url": "https://huggingface.co/microsoft/Phi-4-mini-instruct",
+      "slug": "phi-4-mini-instruct",
+      "model_ref": "phi-4-mini-instruct",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
+      "download_file": "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
+      "sha256": "01999f17c39cc3074afae5e9c539bc82d45f2dd7faa3917c66cbef76fce8c0c2",
+      "description": "Microsoft's compact 3.8B instruct model (2.5 GB), strong at reasoning and following extraction instructions for its size.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Gemma 3 4B Instruct",
+      "model_id": "google/gemma-3-4b-it",
+      "model_card_url": "https://huggingface.co/google/gemma-3-4b-it",
+      "slug": "gemma3-4b",
+      "model_ref": "gemma3-4b",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "bartowski/google_gemma-3-4b-it-GGUF",
+      "download_file": "google_gemma-3-4b-it-Q4_K_M.gguf",
+      "sha256": "4996030242583a40aa151ff93f49ed787ac8c25e4120c3ae4588b2e2a7d1ae94",
+      "description": "Google's newer small Gemma (2.5 GB), a step up from Gemma 2 2B for distilling facts, with a long context window.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Llama 3.1 8B Instruct",
+      "model_id": "meta-llama/Llama-3.1-8B-Instruct",
+      "model_card_url": "https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct",
+      "slug": "llama-3.1-8b-instruct",
+      "model_ref": "llama-3.1-8b-instruct",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
+      "download_file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+      "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+      "description": "Meta's widely used 8B instruct model (4.9 GB) with native tool calling. A good all-rounder on a 16 GB Mac.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Gemma 3 12B Instruct",
+      "model_id": "google/gemma-3-12b-it",
+      "model_card_url": "https://huggingface.co/google/gemma-3-12b-it",
+      "slug": "gemma3-12b",
+      "model_ref": "gemma3-12b",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "bartowski/google_gemma-3-12b-it-GGUF",
+      "download_file": "google_gemma-3-12b-it-Q4_K_M.gguf",
+      "sha256": "fc57f67efa46d711c346e587cbef7d049e95f3df8db2eb2271153343ef0acc7b",
+      "description": "Mid-size Gemma 3 (7.3 GB) with noticeably better answers and fact extraction than the small models. Best on 16 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation"
+      ],
+      "featured": false
+    },
+    {
+      "name": "gpt-oss 20B",
+      "model_id": "openai/gpt-oss-20b",
+      "model_card_url": "https://huggingface.co/openai/gpt-oss-20b",
+      "slug": "gpt-oss-20b",
+      "model_ref": "gpt-oss-20b",
+      "provider": "llama_xpc",
+      "context_size": 32768,
+      "download_model_id": "ggml-org/gpt-oss-20b-GGUF",
+      "download_file": "gpt-oss-20b-MXFP4.gguf",
+      "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+      "description": "OpenAI's open-weight mixture-of-experts reasoning model (12 GB), built for agentic tool use. Fast for its size; needs 24 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling",
+        "Reasoning"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Mistral Small 3.2 24B Instruct",
+      "model_id": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+      "model_card_url": "https://huggingface.co/mistralai/Mistral-Small-3.2-24B-Instruct-2506",
+      "slug": "mistral-small-3.2-24b-instruct",
+      "model_ref": "mistral-small-3.2-24b-instruct",
+      "provider": "llama_xpc",
+      "context_size": 16384,
+      "download_model_id": "bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF",
+      "download_file": "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
+      "sha256": "80f5bda68f156f12650ca03a0a2dbfae06a215ac41caa773b8631a479f82415e",
+      "description": "Dense 24B instruct model (14.3 GB) with strong instruction following and function calling. Needs 32 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Qwen 3 30B A3B Instruct 2507",
+      "model_id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "slug": "qwen3-30b-a3b-instruct-2507",
+      "model_ref": "qwen3-30b-a3b-instruct-2507",
+      "provider": "llama_xpc",
+      "context_size": 32768,
+      "download_model_id": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
+      "download_file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
+      "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+      "description": "Mixture-of-experts Qwen3 (18.6 GB) that runs about as fast as a 3B model with far better answers and tool calling. Needs 32 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
     }
   ]
 }

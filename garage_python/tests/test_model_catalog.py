@@ -52,6 +52,22 @@ class TestTheCommittedCatalog:
         assert "bge-m3" in models
         assert "mistral-7b-instruct-v0.3" not in models  # listed without native_dims
 
+    def test_slugs_are_unique_across_the_catalog(self) -> None:
+        document = json.loads(MODELS_JSON.read_text())
+        slugs = [entry["slug"] for section in ("text_embedding", "fact_distil") for entry in document[section]]
+        assert len(slugs) == len(set(slugs))
+
+    def test_every_distillation_model_downloads_with_a_checksum(self) -> None:
+        # The app downloads huggingface.co/<download_model_id>/resolve/main/<download_file> and
+        # checks it against sha256, so a distillation entry needs all three.
+        document = json.loads(MODELS_JSON.read_text())
+        for entry in document["fact_distil"]:
+            assert entry.get("download_model_id") and entry.get("download_file"), entry["slug"]
+            assert entry["download_file"].endswith(".gguf"), entry["slug"]
+            sha = entry.get("sha256", "")
+            assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), entry["slug"]
+            assert not entry.get("native_dims"), f"{entry['slug']} is generative, not an embedding model"
+
     def test_qwen3_keeps_its_ollama_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(MANIFEST_ENV, raising=False)
         assert resolve_spec("qwen3-embedding-0.6b").model_ref == "qwen3-embedding-0.6b"
