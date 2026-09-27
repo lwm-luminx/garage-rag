@@ -68,8 +68,9 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public let maker: String?
     /// Where its maker is based, as an ISO 3166-1 alpha-2 code (`country_of_origin`, e.g. "US").
     public let countryOfOrigin: String?
-    /// The regulatory zone the model is grouped under (`compliance_zone`: US, EU, CN, UK, CH, OTHER).
-    public let complianceZone: String?
+    /// The zone its maker is based in, which the model is grouped under (`origin_zone`: US, EU, CN, UK,
+    /// CH, OTHER). It says where the model comes from, not that it complies with any rules.
+    public let originZone: String?
     public let slug: String
     public let modelRef: String?
     public let provider: String?
@@ -97,7 +98,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case modelCardURLString = "model_card_url"
         case maker
         case countryOfOrigin = "country_of_origin"
-        case complianceZone = "compliance_zone"
+        case originZone = "origin_zone"
         case slug
         case modelRef = "model_ref"
         case provider
@@ -120,7 +121,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         modelCardURLString: String? = nil,
         maker: String? = nil,
         countryOfOrigin: String? = nil,
-        complianceZone: String? = nil,
+        originZone: String? = nil,
         slug: String,
         modelRef: String? = nil,
         provider: String? = "llama_xpc",
@@ -141,7 +142,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.modelCardURLString = modelCardURLString
         self.maker = maker
         self.countryOfOrigin = countryOfOrigin
-        self.complianceZone = complianceZone
+        self.originZone = originZone
         self.slug = slug
         self.modelRef = modelRef ?? slug
         self.provider = provider
@@ -165,7 +166,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         modelCardURLString = try container.decodeIfPresent(String.self, forKey: .modelCardURLString)
         maker = try container.decodeIfPresent(String.self, forKey: .maker)
         countryOfOrigin = try container.decodeIfPresent(String.self, forKey: .countryOfOrigin)
-        complianceZone = try container.decodeIfPresent(String.self, forKey: .complianceZone)
+        originZone = try container.decodeIfPresent(String.self, forKey: .originZone)
         slug = try container.decode(String.self, forKey: .slug)
         let decodedModelRef = try container.decodeIfPresent(String.self, forKey: .modelRef)
         modelRef = decodedModelRef ?? slug
@@ -217,10 +218,10 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         return tags.contains("distillation")
     }
 
-    /// The origin badge: the catalog's compliance zone, else one derived from the country (US, EU,
+    /// The origin badge: the catalog's origin zone, else one derived from the country (US, EU,
     /// CN or the country code); nil when the catalog names neither.
     public var originRegion: String? {
-        if let zone = complianceZone?.trimmingCharacters(in: .whitespaces).uppercased(), !zone.isEmpty {
+        if let zone = originZone?.trimmingCharacters(in: .whitespaces).uppercased(), !zone.isEmpty {
             return zone
         }
         return ModelOriginRegion.region(for: countryOfOrigin)
@@ -241,7 +242,7 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
 }
 
 /// Groups a model's country of origin (an ISO 3166-1 alpha-2 code) for its badge when the catalog
-/// gives no `compliance_zone`.
+/// gives no `origin_zone`.
 public enum ModelOriginRegion {
     /// EU member states, grouped as one region.
     static let euCountries: Set<String> = [

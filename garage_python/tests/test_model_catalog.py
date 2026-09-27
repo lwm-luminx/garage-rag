@@ -77,7 +77,7 @@ class TestTheCommittedCatalog:
             assert tags and set(tags) <= {"inference", "distillation"}, entry["slug"]
         assert all(not entry.get("tags") for entry in document["text_embedding"])
 
-    def test_compliance_zone_agrees_with_the_country(self) -> None:
+    def test_origin_zone_agrees_with_the_country(self) -> None:
         # The zone the selection prompt groups by is stored, not derived, so hold it to the country.
         eu = {
             "AT",
@@ -113,7 +113,7 @@ class TestTheCommittedCatalog:
         for entry in document["text_embedding"] + document["inference_models"]:
             country = entry.get("country_of_origin", "")
             expected = "EU" if country in eu else by_country.get(country, "OTHER")
-            assert entry.get("compliance_zone") == expected, entry["slug"]
+            assert entry.get("origin_zone") == expected, entry["slug"]
 
     def test_every_entry_names_its_origin(self) -> None:
         # An ISO 3166-1 alpha-2 code, not a region: the app groups codes into US / EU / CN / other.
