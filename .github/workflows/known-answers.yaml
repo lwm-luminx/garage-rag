@@ -6,11 +6,10 @@
 # - `macos (cpu)` (Apple silicon, the only CPU the app ships on) is the canonical reference; it
 #   fails when the committed file no longer matches, and uploads what it produced, which is the
 #   file to commit after bumping a pin;
-# - `macos (metal)` repeats it on Metal and checks it against the reference (the committed file,
-#   else the CPU job's), which is the evidence for the tolerance the self-test uses;
-# - `linux` (x86-64) checks the same against the reference with the cross-architecture tolerance:
-#   Q2_K kernels differ per ISA and land near 0.99 of each other, so it catches a broken pipeline
-#   (far below that) without holding another architecture to the same-machine tolerance.
+# - `macos (metal)` repeats it on Metal and `linux` on x86-64, and each checks its vectors against
+#   the reference (the committed file, else the CPU job's) at the file's tolerance. Q2_K is not
+#   bit-exact across backends or ISAs (Metal measured 0.988 at worst, x86-64 about 0.99), so the
+#   tolerance is 0.98: the evidence for the self-test's, and enough to catch a broken pipeline.
 on:
   push:
     paths:
@@ -57,7 +56,7 @@ jobs:
             flags: --metal
           - name: linux
             os: ubuntu-latest
-            flags: --cross-architecture
+            flags: ""
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:

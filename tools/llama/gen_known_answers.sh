@@ -13,7 +13,7 @@
 #
 # Needs python3 (standard library only), cmake and a C++ compiler. The known-answers workflow
 # (.github/workflows/known-answers.yaml) runs it on macOS (the reference, and Metal against it)
-# and, with the cross-architecture tolerance, on Linux.
+# and on Linux x86-64, both compared at the file's tolerance.
 set -eu
 here=$(cd "$(dirname "$0")" && pwd)
 exec python3 "$here/known_answers.py" "$@"
