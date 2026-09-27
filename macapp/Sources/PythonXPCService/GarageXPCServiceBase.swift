@@ -141,6 +141,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     public func run() -> Never {
         let listener = NSXPCListener.service()
         listener.delegate = self
+        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         logger.info("\(self.serviceName, privacy: .public): resuming NSXPCListener")
         listener.resume()
         dispatchMain()
@@ -158,6 +159,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
         let listener = NSXPCListener.anonymous()
         listener.delegate = self
+        GarageXPCPeerRequirement.apply(to: listener, serviceName: serviceName)
         listener.resume()
         _anonymousListener = listener
         logger.info("\(self.serviceName, privacy: .public): anonymous NSXPCListener resumed")

@@ -42,6 +42,7 @@ swift_library(
         "GaragePythonRuntime.swift",
         "GarageXPCCrashHandler.swift",
         "GarageXPCOutputCapture.swift",
+        "GarageXPCPeerRequirement.swift",
         "GarageXPCSelfTests.swift",
         "GarageXPCServiceBase.swift",
         "GarageXPCServiceHost.swift",
