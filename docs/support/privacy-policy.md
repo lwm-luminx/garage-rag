@@ -16,7 +16,7 @@ redirect_from:
 
 ## 1. Overview & Local-First Philosophy
 
-Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5). This website, garagerag.app, uses Google Analytics to count visits if you agree; the application does not (section 6).
+Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5). This website, garagerag.app, uses Google Analytics to count visits; the application does not (section 6).
 
 ---
 
@@ -73,11 +73,10 @@ Like any server, garagerag.app (hosted on GitHub Pages) and Hugging Face receive
 ---
 
 ## 6. This Website
-{: #website-analytics}
 
-The website at garagerag.app, including these support pages, can use **Google Analytics** to count visits and see which pages people read, but only if you agree. On your first visit the site asks; until you press **Allow**, it loads nothing from Google and sets no analytics cookies. If you allow it, your browser loads Google's analytics script on each page, which sets cookies and sends Google the page address, the referring page, your browser and device type, an approximate location derived from your IP address, and how you interact with the page. Google handles that information under the [Google Privacy Policy](https://policies.google.com/privacy). We use the reports only to understand how the site is used; we do not use them for advertising and do not combine them with anything else.
+The website at garagerag.app, including these support pages, uses **Google Analytics** to count visits and see which pages people read. When you open a page, your browser loads Google's analytics script, which sets cookies and sends Google the page address, the referring page, your browser and device type, an approximate location derived from your IP address, and how you interact with the page. Google handles that information under the [Google Privacy Policy](https://policies.google.com/privacy). We use the reports only to understand how the site is used; we do not use them for advertising and do not combine them with anything else.
 
-Your choice is kept in your browser. To change it, use the **Analytics Settings** link at the bottom of any page. If your browser sends a Global Privacy Control signal, the site treats it as a no and does not ask.
+You can stop this collection with a content blocker that blocks Google Analytics, or with [Google's opt-out browser add-on](https://tools.google.com/dlpage/gaoptout).
 
 This applies to the website only. GarageApp and the `garage` tools contain no analytics, and the website cannot see anything in your Garage library.
 
