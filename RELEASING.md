@@ -45,16 +45,19 @@ Both are built from the same commit and share one data folder and one Keychain i
 ## 3. App Store
 
 1. Make sure App Review has answered on the previous submission, then create the new version in App Store Connect.
-2. Build the archive from the signed release tag and open it in Organizer:
+2. Build the archive from the signed release tag, validate it and upload it:
    ```bash
    git checkout v<version>
-   aspect run //macapp:xcarchive_open --bazel-flag=--config=appstore_release
+   aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release -- --validate-only
+   aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release
    ```
    Build it from the tag, not from `main`. The appcast commit from Developer ID step 6 moves `main` one commit ahead, and `CFBundleVersion` is the commit count, so building from `main` would give the two distributions different build numbers.
-3. In Organizer, run **Validate App** first, then **Distribute App**. It re-signs the app with Apple Distribution and three store profiles:
+3. The script re-signs the app with Apple Distribution and three store profiles, the same ones Organizer's **Distribute App** asks for:
    - `GarageMacAppConnect` for the app;
    - `GarageRAGAppStoreCLI` for `garage.app`;
    - `GarageRAGAppStoreMCP` for `garage-mcp.app`.
+
+   It needs the App Store Connect API key in the login keychain (`macapp/README.md`, "App Store configuration"). Organizer still works as a fallback: `aspect run //macapp:xcarchive_open --bazel-flag=--config=appstore_release`, then **Validate App** and **Distribute App**.
 4. Install the build through TestFlight on a Mac that didn't build it. Check the first-run assistant, the home folder grant, one source ingested and found by search, and MCP registration.
 5. Update the listing:
    - What's New, and the screenshots (`StoreScreenshotsUITests`, 2880 × 1800, light and dark);

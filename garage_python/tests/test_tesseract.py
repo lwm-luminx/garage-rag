@@ -53,6 +53,17 @@ def test_data_comes_from_the_frameworks_tessdata(tmp_path):
     assert tesseract._datapath(str(library)) == str(framework / "tessdata")
 
 
+def test_data_comes_from_a_versioned_frameworks_resources(tmp_path):
+    version = tmp_path / "PythonXPCService.framework" / "Versions" / "A"
+    (version / "Frameworks").mkdir(parents=True)
+    (version / "Resources" / "tessdata").mkdir(parents=True)
+    library = version / "Frameworks" / "libtesseract.5.5.dylib"
+    assert tesseract._datapath(str(library)) is None, "no language data yet"
+
+    (version / "Resources" / "tessdata" / "eng.traineddata").touch()
+    assert tesseract._datapath(str(library)) == str(version / "Resources" / "tessdata")
+
+
 @pytest.mark.parametrize(
     ("mode", "expected"),
     [("RGB", "RGB"), ("L", "L"), ("1", "L"), ("P", "RGB"), ("RGBA", "RGB"), ("LA", "RGB"), ("CMYK", "RGB")],
