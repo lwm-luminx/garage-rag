@@ -37,6 +37,8 @@ from garage_rag.proto.garage_pb2 import (
     BeginIngestSessionResponse,
     CheckDocumentStatRequest,
     CheckDocumentStatResponse,
+    ClusterFactsRequest,
+    ClusterFactsStatus,
     DocumentAuthorInfo,
     DocumentChunkInfo,
     DocumentDetail,
@@ -586,6 +588,8 @@ class GarageRpcServicer(GarageServiceServicer):
                 document_id=request.document_id or None,
                 limit=request.limit or 200,
                 offset=request.offset,
+                collapse=request.collapse,
+                distilled_fact_id=request.distilled_fact_id or None,
             )
 
         summaries = [
@@ -607,6 +611,10 @@ class GarageRpcServicer(GarageServiceServicer):
                 corpus_class=f.corpus_class or "",
                 excerpt=f.excerpt or "",
                 excerpt_start=f.excerpt_start if f.excerpt else 0,
+                distilled_fact_id=f.distilled_fact_id or 0,
+                distilled_size=f.distilled_size,
+                distilled_statement=f.distilled_statement or "",
+                distilled_generated=f.distilled_generated,
             )
             for f in page.facts
         ]
@@ -638,6 +646,9 @@ class GarageRpcServicer(GarageServiceServicer):
             facts_by_source=stats.by_source,
             facts_by_class=stats.by_class,
             formatted_output=stats.message,
+            distilled=stats.distilled,
+            clusters=stats.clusters,
+            clustered_facts=stats.clustered_facts,
         )
 
     # -----------------------------------------------------------------------
@@ -1055,6 +1066,61 @@ class GarageRpcServicer(GarageServiceServicer):
                     failed=summary.failed,
                     skipped=summary.skipped,
                     prompts=summary.prompts,
+                    message=summary.message,
+                )
+            )
+            return summary
+
+        yield from _stream_events(run, context)
+
+    @_grpc_errors
+    def ClusterFacts(self, request: ClusterFactsRequest, context: grpc.ServicerContext) -> Iterator[ClusterFactsStatus]:
+        """Link every potential fact to a distilled fact, streaming progress, then the totals."""
+        from garage_rag.ops.facts import cluster_facts
+
+        def run(emit: Callable[[ClusterFactsStatus], None]) -> object:
+            def on_progress(state) -> None:
+                if state.phase == "neighbors":
+                    message = f"finding neighbours: {state.scanned:,}/{state.facts - state.unembedded:,} facts"
+                elif state.phase == "distill":
+                    message = f"distilling: {state.distilled:,}/{state.to_distill:,} groups"
+                else:
+                    return
+                emit(
+                    ClusterFactsStatus(
+                        phase=state.phase,
+                        facts=state.facts,
+                        unembedded=state.unembedded,
+                        scanned=state.scanned,
+                        to_distill=state.to_distill,
+                        distilled=state.distilled,
+                        message=message,
+                    )
+                )
+
+            summary = cluster_facts(
+                model=request.model or None,
+                threshold=request.threshold or None,
+                neighbors=request.neighbors or None,
+                distill=not request.no_distill,
+                graph=not request.no_graph,
+                on_progress=on_progress,
+            )
+            emit(
+                ClusterFactsStatus(
+                    phase="finished",
+                    facts=summary.facts,
+                    unembedded=summary.unembedded,
+                    distilled_facts=summary.distilled_facts,
+                    clusters=summary.clusters,
+                    clustered_facts=summary.clustered_facts,
+                    dissolved=summary.dissolved,
+                    failed=summary.failed,
+                    withheld=summary.withheld,
+                    model=summary.model,
+                    distill_model=summary.distill_model,
+                    graph=summary.graph,
+                    errors=summary.errors,
                     message=summary.message,
                 )
             )

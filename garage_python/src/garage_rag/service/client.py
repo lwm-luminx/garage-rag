@@ -22,6 +22,8 @@ from garage_rag.proto.garage_pb2 import (
     BeginIngestSessionResponse,
     CheckDocumentStatRequest,
     CheckDocumentStatResponse,
+    ClusterFactsRequest,
+    ClusterFactsStatus,
     DropModelRequest,
     DropModelResponse,
     EnrichFactsRequest,
@@ -333,6 +335,9 @@ class GarageClient:
 
     def enrich_facts(self, request: EnrichFactsRequest) -> Iterator[EnrichFactsStatus]:
         return self._invoke_stream("EnrichFacts", request, EnrichFactsStatus)
+
+    def cluster_facts(self, request: ClusterFactsRequest) -> Iterator[ClusterFactsStatus]:
+        return self._invoke_stream("ClusterFacts", request, ClusterFactsStatus)
 
     def list_facts(self, request: ListFactsRequest | None = None) -> ListFactsResponse:
         return self._invoke_unary("ListFacts", request or ListFactsRequest(), ListFactsResponse)

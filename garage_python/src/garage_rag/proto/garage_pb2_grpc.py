@@ -153,6 +153,11 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.EnrichFactsRequest.SerializeToString,
                 response_deserializer=garage__pb2.EnrichFactsStatus.FromString,
                 _registered_method=True)
+        self.ClusterFacts = channel.unary_stream(
+                '/garage.GarageService/ClusterFacts',
+                request_serializer=garage__pb2.ClusterFactsRequest.SerializeToString,
+                response_deserializer=garage__pb2.ClusterFactsStatus.FromString,
+                _registered_method=True)
         self.ListFactPrompts = channel.unary_unary(
                 '/garage.GarageService/ListFactPrompts',
                 request_serializer=garage__pb2.ListFactPromptsRequest.SerializeToString,
@@ -382,6 +387,12 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ClusterFacts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def ListFactPrompts(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -587,6 +598,11 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.EnrichFacts,
                     request_deserializer=garage__pb2.EnrichFactsRequest.FromString,
                     response_serializer=garage__pb2.EnrichFactsStatus.SerializeToString,
+            ),
+            'ClusterFacts': grpc.unary_stream_rpc_method_handler(
+                    servicer.ClusterFacts,
+                    request_deserializer=garage__pb2.ClusterFactsRequest.FromString,
+                    response_serializer=garage__pb2.ClusterFactsStatus.SerializeToString,
             ),
             'ListFactPrompts': grpc.unary_unary_rpc_method_handler(
                     servicer.ListFactPrompts,
@@ -1264,6 +1280,33 @@ class GarageService:
             '/garage.GarageService/EnrichFacts',
             garage__pb2.EnrichFactsRequest.SerializeToString,
             garage__pb2.EnrichFactsStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ClusterFacts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/garage.GarageService/ClusterFacts',
+            garage__pb2.ClusterFactsRequest.SerializeToString,
+            garage__pb2.ClusterFactsStatus.FromString,
             options,
             channel_credentials,
             insecure,
