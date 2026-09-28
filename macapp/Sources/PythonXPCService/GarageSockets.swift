@@ -85,6 +85,9 @@ public enum GarageSockets {
     /// gRPC server takes the same lock for its socket. The lock file stays in place: every process
     /// on the path must lock the same inode, and it lives in the owner-only socket folder.
     public static func withRecoveryLock<T>(at path: String, _ body: () throws -> T) throws -> T {
+        // The lock file sits beside the socket, so its folder must exist first: LlamaXPCService can
+        // start before anything else has made it, and `open` would then fail with ENOENT.
+        try ensureDirectory(URL(fileURLWithPath: path, isDirectory: false).deletingLastPathComponent())
         let lockPath = path + ".lock"
         let fd = open(lockPath, O_RDWR | O_CREAT | O_CLOEXEC, 0o600)
         guard fd >= 0 else {
