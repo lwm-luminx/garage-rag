@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -244,6 +245,14 @@ def _fact_filters(
     return base, filtered, params
 
 
+def _fact_row_values(row) -> dict[str, Any]:
+    """A result row as FactRow's keyword arguments, with NULL attributes and extractor made empty."""
+    values: dict[str, Any] = dict(row)
+    values["attributes"] = values["attributes"] or {}
+    values["extractor"] = values["extractor"] or ""
+    return values
+
+
 def list_facts(
     session: Session,
     *,
@@ -295,9 +304,7 @@ def list_facts(
         ),
         params,
     ).mappings()
-    facts = [
-        FactRow(**{**row, "attributes": row["attributes"] or {}, "extractor": row["extractor"] or ""}) for row in rows
-    ]
+    facts = [FactRow(**_fact_row_values(row)) for row in rows]
 
     total = session.execute(text(f"SELECT count(*) {_FACT_JOINS} {_where(filtered)}"), params).scalar_one()
     classes = [
