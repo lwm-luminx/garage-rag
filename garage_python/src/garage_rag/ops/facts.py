@@ -1,5 +1,5 @@
 """Fact distillation over a set of documents, reported per document; the prompts it runs; and the
-listing the app's Facts page browses them through."""
+listing and counts the app's Facts page and ``garage facts list|stats`` browse them through."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from garage_rag.config.fact_prompts import EffectivePrompt, select_prompts
 from garage_rag.db.engine import session_scope
-from garage_rag.db.models import Document, FactRun, Source
+from garage_rag.db.models import CorpusClass, Document, FactRun, Source
 
 
 @dataclass
@@ -205,6 +205,45 @@ def _like_pattern(value: str) -> str:
     return f"%{escaped}%"
 
 
+_FACT_JOINS = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id"
+
+
+def _where(clauses: list[str]) -> str:
+    return ("WHERE " + " AND ".join(clauses)) if clauses else ""
+
+
+def _fact_filters(
+    *, query: str, source: str, fact_class: str, corpus_class: str, document_id: int | None
+) -> tuple[list[str], list[str], dict[str, object]]:
+    """The WHERE clauses for the filters: without fact_class, with it, and their parameters.
+
+    Raises ValueError for a corpus class that does not exist, rather than a cast error from the database.
+    """
+    params: dict[str, object] = {}
+    base: list[str] = []
+    if query:
+        base.append("(f.tsv @@ websearch_to_tsquery('english', :q) OR f.fact ILIKE :like)")
+        params["q"] = query
+        params["like"] = _like_pattern(query)
+    if source:
+        base.append("s.slug = :source")
+        params["source"] = source
+    if corpus_class:
+        if corpus_class not in {c.value for c in CorpusClass}:
+            choices = ", ".join(c.value for c in CorpusClass)
+            raise ValueError(f"unknown corpus class {corpus_class!r} (expected one of {choices})")
+        base.append("d.corpus_class = CAST(:corpus_class AS corpus_class)")
+        params["corpus_class"] = corpus_class
+    if document_id:
+        base.append("f.document_id = :document_id")
+        params["document_id"] = document_id
+    filtered = [*base]
+    if fact_class:
+        filtered.append("f.fact_class = :fact_class")
+        params["fact_class"] = fact_class
+    return base, filtered, params
+
+
 def list_facts(
     session: Session,
     *,
@@ -223,30 +262,10 @@ def list_facts(
     match everything.
     """
     query = query.strip()
-    params: dict[str, object] = {"ctx": EXCERPT_CONTEXT}
-    base: list[str] = []
-    if query:
-        base.append("(f.tsv @@ websearch_to_tsquery('english', :q) OR f.fact ILIKE :like)")
-        params["q"] = query
-        params["like"] = _like_pattern(query)
-    if source:
-        base.append("s.slug = :source")
-        params["source"] = source
-    if corpus_class:
-        base.append("d.corpus_class = CAST(:corpus_class AS corpus_class)")
-        params["corpus_class"] = corpus_class
-    if document_id:
-        base.append("f.document_id = :document_id")
-        params["document_id"] = document_id
-    filtered = [*base]
-    if fact_class:
-        filtered.append("f.fact_class = :fact_class")
-        params["fact_class"] = fact_class
-
-    joins = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id"
-
-    def where(clauses: list[str]) -> str:
-        return ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    base, filtered, params = _fact_filters(
+        query=query, source=source, fact_class=fact_class, corpus_class=corpus_class, document_id=document_id
+    )
+    params["ctx"] = EXCERPT_CONTEXT
 
     order = (
         "ts_rank(f.tsv, websearch_to_tsquery('english', :q)) DESC, f.id DESC"
@@ -268,8 +287,8 @@ def list_facts(
                                     f.char_end - GREATEST(f.char_start - :ctx, 0) + :ctx)
                    END AS excerpt,
                    GREATEST(COALESCE(f.char_start, 0) - :ctx, 0) AS excerpt_start
-            {joins}
-            {where(filtered)}
+            {_FACT_JOINS}
+            {_where(filtered)}
             ORDER BY {order}
             LIMIT :limit OFFSET :offset
             """
@@ -280,12 +299,57 @@ def list_facts(
         FactRow(**{**row, "attributes": row["attributes"] or {}, "extractor": row["extractor"] or ""}) for row in rows
     ]
 
-    total = session.execute(text(f"SELECT count(*) {joins} {where(filtered)}"), params).scalar_one()
+    total = session.execute(text(f"SELECT count(*) {_FACT_JOINS} {_where(filtered)}"), params).scalar_one()
     classes = [
         (name, count)
         for name, count in session.execute(
-            text(f"SELECT f.fact_class, count(*) {joins} {where(base)} GROUP BY f.fact_class ORDER BY 2 DESC, 1"),
+            text(
+                f"SELECT f.fact_class, count(*) {_FACT_JOINS} {_where(base)} GROUP BY f.fact_class ORDER BY 2 DESC, 1"
+            ),
             params,
         ).all()
     ]
     return FactPage(facts=facts, total=int(total), classes=classes)
+
+
+@dataclass
+class FactStats:
+    facts: int
+    documents: int
+    by_source: dict[str, int]
+    by_class: dict[str, int]
+
+    @property
+    def message(self) -> str:
+        return f"{self.facts:,} facts across {self.documents:,} documents"
+
+
+def fact_stats(
+    session: Session,
+    *,
+    query: str = "",
+    source: str = "",
+    fact_class: str = "",
+    corpus_class: str = "",
+    document_id: int | None = None,
+) -> FactStats:
+    """How many facts match the filters (the same ones ``list_facts`` takes), over how many documents,
+    per source and per class."""
+    _, filtered, params = _fact_filters(
+        query=query.strip(), source=source, fact_class=fact_class, corpus_class=corpus_class, document_id=document_id
+    )
+    scope = f"{_FACT_JOINS} {_where(filtered)}"
+    facts, documents = session.execute(text(f"SELECT count(*), count(DISTINCT f.document_id) {scope}"), params).one()
+    by_source = {
+        slug: int(count)
+        for slug, count in session.execute(
+            text(f"SELECT s.slug, count(*) {scope} GROUP BY s.slug ORDER BY 2 DESC, 1"), params
+        ).all()
+    }
+    by_class = {
+        name: int(count)
+        for name, count in session.execute(
+            text(f"SELECT f.fact_class, count(*) {scope} GROUP BY f.fact_class ORDER BY 2 DESC, 1"), params
+        ).all()
+    }
+    return FactStats(facts=int(facts or 0), documents=int(documents or 0), by_source=by_source, by_class=by_class)
