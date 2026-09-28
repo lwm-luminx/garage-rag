@@ -209,7 +209,7 @@ py_test(
     srcs = ["test_model_catalog.py"],
     data = [
         "//data/sql:sql_schema",
-        "//docs:model_manifest",
+        "//data/models",
     ],
     deps = [
         ":conftest",
@@ -223,7 +223,7 @@ py_test(
 py_test(
     name = "test_registry_dims",
     srcs = ["test_registry_dims.py"],
-    data = ["//docs:model_manifest"],
+    data = ["//data/models"],
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/config",

@@ -30,6 +30,10 @@ jobs:
         uses: actions/checkout@v4
       - name: Setup Pages
         uses: actions/configure-pages@v5
+      # The model catalog lives in data/models; the site serves a copy at /.data/models.json
+      # (docs/BUILD.bazel's site_files makes the same copy for //docs:site).
+      - name: Copy the model catalog into the site
+        run: cp data/models/models.json docs/.data/models.json
       - name: Build with Jekyll
         uses: actions/jekyll-build-pages@v1
         with:

@@ -6,7 +6,7 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 
 /// Keeps the model catalog (`models.json`) current between releases.
 ///
-/// The website serves the repository's `docs/.data/models.json`. At launch the app fetches it and,
+/// The website serves a copy of the repository's `data/models/models.json`. At launch the app fetches it and,
 /// when it decodes as a catalog with presets, saves it in the data folder, where `Paths.modelsJSON`
 /// (and so the presets and `GARAGE_MODEL_MANIFEST` for Python) prefers it to the bundled copy.
 /// Offline, a bad reply or a file that does not decode keeps whatever copy is already in use; the

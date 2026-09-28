@@ -1,0 +1,2 @@
+# Copied in from //data/models when the site is built or served (docs/BUILD.bazel site_files).
+.data/models.json
