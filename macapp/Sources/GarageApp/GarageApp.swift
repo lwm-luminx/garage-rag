@@ -40,6 +40,7 @@ struct GarageApp: App {
             }
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesButton(updater: appState.updater)
+                BetaUpdatesToggle(updater: appState.updater)
                 Button("Setup Assistant…") {
                     showFirstRun()
                 }

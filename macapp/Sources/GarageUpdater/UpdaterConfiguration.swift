@@ -16,6 +16,13 @@ public enum UpdaterInfoPlistKey {
 /// then failing on the signature.
 public let updaterPublicKeyPlaceholder = "REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY"
 
+/// The one Sparkle channel the feed uses. An entry with no `sparkle:channel` reaches
+/// every install; one tagged `beta` reaches only the installs that opted into betas.
+public let updaterBetaChannel = "beta"
+
+/// UserDefaults key for "Receive Beta Updates". Off unless the user turns it on.
+public let updaterReceivesBetaUpdatesKey = "garage.updates.beta"
+
 /// The appcast feed and the public key its entries are signed with.
 public struct UpdaterConfiguration: Equatable, Sendable {
     public let feedURL: URL

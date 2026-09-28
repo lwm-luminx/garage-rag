@@ -374,8 +374,21 @@ is behind `select()`s on `//bazel:is_store`:
   into the app's `Info.plist` for the same configurations.
 
 The app never shows a disabled "Check for Updates…"; when the running build
-can't update itself the item is simply absent. Whether to check automatically is
-Sparkle's own question, asked on the second launch.
+can't update itself the item is simply absent, along with "Receive Beta Updates"
+below it. Whether to check automatically is Sparkle's own question, asked on the
+second launch.
+
+### Beta channel
+
+The feed has one Sparkle channel, `beta`. An entry with no `sparkle:channel` is offered to
+every install; one tagged `beta` only to installs with "Receive Beta Updates" on (the
+`garage.updates.beta` default, which `SparkleChannelDelegate` answers Sparkle's
+`allowedChannels(for:)` from). Sparkle still takes the highest `CFBundleVersion` it is allowed
+to see, so a tester is offered a stable release once it is newer than their beta, and turning
+betas off never downgrades anyone.
+
+`publish_appcast --channel beta` tags an entry; without it the entry is on both tracks, as
+1.5 beta 1 is. `test_appcast.py` rejects any other channel, since no build asks for one.
 
 ### The signing key
 
@@ -423,7 +436,7 @@ refuses that). The marketing version is `short_version_string` in
    aspect run //macapp/package:publish_appcast -- v1.5 --notes path/to/notes.md
    ```
 
-   `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
+   `--channel beta` puts the entry on the beta channel (see above). `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
    in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
    and refuses one whose build is not the one in `bazel-bin`. Before signing anything the
    script checks that the archive's version matches the tag, that it is notarized and

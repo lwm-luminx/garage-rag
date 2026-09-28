@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Adds a signed Sparkle entry for one Developer ID release to docs/appcast.xml.
 #
-#   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md]
+#   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md] [--channel beta]
 #   aspect run //macapp/package:publish_appcast -- --check-live
 #
 # The first form takes the stapled dist/Garage-<version>.zip that notarize_all wrote, checks it
@@ -10,6 +10,10 @@
 # generate_appcast over it, verifies the entry it wrote, and leaves:
 #   - docs/appcast.xml with the new entry, to commit;
 #   - dist/Garage-<version>.zip, the exact archive the entry signs, to upload to the release.
+#
+# Without --channel the entry is on no channel, so every install is offered it, whether or not
+# it opted into betas. --channel beta tags it for the installs that turned on "Receive Beta
+# Updates" only.
 #
 # The second form fetches the feed from its SUFeedURL and checks that every enclosure is
 # a download that exists, which is the last step before announcing a release.
@@ -31,7 +35,7 @@ usage() {
 }
 
 archive="" generate_appcast="" sign_update="" generate_keys="" sparkle_plist=""
-tag="" notes="" check_live=0
+tag="" notes="" channel="" check_live=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --archive) archive="$2"; shift 2 ;;
@@ -40,6 +44,7 @@ while [[ $# -gt 0 ]]; do
         --generate-keys) generate_keys="$2"; shift 2 ;;
         --sparkle-plist) sparkle_plist="$2"; shift 2 ;;
         --notes) notes="$2"; shift 2 ;;
+        --channel) channel="$2"; shift 2 ;;
         --check-live) check_live=1; shift ;;
         -h | --help) usage ;;
         -*) die "unknown option $1" ;;
@@ -91,6 +96,7 @@ fi
 
 [[ -n "$tag" ]] || usage
 [[ -z "$notes" || -f "$notes" ]] || die "no release notes at $notes"
+[[ -z "$channel" || "$channel" == beta ]] || die "unknown channel '$channel'; the feed's only channel is beta"
 [[ -f "$feed" ]] || die "no $feed in $BUILD_WORKSPACE_DIRECTORY"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/garage-appcast.XXXXXX")"
@@ -156,21 +162,22 @@ keychain_public="$("$generate_keys" -p)" || die "no Sparkle EdDSA key in the log
 name="Garage-$short"
 cp "$archive" "$work/$name.zip"
 cp "$feed" "$work/appcast.xml"
-embed=()
+embed=() channel_args=()
+[[ -z "$channel" ]] || channel_args=(--channel "$channel")
 if [[ -n "$notes" ]]; then
     cp "$notes" "$work/$name.${notes##*.}"
     embed=(--embed-release-notes)
 fi
 rm -rf "$work/unpacked"
 echo "==> Signing the entry (macOS may ask to allow Keychain access)"
-"$generate_appcast" --download-url-prefix "$REPO_DOWNLOADS/$tag/" "${embed[@]+"${embed[@]}"}" "$work"
+"$generate_appcast" --download-url-prefix "$REPO_DOWNLOADS/$tag/" "${embed[@]+"${embed[@]}"}" "${channel_args[@]+"${channel_args[@]}"}" "$work"
 
 # 6. Check what generate_appcast wrote before it replaces the committed feed.
-signature="$(/usr/bin/python3 - "$work/appcast.xml" "$build" "$REPO_DOWNLOADS/$tag/$name.zip" <<'PY'
+signature="$(/usr/bin/python3 - "$work/appcast.xml" "$build" "$REPO_DOWNLOADS/$tag/$name.zip" "$channel" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-path, build, url = sys.argv[1:]
+path, build, url, channel = sys.argv[1:]
 for item in ET.parse(path).getroot().iter("item"):
     version = item.findtext(ns + "version") or item.find("enclosure").get(ns + "version")
     if (version or "").strip() != build:
@@ -179,6 +186,8 @@ for item in ET.parse(path).getroot().iter("item"):
     problems = []
     if enclosure.get("url") != url:
         problems.append(f"enclosure url is {enclosure.get('url')}, expected {url}")
+    if (item.findtext(ns + "channel") or "") != channel:
+        problems.append(f"entry is on channel {item.findtext(ns + 'channel')!r}, expected {channel or None!r}")
     if not enclosure.get(ns + "edSignature"):
         problems.append("enclosure has no sparkle:edSignature")
     if "arm64" not in (item.findtext(ns + "hardwareRequirements") or ""):
