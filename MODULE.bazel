@@ -154,7 +154,7 @@ toolchains.toolchain(
 use_repo(toolchains, "default_rust_toolchains")
 
 include("//ext/postgres:postgres.MODULE.bazel")
-include("//ext/postgres19:postgres19.MODULE.bazel")
+include("//ext/postgres:postgres19.MODULE.bazel")
 include("//ext/pgvector:pgvector.MODULE.bazel")
 include("//ext/age:age.MODULE.bazel")
 include("//ext/libicu:libicu.MODULE.bazel")

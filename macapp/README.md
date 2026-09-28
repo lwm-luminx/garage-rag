@@ -340,10 +340,10 @@ postgres's fork-safety check runs.
 
 ## Building against Postgres 19 (beta)
 
-The Bazel build carries two Postgres externals: `//ext/postgres` (18, the
-default) and `//ext/postgres19` (19beta4, pinned by commit). Both share one
-build definition (`ext/postgres/postgres.bzl`); each has its own sandbox patch.
-18 carries `appstore.patch`, which adds a `--enable-appstore` configure/meson
+`//ext/postgres` builds either 18 (the default) or 19beta4 (pinned by
+commit): `--//ext:postgres_version` selects the source repository, and each
+version's sandbox patches live in `ext/postgres/pg<major>/`.
+18 carries `pg18/appstore.patch`, which adds a `--enable-appstore` configure/meson
 option (no System V IPC: a `flock()` on `postmaster.pid` as the interlock against
 orphaned backends, and process-shared pthread semaphores in the mmap'd segment)
 and is the version being prepared for upstream. 19 still carries the older

@@ -12,8 +12,8 @@ http_archive(
     # server runs inside the App Sandbox. username.patch is a local workaround for
     # getpwuid() failing in the sandbox; it is not part of the upstream proposal.
     patches = [
-        "//ext/postgres:appstore.patch",
-        "//ext/postgres:username.patch",
+        "//ext/postgres:pg18/appstore.patch",
+        "//ext/postgres:pg18/username.patch",
     ],
     sha256 = "983ee554ec53dbeb9b70797bef9fcf4e67e117e7e48ca1463cc80b3ff8e8ff3f",
     strip_prefix = "postgresql-18.6",
