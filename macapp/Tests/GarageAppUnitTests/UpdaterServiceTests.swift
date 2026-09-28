@@ -12,6 +12,9 @@ private final class FakeUpdaterDriver: UpdaterDriving {
         didSet { onStateChange?() }
     }
     var lastUpdateCheckDate: Date?
+    var receivesBetaUpdates = false {
+        didSet { onStateChange?() }
+    }
     var onStateChange: (() -> Void)?
     private(set) var checkCount = 0
 
@@ -129,6 +132,18 @@ final class UpdaterServiceTests: XCTestCase {
 
         XCTAssertFalse(driver.automaticallyChecksForUpdates)
         XCTAssertFalse(service.automaticallyChecksForUpdates)
+    }
+
+    func testBetaUpdatesStartFromTheDriverAndWriteThrough() {
+        let driver = FakeUpdaterDriver()
+        driver.receivesBetaUpdates = true
+        let service = UpdaterService(driver: driver)
+        XCTAssertTrue(service.receivesBetaUpdates)
+
+        service.receivesBetaUpdates = false
+
+        XCTAssertFalse(driver.receivesBetaUpdates)
+        XCTAssertFalse(service.receivesBetaUpdates)
     }
 
     func testCheckForUpdatesReachesTheDriver() {
