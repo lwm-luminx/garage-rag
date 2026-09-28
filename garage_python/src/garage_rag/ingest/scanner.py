@@ -27,8 +27,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from garage_rag.attribute.git import GIT_HARDENING, git_executable
 from garage_rag.config import (
     DEFAULT_EXCLUDE_DIRS,
+    expand_home,
     get_settings,
 )
 from garage_rag.db.models import Source
@@ -42,6 +44,7 @@ from garage_rag.ingest.walker import (
     is_diagnostic_file,
     is_git_dir,
     is_inside_git_dir,
+    root_problem,
 )
 
 log = logging.getLogger(__name__)
@@ -266,10 +269,13 @@ def scan_git(
 
 
 def _count_tracked_files(root: Path) -> int | None:
-    """``git ls-files`` count, or None when ``root`` is not a git work tree."""
+    """``git ls-files`` count, or None when ``root`` is not a git work tree or git can't run."""
+    git = git_executable()
+    if git is None:
+        return None
     try:
         proc = subprocess.run(
-            ["git", "-C", str(root), "ls-files", "-z"],
+            [git, *GIT_HARDENING, "-C", str(root), "ls-files", "-z"],
             capture_output=True,
             check=False,
             timeout=10,
@@ -552,6 +558,10 @@ def scan_feed(
 # ---------------------------------------------------------------------------
 
 
+# What each kind counts, for a scan that could not start.
+_ITEM_TYPES = {"filesystem": "files", "git": "files", "sqlite": "records", "maildir": "messages", "feed": "entries"}
+
+
 def scan_source(
     source: Source | Any,
     *,
@@ -565,11 +575,25 @@ def scan_source(
     slug = getattr(source, "slug", str(source))
     kind = getattr(source, "kind", "filesystem")
     root_val = getattr(source, "root", source)
-    root = Path(root_val).expanduser() if not isinstance(root_val, Path) else root_val
+    root = expand_home(root_val) if not isinstance(root_val, Path) else root_val
 
     log.info("Scanning source %r (kind=%s, root=%s, include_code=%s)", slug, kind, root, include_code)
 
-    prefixes = default_exclude_prefixes(root) if root.exists() else ()
+    if problem := root_problem(root):
+        # Nothing can be counted. ``root_problem`` in the details is what tells the pipeline
+        # this is the whole source, not a subtree it may skip.
+        log.warning("Cannot scan source %r: %s", slug, problem)
+        return SourceScanResult(
+            source_slug=slug,
+            kind=kind,
+            root=root,
+            item_count=0,
+            item_type=_ITEM_TYPES.get(kind, "items"),
+            details={"root_problem": problem},
+            error=problem,
+        )
+
+    prefixes = default_exclude_prefixes(root)
 
     match kind:
         case "git":

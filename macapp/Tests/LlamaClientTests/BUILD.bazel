@@ -9,6 +9,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         "//macapp/Sources/LlamaClient",
+        "//macapp/Sources/LlamaServiceHost",
         "//macapp/Tests/LlamaTestSupport",
     ],
 )

@@ -1,6 +1,7 @@
 import Foundation
 import LlamaClient
 import OSLog
+import PythonXPCService
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "LlamaModelLoader")
 
@@ -30,9 +31,14 @@ public final class LlamaModelLoader: @unchecked Sendable {
         }
 
         /// LlamaXPCService over NSXPC. The connection is made again once if the service went away
-        /// (a relaunched service answers a fresh connection; it also comes back with no models).
-        public static func xpc(makeClient: @escaping @Sendable () -> LlamaClient = { LlamaClient() }) -> Service {
-            let box = ClientBox(makeClient: makeClient)
+        /// (a relaunched service answers a fresh connection; it also comes back with no models), and
+        /// whenever `generation` changes (a new endpoint was handed over). The default looks the
+        /// service up by name, which only the app itself can do.
+        public static func xpc(
+            makeClient: @escaping @Sendable () throws -> LlamaClient = { LlamaClient() },
+            generation: @escaping @Sendable () -> Int = { 0 }
+        ) -> Service {
+            let box = ClientBox(makeClient: makeClient, generation: generation)
             return Service(
                 residentAliases: {
                     try await box.withClient { try await $0.listModels().data.map(\.id) }
@@ -40,6 +46,22 @@ public final class LlamaModelLoader: @unchecked Sendable {
                 ensure: { plan in
                     try await box.withClient { try await $0.ensureModel(path: plan.path, alias: plan.alias, config: plan.config) }
                 }
+            )
+        }
+
+        /// LlamaXPCService through the listener endpoint the app handed this process: how a sibling
+        /// XPC service (garage-xpc, embed-xpc, mcp-server-xpc) reaches it, since only the app can
+        /// look it up by name. Until an endpoint arrives every call fails with
+        /// `LlamaModelLoaderError.endpointNotHandedOver`; a newer endpoint replaces the connection.
+        public static func handedOverEndpoint(store: GarageLlamaEndpointStore = .shared) -> Service {
+            xpc(
+                makeClient: {
+                    guard let endpoint = store.endpoint else {
+                        throw LlamaModelLoaderError.endpointNotHandedOver
+                    }
+                    return LlamaClient(endpoint: endpoint)
+                },
+                generation: { store.generation }
             )
         }
     }
@@ -62,10 +84,11 @@ public final class LlamaModelLoader: @unchecked Sendable {
     }
 
     /// The loader for this process: LlamaXPCService over NSXPC, models resolved from the catalog
-    /// and models folder of the app's data folder.
-    public static func standard() -> LlamaModelLoader {
+    /// and models folder of the app's data folder. The app passes the default (lookup by service
+    /// name); an XPC service passes `.handedOverEndpoint()`.
+    public static func standard(service: Service = .xpc()) -> LlamaModelLoader {
         let resolver = LlamaModelResolver.standard()
-        return LlamaModelLoader(service: .xpc(), resolve: { try resolver.resolve(alias: $0) })
+        return LlamaModelLoader(service: service, resolve: { try resolver.resolve(alias: $0) })
     }
 
     /// Ensures `alias` is resident, loading it when it is not.
@@ -148,23 +171,33 @@ private final class ResultBox: @unchecked Sendable {
     }
 }
 
-/// The NSXPC client, made again once when a call finds the service gone.
+/// The NSXPC client, made again once when a call finds the service gone, and whenever the
+/// generation (of the handed-over endpoint) changes.
 private final class ClientBox: @unchecked Sendable {
     private let lock = NSLock()
-    private let makeClient: @Sendable () -> LlamaClient
+    private let makeClient: @Sendable () throws -> LlamaClient
+    private let generation: @Sendable () -> Int
     private var client: LlamaClient?
+    private var clientGeneration = 0
 
-    init(makeClient: @escaping @Sendable () -> LlamaClient) {
+    init(makeClient: @escaping @Sendable () throws -> LlamaClient, generation: @escaping @Sendable () -> Int) {
         self.makeClient = makeClient
+        self.generation = generation
     }
 
-    private func current(fresh: Bool) -> LlamaClient {
+    private func current(fresh: Bool) throws -> LlamaClient {
         lock.lock()
         defer { lock.unlock() }
-        if fresh || client == nil {
-            client = makeClient()
+        // Read before making the client: an endpoint arriving in between only costs one more reconnect.
+        let now = generation()
+        if !fresh, let client, clientGeneration == now {
+            return client
         }
-        return client!
+        client = nil
+        let made = try makeClient()
+        client = made
+        clientGeneration = now
+        return made
     }
 
     func withClient<T>(_ body: (LlamaClient) async throws -> T) async throws -> T {

@@ -85,12 +85,14 @@ public struct DocumentsView: View {
                 TextField("Filter by title or URI…", text: $searchText)
                     .textFieldStyle(.plain)
                     .onSubmit { refreshDocuments() }
+                    .accessibilityIdentifier("documents.filter")
                 if !searchText.isEmpty {
                     Button(action: { searchText = ""; refreshDocuments() }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
                     .accessibilityLabel("Clear search")
+                    .accessibilityIdentifier("documents.filter.clear")
                     .buttonStyle(.plain)
                 }
             }
@@ -115,6 +117,7 @@ public struct DocumentsView: View {
             }
             .frame(width: 130)
             .onChange(of: selectedCorpusClass) { _, _ in refreshDocuments() }
+            .accessibilityIdentifier("documents.class")
 
             Picker("Trust", selection: $selectedTrustTier) {
                 ForEach(trustTiers, id: \.self) { t in
@@ -134,6 +137,7 @@ public struct DocumentsView: View {
                 }
             }
             .accessibilityLabel("Refresh document list")
+            .accessibilityIdentifier("documents.refresh")
             .disabled(isLoadingList || appState.postgres.status != .running)
             .help("Refresh document list")
         }
@@ -148,7 +152,7 @@ public struct DocumentsView: View {
         if isLoadingList && documents.isEmpty {
             VStack(spacing: 12) {
                 Spacer()
-                ProgressView("Loading documents via gRPC…")
+                ProgressView("Loading documents…")
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -227,6 +231,7 @@ public struct DocumentsView: View {
                 Text("\(documents.count) of \(totalCount) document\(totalCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("documents.count")
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -317,6 +322,7 @@ public struct DocumentsView: View {
                 Text(detail.displayTitle)
                     .font(.headline)
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("documents.detail.title")
 
                 HStack(spacing: 6) {
                     CorpusClassBadge(corpusClass: detail.corpusClass)
@@ -348,7 +354,7 @@ public struct DocumentsView: View {
                     if !detail.lang.isEmpty { metaField("Lang", detail.lang) }
                     if !detail.mime.isEmpty { metaField("MIME", detail.mime) }
                     if !detail.chunker.isEmpty { metaField("Chunker", detail.chunker) }
-                    metaField("Chunks", "\(detail.chunks.count)")
+                    metaField("Chunks", "\(detail.chunks.count)", identifier: "documents.detail.chunkCount")
                     if !detail.facts.isEmpty { metaField("Facts", "\(detail.facts.count)") }
                     Spacer()
                     Button {
@@ -409,13 +415,19 @@ public struct DocumentsView: View {
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
-    private func metaField(_ label: String, _ value: String) -> some View {
+    private func metaField(_ label: String, _ value: String, identifier: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label)
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption)
+            if let identifier {
+                Text(value)
+                    .font(.caption)
+                    .accessibilityIdentifier(identifier)
+            } else {
+                Text(value)
+                    .font(.caption)
+            }
         }
     }
 
@@ -472,6 +484,7 @@ public struct DocumentsView: View {
                 .font(.system(.caption, design: .monospaced))
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("documents.chunk.\(chunk.ord)")
         }
         .padding(8)
         .background(Color.primary.opacity(0.04))

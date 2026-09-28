@@ -5,6 +5,10 @@ import SwiftUI
 // is something to do about it, one small action on the right.
 
 /// The rounded card a section of the popover sits in.
+///
+/// The card is its own accessibility container: an identifier given to a module then names the
+/// card, and its rows keep theirs. Without it, an identifier on the plain stack is applied to every
+/// row inside and replaces their own ("menubar.services" would hide "menubar.allSystemsGo").
 struct MenuBarModule<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -14,6 +18,7 @@ struct MenuBarModule<Content: View>: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .accessibilityElement(children: .contain)
     }
 }
 

@@ -13,8 +13,8 @@ public struct LogsView: View {
         case ingest = "Ingest"
         case embed = "Embed"
         case mcp = "MCP Server"
-        case grpc = "gRPC Server"
-        case llama = "LLaMa"
+        case grpc = "Index Manager"
+        case llama = "Built-in Engine"
         case modelDownload = "Downloader"
 
         public var id: String { rawValue }
@@ -58,6 +58,7 @@ public struct LogsView: View {
                 }
             }
             .pickerStyle(.segmented)
+            .accessibilityIdentifier("logs.source")
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
         }
@@ -101,6 +102,7 @@ public struct LogsView: View {
             .buttonStyle(.plain)
             .font(.caption)
             .controlSize(.small)
+            .accessibilityIdentifier("logs.pause")
 
             Spacer()
 
@@ -118,6 +120,7 @@ public struct LogsView: View {
             .font(.caption)
             .controlSize(.small)
             .help("Fetch historical entries from OSLogStore")
+            .accessibilityIdentifier("logs.fetch")
 
             Divider()
                 .frame(height: 14)

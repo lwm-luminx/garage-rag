@@ -18,7 +18,7 @@ We welcome questions, bug reports, feature suggestions, and security vulnerabili
 If you encounter a bug, crash, or unexpected behavior in `GarageApp` or the `garage` CLI:
 
 **From inside GarageApp (recommended)**: choose **Help → Report a Bug…** (⇧⌘B), click the ladybug tab on
-the right edge of the main window, pick **Report a Bug…** from the menu bar, or click **Report a Bug** in the **Logs** view to start with the log stream you are
+the right edge of the main window, or click **Report a Bug** in the **Logs** view to start with the log stream you are
 already looking at. Describe what happened and Garage assembles the rest — version, macOS build,
 database and helper service state, corpus counts, registered models, and optionally the most recent log
 lines.
@@ -30,7 +30,7 @@ can copy it, save it as Markdown, or open a pre-filled GitHub issue in your brow
 more chance to read it before posting.
 
 **By hand**: [open a GitHub Issue](https://github.com/rickmark/garage-rag/issues) and include:
-  - macOS version and hardware architecture (e.g., macOS 15.0 Sequoia, Apple Silicon M3)
+  - macOS version and Mac model (e.g., macOS 15.0 Sequoia, M3 MacBook Air)
   - Garage version / commit hash
   - Relevant sanitized log snippets (see below)
   - Exact steps to reproduce the issue
@@ -52,10 +52,13 @@ If you discover a potential security issue or data leakage vulnerability:
 Before sharing logs on public issue trackers, protect your privacy by following these sanitization steps:
 
 ### Locating Your Logs
-Logs are stored locally on your machine at:
-- **PostgreSQL Service**: `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/postgres.log`
-- **Ingestion & CLI Pipeline**: `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/ingest.log`
-- **MCP HTTP Server**: `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/mcp.log`
+The **Logs** page in GarageApp shows every log live, Postgres included. The helper services also
+write log files, in `~/Library/Logs/Garage/` for the direct-download build:
+- **Ingestion Pipeline**: `ingest-xpc.log`
+- **Embedding**: `embed-xpc.log`
+- **MCP HTTP Server**: `mcp-server-xpc.log`
+- **Index Manager** (search, embedding, facts): `garage-xpc.log`
+- **Built-in Model Engine**: `llama-xpc.log`
 
 If you file through **Help → Report a Bug…**, the steps below are already applied to anything the
 reporter attaches — they matter when you paste log snippets by hand.

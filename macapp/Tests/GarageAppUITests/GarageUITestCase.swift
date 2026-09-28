@@ -7,9 +7,10 @@ import XCTest
 ///
 /// Launch arguments set the launch-time preferences in the argument domain, which overrides
 /// UserDefaults for that run without writing them. A test that clicks a control that saves a
-/// preference (the splash's "Show this window at launch", the setup assistant's Finish or Skip)
-/// does write the real `me.rickmark.garage-rag` domain, so tests leave those controls alone or
-/// only reach states they already have.
+/// preference (such as the splash's "Show this window at launch") does write the real
+/// `me.rickmark.garage-rag` domain, so tests leave those controls alone or only reach states they
+/// already have. The setup assistant's Finish and Skip are the exception: on a `--data-directory`
+/// launch they last for that launch only.
 ///
 /// The app's Postgres uses the fixed port 14824 and its quit path stops XPC services by executable
 /// name, so a test refuses to run while another Garage is running or its ports are taken.
@@ -18,6 +19,9 @@ class GarageUITestCase: XCTestCase {
     static let postgresPort: UInt16 = 14824
     static let grpcPort: UInt16 = 50051
     static let servicePorts: [UInt16] = [14824, 8787, 8790, 50051]
+    /// Every test's data folder is named with this, which is how leftovers from an earlier test are
+    /// told apart from a Garage (or the real corpus's Postgres) someone is using.
+    static let dataDirectoryPrefix = "GarageUITest-"
 
     private(set) var dataDirectory: URL!
     private(set) var app: XCUIApplication!
@@ -28,17 +32,22 @@ class GarageUITestCase: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
 
+        // An earlier test that died before its teardown could stop them (its launch failed, or the
+        // runner was killed) can leave its Garage or its Postgres on 14824; every later test would
+        // then skip. Those carry a GarageUITest- folder in their arguments, so they are safe to stop.
+        Self.stopLeftoverTestProcesses(matching: Self.dataDirectoryPrefix)
+
         let running = Self.runningGarageInstances()
         try XCTSkipUnless(
             running.isEmpty,
-            "Quit Garage first (pids \(running.map(\.processIdentifier))): this test would share its port and its quit path kills XPC services by name."
+            "Quit Garage first (`garage quit`; pids \(running.map(\.processIdentifier))): this test would share its port and its quit path kills XPC services by name."
         )
         for port in Self.servicePorts {
             try XCTSkipIf(Self.isListening(on: port), "Something already listens on 127.0.0.1:\(port).")
         }
 
         dataDirectory = try makeDataDirectoryParent()
-            .appendingPathComponent("GarageUITest-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("\(Self.dataDirectoryPrefix)\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
         // The app and its gRPC server look for ./garage.json in the data folder before ~/.garage.json,
         // and write sources to the file they found. An empty config here keeps a test from reading or
@@ -62,10 +71,21 @@ class GarageUITestCase: XCTestCase {
 
     // MARK: - Launching
 
+    /// Arguments a subclass adds to every launch (the screenshot tests' `--appearance`).
+    var additionalLaunchArguments: [String] { [] }
+
     /// Launches Garage on this test's data folder and waits for its main window (or, with
     /// `firstRunCompleted: false`, the setup assistant).
+    ///
+    /// `mcpHTTP` turns on the app's HTTP MCP server, which is off by default; the MCP page's tests
+    /// and Try It need it.
     @discardableResult
-    func launchApp(showSplash: Bool = false, firstRunCompleted: Bool = true, automaticMaintenance: Bool = false) throws -> XCUIApplication {
+    func launchApp(
+        showSplash: Bool = false,
+        firstRunCompleted: Bool = true,
+        automaticMaintenance: Bool = false,
+        mcpHTTP: Bool = true
+    ) throws -> XCUIApplication {
         let app = try makeApplication()
         app.launchArguments = [
             "--data-directory", dataDirectory.path,
@@ -75,9 +95,12 @@ class GarageUITestCase: XCTestCase {
             // source, which makes the source a test just added busy (not removable) until it ends.
             "-scheduledMaintenanceEnabled", automaticMaintenance ? "YES" : "NO",
             "-scheduledMaintenanceRunsAtLaunch", "NO",
+            "-garage.mcp.httpEnabled", mcpHTTP ? "YES" : "NO",
+            // The build's bundled models.json, not the website's copy, which can lag the branch under test.
+            "-garage.modelCatalog.refreshAtLaunch", "NO",
             // Start from a clean window each time rather than the last run's restored state.
             "-ApplePersistenceIgnoreState", "YES",
-        ]
+        ] + additionalLaunchArguments
         app.launch()
         self.app = app
 
@@ -125,6 +148,23 @@ class GarageUITestCase: XCTestCase {
         }
     }
 
+    /// Clicks Garage's menu bar item and waits for its popover.
+    func openPopover(file: StaticString = #filePath, line: UInt = #line) {
+        let item = app.statusItems.firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15), "Garage has no menu bar item", file: file, line: line)
+        item.click()
+        XCTAssertTrue(element(identifier: "menubar.services").waitForExistence(timeout: 10), "the menu bar item did not open its popover", file: file, line: line)
+    }
+
+    /// Types `text` into the popover's search field once it takes input.
+    func typeInPopoverField(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        let field = element(identifier: "menubar.search.field")
+        XCTAssertTrue(waitForEnabled(field), "the popover's search field stayed disabled", file: file, line: line)
+        // The popover puts the cursor in the field as it opens; click it anyway in case it did not.
+        field.click()
+        field.typeText(text)
+    }
+
     /// Clicks the sidebar row for `section` (the `AppSection` case name, e.g. `"mcp"`).
     func open(section: String, file: StaticString = #filePath, line: UInt = #line) {
         let row = element(identifier: "sidebar.\(section)")
@@ -154,6 +194,15 @@ class GarageUITestCase: XCTestCase {
         app.descendants(matching: .any).matching(
             NSPredicate(format: "label BEGINSWITH %@ OR value BEGINSWITH %@", prefix, prefix)
         ).firstMatch
+    }
+
+    /// The text `element` shows. A static text carries it in its value, with an empty label unless the
+    /// view sets one; a button, or an element that combines its children, carries it in its label.
+    func shownText(of element: XCUIElement) -> String {
+        if let value = element.value as? String, !value.isEmpty {
+            return value
+        }
+        return element.label
     }
 
     func button(label: String) -> XCUIElement {
@@ -190,6 +239,9 @@ class GarageUITestCase: XCTestCase {
         let margin: CGFloat = 60
         var step: CGFloat = -120
         for _ in 0..<40 {
+            // Reading the frame of an element that has gone (a Stop button whose run just ended) fails
+            // the test outright; leave it to the caller's own check instead.
+            guard element.exists else { return }
             let visible = scrollView.frame.insetBy(dx: 0, dy: min(margin, scrollView.frame.height / 4))
             let frame = element.frame
             let offset: CGFloat
@@ -204,6 +256,7 @@ class GarageUITestCase: XCTestCase {
             // learn it from the first step: flip the sign when the element moved the wrong way.
             let delta = offset > 0 ? step : -step
             scrollView.scroll(byDeltaX: 0, deltaY: delta)
+            guard element.exists else { return }
             let moved = element.frame.minY - frame.minY
             if moved != 0, (moved > 0) == (offset > 0) {
                 step = -step
@@ -225,6 +278,36 @@ class GarageUITestCase: XCTestCase {
         return slugField
     }
 
+    /// Adds a filesystem source through the Sources page's custom form and waits for its row. `root`
+    /// should sit inside this test's data folder, so the source never points at real files.
+    func addCustomSource(slug: String, root: URL, file: StaticString = #filePath, line: UInt = #line) {
+        open(section: "sources", file: file, line: line)
+        let slugField = revealCustomSourceForm(file: file, line: line)
+        // The folder first: typing it fills in the name, which the slug then replaces.
+        replaceText(in: element(identifier: "sources.form.root"), with: root.path, file: file, line: line)
+        replaceText(in: slugField, with: slug, file: file, line: line)
+
+        let submit = element(identifier: "sources.form.submit")
+        XCTAssertTrue(waitForEnabled(submit), "Add Source stayed disabled", file: file, line: line)
+        click(submit)
+        XCTAssertTrue(
+            element(identifier: "sources.row.\(slug)").waitForExistence(timeout: 30),
+            "the source \(slug) did not appear in the list",
+            file: file,
+            line: line
+        )
+    }
+
+    /// A folder inside this test's data folder holding `files`.
+    func makeFolder(named name: String, files: [String: String] = [:]) throws -> URL {
+        let folder = dataDirectory.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        for (file, body) in files {
+            try Data(body.utf8).write(to: folder.appendingPathComponent(file))
+        }
+        return folder
+    }
+
     func waitForEnabled(_ element: XCUIElement, timeout: TimeInterval = 30) -> Bool {
         waitUntil(timeout: timeout) { element.exists && element.isEnabled }
     }
@@ -237,6 +320,40 @@ class GarageUITestCase: XCTestCase {
 
     func waitForSingleInstance(timeout: TimeInterval) -> pid_t? {
         waitUntilValue(timeout: timeout) { self.appPID }
+    }
+
+    /// Every process of this user whose arguments mention `marker`.
+    static func processes(withArgumentContaining marker: String) -> [pid_t] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_UID, Int32(bitPattern: getuid())]
+        var size = 0
+        guard sysctl(&mib, 4, nil, &size, nil, 0) == 0, size > 0 else { return [] }
+        // Room for processes started between the two calls.
+        size += 16 * MemoryLayout<kinfo_proc>.stride
+        var procs = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride)
+        guard sysctl(&mib, 4, &procs, &size, nil, 0) == 0 else { return [] }
+        let me = getpid()
+        return procs.prefix(size / MemoryLayout<kinfo_proc>.stride)
+            .map(\.kp_proc.p_pid)
+            .filter { $0 > 0 && $0 != me && arguments(of: $0).contains { $0.contains(marker) } }
+    }
+
+    /// Stops what an earlier or current test left running under a folder matching `marker`:
+    /// Postgres gets a fast shutdown, everything else is killed, and anything still alive after a
+    /// few seconds is killed too.
+    static func stopLeftoverTestProcesses(matching marker: String) {
+        let leftovers = processes(withArgumentContaining: marker)
+        guard !leftovers.isEmpty else { return }
+        for pid in leftovers {
+            let isPostgres = arguments(of: pid).first.map { ($0 as NSString).lastPathComponent == "postgres" } ?? false
+            kill(pid, isPostgres ? SIGINT : SIGKILL)
+        }
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline, leftovers.contains(where: isAlive) {
+            usleep(100_000)
+        }
+        for pid in leftovers where isAlive(pid) {
+            kill(pid, SIGKILL)
+        }
     }
 
     static func isAlive(_ pid: pid_t) -> Bool {
@@ -391,24 +508,50 @@ class GarageUITestCase: XCTestCase {
     /// and only processes whose arguments name this test's folder (never by name: that could reach a
     /// real Garage), then deletes the folder, which holds the isolated cluster's password too
     /// (`GaragePostgresEndpoint.isolatedPasswordFile`).
+    /// Stops this test's Garage without its full quit path, which spends most of a test's time
+    /// (about 20 of 26 seconds on the M4) waiting on Postgres's shutdown and the service stops.
+    /// The data folder is thrown away, so nothing needs a clean shutdown: Postgres gets a fast
+    /// shutdown (SIGINT) first, so the app's own quit finds it stopped and only stops the XPC
+    /// services; anything still running a few seconds later is killed. DatabaseUITests covers the
+    /// real ⌘Q path.
     private func cleanUp() {
         guard let dataDirectory else { return }
         let ours: (pid_t) -> Bool = { Self.isAlive($0) && Self.arguments(of: $0).contains(dataDirectory.path) }
+
+        // `postgres -D <folder>/pgdata`: the argument names the folder too.
+        // Matched by the folder's name rather than its path: Postgres may have been handed the path
+        // with /var resolved to /private/var.
+        let folderName = dataDirectory.lastPathComponent
+        let postmaster = postmasterPID().flatMap { pid in
+            Self.isAlive(pid) && Self.arguments(of: pid).contains(where: { $0.contains(folderName) }) ? pid : nil
+        }
+        if let postmaster {
+            kill(postmaster, SIGINT)
+        }
         for running in Self.runningGarageInstances() where ours(running.processIdentifier) {
             running.terminate()
         }
-        _ = waitUntil(timeout: 20) { !Self.runningGarageInstances().contains { ours($0.processIdentifier) } }
+        _ = waitUntil(timeout: 5) {
+            !Self.runningGarageInstances().contains { ours($0.processIdentifier) }
+                && !(postmaster.map(Self.isAlive) ?? false)
+        }
 
-        let postmaster = postmasterPID()
         for pid in launchedPIDs.union(Self.runningGarageInstances().map(\.processIdentifier)) where ours(pid) {
             kill(pid, SIGKILL)
         }
-        // `postgres -D <folder>/pgdata`: the argument names the folder too.
-        if let postmaster, Self.isAlive(postmaster),
-           Self.arguments(of: postmaster).contains(where: { $0.hasPrefix(dataDirectory.path) }) {
+        if let postmaster, Self.isAlive(postmaster) {
             kill(postmaster, SIGKILL)
         }
-        _ = waitUntil(timeout: 10) { !Self.isListening(on: Self.postgresPort) }
+        // Anything else this test started that is still running, such as a postmaster whose pid
+        // file was not written yet or a Garage that never became the single instance.
+        Self.stopLeftoverTestProcesses(matching: folderName)
+        // The next test skips while any of these is taken, so a service left listening would
+        // quietly skip the rest of the suite: say so here instead.
+        let freed = waitUntil(timeout: 15) { !Self.servicePorts.contains(where: Self.isListening) }
+        if !freed {
+            let busy = Self.servicePorts.filter(Self.isListening).map { String($0) }.joined(separator: ", ")
+            XCTFail("Garage's services still listen on \(busy) after the test; later tests would skip")
+        }
         try? FileManager.default.removeItem(at: dataDirectory)
     }
 }

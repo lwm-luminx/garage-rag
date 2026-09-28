@@ -65,6 +65,10 @@ class ChunkPayload:
     heading_path: str | None = None
     chunk_sha256: str = ""
     chunker: str | None = None
+    # Message chunks only: 'sent' | 'received', and the handle that wrote the
+    # message, or 'me'. None for every other chunk (chunks.direction/sender).
+    direction: str | None = None
+    sender: str | None = None
 
 
 class IngestStorageGateway(ABC):
@@ -523,6 +527,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
             CorpusClass,
             Document,
             DocumentAuthor,
+            FactRun,
             IngestSeen,
             IngestState,
             Source,
@@ -604,7 +609,9 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
             # unchanged: its row, and so its vectors in every model table,
             # survive. A thread that gained messages or a file edited near its
             # end re-embeds only what changed. Fact chunks sit after the text
-            # chunks' ords and are always dropped, as before.
+            # chunks' ords and are always dropped, as before; the document's
+            # fact_runs go with them, so a stale-only Glean Facts extracts its
+            # facts (and so their chunks) again instead of counting it as done.
             kept: dict[int, Any] = {}
             stale: list[Any] = []
             wanted = {
@@ -632,6 +639,8 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                     stale.append(row)
             if stale:
                 session.query(Chunk).filter(Chunk.id.in_([row.id for row in stale])).delete(synchronize_session=False)
+                if any(row.fact_id is not None for row in stale):
+                    session.query(FactRun).filter(FactRun.document_id == doc.id).delete(synchronize_session=False)
                 for row in stale:
                     session.expunge(row)
             session.flush()
@@ -643,10 +652,14 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                 )
                 row = kept.get(c.ord)
                 if row is not None:
+                    # Vectors depend on the text alone, so a kept row takes the new
+                    # offsets, heading, direction and sender in place, with no re-embedding.
                     row.token_count = c.token_count or None
                     row.char_start = c.char_start
                     row.char_end = c.char_end
                     row.heading_path = c.heading_path or None
+                    row.direction = c.direction or None
+                    row.sender = c.sender or None
                     continue
                 session.add(
                     Chunk(
@@ -659,6 +672,8 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                         heading_path=c.heading_path or None,
                         chunk_sha256=chunk_hash,
                         chunker=c.chunker or doc.chunker or "default",
+                        direction=c.direction or None,
+                        sender=c.sender or None,
                     )
                 )
 
@@ -734,7 +749,8 @@ class GrpcIngestStorageGateway(IngestStorageGateway):
             item_count=scan_result.item_count,
             item_type=scan_result.item_type,
             duration_seconds=scan_result.duration_seconds,
-            details=scan_result.details or {},
+            # JSON, not a proto map: the details hold lists and nested tables as well as counts.
+            details_json=json.dumps(scan_result.details or {}, default=str),
             error=scan_result.error or "",
         )
         self.client.persist_scan(req)
@@ -926,6 +942,8 @@ class GrpcIngestStorageGateway(IngestStorageGateway):
                     else str(c.chunk_sha256 or "")
                 ),
                 chunker=c.chunker or "",
+                direction=c.direction or "",
+                sender=c.sender or "",
             )
             for c in chunks
         ]

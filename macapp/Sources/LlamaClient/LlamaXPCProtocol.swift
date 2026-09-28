@@ -53,6 +53,12 @@ public protocol LlamaXPCServiceProtocol: GarageCommonXPCServiceProtocol {
 
     /// Unload current model
     func unloadModel(with reply: @escaping (Bool, Error?) -> Void)
+
+    /// The endpoint of an anonymous listener serving this same protocol. Only Garage.app can look
+    /// LlamaXPCService up by service name; the app fetches this endpoint and hands it to the sibling
+    /// XPC services that load models on demand (`GarageLlamaEndpointReceiverProtocol`), which connect
+    /// with `NSXPCConnection(listenerEndpoint:)`. The listener lives as long as the service process.
+    func getListenerEndpoint(with reply: @escaping (NSXPCListenerEndpoint?, Error?) -> Void)
 }
 
 public enum LlamaXPCConstants {

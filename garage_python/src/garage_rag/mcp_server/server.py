@@ -42,7 +42,10 @@ from garage_rag.db.models import (
     Source,
 )
 from garage_rag.enrich.generation import LocalChatModel
+from garage_rag.mcp_server import agent as _agent
+from garage_rag.mcp_server.agent import AgentResult
 from garage_rag.net import egress
+from garage_rag.search import Direction
 from garage_rag.search.hybrid import SearchHit, corpus_overview
 from garage_rag.search.hybrid import search as run_search
 
@@ -97,6 +100,7 @@ TrustFilter = Annotated[
     BeforeValidator(_as_list),
 ]
 SourceFilter = Annotated[list[str] | str | None, BeforeValidator(_as_list)]
+DirectionFilter = Direction | None
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +121,10 @@ class Hit:
     matched_by: str
     score: float
     text: str
+    # Message chunks: 'sent' (the owner wrote it) or 'received', and who wrote
+    # it -- a handle, or 'me'. None for every other chunk.
+    direction: str | None = None
+    sender: str | None = None
 
 
 @dataclass
@@ -238,6 +246,7 @@ def _retrieve(
     trust: object = None,
     source: object = None,
     author: str | None = None,
+    direction: str | None = None,
 ) -> tuple[list[SearchHit], str]:
     """Run the hybrid search; returns the hits and the embedding model's slug."""
     # The BeforeValidator only runs when the call comes through the MCP layer; a
@@ -258,6 +267,7 @@ def _retrieve(
             trust_tiers=list(tiers) if tiers else None,
             sources=list(slugs) if slugs else None,
             author=author,
+            direction=direction,
         )
         models = list_models(session)
         default = next((m.slug for m in models if m.is_default), "none")
@@ -307,14 +317,33 @@ def rag_search(
         Field(description="Restrict to these source slugs. Accepts one value or a list."),
     ] = None,
     author: Annotated[str | None, Field(description="Restrict to documents by this author (substring match).")] = None,
+    direction: Annotated[
+        DirectionFilter,
+        Field(
+            description=(
+                "Restrict to messages (SMS/iMessage) that went one way: 'sent' is what the "
+                "corpus owner wrote, 'received' is what others wrote to them. A message "
+                "thread holds both, so this is how to find the owner's own words in a "
+                "conversation. Excludes everything that is not a message."
+            )
+        ),
+    ] = None,
 ) -> SearchResult:
     """Search the personal corpus with hybrid semantic + keyword retrieval.
 
     Filter by trust to separate the owner's own writing from reference material,
-    and by corpus_class to keep source code out of prose answers.
+    by corpus_class to keep source code out of prose answers, and by direction
+    to keep to messages the owner sent or received.
     """
     hits, embedding_model = _retrieve(
-        query, limit=limit, mode=mode, corpus_class=corpus_class, trust=trust, source=source, author=author
+        query,
+        limit=limit,
+        mode=mode,
+        corpus_class=corpus_class,
+        trust=trust,
+        source=source,
+        author=author,
+        direction=direction,
     )
 
     return SearchResult(
@@ -335,6 +364,8 @@ def rag_search(
                 matched_by=h.matched_by,
                 score=round(h.score, 6),
                 text=h.text,
+                direction=h.direction,
+                sender=h.sender,
             )
             for h in hits
         ],
@@ -644,6 +675,49 @@ def rag_generate(
     messages.append({"role": "user", "content": prompt})
     text = model.chat(messages, max_tokens=max_tokens, temperature=temperature)
     return GenerateResult(text=text, model=model.model_ref, provider=model.provider)
+
+
+@mcp.tool()
+def rag_agent(
+    question: Annotated[str, Field(description="Natural-language question to answer from the corpus.")],
+    max_steps: Annotated[
+        int, Field(ge=1, le=12, description="Tool calls the model may make before it has to answer.")
+    ] = _agent.DEFAULT_MAX_STEPS,
+    max_tokens: Annotated[int, Field(ge=16, le=4096, description="Cap on each model reply.")] = 768,
+    temperature: Annotated[float, Field(ge=0.0, le=2.0, description="Sampling temperature.")] = 0.2,
+    search_first: Annotated[
+        bool,
+        Field(
+            description=(
+                "Search the corpus for the question before the model's first reply, so a small "
+                "model starts from the user's documents instead of answering from its training."
+            )
+        ),
+    ] = True,
+) -> AgentResult:
+    """Answer a question by letting the local model search and read the corpus itself.
+
+    The model named by facts.model on facts.provider gets this server's read-only
+    tools (rag_search, rag_get_document, rag_list_sources, rag_list_authors,
+    rag_stats) to call, in a loop, until it answers; the result carries the
+    answer, the steps it took and the documents it saw. By default the question is
+    searched first and the model starts from those hits. Use rag_ask for one
+    retrieval and a cited answer, rag_agent when the question needs more than one
+    look. Runs on the local model, so nothing leaves the machine; an off-box
+    Ollama or LM Studio host never receives a communication.
+    """
+    model = LocalChatModel()
+    tools = _agent.tools_from_server(mcp)
+    return _agent.run_agent(
+        question,
+        tools,
+        model,
+        max_steps=max_steps,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        search_first=search_first,
+        owner=get_settings().self_name,
+    )
 
 
 # Names that ``ipaddress`` cannot classify; every 127.x.x.x literal is handled

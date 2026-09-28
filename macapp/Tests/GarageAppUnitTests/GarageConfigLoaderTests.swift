@@ -1,6 +1,7 @@
 import XCTest
 import CryptoKit
 import ModelDownloadClient
+import PythonXPCService
 @testable import GarageApp
 
 final class GarageConfigLoaderTests: XCTestCase {
@@ -29,7 +30,7 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(source.origin, .config)
         XCTAssertEqual(source.documentCount, 42)
         XCTAssertFalse(source.expandedRootPath.hasPrefix("~"))
-        XCTAssertEqual(source.expandedRootURL.path, (source.root as NSString).expandingTildeInPath)
+        XCTAssertEqual(source.expandedRootURL.path, GarageAppGroup.realHomeDirectory + "/Dropbox")
     }
 
     func testLoadSourcesFromConfigJSON() throws {
@@ -129,6 +130,21 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(preset.downloadFile, "bge-m3-Q8_0.gguf")
         XCTAssertEqual(preset.sha256, "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167")
         XCTAssertEqual(preset.downloadURLString, "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf")
+    }
+
+    func testModelCardLinkComesFromTheCatalogOrTheRepositoryId() throws {
+        let json = Data("""
+        {"name": "Gemma", "slug": "embeddinggemma", "model_id": "google/embeddinggemma-2b",
+         "model_card_url": "https://huggingface.co/google/embeddinggemma-300m"}
+        """.utf8)
+        let named = try JSONDecoder().decode(ModelPresetEntry.self, from: json)
+        XCTAssertEqual(named.modelCardURL?.absoluteString, "https://huggingface.co/google/embeddinggemma-300m")
+
+        let derived = ModelPresetEntry(name: "BGE-M3", modelId: "BAAI/bge-m3", slug: "bge-m3")
+        XCTAssertEqual(derived.modelCardURL?.absoluteString, "https://huggingface.co/BAAI/bge-m3")
+
+        XCTAssertNil(ModelPresetEntry(name: "Local", modelId: "nomic-embed-text", slug: "local").modelCardURL)
+        XCTAssertNil(ModelPresetEntry(name: "Plain", modelCardURLString: "http://example.com", slug: "plain").modelCardURL)
     }
 
     func testLoadModelPresetsFromJSONWithSha256() throws {
@@ -339,16 +355,63 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(factDistilPresets.contains { $0.slug == "bge-m3" })
     }
 
-    func testLoadFactDistilPresetsFallbackToDefaultWhenFileMissing() {
-        let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_models_\(UUID().uuidString).json")
-        let presets = GarageConfigLoader.loadFactDistilPresets(fileURL: fakeURL)
-        XCTAssertTrue(presets.contains { $0.slug == "gemma2-2b" })
+    func testInferenceModelsAreTaggedForDistillation() throws {
+        let json = """
+        {
+            "text_embedding": [{"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024}],
+            "inference_models": [
+                {"name": "Both", "slug": "both", "tags": ["inference", "distillation"]},
+                {"name": "Chat", "slug": "chat", "tags": ["inference"]}
+            ]
+        }
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_models_tags_\(UUID().uuidString).json")
+        try json.data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        XCTAssertEqual(GarageConfigLoader.loadInferencePresets(fileURL: tempURL).map(\.slug), ["both", "chat"])
+        XCTAssertEqual(GarageConfigLoader.loadFactDistilPresets(fileURL: tempURL).map(\.slug), ["both"])
+        // An untagged entry (the older fact_distil list) counts as a distillation model.
+        XCTAssertTrue(ModelPresetEntry(name: "Legacy", slug: "legacy").isForDistillation)
     }
 
-    func testLoadFactDistilPresetsFromLegacyFlatArrayFallsBackToDefault() throws {
-        // A pre-grouping models.json (flat array) has no fact_distil section at
-        // all; loadFactDistilPresets should still offer the built-in default
-        // rather than silently returning nothing.
+    func testPresetsCarryOriginAndToolCalling() throws {
+        let json = """
+        {
+            "text_embedding": [
+                {"name": "BGE-M3", "slug": "bge-m3", "native_dims": 1024, "maker": "BAAI", "country_of_origin": "CN"}
+            ],
+            "inference_models": [
+                {"name": "Granite", "slug": "granite-4.1-8b", "tool_calling": true, "maker": "IBM", "country_of_origin": "US"},
+                {"name": "Mistral", "slug": "mistral-small", "maker": "Mistral AI", "country_of_origin": "fr"},
+                {"name": "Legacy", "slug": "legacy"}
+            ]
+        }
+        """
+        let tempURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_models_origin_\(UUID().uuidString).json")
+        try json.data(using: .utf8)!.write(to: tempURL)
+        defer { try? FileManager.default.removeItem(at: tempURL) }
+
+        XCTAssertEqual(GarageConfigLoader.loadModelPresets(fileURL: tempURL).first?.originRegion, "CN")
+        let facts = Dictionary(uniqueKeysWithValues: GarageConfigLoader.loadInferencePresets(fileURL: tempURL).map { ($0.slug, $0) })
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originRegion, "US")
+        XCTAssertEqual(facts["granite-4.1-8b"]?.originSummary, "IBM, US")
+        XCTAssertTrue(facts["granite-4.1-8b"]?.toolCalling ?? false)
+        // An EU member state is grouped as EU, whatever the case of its code.
+        XCTAssertEqual(facts["mistral-small"]?.originRegion, "EU")
+        XCTAssertFalse(facts["mistral-small"]?.toolCalling ?? true)
+        // An entry from before the fields existed still decodes, with neither badge.
+        XCTAssertNil(facts["legacy"]?.maker)
+        XCTAssertNil(facts["legacy"]?.originRegion)
+        XCTAssertFalse(facts["legacy"]?.toolCalling ?? true)
+        XCTAssertEqual(ModelOriginRegion.region(for: "GB"), "GB")
+        // A stated origin zone wins over the one derived from the country.
+        XCTAssertEqual(ModelPresetEntry(name: "M", countryOfOrigin: "GB", originZone: "uk", slug: "m").originRegion, "UK")
+    }
+
+    func testLoadFactDistilPresetsFromLegacyFlatArrayIsEmpty() throws {
+        // A pre-grouping models.json (flat array) has no fact_distil section at all, and there is
+        // no built-in list to fall back on: models.json is the one catalog.
         let json = """
         [
             {
@@ -373,7 +436,7 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(embeddingPresets[0].slug, "bge-m3")
 
         let factDistilPresets = GarageConfigLoader.loadFactDistilPresets(fileURL: tempURL)
-        XCTAssertTrue(factDistilPresets.contains { $0.slug == "gemma2-2b" })
+        XCTAssertTrue(factDistilPresets.isEmpty)
     }
 
     func testLoadFactsSettingsDefaultsWhenSectionAbsent() throws {
@@ -437,10 +500,48 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(facts.provider, "llama_xpc")
     }
 
-    func testLoadModelPresetsFallbackToDefault() {
+    func testInferenceSettingsFollowDistillationUntilAModelIsNamed() throws {
+        func load(_ json: String) throws -> (model: String?, provider: String?) {
+            let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("test_inference_\(UUID().uuidString).json")
+            try json.data(using: .utf8)!.write(to: url)
+            defer { try? FileManager.default.removeItem(at: url) }
+            return GarageConfigLoader.loadInferenceSettings(fileURL: url)
+        }
+
+        // No section, an empty model, or a provider alone: chat follows the distillation model.
+        XCTAssertNil(try load(#"{"facts": {"model": "granite-4.1-3b"}}"#).model)
+        XCTAssertNil(try load(#"{"inference": {"model": "  ", "provider": "ollama"}}"#).model)
+        XCTAssertNil(try load(#"{"inference": {"provider": "ollama"}}"#).provider)
+
+        let named = try load(#"{"inference": {"model": "qwen3-4b-instruct-2507", "provider": "lmstudio"}}"#)
+        XCTAssertEqual(named.model, "qwen3-4b-instruct-2507")
+        XCTAssertEqual(named.provider, "lmstudio")
+        XCTAssertNil(try load(#"{"inference": {"model": "gpt-oss-20b"}}"#).provider)
+    }
+
+    func testWithoutAManifestThereAreNoPresets() {
+        // No hand-written list stands in for models.json: when none of the candidate files exists,
+        // the loader offers nothing rather than a copy that could disagree with the catalog.
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_models_\(UUID().uuidString).json")
-        let presets = GarageConfigLoader.loadModelPresets(fileURL: fakeURL)
-        XCTAssertFalse(presets.isEmpty)
+        let manifest = GarageConfigLoader.loadModelManifest(candidates: [fakeURL])
+        XCTAssertNil(manifest.textEmbedding)
+        XCTAssertNil(manifest.inference)
+    }
+
+    func testTheBundledCatalogIsTheFallback() {
+        // The app's fallback is the models.json in its bundle (Paths.modelsJSON), read right after
+        // the caller's file and before any garage.json.
+        let explicit = URL(fileURLWithPath: "/tmp/explicit_models.json")
+        let candidates = GarageConfigLoader.modelManifestCandidates(fileURL: explicit)
+        XCTAssertEqual(candidates.first, explicit)
+        XCTAssertEqual(candidates.dropFirst().first, Paths.modelsJSON)
+        XCTAssertEqual(Array(candidates.dropFirst(2)), GarageConfigLoader.candidateConfigFiles)
+    }
+
+    func testTheCommittedCatalogCarriesThePresetsTheAppOnceHardCoded() throws {
+        // The models the Swift fallback used to list by hand are in data/models/models.json, so
+        // dropping the list lost none of them.
+        let presets = GarageConfigLoader.loadModelPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(presets.contains { $0.slug == "bge-m3" })
         XCTAssertTrue(presets.contains { $0.slug == "nomic-embed-text" })
         XCTAssertTrue(presets.contains { $0.slug == "mxbai-embed-xsmall" })
@@ -449,9 +550,31 @@ final class GarageConfigLoaderTests: XCTestCase {
             XCTAssertEqual(mxbai.sha256, "21f9f06af9e4e895fcdcbf6c0d57ca1996fe22da54ecb6cc5f7733d785412d44")
             XCTAssertTrue(mxbai.featured)
         }
-
         let featuredSlugs = Set(presets.filter { $0.featured }.map(\.slug))
         XCTAssertEqual(featuredSlugs, ["bge-m3", "nomic-embed-text", "mxbai-embed-xsmall"])
+
+        let factDistil = GarageConfigLoader.loadFactDistilPresets(fileURL: try committedCatalogURL())
+        XCTAssertTrue(factDistil.contains { $0.slug == "gemma2-2b" })
+        // gpt-oss is an inference model only: its reasoning text would land in the facts.
+        let inference = GarageConfigLoader.loadInferencePresets(fileURL: try committedCatalogURL())
+        XCTAssertTrue(inference.contains { $0.slug == "gpt-oss-20b" })
+        XCTAssertFalse(factDistil.contains { $0.slug == "gpt-oss-20b" })
+        // Chat models are no longer offered as embedding presets.
+        XCTAssertFalse(presets.contains { $0.slug == "mistral-7b-instruct-v0.3" })
+    }
+
+    /// data/models/models.json, from the test bundle's resources or Bazel's runfiles.
+    private func committedCatalogURL() throws -> URL {
+        let candidates = [
+            Bundle(for: Self.self).url(forResource: "models", withExtension: "json"),
+            ProcessInfo.processInfo.environment["TEST_SRCDIR"].map {
+                URL(fileURLWithPath: $0).appendingPathComponent("_main/data/models/models.json")
+            },
+        ].compactMap { $0 }
+        guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
+            throw XCTSkip("data/models/models.json is not in this test's runfiles")
+        }
+        return url
     }
 
     func testEmbeddingVectorStatsCalculation() {

@@ -1,0 +1,7 @@
+# Real-world corpora the Python tests ingest (see README.md). Test data only; nothing here ships.
+filegroup(
+    name = "second_brain_os",
+    testonly = True,
+    srcs = glob(["second-brain-os/**"]),
+    visibility = ["//garage_python/tests:__pkg__"],
+)

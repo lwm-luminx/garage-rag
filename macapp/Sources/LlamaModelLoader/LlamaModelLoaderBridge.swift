@@ -14,6 +14,9 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 /// `LlamaModelLoader.ensureLoadedBlocking`, which loads over NSXPC. Nothing here touches Python
 /// while the call is in flight.
 ///
+/// The services that install it are siblings of LlamaXPCService, which cannot look it up by name:
+/// they connect through the listener endpoint the app hands them (`GarageLlamaEndpointStore`).
+///
 /// C signature: `int32_t loader(const char *alias, char *message, size_t capacity)`: 0 when the
 /// model is resident (message says whether it was loaded now), nonzero on failure (message says
 /// why and what to do). The message is NUL-terminated and truncated to `capacity`.
@@ -69,8 +72,9 @@ public enum LlamaModelLoaderBridge {
 
     nonisolated(unsafe) private static var registeredWithPython = false
 
-    /// Installs the standard NSXPC loader (unless one is set already) and registers the entry
-    /// point with Python, along with `LlamaInferenceBridge`. Call once Python is ready; takes the GIL itself; later calls do nothing.
+    /// Installs the standard NSXPC loader, on the handed-over LlamaXPCService endpoint (unless a
+    /// loader is set already), and registers the entry point with Python, along with
+    /// `LlamaInferenceBridge`. Call once Python is ready; takes the GIL itself; later calls do nothing.
     /// Returns false (and logs) when `garage_rag` cannot be imported, so the service still starts.
     @discardableResult
     public static func install() -> Bool {
@@ -80,7 +84,7 @@ public enum LlamaModelLoaderBridge {
             return true
         }
         if installedLoader == nil {
-            installedLoader = .standard()
+            installedLoader = .standard(service: .handedOverEndpoint())
         }
         lock.unlock()
         do {
@@ -103,17 +107,22 @@ public enum LlamaModelLoaderBridge {
     }
 
     /// Self test for a service that installs the loader: LlamaXPCService must answer this process
-    /// over NSXPC (a sibling service in the app bundle), or on-demand loads cannot work.
-    public static func selfTest() -> GarageXPCSelfTest {
+    /// over NSXPC, through the endpoint the app handed over, or on-demand loads cannot work.
+    /// Skipped until the app has handed one over; the service re-runs it when one arrives.
+    public static func selfTest(store: GarageLlamaEndpointStore = .shared) -> GarageXPCSelfTest {
         GarageXPCSelfTest(
-            name: "Llama Loader",
-            description: "Reaches LlamaXPCService over NSXPC, which on-demand model loads go through.",
+            name: GarageLlamaEndpointStore.dependentSelfTestName,
+            description: "Reaches LlamaXPCService over NSXPC, through the endpoint the app hands over, which on-demand model loads go through.",
             requiresPython: false
         ) {
+            guard let endpoint = store.endpoint else {
+                throw GarageXPCSelfTestSkipped("LlamaXPCService endpoint not handed over yet: the Garage app hands it over after launch")
+            }
+            // Made here, not in the task: the endpoint is not Sendable, the client is.
+            let client = LlamaClient(endpoint: endpoint)
             let semaphore = DispatchSemaphore(value: 0)
             let box = PingBox()
             Task.detached {
-                let client = LlamaClient()
                 do {
                     let reply = try await client.ping()
                     let models = (try? await client.listModels().data.map(\.id)) ?? []
@@ -130,7 +139,7 @@ public enum LlamaModelLoaderBridge {
             case .success(let text):
                 return text
             case .failure(let error):
-                throw GarageXPCSelfTestFailure("LlamaXPCService is unreachable over NSXPC", details: error.localizedDescription)
+                throw GarageXPCSelfTestFailure("LlamaXPCService is unreachable through the handed-over endpoint", details: error.localizedDescription)
             }
         }
     }

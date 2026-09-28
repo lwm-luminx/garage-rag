@@ -1,5 +1,7 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+load("//bazel:framework_linking.bzl", "framework_linked_library")
 
 # Implementation library for GarageMCPServerService
 swift_library(
@@ -23,6 +25,7 @@ macos_xpc_service(
     ],
     bundle_id = "me.rickmark.garage-rag.mcp-server-xpc",
     bundle_name = "GarageMCPServerService",
+    codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
     entitlements = select({
         "//bazel:is_store": ":GarageMCPServerService.entitlements",
         "//bazel:is_developer_id": "//macapp/externals:GarageAppGroup.entitlements",
@@ -41,6 +44,14 @@ macos_xpc_service(
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":GarageMCPServerService_lib",
+        ":GarageMCPServerService_linked",
     ],
+)
+
+# The service's library without the static copy of PythonXPCService.framework's code, which it links
+# (see //bazel:framework_linking.bzl).
+framework_linked_library(
+    name = "GarageMCPServerService_linked",
+    framework_deps = ["//macapp/Sources/PythonXPCService"],
+    deps = [":GarageMCPServerService_lib"],
 )

@@ -152,17 +152,34 @@ def _split_keeping_separator(text: str, pattern: str) -> list[str]:
     return [s for s in splits if s]
 
 
+def strip_keeping_indent(text: str) -> str:
+    """``text`` stripped, except that a first line starting after a line break keeps its indentation.
+
+    Whitespace before the first line break is a separator left by a split within a line, so it goes.
+    """
+    blank = re.match(r"(?:[ \t]*\r?\n)+", text)
+    return text[blank.end() :].rstrip() if blank else text.strip()
+
+
 class RecursiveSplitter:
     """Split on the first separator present, recursing into pieces still too long.
 
     Separators are kept, at the start of the piece that follows them, and pieces
     are merged back up to ``chunk_size`` characters with ``chunk_overlap``
     characters carried from one chunk into the next. Chunks are stripped of
-    surrounding whitespace, and whitespace-only chunks are dropped.
+    surrounding whitespace, and whitespace-only chunks are dropped. With
+    ``keep_indent``, a chunk keeps the indentation of its first line and only
+    loses the blank lines before it, so code split mid-block stays indented.
     """
 
     def __init__(
-        self, *, chunk_size: int, chunk_overlap: int, separators: list[str], is_separator_regex: bool = False
+        self,
+        *,
+        chunk_size: int,
+        chunk_overlap: int,
+        separators: list[str],
+        is_separator_regex: bool = False,
+        keep_indent: bool = False,
     ) -> None:
         if chunk_size <= 0:
             raise ValueError(f"chunk_size must be > 0, got {chunk_size}")
@@ -174,6 +191,7 @@ class RecursiveSplitter:
         self._chunk_overlap = chunk_overlap
         self._separators = separators
         self._is_separator_regex = is_separator_regex
+        self._strip = strip_keeping_indent if keep_indent else str.strip
 
     @classmethod
     def for_language(cls, language: str, *, chunk_size: int, chunk_overlap: int) -> RecursiveSplitter:
@@ -233,7 +251,7 @@ class RecursiveSplitter:
                 if total > self._chunk_size:
                     log.debug("created a chunk of %d characters, over the %d limit", total, self._chunk_size)
                 if current:
-                    doc = "".join(current).strip()
+                    doc = self._strip("".join(current))
                     if doc:
                         docs.append(doc)
                     while total > self._chunk_overlap or (total + length > self._chunk_size and total > 0):
@@ -241,7 +259,7 @@ class RecursiveSplitter:
                         current = current[1:]
             current.append(piece)
             total += length
-        doc = "".join(current).strip()
+        doc = self._strip("".join(current))
         if doc:
             docs.append(doc)
         return docs
@@ -259,8 +277,10 @@ class MarkdownHeaderSplitter:
     """Split markdown into sections at ATX headings, keeping the heading lines.
 
     Lines are stripped (and non-printable characters dropped), blank lines are
-    dropped, and fenced code blocks are never split on. Each section records the
-    text of the headings above it under the names in ``headers``.
+    dropped, and fenced code blocks are never split on. Lines inside a fence keep
+    their indentation, and tabs, since code (Python above all) means something
+    different without them. Each section records the text of the headings above
+    it under the names in ``headers``.
     """
 
     def __init__(self, headers: list[tuple[str, str]]) -> None:
@@ -287,7 +307,7 @@ class MarkdownHeaderSplitter:
                 in_code, fence = False, ""
 
             if in_code:
-                content.append(line)
+                content.append("".join(c for c in raw.rstrip() if c.isprintable() or c == "\t"))
                 continue
 
             for marker, name in self._headers:

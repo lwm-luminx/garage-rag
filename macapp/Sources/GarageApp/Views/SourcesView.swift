@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import IngestClient
+import PythonXPCService
 
 // The Sources page: what needs fixing at the top, what the pipeline is doing now, then one row per
 // source with its state and the one action that applies to it, and a form to add another. The
@@ -26,6 +27,8 @@ struct SourcesView: View {
     @State private var templates: [FirstRunSourceTemplate] = []
     @State private var addingTemplateID: String? = nil
     @State private var addFolderError: String? = nil
+    /// Why the last Remove Source failed; shown above the list until the next removal.
+    @State private var removeError: String? = nil
     /// The custom-source form is folded away until "Custom Source…" or a row's "Edit…" opens it.
     @State private var showCustomForm = false
     /// The last name the form filled in by itself. While the field still holds it (or nothing),
@@ -43,14 +46,15 @@ struct SourcesView: View {
                 activitySection
                 sourcesSection
                 addSourceSection
-                automaticUpdatesSection
                 ingestOutputSection
             }
             .padding(20)
         }
         .navigationTitle("Sources")
         .onAppear {
-            templates = FirstRunSourceTemplate.builtIn()
+            templates = FirstRunSourceTemplate.builtIn(
+                assumeAvailable: GarageAppGroup.isSandboxed && !appState.volumeAccess.status.isGranted
+            )
             refreshSourcesAndTestDisk()
         }
         .onChange(of: root) { _, _ in suggestSlugIfUnedited() }
@@ -206,6 +210,7 @@ struct SourcesView: View {
                             .font(.headline)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                            .accessibilityIdentifier("sources.activity.title")
                         if let percent = activity.percent {
                             Text(percent)
                                 .font(.headline.monospacedDigit())
@@ -265,9 +270,24 @@ struct SourcesView: View {
 
     // MARK: - Sources
 
+    /// Titled with the summary line, with the list's buttons on the box's first row rather than in a
+    /// custom label: on macOS a GroupBox's custom label is not in the accessibility tree, so Update
+    /// Everything, Scan & Ingest All and Sync could not be reached there.
     private var sourcesSection: some View {
-        GroupBox {
+        GroupBox(SourcesSummary.line(sources: appState.registeredSources.count, documents: appState.corpusStats.documentsCount)) {
             VStack(alignment: .leading, spacing: 0) {
+                sourcesToolbar
+                    .padding(.bottom, 12)
+
+                if let removeError {
+                    Text(removeError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 10)
+                        .accessibilityIdentifier("sources.removeError")
+                }
+
                 if appState.registeredSources.isEmpty {
                     emptyState
                 } else {
@@ -281,45 +301,45 @@ struct SourcesView: View {
                 diskAccessFooter
             }
             .padding(.horizontal, 12)
-            .padding(.top, 16)
+            .padding(.top, 10)
             .padding(.bottom, 12)
-        } label: {
-            HStack(spacing: 8) {
-                Text(SourcesSummary.line(sources: appState.registeredSources.count, documents: appState.corpusStats.documentsCount))
-                Spacer()
+        }
+    }
 
-                Button("Update Everything") {
-                    Task { await appState.updateEverything() }
-                }
-                .controlSize(.small)
-                .buttonStyle(.borderedProminent)
-                .disabled(appState.registeredSources.isEmpty || notReady || appState.hasCancellableWork
-                          || appState.backfill.isRunning || appState.enrichFacts.isRunning)
-                .help("Scan and ingest every source, embed the new chunks with every model, then glean facts from what has not been distilled yet.")
-                .accessibilityIdentifier("sources.updateEverything")
+    private var sourcesToolbar: some View {
+        HStack(spacing: 8) {
+            Spacer()
 
-                Button {
-                    scanAndIngest(slug: "*")
-                } label: {
-                    Label("Scan & Ingest All", systemImage: "square.and.arrow.down.on.square")
-                }
-                .controlSize(.small)
-                .disabled(appState.registeredSources.isEmpty || notReady || appState.hasCancellableWork)
-                .help("Count what every source holds, then index what is new or changed. Embedding and facts wait for the next automatic update.")
-                .accessibilityIdentifier("sources.scanIngestAll")
-
-                Button {
-                    syncSources()
-                } label: {
-                    Label("Sync", systemImage: "arrow.triangle.2.circlepath")
-                }
-                .controlSize(.small)
-                .help("Keep garage.json and the database listing the same sources: sources added here are written to the file, and sources declared in the file are applied.")
-                .accessibilityLabel("Sync sources")
-                .accessibilityIdentifier("sources.sync")
-                .disabled(notReady)
+            Button("Update Everything") {
+                Task { await appState.updateEverything() }
             }
-            .padding(.bottom, 6)
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .disabled(appState.registeredSources.isEmpty || notReady || appState.hasCancellableWork
+                      || appState.backfill.isRunning || appState.enrichFacts.isRunning)
+            .help("Scan and ingest every source, embed the new chunks with every model, then glean facts from what has not been distilled yet.")
+            .accessibilityIdentifier("sources.updateEverything")
+
+            Button {
+                scanAndIngest(slug: "*")
+            } label: {
+                Label("Scan & Ingest All", systemImage: "square.and.arrow.down.on.square")
+            }
+            .controlSize(.small)
+            .disabled(appState.registeredSources.isEmpty || notReady || appState.hasCancellableWork)
+            .help("Count what every source holds, then index what is new or changed. Use Update Everything to also embed and glean facts.")
+            .accessibilityIdentifier("sources.scanIngestAll")
+
+            Button {
+                syncSources()
+            } label: {
+                Label("Sync", systemImage: "arrow.triangle.2.circlepath")
+            }
+            .controlSize(.small)
+            .help("Keep garage.json and the database listing the same sources: sources added here are written to the file, and sources declared in the file are applied.")
+            .accessibilityLabel("Sync sources")
+            .accessibilityIdentifier("sources.sync")
+            .disabled(notReady)
         }
     }
 
@@ -560,6 +580,7 @@ struct SourcesView: View {
                     Text(row.status)
                         .font(.caption)
                         .foregroundStyle(row.statusTone.color)
+                        .accessibilityIdentifier("sources.row.\(source.slug).status")
                     Spacer()
                     if let counts = row.counts {
                         Text(counts)
@@ -582,6 +603,7 @@ struct SourcesView: View {
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("sources.row.\(source.slug).error")
                 }
             }
         }
@@ -792,9 +814,13 @@ struct SourcesView: View {
                                 .foregroundStyle(.secondary)
                         }
                     }
-                    // Badges get their own row so a three-column title never hyphenates. The row is
-                    // there on every card, badges or not, and the subtitle always takes two lines, so
-                    // the cards in a grid row are the same height.
+                    .font(.subheadline)
+                    .frame(height: 18)
+                    // A LazyVGrid sizes each card to its content rather than stretching it to the row,
+                    // so every line has a fixed height whatever it shows: the title row is 18 points
+                    // with or without its trailing icon or spinner, the badge row is there on every
+                    // card, badges or not, and the subtitle always takes two lines. Badges get their
+                    // own row so a three-column title never hyphenates.
                     HStack(spacing: 4) {
                         if template.isCommunication {
                             StatusBadge("PRIVATE", tint: .purple)
@@ -803,6 +829,8 @@ struct SourcesView: View {
                         }
                         if registered {
                             StatusBadge("ADDED", tint: .green)
+                        } else if template.needsFullDiskAccess {
+                            StatusBadge("NEEDS FULL DISK ACCESS", tint: .orange)
                         } else if !template.isAvailable {
                             StatusBadge("NOT FOUND", tint: .secondary)
                         }
@@ -829,7 +857,11 @@ struct SourcesView: View {
         }
         .buttonStyle(.plain)
         .disabled(!template.isAvailable || registered || notReady || addingTemplateID != nil)
-        .help(registered ? "Already one of your sources." : "Add \(template.title) as a source.")
+        .help(registered
+            ? "Already one of your sources."
+            : template.needsFullDiskAccess
+                ? "Turn on Full Disk Access for Garage in System Settings → Privacy & Security, then quit and reopen Garage."
+                : "Add \(template.title) as a source.")
         .accessibilityLabel(registered ? "\(template.title), added" : "Add \(template.title)")
         .accessibilityIdentifier("sources.template.\(template.id)")
     }
@@ -1007,36 +1039,6 @@ struct SourcesView: View {
         }
     }
 
-    // MARK: - Automatic updates
-
-    private var automaticUpdatesSection: some View {
-        GroupBox("Automatic Updates") {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 16) {
-                    Toggle("Keep every source up to date", isOn: $appState.scheduledMaintenanceEnabled)
-                    Picker("Every", selection: $appState.scheduledMaintenanceInterval) {
-                        Text("15 minutes").tag(TimeInterval(15 * 60))
-                        Text("hour").tag(TimeInterval(60 * 60))
-                        Text("6 hours").tag(TimeInterval(6 * 60 * 60))
-                        Text("24 hours").tag(TimeInterval(24 * 60 * 60))
-                    }
-                    .fixedSize()
-                    .disabled(!appState.scheduledMaintenanceEnabled)
-                }
-                Toggle("Also run when Garage starts", isOn: $appState.maintenanceRunsAtLaunch)
-                    .disabled(!appState.scheduledMaintenanceEnabled)
-                    .help("Run once as soon as the database is up after launch, instead of waiting a whole interval for the first run.")
-                    .accessibilityIdentifier("sources.maintenance.atLaunch")
-                Text("Each run scans and ingests every source, then embeds the new chunks with every registered model. Otherwise the first run starts after the chosen interval; a source added meanwhile is scanned as soon as the current run ends.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(8)
-        }
-    }
-
     // MARK: - Ingest output
 
     /// The log of every ingest, folded away: it is for looking into a failure, not for glancing at.
@@ -1083,8 +1085,9 @@ struct SourcesView: View {
     }
 
     /// Only one scan and one ingest run at a time, so starting another waits for them.
+    /// A queued source counts: a Scan & Ingest of one source keeps it queued between its scan and ingest.
     private var jobRunning: Bool {
-        appState.isIngesting || appState.isIngestingAll || appState.isScanning
+        appState.isIngesting || appState.isIngestingAll || appState.isScanning || !appState.ingestQueue.isEmpty
     }
 
     /// The form's source is being scanned or ingested, so it cannot be updated yet. It can be removed:
@@ -1159,8 +1162,11 @@ struct SourcesView: View {
     private func scanAndIngest(slug: String, includeCode: Bool = false) {
         guard !jobRunning else { return }
         Task {
-            if await appState.scanSources(source: slug, includeCode: includeCode, followedByIngest: slug == "*") {
-                _ = await appState.ingestSource(slug: slug, options: IngestOptions(includeCode: includeCode))
+            let options = IngestOptions(includeCode: includeCode)
+            if slug != "*" {
+                _ = await appState.scanAndIngestSource(slug: slug, options: options)
+            } else if await appState.scanSources(source: slug, includeCode: includeCode, followedByIngest: true) {
+                _ = await appState.ingestSource(slug: slug, options: options)
             }
         }
     }
@@ -1205,8 +1211,13 @@ struct SourcesView: View {
     /// this source's row needs to show it (REMOVING).
     private func removeSource(slug toRemove: String) {
         let trimmed = toRemove.trimmingCharacters(in: .whitespacesAndNewlines)
+        removeError = nil
         Task {
-            await appState.removeSource(slug: trimmed)
+            let removed = await appState.removeSource(slug: trimmed)
+            if !removed {
+                let reason = appState.lastCommandOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+                removeError = "Could not remove \(trimmed)" + (reason.isEmpty ? "." : ": \(reason)")
+            }
             await appState.fetchRegisteredSources()
             await appState.fetchCorpusStats()
             _ = appState.testVolumeAccess()

@@ -58,9 +58,10 @@ final class GarageGRPCService: ObservableObject {
         socketPath.map { "unix:\($0)" } ?? "\(host):\(port)"
     }
 
-    /// Where the server listens, in the few words a status line has room for.
-    var shortAddress: String {
-        socketPath == nil ? "\(host):\(port)" : "a private socket"
+    /// How the status line opens: "Without remote access" on the Unix socket, which nothing off
+    /// the Mac can reach, or "On 127.0.0.1:50051" when the server has a port.
+    var listeningPhrase: String {
+        socketPath == nil ? "On \(host):\(port)" : "Without remote access"
     }
 
     private let postgres: PostgresService
@@ -99,6 +100,8 @@ final class GarageGRPCService: ObservableObject {
         var env: [String: String] = [:]
         env["GARAGE_DATABASE_URL"] = try postgres.connectionURL()
         env[GarageXPCConfigurationKey.workingDirectory] = Paths.garageWorkingDirectory.path
+        // The server rejects any call without this launch's token (garage_rag.service.auth).
+        env[GarageXPCConfigurationKey.grpcToken] = GarageGRPCAuth.token
         if let lmStudioToken = try LMStudioTokenStore.load() {
             env["GARAGE_LMSTUDIO_API_TOKEN"] = lmStudioToken
         }
@@ -115,6 +118,27 @@ final class GarageGRPCService: ObservableObject {
             env["GARAGE_MODEL_MANIFEST"] = Paths.modelsJSON.path
         }
         return env
+    }
+
+    /// What every Python helper needs to reach the database and this server: the settings the
+    /// backend was started with, plus where it listens. `AppState.startBackend` pushes it to the
+    /// ingest, embed and MCP helpers (`XPCServiceManager.configureHelpers`) once the server is up,
+    /// so their Database Connection and gRPC Connection self tests check the real thing instead
+    /// of being skipped for want of configuration, as they were when the helpers only heard of
+    /// the database with their first job.
+    func helperConfiguration() throws -> [String: String] {
+        var options = try environment()
+        options.merge(Self.addressOptions(socketPath: socketPath, host: host, port: port)) { _, new in new }
+        return options
+    }
+
+    /// The configuration keys that name where the server listens: the socket when there is one,
+    /// else host and port (`GarageXPCServiceBase.grpcTarget` reads them in that order).
+    nonisolated static func addressOptions(socketPath: String?, host: String, port: Int) -> [String: String] {
+        if let socketPath {
+            return [GarageXPCConfigurationKey.grpcSocket: socketPath]
+        }
+        return [GarageXPCConfigurationKey.grpcHost: host, GarageXPCConfigurationKey.grpcPort: String(port)]
     }
 
     private func startLogPolling() {
@@ -275,11 +299,18 @@ final class GarageGRPCService: ObservableObject {
         }
         let group = PlatformSupport.makeEventLoopGroup(loopCount: 1)
         self.group = group
+        // GetDocument returns every chunk, and a long Messages thread passes grpc-swift's 4 MiB default;
+        // match the server's own 256 MiB request limit (MAX_REQUEST_BYTES in service/server.py).
+        let maximumReceiveMessageLength = 256 * 1024 * 1024
         let connection: ClientConnection
         if let socketPath {
-            connection = ClientConnection(configuration: .default(target: .unixDomainSocket(socketPath), eventLoopGroup: group))
+            var configuration = ClientConnection.Configuration.default(target: .unixDomainSocket(socketPath), eventLoopGroup: group)
+            configuration.maximumReceiveMessageLength = maximumReceiveMessageLength
+            connection = ClientConnection(configuration: configuration)
         } else {
-            connection = ClientConnection.insecure(group: group).connect(host: host, port: port)
+            connection = ClientConnection.insecure(group: group)
+                .withMaximumReceiveMessageLength(maximumReceiveMessageLength)
+                .connect(host: host, port: port)
         }
         self.channel = connection
         return connection
@@ -306,10 +337,10 @@ final class GarageGRPCService: ObservableObject {
 
     private func pingOverChannel() async -> Bool {
         do {
-            let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
+            let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
             var pingReq = Garage_PingRequest()
             pingReq.message = "healthcheck"
-            let callOptions = CallOptions(timeLimit: .timeout(.milliseconds(500)))
+            let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.milliseconds(500)))
             let response = try await client.ping(pingReq, callOptions: callOptions)
             return !response.message.isEmpty
         } catch {
@@ -344,7 +375,7 @@ final class GarageGRPCService: ObservableObject {
             try await start()
         }
 
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
         var request = Garage_SearchRequest()
         request.query = query
         request.mode = mode
@@ -366,7 +397,7 @@ final class GarageGRPCService: ObservableObject {
         }
         request.full = full
 
-        let callOptions = CallOptions(timeLimit: .timeout(.seconds(30)))
+        let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
         do {
             let response = try await client.search(request, callOptions: callOptions)
             return response
@@ -397,7 +428,7 @@ final class GarageGRPCService: ObservableObject {
             try await start()
         }
 
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
         var request = Garage_ListDocumentsRequest()
         if let source = source, !source.isEmpty {
             request.source = source
@@ -414,7 +445,7 @@ final class GarageGRPCService: ObservableObject {
         request.limit = Int32(limit)
         request.offset = Int32(offset)
 
-        let callOptions = CallOptions(timeLimit: .timeout(.seconds(30)))
+        let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
         do {
             return try await client.listDocuments(request, callOptions: callOptions)
         } catch {
@@ -427,11 +458,11 @@ final class GarageGRPCService: ObservableObject {
             try await start()
         }
 
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
         var request = Garage_GetDocumentRequest()
         request.documentID = documentID
 
-        let callOptions = CallOptions(timeLimit: .timeout(.seconds(30)))
+        let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
         do {
             return try await client.getDocument(request, callOptions: callOptions)
         } catch {
@@ -446,8 +477,8 @@ final class GarageGRPCService: ObservableObject {
         var queries: [String] = []
         var errors: [String] = []
 
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
-        let callOptions = CallOptions(timeLimit: .timeout(.seconds(5)))
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
+        let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(5)))
 
         // 1. GetStatus
         do {

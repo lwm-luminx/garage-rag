@@ -1,5 +1,4 @@
 import Foundation
-import ModelDownloadClient
 import PythonXPCService
 
 /// The settings a llama.cpp model is loaded with when nobody chose others: the Models page's
@@ -53,6 +52,9 @@ public enum LlamaModelLoaderError: LocalizedError, Equatable {
     /// LlamaXPCService could not load the file, or could not be reached.
     case loadFailed(alias: String, message: String)
     case timedOut(alias: String, seconds: Int)
+    /// This XPC service has not been handed LlamaXPCService's endpoint by the app yet (a sibling
+    /// service cannot look LlamaXPCService up by name).
+    case endpointNotHandedOver
 
     public var errorDescription: String? {
         switch self {
@@ -67,19 +69,25 @@ public enum LlamaModelLoaderError: LocalizedError, Equatable {
             return "LlamaXPCService could not load the model \(alias): \(message)"
         case .timedOut(let alias, let seconds):
             return "Loading the model \(alias) did not finish within \(seconds) seconds."
+        case .endpointNotHandedOver:
+            return "LlamaXPCService endpoint not handed over yet: this helper reaches LlamaXPCService only "
+                + "through a connection the Garage app hands it after launch. Wait for the app to finish "
+                + "starting its helpers, or quit and reopen Garage."
         }
     }
 }
 
 /// Finds the GGUF and load settings for a model alias (its slug), the way the Models page does:
-/// the `models.json` catalog entry's `download_file` and `context_size`, then the curated download
-/// catalog (`ModelPresetCatalog`), then a file in the models folder named after the alias.
+/// the `models.json` catalog entry's `download_file` and `context_size`, else a file in the models
+/// folder named after the alias.
 public struct LlamaModelResolver: Sendable {
     /// One model of `models.json`, reduced to what a load needs.
     public struct CatalogEntry: Decodable, Equatable, Sendable {
         public let slug: String
         public let name: String?
         public let modelRef: String?
+        /// The provider-side id (`BAAI/bge-m3`), which the add-model form suggests as a `model_ref`.
+        public let modelID: String?
         public let downloadFile: String?
         public let contextSize: Int?
 
@@ -87,6 +95,7 @@ public struct LlamaModelResolver: Sendable {
             case slug
             case name
             case modelRef = "model_ref"
+            case modelID = "model_id"
             case downloadFile = "download_file"
             case contextSize = "context_size"
         }
@@ -168,10 +177,13 @@ public struct LlamaModelResolver: Sendable {
         }
     }
 
-    /// The catalog entry for `alias`: by slug, else by `model_ref`.
+    /// The catalog entry for `alias`: by slug, else by `model_ref`, else by `model_id` (a
+    /// registration may name the model the provider's way, as the add-model form suggests).
     public func entry(for alias: String) -> CatalogEntry? {
         let entries = catalogEntries()
-        return entries.first { $0.slug == alias } ?? entries.first { $0.modelRef == alias }
+        return entries.first { $0.slug == alias }
+            ?? entries.first { $0.modelRef == alias }
+            ?? entries.first { $0.modelID == alias }
     }
 
     /// The load plan for `alias`, or an error that says what to download.
@@ -180,14 +192,12 @@ public struct LlamaModelResolver: Sendable {
         guard !trimmed.isEmpty else { throw LlamaModelLoaderError.unknownModel(alias: alias) }
 
         let entry = entry(for: trimmed)
-        let curated = ModelPresetCatalog.item(forModelIdOrSlug: trimmed)
-        let name = entry?.name ?? curated?.name ?? trimmed
+        let name = entry?.name ?? trimmed
         let contextSize = entry?.contextSize ?? LlamaModelLoadDefaults.contextSize
-        let gpuLayers = curated?.defaultGpuLayers ?? LlamaModelLoadDefaults.gpuLayers
+        let gpuLayers = LlamaModelLoadDefaults.gpuLayers
 
-        // The file the Models page would download for this model (preset first, as it does).
-        let expectedFile = nonEmpty(entry?.downloadFile) ?? nonEmpty(curated?.filename)
-        if let expectedFile {
+        // The file the Models page would download for this model.
+        if let expectedFile = nonEmpty(entry?.downloadFile) {
             if let path = downloadedPath(for: expectedFile) {
                 return LlamaModelLoadPlan(alias: trimmed, displayName: name, path: path,
                                           contextSize: contextSize, gpuLayers: gpuLayers)

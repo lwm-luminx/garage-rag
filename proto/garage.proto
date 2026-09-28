@@ -27,6 +27,7 @@ service GarageService {
 
     // --- Facts ---
     rpc ListFacts (ListFactsRequest) returns (ListFactsResponse);
+    rpc GetFactStats (FactStatsRequest) returns (FactStatsResponse);
 
     // --- Sources ---
     rpc ListSources (ListSourcesRequest) returns (ListSourcesResponse);
@@ -115,6 +116,8 @@ message SearchRequest {
     repeated string sources = 7;
     string author = 8;
     bool full = 9;
+    // "sent" | "received": only message chunks that went that way. Empty: no filter.
+    string direction = 10;
 }
 
 message SearchHit {
@@ -129,6 +132,10 @@ message SearchHit {
     repeated string authors = 9;
     string text = 10;
     string snippet = 11;
+    // Message chunks: "sent" | "received", and the handle that wrote it, or "me".
+    // Empty for every other chunk.
+    string direction = 12;
+    string sender = 13;
 }
 
 message SearchResponse {
@@ -281,6 +288,23 @@ message ListFactsResponse {
     // Fact classes under every filter but fact_class, most common first.
     repeated FactClassCount classes = 3;
     string formatted_output = 4;
+}
+
+// Fact counts under the same filters as ListFactsRequest.
+message FactStatsRequest {
+    string query = 1; // full-text or substring match on the fact; empty = all
+    string source = 2; // source slug filter; empty = all sources
+    string fact_class = 3; // filter; empty = all
+    string corpus_class = 4; // filter; empty = all
+    int64 document_id = 5; // one document's facts; 0 = all
+}
+
+message FactStatsResponse {
+    int64 facts = 1;
+    int64 documents = 2; // documents with at least one matching fact
+    map<string, int64> facts_by_source = 3;
+    map<string, int64> facts_by_class = 4;
+    string formatted_output = 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -702,8 +726,13 @@ message PersistScanRequest {
     int64 item_count = 2;
     string item_type = 3;
     double duration_seconds = 4;
-    map<string, int64> details = 5;
+    // Field 5 was map<string, int64> details; a scanner's details hold lists, nested tables and
+    // strings too (the sqlite scanner's database names and table counts, a root problem), which
+    // that map could not carry.
+    reserved 5;
     string error = 6;
+    // The scanner's details as a JSON object, stored verbatim in sources.scan_details.
+    string details_json = 7;
 }
 
 message PersistScanResponse {
@@ -744,6 +773,9 @@ message DocumentChunkPayload {
     string heading_path = 6;
     string chunk_sha256 = 7;
     string chunker = 8;
+    // Message chunks only (chunks.direction/sender); empty otherwise.
+    string direction = 9;
+    string sender = 10;
 }
 
 message PersistDocumentRequest {

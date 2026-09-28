@@ -220,6 +220,32 @@ final class IngestClientTests: XCTestCase {
         XCTAssertTrue(service.logs.isEmpty)
     }
 
+    /// The "Ingest output" table hung the main thread once its buffer was full: every flush dropped
+    /// the overflow from the front, tearing down the rows on screen. A batch past the cap now drops
+    /// a quarter at once, and later lines only add rows at the end.
+    @MainActor
+    func testIngestServiceFullBufferDropsAQuarterAtOnce() {
+        let service = IngestService()
+        service.appendLogs((0...4000).map { LogLine(stream: .stdout, text: "file \($0)", source: "Ingest") })
+
+        XCTAssertEqual(service.logs.count, 3000)
+        XCTAssertEqual(service.logs.first?.text, "file 1001")
+        XCTAssertEqual(service.logs.last?.text, "file 4000")
+
+        service.appendLog("file 4001")
+        XCTAssertEqual(service.logs.count, 3001)
+        XCTAssertEqual(service.logs.first?.text, "file 1001", "the oldest line on screen moved on an ordinary append")
+    }
+
+    @MainActor
+    func testIngestServiceDropsBlankAndRepeatedLinesInABatch() {
+        let service = IngestService()
+        let line = LogLine(stream: .stdout, text: "indexed notes/a.md", source: "Ingest")
+        service.appendLogs([line, LogLine(stream: .stdout, text: "   ", source: "Ingest"), line])
+
+        XCTAssertEqual(service.logs.map(\.text), ["indexed notes/a.md"])
+    }
+
     func testIngestProgressScanVsIngestCounts() {
         let update = IngestProgressUpdate(
             source: "books",

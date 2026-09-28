@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from garage_rag.config import ensure_psycopg_database_url, get_settings
+from garage_rag.config import ensure_psycopg_database_url, expand_home, get_settings
 from garage_rag.mcp_server.install import (
     ClientTarget,
     app_launcher,
@@ -77,7 +77,7 @@ def install_mcp_server(
     path: Path | None = None,
     all_configs: bool = False,
     name: str = "garage-rag",
-    stdio: bool = False,
+    stdio: bool = True,
     host: str | None = None,
     port: int | None = None,
     route: str | None = None,
@@ -87,11 +87,12 @@ def install_mcp_server(
 ) -> McpInstallReport:
     """Register this server in one client's config, a custom file, or every detected one.
 
-    HTTP (a URL to the running server) is the default; ``stdio`` registers a
-    spawned command instead. Existing configs are merged, backed up and written
-    atomically. ``confirm`` is asked before each write; without it, writes go
-    ahead. With one target, a refusal (entry exists without ``force``, malformed
-    file) raises; with several, it is recorded and the rest continue.
+    ``stdio`` (the default, as in the app) registers the `garage-mcp` command the
+    client starts itself; ``stdio=False`` registers the URL of a running HTTP
+    server. Existing configs are merged, backed up and written atomically.
+    ``confirm`` is asked before each write; without it, writes go ahead. With one
+    target, a refusal (entry exists without ``force``, malformed file) raises; with
+    several, it is recorded and the rest continue.
     """
     plan = plan_targets(target, path=path, all_configs=all_configs)
     settings = get_settings()
@@ -164,7 +165,7 @@ def uninstall_mcp_server(
 ) -> tuple[Path, bool]:
     """Remove this server from one client's config; ``(path, removed)``."""
     if path is not None:
-        chosen = ClientTarget("custom", "custom path", path.expanduser().resolve())
+        chosen = ClientTarget("custom", "custom path", expand_home(path).resolve())
     else:
         targets = client_targets()
         if target not in targets:

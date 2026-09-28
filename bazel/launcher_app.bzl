@@ -27,6 +27,7 @@ load(
     "STORE_EXPECTED",
     "codesign_test",
 )
+load("//bazel:framework_linking.bzl", "framework_linked_library")
 
 # `Garage.app/Contents/Helpers/<name>.app/Contents/MacOS/<name>` -> `Garage.app/Contents/Frameworks`.
 # rules_apple already adds `@executable_path/../Frameworks` and `@loader_path/../Frameworks`
@@ -139,8 +140,16 @@ def garage_launcher_app(
         version = "//macapp/Sources/GarageApp:GarageAppVersion",
         visibility = visibility,
         deps = [
-            ":" + name + "_main",
+            ":" + name + "_linked",
         ],
+    )
+
+    # The launcher's code without the static copy of PythonXPCService.framework's code, which it
+    # links from the app (see //bazel:framework_linking.bzl).
+    framework_linked_library(
+        name = name + "_linked",
+        framework_deps = ["//macapp/Sources/PythonXPCService"],
+        deps = [":" + name + "_main"],
     )
 
     # A macos_application's default outputs carry the unsigned linker output next to the archive;

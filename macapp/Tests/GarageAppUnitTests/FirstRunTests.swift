@@ -23,7 +23,7 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(FirstRunStep.settingUp.title, "Setting things up")
         XCTAssertEqual(FirstRunStep.selectData.title, "Select your data")
         XCTAssertEqual(FirstRunStep.selectModels.title, "Select your models")
-        XCTAssertEqual(FirstRunStep.setupAgent.title, "Set up your agent")
+        XCTAssertEqual(FirstRunStep.setupAgent.title, "Set up your assistant")
         for step in FirstRunStep.allCases {
             XCTAssertFalse(step.symbol.isEmpty)
         }
@@ -54,6 +54,14 @@ final class FirstRunTests: XCTestCase {
         XCTAssertTrue(FirstRunReadiness.isReady(withMcpFailure))
         XCTAssertTrue(FirstRunReadiness.hasFailure(withMcpFailure))
         XCTAssertFalse(FirstRunReadiness.hasBlockingFailure(withMcpFailure), "an MCP port clash must not trap the user on page one")
+    }
+
+    func testReadinessLeavesOutMcpWhenHTTPIsOff() {
+        let checks = FirstRunReadiness.checks(
+            postgres: .running, pendingMigrations: [], isApplyingMigrations: false, grpc: .running, mcp: .stopped, mcpHTTPEnabled: false
+        )
+        XCTAssertEqual(checks.map(\.id), ["postgres", "schema", "grpc"])
+        XCTAssertTrue(FirstRunReadiness.isReady(checks))
     }
 
     func testReadinessTracksPendingMigrations() {
@@ -87,8 +95,14 @@ final class FirstRunTests: XCTestCase {
 
     func testBuiltInTemplatesResolveAvailabilityAgainstHome() {
         let home = URL(fileURLWithPath: "/Users/tester")
-        let present: Set<String> = ["/Users/tester/Documents", "/Users/tester/Library/Messages"]
-        let templates = FirstRunSourceTemplate.builtIn(home: home) { present.contains($0) }
+        let present: Set<String> = ["/Users/tester/Documents", "/Users/tester/Library/Messages", "/Users/tester/Library/Mail"]
+        // Mail's folder is there but closed (no Full Disk Access); Messages can be read.
+        let readable: Set<String> = ["/Users/tester/Library/Messages"]
+        let templates = FirstRunSourceTemplate.builtIn(
+            home: home,
+            exists: { present.contains($0) },
+            readable: { readable.contains($0) }
+        )
 
         XCTAssertFalse(templates.isEmpty)
         XCTAssertTrue(templates.allSatisfy { !$0.isCustom })
@@ -107,22 +121,54 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(messages?.corpusClass, "communication")
         XCTAssertEqual(messages?.trust, "received")
         XCTAssertEqual(messages?.isCommunication, true)
+        XCTAssertEqual(messages?.needsFullDiskAccess, false)
+
+        let mail = templates.first { $0.id == "apple-mail" }
+        XCTAssertEqual(mail?.isAvailable, false, "a Mail folder whose contents can't be listed can't be picked")
+        XCTAssertEqual(mail?.needsFullDiskAccess, true)
+        XCTAssertEqual(documents?.needsFullDiskAccess, false)
+    }
+
+    func testTheSandboxBeforeAnyGrantAssumesEveryLocationIsThere() {
+        let templates = FirstRunSourceTemplate.builtIn(
+            home: URL(fileURLWithPath: "/Users/tester"),
+            assumeAvailable: true,
+            exists: { _ in false },
+            readable: { _ in false }
+        )
+        XCTAssertTrue(templates.allSatisfy(\.isAvailable))
+        XCTAssertFalse(templates.contains(where: \.needsFullDiskAccess))
     }
 
     func testTemplateSlugsAndIDsAreUnique() {
-        let templates = FirstRunSourceTemplate.builtIn(home: URL(fileURLWithPath: "/Users/tester")) { _ in true }
+        let templates = FirstRunSourceTemplate.builtIn(home: URL(fileURLWithPath: "/Users/tester"), exists: { _ in true }, readable: { _ in true })
         XCTAssertEqual(Set(templates.map(\.slug)).count, templates.count)
         XCTAssertEqual(Set(templates.map(\.id)).count, templates.count)
     }
 
     func testSharedTemplatesAgreeWithTheSourcePresets() {
-        let templates = FirstRunSourceTemplate.builtIn(home: URL(fileURLWithPath: "/Users/tester")) { _ in true }
+        let templates = FirstRunSourceTemplate.builtIn(home: URL(fileURLWithPath: "/Users/tester"), exists: { _ in true }, readable: { _ in true })
         for preset in [SourcePreset.documents, .desktop, .downloads, .dropbox, .messages, .mail] {
             let template = templates.first { $0.id == preset.id }
             XCTAssertNotNil(template, preset.id)
             XCTAssertEqual(template?.spec, preset.spec, preset.id)
             XCTAssertEqual(template?.title, preset.title, preset.id)
         }
+    }
+
+    func testAbsoluteRootsAreCheckedAsTheyAre() {
+        // The Dropbox folder info.json names may be on another volume; `~/…` stays home-relative.
+        let home = URL(fileURLWithPath: "/Users/tester", isDirectory: true)
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("/Volumes/Data/Dropbox", home: home), "/Volumes/Data/Dropbox")
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("~/Documents", home: home), "/Users/tester/Documents")
+        XCTAssertEqual(FirstRunSourceTemplate.resolvedPath("~", home: home), "/Users/tester")
+
+        var checked: [String] = []
+        let templates = FirstRunSourceTemplate.builtIn(home: home, exists: { checked.append($0); return true }, readable: { _ in true })
+        let dropbox = templates.first { $0.id == "dropbox" }
+        XCTAssertNotNil(dropbox)
+        XCTAssertTrue(checked.contains(FirstRunSourceTemplate.resolvedPath(SourcePreset.dropbox.spec.root, home: home)))
+        XCTAssertFalse(checked.contains { $0.hasPrefix("/Users/tester//") || $0.contains("/Users/tester/Volumes") })
     }
 
     func testSpecMatchesTheAddSourceRPC() {
@@ -234,6 +280,28 @@ final class FirstRunTests: XCTestCase {
         coordinator.skip()
         XCTAssertFalse(coordinator.isActive)
         XCTAssertTrue(coordinator.hasCompleted)
+
+        coordinator.resetCompletion()
+        XCTAssertFalse(coordinator.hasCompleted)
+    }
+
+    /// On an overridden data folder (UI tests) finishing or skipping lasts for the launch only, so a
+    /// test that walks the assistant leaves the real preference alone.
+    @MainActor
+    func testCompletionOnAThrowawayDataFolderIsNotSaved() {
+        let defaults = makeDefaults()
+        let coordinator = FirstRunCoordinator(defaults: defaults, persistsCompletion: false)
+
+        coordinator.begin()
+        coordinator.finish()
+        XCTAssertFalse(coordinator.isActive)
+        XCTAssertTrue(coordinator.hasCompleted, "a finished assistant counts as completed for the rest of the launch")
+        XCTAssertNil(defaults.object(forKey: FirstRunPreferences.completedKey), "finishing saved the preference")
+
+        coordinator.begin(force: true)
+        coordinator.skip()
+        XCTAssertTrue(coordinator.hasCompleted)
+        XCTAssertNil(defaults.object(forKey: FirstRunPreferences.completedKey), "skipping saved the preference")
 
         coordinator.resetCompletion()
         XCTAssertFalse(coordinator.hasCompleted)

@@ -1,5 +1,6 @@
 import Foundation
 import MCPServerClient
+import PythonXPCService
 
 enum GarageMCPStatus: Equatable {
     case stopped
@@ -115,12 +116,19 @@ public struct MCPTestResult: Equatable {
 }
 
 /// Owns the app-managed, loopback-only HTTP `garage-mcp` server.
+///
+/// The HTTP server is opt-in (`httpEnabled`). Off, the app opens no TCP port for MCP: assistants are
+/// registered with the bundled `garage-mcp` launcher, which they run themselves over stdio.
 @MainActor
 final class GarageMCPService: ObservableObject {
     nonisolated static let defaultPort = 8787
     nonisolated static let portDefaultsKey = "garage.mcp.port"
+    nonisolated static let httpEnabledDefaultsKey = "garage.mcp.httpEnabled"
 
     @Published private(set) var status: GarageMCPStatus = .stopped
+    /// Whether the app serves MCP over HTTP on `endpoint`. Turned on by starting the server, off by
+    /// stopping it; saved across launches.
+    @Published private(set) var httpEnabled = false
     @Published private(set) var logs: [LogLine] = []
     @Published var port: Int {
         didSet {
@@ -138,6 +146,12 @@ final class GarageMCPService: ObservableObject {
 
     /// Client registration goes through the McpInstall RPC; AppState wires this up.
     weak var grpc: GarageGRPCService?
+
+    /// Hands a config file chosen in an open panel to GarageXPCService, which runs McpInstall and,
+    /// in the sandboxed build, can write nothing it was not granted. The known client configs are
+    /// under the home folder, which reaches that service with the root grant (VolumeAccessService).
+    /// AppState wires this up.
+    var folderAccess: FolderAccessRelaying?
 
     private let postgres: PostgresService
     private let client: GarageMCPServerClient
@@ -161,6 +175,37 @@ final class GarageMCPService: ObservableObject {
             self.port = (1...65535).contains(savedPort) ? savedPort : Self.defaultPort
         }
         refreshDetectedClients()
+        if defaults.object(forKey: Self.httpEnabledDefaultsKey) != nil {
+            httpEnabled = defaults.bool(forKey: Self.httpEnabledDefaultsKey)
+        } else {
+            // First launch of a build with the opt-in: keep HTTP on for someone whose assistants are
+            // registered at its address, so they keep working; everyone else starts on stdio.
+            httpEnabled = Self.hasHTTPRegistration(detectedClients)
+            defaults.set(httpEnabled, forKey: Self.httpEnabledDefaultsKey)
+        }
+    }
+
+    /// Whether any assistant is registered at an HTTP address rather than as a stdio command.
+    nonisolated static func hasHTTPRegistration(_ clients: [MCPClientConfig]) -> Bool {
+        clients.contains { $0.isRegistered && $0.registeredURL != nil }
+    }
+
+    /// Turns the HTTP server on or off for this and later launches. It does not start or stop it.
+    func setHTTPEnabled(_ enabled: Bool) {
+        httpEnabled = enabled
+        defaults.set(enabled, forKey: Self.httpEnabledDefaultsKey)
+    }
+
+    /// Starts the HTTP server when it is turned on; the app's own start points call this, so an
+    /// install that never opted in opens no MCP port.
+    func startIfEnabled() async throws {
+        guard httpEnabled else { return }
+        try await start()
+    }
+
+    /// The address assistants are registered at, or nil when HTTP is off and they run `garage-mcp`.
+    var registrationEndpoint: URL? {
+        httpEnabled ? endpoint : nil
     }
 
     deinit {
@@ -192,8 +237,10 @@ final class GarageMCPService: ObservableObject {
         self.detectedClients = detectClientConfigs()
     }
 
+    /// The client configs Garage knows, as `mcp_server/install.py`'s table lists them. The home folder
+    /// is the account's: in the sandbox `homeDirectoryForCurrentUser` is the app's container.
     func detectClientConfigs() -> [MCPClientConfig] {
-        let home = FileManager.default.homeDirectoryForCurrentUser
+        let home = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
         let project = Paths.garageWorkingDirectory
         let appSupport = home.appendingPathComponent("Library/Application Support")
 
@@ -308,17 +355,25 @@ final class GarageMCPService: ObservableObject {
             return (false, message)
         }
         do {
-            let response = try await grpc.mcpInstall(scope: scope, host: host, port: port, force: force)
+            let response = try await grpc.mcpInstall(scope: scope, host: host, port: port, stdio: !httpEnabled, force: force)
             for line in response.message.split(separator: "\n") {
                 appendLog(LogLine(stream: .stdout, text: String(line), source: "garage-mcp"))
             }
             return (true, response.message.isEmpty ? "Registered." : response.message)
         } catch {
-            let message = "MCP registration failed: \(error.localizedDescription)"
+            var message = "MCP registration failed: \(error.localizedDescription)"
+            if GarageAppGroup.isSandboxed {
+                message += " " + Self.sandboxedRegistrationHint
+            }
             appendLog(LogLine(stream: .stderr, text: message, source: "garage-mcp"))
             return (false, message)
         }
     }
+
+    /// What a failed registration adds in the sandboxed build, where Garage writes a client's config
+    /// only inside a folder the user granted.
+    nonisolated static let sandboxedRegistrationHint =
+        "Garage can change a client's settings only in a folder you gave it: grant disk access to your home folder or startup disk on the Sources page, or pick the file with Connect a Config File…"
 
     @discardableResult
     func registerInAllFoundConfigs(force: Bool = true) async -> (success: Bool, message: String) {
@@ -346,6 +401,10 @@ final class GarageMCPService: ObservableObject {
         defer {
             isRegistering = false
             refreshDetectedClients()
+        }
+        // The open panel gave this process access to the file; the service writing it needs its own.
+        if let folderAccess {
+            await folderAccess.grant(url, key: GarageFolderAccessKey.file(url.path))
         }
         return await install(.path(url.path), force: force)
     }
@@ -479,7 +538,17 @@ final class GarageMCPService: ObservableObject {
         }
     }
 
-    func executeToolCall(toolName: String, arguments: [String: Any] = [:]) async throws -> String {
+    /// How long a `tools/call` may take. Reading the corpus answers in well under a second; a
+    /// generating tool (`rag_ask`, `rag_agent`) runs the local model, whose first token can be tens
+    /// of seconds away while it loads, so callers of those pass a longer allowance.
+    nonisolated static let toolCallTimeout: TimeInterval = 10
+    nonisolated static let generationTimeout: TimeInterval = 300
+
+    func executeToolCall(
+        toolName: String,
+        arguments: [String: Any] = [:],
+        timeout: TimeInterval = GarageMCPService.toolCallTimeout
+    ) async throws -> String {
         if sessionId == nil {
             try await initializeSession()
         }
@@ -496,13 +565,13 @@ final class GarageMCPService: ObservableObject {
 
         let resp: [String: Any]
         do {
-            resp = try await sendJSONRPC(callPayload)
+            resp = try await sendJSONRPC(callPayload, timeout: timeout)
         } catch {
             if let mcpError = error as? GarageMCPError,
                case .invalidResponse(let msg) = mcpError,
                msg.localizedCaseInsensitiveContains("session") {
                 try await initializeSession()
-                resp = try await sendJSONRPC(callPayload)
+                resp = try await sendJSONRPC(callPayload, timeout: timeout)
             } else {
                 throw error
             }
@@ -529,7 +598,10 @@ final class GarageMCPService: ObservableObject {
         return "Tool executed successfully (empty response)."
     }
 
-    private func sendJSONRPC(_ payload: [String: Any]) async throws -> [String: Any] {
+    private func sendJSONRPC(
+        _ payload: [String: Any],
+        timeout: TimeInterval = GarageMCPService.toolCallTimeout
+    ) async throws -> [String: Any] {
         var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -537,7 +609,7 @@ final class GarageMCPService: ObservableObject {
         if let sid = self.sessionId, !sid.isEmpty {
             request.setValue(sid, forHTTPHeaderField: "Mcp-Session-Id")
         }
-        request.timeoutInterval = 10
+        request.timeoutInterval = timeout
         request.httpBody = try JSONSerialization.data(withJSONObject: payload)
 
         let (data, response) = try await URLSession.shared.data(for: request)
@@ -727,6 +799,8 @@ final class GarageMCPService: ObservableObject {
     private func environment() throws -> [String: String] {
         var env: [String: String] = [:]
         env["GARAGE_DATABASE_URL"] = try postgres.connectionURL()
+        // Where the server finds garage.json, so rag_agent and rag_ask use the models chosen in the app.
+        env[GarageXPCConfigurationKey.workingDirectory] = Paths.garageWorkingDirectory.path
         if let lmStudioToken = try LMStudioTokenStore.load() {
             env["GARAGE_LMSTUDIO_API_TOKEN"] = lmStudioToken
         }

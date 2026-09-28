@@ -1,5 +1,6 @@
 import SwiftUI
 import IngestClient
+import PythonXPCService
 
 // The Sources page's model, independent of the view: what each source row shows, what the page
 // asks the person to fix at the top, and what the activity module says while the pipeline runs.
@@ -145,7 +146,7 @@ struct SourceRowPresentation: Equatable {
             cancelTitle = "Cancelling…"
             cancelDisabled = true
         case .ingesting(let run):
-            status = run.isCancelling ? "Stopping…" : "Ingesting \(run.percent)"
+            status = run.isCancelling ? "Stopping…" : "Reading \(run.percent)"
             tone = .active
             progress = run.fraction
             indeterminate = run.fraction == nil
@@ -330,7 +331,8 @@ struct SourcesAttention: Equatable, Identifiable {
     static func attentions(
         volumeStatus: VolumeAccessStatus,
         testResult: VolumeAccessTestResult?,
-        sources: [RegisteredSource]
+        sources: [RegisteredSource],
+        sandboxed: Bool = GarageAppGroup.isSandboxed
     ) -> [SourcesAttention] {
         var items: [SourcesAttention] = []
 
@@ -379,7 +381,24 @@ struct SourcesAttention: Equatable, Identifiable {
             guard seen.insert(access.id).inserted else { continue }
             let category = access.tccCategory ?? TCCPermissionCategory.detect(slug: source.slug, path: source.root)
             let name = Self.displayName(of: source)
-            if access.requiresTCCPermission || access.tccCategory != nil, let category {
+            if let category, category.needsFullDiskAccess {
+                // Mail and Messages: nothing reads them until Full Disk Access is on, so settings come
+                // first; the folder grant follows only where the sandbox needs it too.
+                var secondary: [Command] = []
+                if sandboxed {
+                    secondary.append(Command(title: "Grant Folder Access…", action: .grantFolder(slug: source.slug, path: source.root)))
+                }
+                secondary.append(Command(title: "Re-check", action: .recheck))
+                items.append(SourcesAttention(
+                    id: "source:\(source.slug)",
+                    symbol: "lock",
+                    tint: .orange,
+                    title: "\(name) needs Full Disk Access",
+                    detail: category.fullDiskAccessSteps(sandboxed: sandboxed),
+                    primary: Command(title: "Open Privacy Settings…", action: .openPrivacySettings(category)),
+                    secondary: secondary
+                ))
+            } else if access.requiresTCCPermission || access.tccCategory != nil, let category {
                 items.append(SourcesAttention(
                     id: "source:\(source.slug)",
                     symbol: "lock",
@@ -388,7 +407,7 @@ struct SourcesAttention: Equatable, Identifiable {
                     detail: access.tccHelpMessage ?? category.helpMessage,
                     primary: Command(title: "Grant Folder Access…", action: .grantFolder(slug: source.slug, path: source.root)),
                     secondary: [
-                        Command(title: "Ask macOS…", action: .tccPrompt(category, slug: source.slug, path: source.root)),
+                        Command(title: "Explain…", action: .tccPrompt(category, slug: source.slug, path: source.root)),
                         Command(title: "Open Privacy Settings…", action: .openPrivacySettings(category)),
                     ]
                 ))
@@ -462,7 +481,7 @@ struct SourcesActivityPresentation: Equatable {
         }
     }
 
-    /// Where a whole-pipeline run is, for the "Scan › Ingest › Embed › Distill" trail.
+    /// Where a whole-pipeline run is, for the "Scan › Read › Index › Glean" trail.
     var stage: MenuBarStatus.Stage? {
         switch kind {
         case .scanning: .scan
@@ -494,7 +513,7 @@ struct SourcesActivityPresentation: Equatable {
             kind: .embedding,
             symbol: "point.3.connected.trianglepath.dotted",
             tint: .blue,
-            title: "Embedding new chunks…",
+            title: "Indexing new chunks…",
             detail: "The Models page shows each model's progress.",
             currentItem: nil,
             error: nil,
@@ -527,7 +546,7 @@ struct SourcesActivityPresentation: Equatable {
             symbol: "clock",
             tint: .gray,
             title: "Waiting to scan \(names)\(more)",
-            detail: "Each source gets its own scan and ingest once the current run ends.",
+            detail: "Each source gets its own scan and read once the current run ends.",
             currentItem: nil,
             error: nil,
             progress: nil,
@@ -549,11 +568,11 @@ struct SourcesActivityPresentation: Equatable {
     ) -> SourcesActivityPresentation {
         var title: String
         if let subject {
-            title = "Ingesting \(subject)"
+            title = "Reading \(subject)"
         } else if let current, !current.isEmpty, current != "*" {
-            title = "Ingesting all sources · \(current)"
+            title = "Reading all sources · \(current)"
         } else {
-            title = "Ingesting all sources"
+            title = "Reading all sources"
         }
         if isCancelling { title = "Stopping…" }
         return SourcesActivityPresentation(

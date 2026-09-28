@@ -8,6 +8,7 @@ environment variable.
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,7 @@ from garage_rag.config import (
     SourceSpec,
     candidate_paths,
     default_config_path,
+    expand_home,
     flatten,
     json_schema,
     load_config,
@@ -215,6 +217,22 @@ class TestSources:
         spec = SourceSpec(slug="a", root="~/Documents")
         assert spec.expanded_root.is_absolute()
         assert "~" not in str(spec.expanded_root)
+
+    def test_root_expansion_in_a_sandbox_uses_the_account_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A sandboxed process's $HOME is its container; ~ must still name the real home folder."""
+        import pwd
+
+        monkeypatch.setenv("HOME", "/Users/me/Library/Containers/me.rickmark.garage-rag.xpc/Data")
+        monkeypatch.setenv("APP_SANDBOX_CONTAINER_ID", "me.rickmark.garage-rag.xpc")
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        assert SourceSpec(slug="a", root="~/Documents").expanded_root == home / "Documents"
+        assert expand_home("~") == home
+        assert expand_home("/abs/~x") == Path("/abs/~x")
+
+    def test_root_expansion_outside_a_sandbox_follows_home(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("APP_SANDBOX_CONTAINER_ID", raising=False)
+        monkeypatch.setenv("HOME", "/tmp/elsewhere")
+        assert expand_home("~/Documents") == Path("/tmp/elsewhere/Documents")
 
     def test_defaults(self) -> None:
         spec = SourceSpec(slug="a", root="/x")

@@ -102,7 +102,9 @@ anything else when the caller says what it is sending:
   stored facts are touched.
 - **Answers** (`rag_ask`) run every retrieved excerpt's class through the guard
   before building a prompt for an off-box Ollama or LM Studio, so a communication in the
-  results aborts the call.
+  results aborts the call. `rag_agent`, where the model searches for itself, restricts
+  its searches to documents and code and refuses to read a communication when the
+  model host is not loopback, so the model never sees one.
 - **Embeddings** — backfill, in-process or through the embed worker, asks
   `egress.allows_communications` and leaves chunks of communication documents
   out for a provider that is not on this machine. They stay unembedded for that
@@ -124,7 +126,10 @@ The MCP server hands search results and document excerpts, communications
 included, to whichever client is connected to it, and that client may send them
 to its own model provider; see [What connected agents receive](#what-connected-agents-receive).
 `rag_search` results carry each hit's `corpus_class` so a client can tell
-communications apart.
+communications apart, and a message's `direction` and `sender` (a phone number
+or address, or `me`). Those two are communication metadata: they live on the
+chunk in the local database, and like the message itself reach only an MCP
+client that retrieves it.
 
 ### Outside the guard — the app's own downloads
 
@@ -153,8 +158,8 @@ confusingly on every one. The pipeline detects this and reports it as a
 permissions problem rather than a parse failure.
 
 To grant: **System Settings → Privacy & Security → Full Disk Access**, and add
-your terminal (or whichever process runs `garage`). Then re-run — idempotency
-means nothing already indexed is re-done.
+Garage (for the app's ingest) or your terminal (for `garage` run from it). Then
+re-run — idempotency means nothing already indexed is re-done.
 
 If you would rather not grant blanket access, copy `chat.db` (plus `-wal` and
 `-shm`) to a working directory via Finder and register that copy as the source.
@@ -167,7 +172,9 @@ download it** — a naive walk would have quietly pulled ~230 GB.
 
 `placeholders.materialize` controls this, and even when enabled, downloads are
 capped per run by `placeholders.limit` and `placeholders.max_bytes`. Every run reports what it fetched and what it
-deferred; nothing is silently truncated.
+deferred; nothing is silently truncated. A stub that is not downloaded gets no
+document (the run counts it as a placeholder), and a file indexed before the sync
+client evicted it is skipped without a download while its stat still matches.
 
 ## Garage's own endpoints
 
@@ -186,6 +193,13 @@ of every account on the Mac, so none of these listen on one:
   A socket path must fit in 104 bytes; for a user name long enough to overflow
   that, the affected endpoint falls back to its loopback port as before
   (`GarageSockets`).
+- **Configuration changes need a vouched-for caller.** The gRPC methods that
+  write `garage.json` or an MCP client's config (`SetSetting`, the source and
+  model methods, `McpInstall`/`McpUninstall`), and `InitDb`, which runs the SQL
+  of a caller-named `schema_dir`, run only for a caller presenting
+  the app's per-launch token or arriving over that owner-only socket. A server
+  on a loopback TCP port with no token refuses them, so no other account on
+  the Mac can point `embedding.ollama_host` off-box and widen the allowlist.
 - **XPC peers must share the team.** Each XPC service puts a code-signing
   requirement on its connections (`anchor apple generic and certificate
   leaf[subject.OU]` = the team in its own signature), so only the app, its
@@ -214,7 +228,7 @@ refusing to bind 0.0.0.0: this server has no authentication and exposes your
 entire corpus, including anything indexed from private communications.
 ```
 
-**DNS-rebinding protection, always on.** Without it, a page you visit could
+**DNS-rebinding protection, on by default.** Without it, a page you visit could
 resolve its own hostname to `127.0.0.1` and POST to your loopback server from
 your browser — reading your corpus without ever touching the network perimeter.
 The `Host` allowlist blocks it:
@@ -227,6 +241,9 @@ $ curl -H 'Host: 127.0.0.1:8787'   http://127.0.0.1:8787/mcp   # 200
 Browser clients additionally need their origin allowed explicitly, with
 `--allow-origin https://example.com`.
 
+The check stays on for loopback. Under `--allow-remote` the server cannot know which
+host names reach it, so the check is off unless you list them with `--allow-host`.
+
 **No transport-level encryption.** Plain HTTP. Fine over loopback; if you expose
 it, terminate TLS and authenticate at a reverse proxy. Do not put this on a
 network you do not control.
@@ -235,12 +252,12 @@ network you do not control.
 
 The MCP server answers whichever client you connect: Claude Desktop, Claude
 Code, Cursor, or anything else you register. An agent receives the excerpts its
-searches return (`rag_search`, `get_document`, and the answers from `rag_ask` /
-`rag_generate`), only those, not the whole index. Most agents run their model in
+searches return (`rag_search`, `rag_get_document`, and the answers from `rag_ask` /
+`rag_agent` / `rag_generate`), only those, not the whole index. Most agents run their model in
 the cloud, so they send those excerpts, with your conversation, to their model
 provider. That includes excerpts from Messages and Mail if you have indexed
 them: the MCP tools serve communications like any other content, and the egress
-guard above governs Garage's own cloud calls, not a client's.
+guard above governs what Garage itself sends, not what a client does next.
 
 What happens to an excerpt after an agent receives it is governed by that
 agent's terms and privacy policy, not Garage's. If an indexed source should not
@@ -249,7 +266,8 @@ out of the index.
 
 ## What is stored, and where
 
-Everything stays in your local Postgres `rag` database: extracted text in
+Everything stays in your local Postgres database (`garage-rag` in the app's
+bundled cluster, in its data folder): extracted text in
 `documents.content`, chunk text in `chunks.text`, vectors in `emb_*`. No content
 leaves the machine except to the model servers you configure (communications
 never do), or through an MCP client or `--allow-remote`, described above.

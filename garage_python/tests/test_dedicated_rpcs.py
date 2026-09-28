@@ -20,7 +20,7 @@ def test_dedicated_rpc_ping():
 def test_dedicated_rpc_version():
     client = GarageClient(in_process=True)
     res = client.get_version()
-    assert res.version == "0.1.0"
+    assert res.version == "1.5.0"
 
 
 def test_dedicated_rpc_status():
@@ -34,7 +34,7 @@ def test_dedicated_rpc_status():
         res = client.get_status()
     assert res.is_ready is True
     assert res.db_status == "connected"
-    assert res.version == "0.1.0"
+    assert res.version == "1.5.0"
 
 
 def test_dedicated_rpc_status_not_ready_when_migrations_pending():

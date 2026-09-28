@@ -8,6 +8,9 @@ def _jekyll_site_impl(ctx):
     if ctx.file.config:
         inputs.append(ctx.file.config)
     inputs.extend(ctx.files.data)
+    site_files = ctx.attr.site_files.items()
+    for target, _ in site_files:
+        inputs.extend(target.files.to_list())
 
     src_dir = ctx.attr.source_dir if ctx.attr.source_dir else ctx.label.package
     if not src_dir:
@@ -25,13 +28,24 @@ def _jekyll_site_impl(ctx):
     if ctx.attr.flags:
         args.add_all(ctx.attr.flags)
 
-    ctx.actions.run(
+    # Files kept outside the site's sources are copied into the built site under their site path.
+    copies = []
+    for target, site_path in site_files:
+        for f in target.files.to_list():
+            copies.append((f.path, site_path))
+    copy_commands = "".join([
+        '\nmkdir -p "$(dirname "$out/{dest}")" && cp "{src}" "$out/{dest}"'.format(src = src, dest = dest)
+        for src, dest in copies
+    ])
+
+    ctx.actions.run_shell(
         mnemonic = "JekyllBuild",
         progress_message = "Building Jekyll site %{label}",
-        executable = ctx.executable.jekyll,
+        tools = [ctx.executable.jekyll],
         inputs = inputs,
         outputs = [out_dir],
-        arguments = [args],
+        arguments = [ctx.executable.jekyll.path, out_dir.path, args],
+        command = 'set -euo pipefail\njekyll="$1"; out="$2"; shift 2\n"$jekyll" "$@"' + copy_commands,
     )
 
     # Generate an executable runner script for `bazel run`
@@ -62,10 +76,19 @@ if [ -z "$JEKYLL_BIN" ] || [ ! -x "$JEKYLL_BIN" ]; then
 fi
 
 SRC_DIR="${BUILD_WORKSPACE_DIRECTORY:-.}/__SRC_DIR__"
+WORKSPACE_DIR="${BUILD_WORKSPACE_DIRECTORY:-.}"
 
+# Files kept outside the site's sources (site_files) go where the built site has them; each such
+# path is in the site's .gitignore.
+__SITE_FILE_COPIES__
 exec "$JEKYLL_BIN" serve --source "$SRC_DIR" "$@"
 """
-    runner_content = runner_template.replace("__RLOCATION__", rlocation_jekyll).replace("__SHORT_PATH__", ctx.executable.jekyll.short_path).replace("__SRC_DIR__", src_dir)
+    serve_copies = "\n".join([
+        'mkdir -p "$(dirname "$SRC_DIR/{dest}")" && cp "$WORKSPACE_DIR/{src}" "$SRC_DIR/{dest}"'.format(src = f.short_path, dest = site_path)
+        for target, site_path in site_files
+        for f in target.files.to_list()
+    ])
+    runner_content = runner_template.replace("__RLOCATION__", rlocation_jekyll).replace("__SHORT_PATH__", ctx.executable.jekyll.short_path).replace("__SRC_DIR__", src_dir).replace("__SITE_FILE_COPIES__", serve_copies)
 
     ctx.actions.write(
         output = executable,
@@ -111,6 +134,12 @@ jekyll_site = rule(
         "data": attr.label_list(
             allow_files = True,
             doc = "Additional data files to make available during the build.",
+        ),
+        "site_files": attr.label_keyed_string_dict(
+            allow_files = True,
+            doc = "Files kept outside the site's sources, each copied into the built site at the path " +
+                  "given (relative to the site root, e.g. \".data/models.json\"). `bazel run` copies them " +
+                  "into the source folder before serving, so list those paths in the site's .gitignore.",
         ),
     },
 )

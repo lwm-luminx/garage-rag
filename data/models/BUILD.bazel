@@ -1,0 +1,8 @@
+# The model catalog: every model the app offers and the pipeline knows by name. The app bundles it,
+# the pipeline and tests read it, and the site serves a copy at
+# https://garagerag.app/.data/models.json (//docs:site, and the Pages workflow, copy it there).
+filegroup(
+    name = "models",
+    srcs = ["models.json"],
+    visibility = ["//visibility:public"],
+)

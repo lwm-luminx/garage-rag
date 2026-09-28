@@ -1,7 +1,12 @@
 load(":postgres.bzl", "postgres_targets")
 
-# PostgreSQL 18 - the default. Select 19 with --//ext:postgres_version=19 (see //ext:BUILD.bazel).
+# The bundled PostgreSQL, one package for every major version: --//ext:postgres_version picks
+# the source (18 by default, 19 with --config=pg19), and each version's patches live in
+# pg<major>/ beside this file, like //ext/age's release lines.
 postgres_targets(
     name = "postgres",
-    lib_source = "@postgres//:postgres_source",
+    lib_source = select({
+        "//ext:postgres_19": "@postgres19//:postgres_source",
+        "//conditions:default": "@postgres//:postgres_source",
+    }),
 )

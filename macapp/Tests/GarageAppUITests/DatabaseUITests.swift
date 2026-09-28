@@ -1,8 +1,9 @@
 import AppKit
 import XCTest
 
-/// The Database page: the schema is brought up to date without a click, and the reset sheet's
-/// Cancel leaves the database alone.
+/// The Database page: the schema is brought up to date without a click, the reset sheet's Cancel
+/// leaves the database alone, the sections and server details show with the password masked, and
+/// Stop and Start keep the same cluster.
 final class DatabaseUITests: GarageUITestCase {
 
     func testFreshClusterShowsSchemaUpToDate() throws {
@@ -59,6 +60,73 @@ final class DatabaseUITests: GarageUITestCase {
         XCTAssertTrue(holds(for: 5) { self.postgresIsServing(from: owner) }, "Postgres stopped after Cancel")
         XCTAssertEqual(try clusterIdentity(), cluster, "Cancel replaced the cluster")
         XCTAssertEqual(appPID, owner, "Cancel relaunched Garage")
+    }
+
+    func testPageShowsItsSectionsAndHidesThePassword() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "database")
+
+        for heading in ["Postgres", "Schema", "Contents", "Backups"] {
+            XCTAssertTrue(element(text: heading).waitForExistence(timeout: 15), "Database does not show \"\(heading)\"")
+        }
+        for identifier in [
+            "database.restart", "database.stop", "database.copyURL", "database.openURL",
+            "database.contents.refresh", "database.backup", "database.restore", "database.reset",
+        ] {
+            XCTAssertTrue(element(identifier: identifier).waitForExistence(timeout: 30), "Database has no \(identifier)")
+        }
+        XCTAssertFalse(element(identifier: "database.start").exists, "a running server offers Start")
+
+        // The connection line shows the URL with its password hidden.
+        let password = try String(contentsOf: dataDirectory.appendingPathComponent("postgres-password"), encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertFalse(password.isEmpty, "the isolated cluster has no password")
+        XCTAssertTrue(element(textBeginningWith: "postgresql://").waitForExistence(timeout: 15), "no connection URL")
+        XCTAssertTrue(element(textContaining: ":••••••@").exists, "the connection URL does not mask its password")
+        XCTAssertFalse(element(textContaining: password).exists, "the page shows the Postgres password")
+    }
+
+    func testDetailsShowTheServer() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "database")
+
+        let toggle = element(identifier: "database.details.toggle")
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15), "the Postgres box has no Details button")
+        XCTAssertFalse(element(text: "Data folder").exists, "the details are open before anyone asked for them")
+        click(toggle)
+        for label in ["Data folder", "Server"] {
+            XCTAssertTrue(element(text: label).waitForExistence(timeout: 10), "the details do not show \"\(label)\"")
+        }
+        XCTAssertTrue(element(textBeginningWith: "PostgreSQL").waitForExistence(timeout: 30), "the details do not name the server")
+        XCTAssertTrue(element(text: "Extensions").waitForExistence(timeout: 30), "the details do not list the extensions")
+        XCTAssertTrue(element(textContaining: "vector ").exists, "the extensions do not include pgvector")
+
+        click(toggle)
+        XCTAssertTrue(waitUntil(timeout: 10) { !self.element(text: "Data folder").exists }, "Details did not fold away")
+    }
+
+    /// Stop shuts the cluster down and offers Start; Start brings it back on the same cluster.
+    func testStopAndStartPostgres() throws {
+        try launchApp()
+        waitForBackend()
+        let owner = try XCTUnwrap(appPID)
+        let cluster = try clusterIdentity()
+        open(section: "database")
+
+        let stop = element(identifier: "database.stop")
+        XCTAssertTrue(waitForEnabled(stop), "Stop stayed disabled")
+        click(stop)
+        let start = element(identifier: "database.start")
+        XCTAssertTrue(start.waitForExistence(timeout: 60), "a stopped server does not offer Start")
+        XCTAssertTrue(waitUntil(timeout: 30) { !Self.isListening(on: Self.postgresPort) }, "Postgres still listens after Stop")
+        XCTAssertFalse(element(identifier: "database.restart").exists, "a stopped server offers Restart")
+
+        click(start)
+        XCTAssertTrue(waitUntil(timeout: 120) { self.postgresIsServing(from: owner) }, "Start did not bring Postgres back")
+        XCTAssertTrue(element(identifier: "database.stop").waitForExistence(timeout: 60), "a running server does not offer Stop")
+        XCTAssertEqual(try clusterIdentity(), cluster, "Start made a new cluster")
     }
 
     // MARK: - psql

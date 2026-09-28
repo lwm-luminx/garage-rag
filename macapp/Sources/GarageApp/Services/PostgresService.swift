@@ -363,6 +363,16 @@ final class PostgresService: ObservableObject {
         }
     }
 
+    /// A wait that a cancelled task still serves in full, for shutdown polls that must not turn
+    /// into an immediate kill.
+    nonisolated static func sleepIgnoringCancellation(seconds: TimeInterval) async {
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+                continuation.resume()
+            }
+        }
+    }
+
     func clearLogs() {
         logs.removeAll()
     }
@@ -536,7 +546,7 @@ final class PostgresService: ObservableObject {
             status = .failed(error.localizedDescription)
             throw error
         }
-        let pending = (try? await fetchPendingMigrations()) ?? []
+        let pending = await pendingMigrationsOrLogged()
         self.pendingMigrations = pending
         if !pending.isEmpty {
             status = .needsMigration
@@ -564,8 +574,11 @@ final class PostgresService: ObservableObject {
         runner.interrupt()
         // Poll for the process to actually exit rather than assuming; the shutdown checkpoint of a
         // busy cluster can take a few seconds.
+        // Not `Task.sleep`: at quit, AppDelegate cancels this task after 15 s, and a cancelled
+        // `Task.sleep` returns at once, so the loop would spin through and SIGKILL the server
+        // before its checkpoint. The wait here ignores cancellation and is bounded on its own.
         for _ in 0..<100 where runner.isRunning {
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            await Self.sleepIgnoringCancellation(seconds: 0.1)
         }
         if runner.isRunning {
             runner.forceKill()
@@ -594,6 +607,12 @@ final class PostgresService: ObservableObject {
         guard !isRunningInTestEnvironment else { return }
         let pidFile = Paths.pgDataDir.appendingPathComponent("postmaster.pid")
         guard FileManager.default.fileExists(atPath: pidFile.path) else { return }
+        // After a crash or power loss the file can outlive its postmaster, and its pid may since
+        // belong to another process. Signal nothing that is not a postgres; the file is stale.
+        guard GarageDataMigration.runningPostmaster(in: Paths.pgDataDir) != nil else {
+            try? FileManager.default.removeItem(at: pidFile)
+            return
+        }
 
         let pgCtl = Paths.postgresTool("pg_ctl")
         if FileManager.default.isExecutableFile(atPath: pgCtl.path) {
@@ -611,7 +630,7 @@ final class PostgresService: ObservableObject {
             return
         }
 
-        if kill(pid, 0) == 0 {
+        if GarageDataMigration.isPostgresProcess(pid) {
             // Fast shutdown, as in stop(); SIGTERM would wait for connected clients.
             kill(pid, SIGINT)
             var exited = false
@@ -793,6 +812,22 @@ final class PostgresService: ObservableObject {
         return sources
     }
 
+    /// `fetchPendingMigrations()`, with a failed check logged on the Database page instead of read as
+    /// "nothing pending": the server then shows as running with the pending list empty, which is
+    /// the same picture a fully migrated cluster gives, so the failure must at least be visible.
+    private func pendingMigrationsOrLogged() async -> [String] {
+        do {
+            return try await fetchPendingMigrations()
+        } catch {
+            appendLog(LogLine(
+                stream: .stderr,
+                text: "could not check for pending migrations: \(error.localizedDescription)",
+                source: "migrate"
+            ))
+            return []
+        }
+    }
+
     /// Returns the list of unapplied migration SQL file names from Paths.schemaDir.
     func fetchPendingMigrations() async throws -> [String] {
         let runner = try commandRunner()
@@ -842,7 +877,7 @@ final class PostgresService: ObservableObject {
             pendingMigrations = []
             return []
         }
-        let list = (try? await fetchPendingMigrations()) ?? []
+        let list = await pendingMigrationsOrLogged()
         self.pendingMigrations = list
         if !list.isEmpty {
             status = .needsMigration
@@ -904,7 +939,7 @@ final class PostgresService: ObservableObject {
             appendLog(LogLine(stream: .stdout, text: "applied migration: \(file)", source: "migrate"))
         }
 
-        let pending = (try? await fetchPendingMigrations()) ?? []
+        let pending = await pendingMigrationsOrLogged()
         self.pendingMigrations = pending
         if !pending.isEmpty {
             status = .needsMigration

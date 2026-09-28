@@ -317,6 +317,10 @@ public final class XPCServiceManager: ObservableObject {
     public weak var osLogStreamService: OSLogStreamService?
     private var streamingConnections: [String: NSXPCConnection] = [:]
     private var streamingAdapters: [String: XPCLogReceiverAdapter] = [:]
+    /// How long to wait before subscribing a relaunched helper to the log stream again, per service.
+    /// Doubles on each interruption up to a minute, so a helper that keeps crashing is not relaunched
+    /// in a tight loop, and goes back to a second once a subscription succeeds.
+    private var streamingResubscribeDelays: [String: TimeInterval] = [:]
 
     private let maxLogLines = 4000
 
@@ -325,6 +329,9 @@ public final class XPCServiceManager: ObservableObject {
 
     private let pingExecutor: PingExecutor
     private let killExecutor: KillExecutor
+    /// Hands LlamaXPCService's endpoint to the services that load llama_xpc models on demand, which
+    /// cannot look it up by name themselves. None in unit tests unless one is injected.
+    let llamaEndpointBroker: LlamaEndpointBroker?
 
     public nonisolated static let defaultServices: [XPCServiceInfo] = [
         XPCServiceInfo(
@@ -378,11 +385,32 @@ public final class XPCServiceManager: ObservableObject {
     private static let selfTestCallTimeout: UInt64 = 180_000_000_000
     private static let restartCallTimeout: UInt64 = 120_000_000_000
 
-    public init(
+    public convenience init(
         initialServices: [XPCServiceInfo] = defaultServices,
         pingExecutor: PingExecutor? = nil,
         killExecutor: KillExecutor? = nil
     ) {
+        let broker: LlamaEndpointBroker?
+        if isRunningInTestEnvironment {
+            broker = nil
+        } else {
+            var bundleIds: [String: String] = [:]
+            for service in initialServices {
+                bundleIds[service.id] = service.bundleId
+            }
+            let llamaBundleId = initialServices.first { $0.id == "llama-xpc" }?.bundleId ?? LlamaXPCConstants.serviceName
+            broker = LlamaEndpointBroker(connector: .xpc(llamaBundleId: llamaBundleId, receiverBundleIds: bundleIds))
+        }
+        self.init(initialServices: initialServices, pingExecutor: pingExecutor, killExecutor: killExecutor, llamaEndpointBroker: broker)
+    }
+
+    init(
+        initialServices: [XPCServiceInfo],
+        pingExecutor: PingExecutor?,
+        killExecutor: KillExecutor?,
+        llamaEndpointBroker: LlamaEndpointBroker?
+    ) {
+        self.llamaEndpointBroker = llamaEndpointBroker
         self.services = initialServices
         self.pingExecutor = pingExecutor ?? { bundleId in
             try await Self.performXPCPing(bundleId: bundleId)
@@ -394,6 +422,11 @@ public final class XPCServiceManager: ObservableObject {
                 _ = kill(pid, SIGKILL)
             }
             return true
+        }
+        llamaEndpointBroker?.setReporter { [weak self] message, isError in
+            Task { @MainActor [weak self] in
+                self?.appendLog(message, stream: isError ? .stderr : .stdout, source: "llama-xpc", level: isError ? .error : .info)
+            }
         }
     }
 
@@ -539,6 +572,57 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
+    /// The Python helpers that learn of the database and the gRPC backend only from the app:
+    /// the backend helper gets both with `startServer`, and the others used to hear of them with
+    /// their first job, so until then their Database Connection and gRPC Connection self tests
+    /// were skipped.
+    public static let helpersConfiguredByTheApp = ["ingest-xpc", "embed-xpc", "mcp-server-xpc"]
+
+    /// The last configuration handed to the helpers, reapplied to a helper `restart` relaunches:
+    /// a helper keeps it in memory, so a fresh process would otherwise skip its Database
+    /// Connection and gRPC Connection tests again until its first job.
+    private var helperConfiguration: [String: String]?
+
+    /// Hands `options` (`GarageGRPCService.helperConfiguration`) to each of
+    /// `helpersConfiguredByTheApp` and re-runs its self tests, so the status page shows whether the
+    /// helper reaches the database and the backend. A helper that cannot be reached is logged and
+    /// skipped; `refresh` reports it in its own row.
+    public func configureHelpers(_ options: [String: String]) async {
+        helperConfiguration = options
+        for serviceId in Self.helpersConfiguredByTheApp {
+            await configureHelper(serviceId: serviceId, options: options)
+        }
+    }
+
+    /// Hands `options` to one helper and re-runs its self tests when it took them.
+    private func configureHelper(serviceId: String, options: [String: String]) async {
+        guard let service = resolveService(serviceId) else { return }
+        let bundleId = service.bundleId
+        do {
+            let (accepted, message): (Bool, String?) = try await Self.performCommonCall(bundleId: bundleId, timeoutNanoseconds: Self.statusCallTimeout) { proxy, relay in
+                proxy.updateConfiguration(options) { accepted, message in
+                    relay.resume(returning: (accepted, message))
+                }
+            }
+            guard accepted else {
+                appendLog("[\(service.name)] Did not take the configuration: \(message ?? "no reason given")", stream: .stderr, source: service.id, level: .warning)
+                return
+            }
+            appendLog("[\(service.name)] Configured with the database and the backend's address", source: service.id, level: .info)
+        } catch {
+            appendLog("[\(service.name)] Could not be configured: \(error.localizedDescription)", stream: .stderr, source: service.id, level: .warning)
+            return
+        }
+        _ = await runServiceSelfTests(serviceId: service.id)
+    }
+
+    /// Reapplies the last helper configuration to `serviceId` when it is one of
+    /// `helpersConfiguredByTheApp` and the backend has configured the helpers before.
+    private func reconfigureRelaunchedHelper(serviceId: String) async {
+        guard Self.helpersConfiguredByTheApp.contains(serviceId), let options = helperConfiguration else { return }
+        await configureHelper(serviceId: serviceId, options: options)
+    }
+
     /// Re-runs the in-service self tests of a helper and mirrors the outcome into `diagnosticResults`.
     @discardableResult
     public func runServiceSelfTests(serviceId: String) async -> GarageXPCStatusReport? {
@@ -619,7 +703,10 @@ public final class XPCServiceManager: ObservableObject {
         }
 
         var summary = "\(passedCount) of \(total) self tests passed"
-        if skippedCount > 0 { summary += " (\(skippedCount) skipped)" }
+        if skippedCount > 0 {
+            let names = report.tests.filter { $0.status == .skipped }.map(\.name).joined(separator: ", ")
+            summary += " (\(skippedCount) skipped: \(names))"
+        }
         let errorMessage = failed.isEmpty ? nil : failed.map { "\($0.name): \($0.errorMessage ?? $0.summary)" }.joined(separator: "; ")
 
         return ServiceDiagnosticTestResult(
@@ -681,8 +768,9 @@ public final class XPCServiceManager: ObservableObject {
         logger.info("Restarting XPC service '\(service.bundleId, privacy: .public)'...")
         appendLog("[\(service.name)] Restarting service...", source: service.id, level: .warning, pid: service.pid)
 
-        // If currently running with known PID, send termination signal
-        if let currentPid = service.pid, currentPid > 0 {
+        // If currently running with known PID, send termination signal. A service the app hosts
+        // itself (GarageInProcessServices) answers with the app's own pid, which is never killed.
+        if let currentPid = service.pid, currentPid > 0, currentPid != getpid() {
             logger.info("Terminating existing process for '\(service.bundleId, privacy: .public)' (pid: \(currentPid))")
             _ = killExecutor(currentPid)
             appendLog("[\(service.name)] Sent termination signal to pid \(currentPid)", source: service.id, level: .warning, pid: currentPid)
@@ -693,7 +781,18 @@ public final class XPCServiceManager: ObservableObject {
 
         // Ping the service to spawn a fresh instance via launchd / XPC runtime
         let newState = await refresh(serviceId: service.id)
+        // A relaunched LlamaXPCService has a new endpoint, a relaunched receiver has none. The
+        // broker also notices the lost connection; this covers a kill it did not see.
+        if service.id == "llama-xpc" {
+            llamaEndpointBroker?.handOverAgain(refetch: true)
+        } else if LlamaEndpointBroker.receiverServiceIds.contains(service.id) {
+            llamaEndpointBroker?.handOverAgain()
+        }
         appendLog("[\(service.name)] Restart finished with state: \(newState.title)", source: service.id, level: newState.isRunning ? .info : .error)
+        // The new process starts unconfigured: give it the database and the backend's address again.
+        if newState.isRunning {
+            await reconfigureRelaunchedHelper(serviceId: service.id)
+        }
         return newState.isRunning
     }
 
@@ -718,9 +817,11 @@ public final class XPCServiceManager: ObservableObject {
     /// Terminates all known running XPC helper services and drops the live log streaming connections.
     public func terminateAll() {
         appendLog("Terminating all active XPC helper processes...", source: "xpc-services", level: .warning)
+        // First, so the broker does not relaunch the helpers it sees go away.
+        llamaEndpointBroker?.stop()
         stopAllStreaming()
         for service in services {
-            if let currentPid = service.pid, currentPid > 0 {
+            if let currentPid = service.pid, currentPid > 0, currentPid != getpid() {
                 logger.info("Terminating XPC service '\(service.bundleId, privacy: .public)' (pid: \(currentPid))")
                 _ = killExecutor(currentPid)
                 appendLog("[\(service.name)] Terminated process pid \(currentPid)", source: service.id, level: .warning, pid: currentPid)
@@ -781,7 +882,7 @@ public final class XPCServiceManager: ObservableObject {
         }
 
         let bundleId = service.bundleId
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         let adapter = XPCLogReceiverAdapter(serviceId: service.id, manager: self, osLogStreamService: osLogStreamService)
         streamingAdapters[key] = adapter
 
@@ -789,8 +890,19 @@ public final class XPCServiceManager: ObservableObject {
         connection.exportedInterface = NSXPCInterface(with: GarageXPCLogReceiverProtocol.self)
         connection.exportedObject = adapter
 
-        connection.interruptionHandler = {
+        // An interruption means the helper exited (a crash, a restart, the system reclaiming it). The
+        // connection stays usable, but the next instance knows nothing of this subscription, so its
+        // lines would never reach the Logs page: subscribe again, which also relaunches it.
+        connection.interruptionHandler = { [weak self, weak connection] in
             logger.warning("Live log streaming connection for '\(bundleId, privacy: .public)' was interrupted")
+            Task { @MainActor [weak self] in
+                guard let self, let connection, self.streamingConnections[key] === connection else { return }
+                let delay = self.streamingResubscribeDelays[key] ?? 1
+                self.streamingResubscribeDelays[key] = min(delay * 2, 60)
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard self.streamingConnections[key] === connection else { return }
+                self.subscribeToLogStream(on: connection, key: key, bundleId: bundleId)
+            }
         }
         // Only drop the registry entry if it still belongs to this connection: a restart replaces the entry with a
         // new connection, and the old connection's invalidation must not remove the new one.
@@ -804,31 +916,37 @@ public final class XPCServiceManager: ObservableObject {
 
         connection.resume()
         streamingConnections[key] = connection
+        subscribeToLogStream(on: connection, key: key, bundleId: bundleId)
+    }
 
-        // Opt this connection in to live log streaming on the service side.
-        if let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+    /// Opts `connection` in to live log streaming on the service side.
+    private func subscribeToLogStream(on connection: NSXPCConnection, key: String, bundleId: String) {
+        guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
             logger.debug("Failed to initialize log streaming proxy for '\(bundleId, privacy: .public)': \(error.localizedDescription, privacy: .public)")
-        }) as? GarageCommonXPCServiceProtocol {
-            proxy.subscribeToLogStream { subscribed in
-                if subscribed {
-                    logger.debug("Live log streaming successfully registered for '\(bundleId, privacy: .public)'")
-                } else {
-                    logger.warning("Service '\(bundleId, privacy: .public)' declined the log streaming subscription")
-                }
+        }) as? GarageCommonXPCServiceProtocol else { return }
+        proxy.subscribeToLogStream { [weak self] subscribed in
+            if subscribed {
+                logger.debug("Live log streaming successfully registered for '\(bundleId, privacy: .public)'")
+                Task { @MainActor [weak self] in self?.streamingResubscribeDelays[key] = nil }
+            } else {
+                logger.warning("Service '\(bundleId, privacy: .public)' declined the log streaming subscription")
             }
         }
     }
 
-    /// Starts streaming logs for all known XPC helper services.
+    /// Starts streaming logs for all known XPC helper services, and the LlamaXPCService endpoint
+    /// hand-over (`LlamaEndpointBroker`), which every launch path and a failed reset go through.
     public func startStreamingAllServices() {
         for service in services {
             startStreamingLogs(for: service.id)
         }
+        llamaEndpointBroker?.start()
     }
 
     /// Stops live log streaming for a given service.
     public func stopStreamingLogs(for serviceId: String) {
         let key = services.first(where: { $0.id == serviceId || $0.bundleId == serviceId })?.id ?? serviceId
+        streamingResubscribeDelays.removeValue(forKey: key)
         if let connection = streamingConnections.removeValue(forKey: key) {
             connection.invalidate()
         }
@@ -842,6 +960,7 @@ public final class XPCServiceManager: ObservableObject {
         }
         streamingConnections.removeAll()
         streamingAdapters.removeAll()
+        streamingResubscribeDelays.removeAll()
     }
 
     // MARK: - Static XPC Ping Implementation
@@ -888,7 +1007,7 @@ public final class XPCServiceManager: ObservableObject {
         timeoutNanoseconds: UInt64,
         _ body: @escaping (GarageCommonXPCServiceProtocol, ContinuationRelay<T>) -> Void
     ) async throws -> T {
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageCommonXPCServiceProtocol.self)
         connection.resume()
         defer { connection.invalidate() }
@@ -912,7 +1031,7 @@ public final class XPCServiceManager: ObservableObject {
 
     private static func performXPCPing(bundleId: String) async throws -> (pid: pid_t, latencyMs: Double, response: String) {
         let startTime = CFAbsoluteTimeGetCurrent()
-        let connection = NSXPCConnection(serviceName: bundleId)
+        let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
         connection.remoteObjectInterface = NSXPCInterface(with: GarageCommonXPCServiceProtocol.self)
         connection.resume()
         defer { connection.invalidate() }
@@ -1038,7 +1157,7 @@ public final class XPCServiceManager: ObservableObject {
         let testString = "Garage vector embedding verification test."
 
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: GarageEmbedXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }
@@ -1116,11 +1235,30 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
+    /// Whether the engine's health JSON (`LlamaCppEngine.handleHealth`) says a model is loaded:
+    /// status "ok" is true, "no_model_loaded" or "loading model" is false. Anything else (no reply,
+    /// not JSON, no or an unknown status) throws, so a broken health route fails the test rather
+    /// than reading as an engine with no model.
+    nonisolated static func llamaHealthReportsLoadedModel(_ json: String?) throws -> Bool {
+        guard let json, let data = json.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let status = object["status"] as? String
+        else {
+            throw NSError(domain: "LlamaTest", code: -2, userInfo: [NSLocalizedDescriptionKey: "Llama health returned no status: \(json ?? "no reply")"])
+        }
+        switch status {
+        case "ok": return true
+        case "no_model_loaded", "loading model": return false
+        default:
+            throw NSError(domain: "LlamaTest", code: -3, userInfo: [NSLocalizedDescriptionKey: "Llama health returned an unknown status: \(status)"])
+        }
+    }
+
     private func runLlamaDiagnosticTest() async -> ServiceDiagnosticTestResult {
         let startTime = CFAbsoluteTimeGetCurrent()
         let bundleId = "me.rickmark.garage-rag.llama-xpc"
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: LlamaXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }
@@ -1152,24 +1290,35 @@ public final class XPCServiceManager: ObservableObject {
                 }
             }
 
-            let tokenizeResponse: String? = try await withCheckedThrowingContinuation { continuation in
-                let relay = ContinuationRelay(continuation)
-                guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
-                    relay.resume(throwing: error)
-                }) as? LlamaXPCServiceProtocol else {
-                    relay.resume(returning: nil)
-                    return
-                }
-                proxy.tokenize(requestJson: "{\"content\": \"Garage local AI prompt test.\"}") { reply, err in
-                    if let err = err { relay.resume(throwing: err) }
-                    else { relay.resume(returning: reply) }
+            // Tokenizing needs a loaded model. With none loaded (no default model yet, or before its
+            // load finishes) the engine is still healthy, so the tokenizer check is skipped, as the
+            // service's own Model File self test is, instead of failing the row.
+            let modelLoaded = try Self.llamaHealthReportsLoadedModel(healthResponse)
+            var tokenizeResponse: String?
+            if modelLoaded {
+                tokenizeResponse = try await withCheckedThrowingContinuation { continuation in
+                    let relay = ContinuationRelay(continuation)
+                    guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+                        relay.resume(throwing: error)
+                    }) as? LlamaXPCServiceProtocol else {
+                        relay.resume(returning: nil)
+                        return
+                    }
+                    proxy.tokenize(requestJson: "{\"content\": \"Garage local AI prompt test.\"}") { reply, err in
+                        if let err = err { relay.resume(throwing: err) }
+                        else { relay.resume(returning: reply) }
+                    }
                 }
             }
 
             let elapsed = (CFAbsoluteTimeGetCurrent() - startTime) * 1000.0
             var details = "Ping response: \(pingResponse)\n"
             if let health = healthResponse { details += "Health status: \(health)\n" }
-            if let tok = tokenizeResponse { details += "Tokenize test: \(tok)\n" }
+            if let tok = tokenizeResponse {
+                details += "Tokenize test: \(tok)\n"
+            } else if !modelLoaded {
+                details += "Tokenize test: skipped, no model loaded\n"
+            }
             details += "Latency: \(String(format: "%.2f", elapsed)) ms"
 
             return ServiceDiagnosticTestResult(
@@ -1178,7 +1327,9 @@ public final class XPCServiceManager: ObservableObject {
                 testDescription: ServiceDiagnosticTest.llama.description,
                 isSuccess: true,
                 durationMs: elapsed,
-                summary: "Llama XPC tokenizer & health check completed in \(String(format: "%.1f", elapsed))ms",
+                summary: modelLoaded
+                    ? "Llama XPC tokenizer & health check completed in \(String(format: "%.1f", elapsed))ms"
+                    : "Llama XPC health check completed in \(String(format: "%.1f", elapsed))ms; tokenizer skipped, no model loaded",
                 details: details
             )
         } catch {
@@ -1270,7 +1421,7 @@ public final class XPCServiceManager: ObservableObject {
         let bundleId = "me.rickmark.garage-rag.xpc"
 
         do {
-            let connection = NSXPCConnection(serviceName: bundleId)
+            let connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
             connection.remoteObjectInterface = NSXPCInterface(with: GarageXPCServiceProtocol.self)
             connection.resume()
             defer { connection.invalidate() }

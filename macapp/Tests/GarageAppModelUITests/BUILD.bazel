@@ -1,0 +1,47 @@
+load("@rules_apple//apple:macos.bzl", "macos_ui_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//bazel:garage_app.bzl", "garage_macos_application")
+
+# The host of these tests: the Garage app (//bazel:garage_app.bzl, as for
+# //macapp/Sources/GarageApp:GarageApp) with MockLlamaXPCService, a deterministic engine behind
+# LlamaXPCService's own front end, in place of llama.cpp. Testonly, and manual like the tests, so
+# nothing ships it and `aspect test //...` does not build a second app. It lives here rather than
+# beside GarageApp because both bundles are Garage.app, and one package cannot hold two.
+garage_macos_application(
+    name = "GarageApp_uitest",
+    testonly = True,
+    llama_xpc_service = "//macapp/Tests/MockLlamaXPCService:MockLlamaXPCService",
+    tags = ["manual"],
+    visibility = ["//macapp:__pkg__"],
+)
+
+swift_library(
+    name = "GarageAppModelUITests_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]) + ["//macapp/Tests/GarageAppUITests:support_srcs"],
+    module_name = "GarageAppModelUITests",
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# XCUITests of the paths that need a model: search results, embedding, fact distillation and the
+# MCP Server page's Try It. Their host is GarageApp_uitest above, so they need no GGUF download and
+# give the same answers on every Mac. Manual for the same reasons as //macapp/Tests/GarageAppUITests
+# (the fixed ports, the quit path, UI automation permission), and run the same way: scheme
+# GarageAppModelUITests of the generated Xcode project.
+macos_ui_test(
+    name = "GarageAppModelUITests",
+    bundle_id = "me.rickmark.garage-rag.GarageAppModelUITests",
+    bundle_name = "GarageAppModelUITests",
+    minimum_os_version = "14.0",
+    # The made-up corpus the tests ingest, as Resources/corpus (GarageUITestCase.copyFixtureCorpus).
+    resources = ["//macapp/Tests/Fixtures:corpus_resources"],
+    tags = [
+        "exclusive",
+        "local",
+        "manual",
+    ],
+    test_host = ":GarageApp_uitest",
+    visibility = ["//visibility:public"],
+    deps = [":GarageAppModelUITests_lib"],
+)

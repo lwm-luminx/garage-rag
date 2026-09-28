@@ -38,10 +38,19 @@ Pruning happens during descent, so excluded subtrees are never entered:
 
 ### 2. Materialize (`ingest/materialize.py`)
 
-Cloud placeholders are zero-byte stubs; *reading* one asks the provider to
-download it. Materialization is therefore metered by a `MaterializationBudget`
-capping files and bytes per run. Hitting the cap is not a failure — because
-ingest is idempotent, repeated bounded runs converge on the full corpus.
+Cloud placeholders are stubs (zero bytes from the old Dropbox client, dataless
+files with their real size from File Provider clients such as iCloud Drive and
+today's Dropbox); *reading* one asks the provider to download it. Materialization
+is therefore metered by a `MaterializationBudget` capping files and bytes per
+run. Hitting the cap is not a failure — because ingest is idempotent, repeated
+bounded runs converge on the full corpus.
+
+On macOS the budget is also enforced by the kernel: `ingest_source` turns the
+`IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES` I/O policy off for its thread, so a
+read of a dataless file anywhere else in the pipeline (an extractor, a hash)
+fails with `EDEADLK` instead of downloading, and the pipeline records that file
+as a placeholder. Only the materialize thread turns the policy back on, for the
+one budgeted read.
 
 A placeholder that was indexed before the sync client evicted it is skipped
 without a download while its `mtime` (and its size, when the stub reports one)
@@ -68,7 +77,18 @@ pay for `pdfplumber` and `openpyxl` in every worker.
 | PDF | `pdf.py` | `pypdf` first, escalating to `pdfplumber` **per page** when a page yields little text or holds tables |
 | Office | `office.py` | `python-docx` / `python-pptx` / `openpyxl`; headings preserved as Markdown |
 | Images | `image.py` | Tesseract, on this machine; no cloud fallback. HEIC/HEIF is decoded by macOS ImageIO (`imageio.py`), not a bundled codec |
+| Mail | `mail.py` | `.eml` and Apple Mail's `.emlx`: a header block (subject, from, to, cc, date) and the body, plain part preferred, HTML stripped otherwise; attachments listed by name, never extracted. Filed as `communication` |
 | Code | `text.py` | Verbatim — indentation is meaningful |
+
+A Messages `chat.db` (a `sqlite` source) is not walked file by file:
+`ingest/conversations.py` reads every chat and stores each thread as one
+`communication` document, keyed on `<chat.db path>#<chat GUID>`, with one chunk
+per message, so a thread that gains a message re-embeds one chunk. Each message
+chunk records its `direction` (`sent` by the owner or `received`) and `sender`,
+which search can filter on. Messages that no `chat_message_join` row names
+(older macOS and iCloud sync leave many) join the one-to-one chat for their
+sender's address; one with no handle, or whose address has only group chats,
+is skipped and counted in the log (`extract/messages.py`).
 
 ### 4. Quality gate (`extract/quality.py`)
 
@@ -97,6 +117,9 @@ Signals in precedence order, each recording its evidence:
    fallback rather than the lead.
 4. **Source default.**
 
+A mail message skips the metadata rule: its sender decides, `authored` when it is
+the owner and `received` otherwise. See [`attribution.md`](attribution.md).
+
 > **Why one `git log` per repository:** `git log --follow` per file would mean
 > 18k git invocations. One `--name-only` pass per repo builds a path→authors map
 > in memory: 60 repos, 29 seconds total, versus an afternoon.
@@ -109,7 +132,8 @@ owns a table keyed on `chunk_id` with `ON DELETE CASCADE`.
 ### 7. Distill facts (`enrich/facts.py`)
 
 An optional pass over stored documents, run as `garage enrich-facts` or the
-`EnrichFacts` streaming RPC (the app's Enrich Facts action), not part of ingest
+`EnrichFacts` streaming RPC (the app's Glean Facts action, and the last step of
+Update Everything on the Sources page, which passes `stale_only`), not part of ingest
 itself. [LangExtract](https://github.com/google/langextract) is pointed at the
 local model named by `facts.model` on `facts.provider` (default: the app's
 `gemma2-2b` alias on `llama_xpc`; `ollama` with e.g. `gemma2:2b` and `lmstudio`
@@ -132,6 +156,48 @@ which also runs a disabled one. `garage facts prompts list` and
 `garage facts prompts show NAME` print the effective prompts, and the app's
 Models page lists and edits them (the `ListFactPrompts` RPC reads them;
 `SetSetting facts.prompts` writes the list back).
+
+Stored facts are browsed with `garage facts list` / `garage facts stats`, over the
+same `ops.facts` functions as the `ListFacts` / `GetFactStats` RPCs behind the
+app's Facts page: filtered by text (full-text or substring), source, document,
+extraction class and corpus class, each fact with the document text around its
+grounding span (`--evidence` prints the span), and counted per source and class.
+
+**Recipe: entities as facts.** Nothing constrains `fact_class` to `'fact'`, so an
+`entities` prompt asking for people, places, organizations, projects and events
+runs today with no code change — just a `facts.prompts` entry. Each mention
+becomes an ordinary, span-grounded fact (with an `attributes.name`/`kind`
+LangExtract attaches) and gets embedded like any other fact; nothing resolves
+repeated mentions into one entity or turns a relationship into an edge yet — see
+[`v1.5.md`](plans/v1.5.md) for where that's headed. Add to `~/.garage.json`:
+
+```json
+{
+  "facts": {
+    "prompts": [
+      {
+        "name": "entities",
+        "description": "Extract every named person, place, organization and event mentioned in this text. Quote each mention exactly as it appears; do not paraphrase. For each, give attributes: name (the full canonical name if the text states it, else the mention), and kind. For a person also give role if the text states one; for an event also give date if the text states one. Do not infer anything not stated.",
+        "examples": [
+          {
+            "text": "On 12 May 2019 Jane Doe of Acme Corp presented the Q2 roadmap at the Austin Convention Center.",
+            "extractions": [
+              {"class": "event", "text": "presented the Q2 roadmap", "attributes": {"name": "Q2 roadmap presentation", "date": "2019-05-12"}},
+              {"class": "person", "text": "Jane Doe", "attributes": {"name": "Jane Doe", "role": "presenter"}},
+              {"class": "organization", "text": "Acme Corp", "attributes": {"name": "Acme Corp"}},
+              {"class": "place", "text": "Austin Convention Center", "attributes": {"name": "Austin Convention Center", "kind": "venue"}}
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Run `garage enrich-facts --prompt entities` and inspect the `facts` rows it
+produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
+building schema on top of what a given local model actually extracts.
 
 Only the local part of LangExtract is used, vendored as
 `enrich/langextract` (prompting, chunking, parsing and alignment). Upstream's
@@ -178,7 +244,7 @@ the `garage` CLI) or HTTP (`garage mcp-serve`, or the macOS app's MCP helper).
 Every tool returns a dataclass, because under MCP 2.0
 dataclass returns map field-for-field while scalars and lists get wrapped in
 `{"result": ...}`. `rag_search`, `rag_get_document`, `rag_list_sources`,
-`rag_list_authors` and `rag_stats` read the corpus; `rag_ask` and
+`rag_list_authors` and `rag_stats` read the corpus; `rag_ask`, `rag_agent` and
 `rag_generate` also generate text, entirely on a local model.
 
 `rag_ask` runs the same retrieval as `rag_search`, numbers the excerpts (each
@@ -186,7 +252,8 @@ trimmed to ~1,200 characters), and asks the model to answer from them citing
 `[n]`; the result carries the answer plus one `Citation` per excerpt so a client
 can resolve `[n]` back to a document. `rag_generate` is the same model with a raw
 prompt and no retrieval. The model is `LocalChatModel` (`enrich/generation.py`),
-built from `facts.provider` / `facts.model`, which posts to `/v1/chat/completions`
+built from `inference.provider` / `inference.model` (or `facts.provider` /
+`facts.model` while `inference.model` is empty), which posts to `/v1/chat/completions`
 through the [inference client](#local-inference-client): `llama_xpc` to the
 app's `LlamaXPCService` on `llama_host` (the `model` field of each request
 selects among the models the engine holds), `ollama` to the Ollama server on
@@ -194,7 +261,28 @@ selects among the models the engine holds), `ollama` to the Ollama server on
 through the egress guard. None is a cloud API; retrieved communications may
 appear in the prompt but never leave the machine: `rag_ask` runs each excerpt's
 class through the guard, which refuses a communication for a host that is not
-loopback (see `docs/privacy.md`). `garage ask` is the
+loopback (see `docs/privacy.md`).
+
+`rag_agent` (`mcp_server/agent.py`) lets the model drive instead: it gets the
+five read-only tools above, each as a one-line signature in the system prompt
+(arguments, their allowed values, the description's first sentence; small models
+follow that better than a JSON schema), with a short guide from kinds of question to
+tools and filters and the owner's name from `identity.self_name`, and calls them by replying with one JSON object
+(`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
+user turn, and a reply that is not a tool call is the answer. Calls travel in the
+conversation rather than as the OpenAI `tools` field because the app's llama engine
+renders the chat template from role/content pairs alone, and the one format then
+works on Ollama and LM Studio too. Arguments are validated against the tool's own
+schema, as `tools/call` validates them, and an error goes back to the model to
+correct. The result carries the answer, the steps (`AgentStep`) and one
+`AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+By default (`search_first`) the question goes to `rag_search` before the model's
+first reply, and the model starts from those hits, shown as a call it already made:
+small models such as gemma2-2b otherwise read "when did I last talk to BMW?" as a
+question about their training and answer that they have no access to personal
+information. The system prompt also tells the model the corpus is the user's own.
+Its content rule: when the model host is not loopback, `rag_search` is restricted
+to documents and code and `rag_get_document` refuses a communication. `garage ask` is the
 CLI front door to both tools, with `--json` for the app.
 
 ## Idempotency
@@ -207,6 +295,13 @@ Two hashes, deliberately not redundant:
 | `content_sha256` | extracted text | rebuild chunks when an extractor improves, even though the file never changed |
 
 One transaction per document, so a crash leaves earlier documents committed.
+
+Replacing a document does not throw its chunks away. Each existing chunk whose
+`ord`, text hash, text and chunker match the new set is kept (its offsets and
+heading are updated in place), the rest are deleted and only new ones inserted.
+A kept chunk keeps its row id, and so its vectors in every `emb_*` table: an edit
+near the end of a file, or a Messages thread that gained a message, re-embeds
+only what changed. Fact chunks are always dropped with the old content.
 
 Each document also records a chunker signature (`chunks.chunker`, e.g.
 `recursive:1000/100` or `code:python:1500/150`); a different signature means the
@@ -253,7 +348,9 @@ it and retries once:
   (`LlamaModelLoaderBridge`, a C function Python calls through ctypes, which
   releases the GIL); it resolves the slug to the downloaded GGUF and the Models
   page's load settings (`LlamaModelResolver`) and calls `ensureModel` on
-  `LlamaXPCService` over NSXPC;
+  `LlamaXPCService` over NSXPC, through the endpoint of its anonymous listener,
+  which the app hands each of these services at launch and after any of them
+  restarts (a sibling XPC service cannot look `LlamaXPCService` up by name);
 - elsewhere (the `garage`/`garage-mcp` launchers, or a venv while the app runs)
   it asks the app's `EnsureLlamaModel` RPC, which uses `GarageXPCService`'s
   loader;
@@ -261,10 +358,64 @@ it and retries once:
   page, and a model that is not downloaded is named with where to download it.
 
 `ensureModel` checks and loads under the engine lock, so callers in different
-processes never load the same model twice. Nothing unloads automatically: the
-embedding model and the facts model stay resident side by side until the
-Models page unloads them, and a load waits for any running inference (they
-share the engine lock).
+processes never load the same model twice, and a load waits for any running
+inference (they share the engine lock). Python never unloads. The app decides
+residency (`AppState+LlamaModels.swift`): it loads the default `llama_xpc`
+embedding model once Postgres is up, and again when the default changes, so a
+search finds it resident; it loads the facts model before a distillation run
+and unloads it when the run ends, unless it is also the search model. Anything
+loaded on demand stays until the Models page's Unload, which the Providers box
+offers for every model Llama XPC holds.
+
+## gRPC bridge (`service/server.py`)
+
+`GarageService` (`proto/garage.proto`) listens on loopback port 50051, hosted in
+the app's `GarageXPCService` helper, or run by hand with `garage serve`. Each handler is a thin
+presenter over the same function the CLI command calls (`ops/`), and a
+`_grpc_errors` decorator maps `LookupError`, `ValueError`, `FileExistsError` and
+`PermissionError` onto gRPC status codes. The RPCs fall in three groups:
+
+- **Corpus reads** for the app's views: `Search`, `ListDocuments`,
+  `GetDocument`, `ListFacts`, `GetFactStats`, `ListSources`, `ListModels`, `GetStats`,
+  `GetStatus`, `GetVersion`, `Ping`.
+- **Operations**: `AddSource`, `RemoveSource`, `Scan` (streaming),
+  `SyncSources`, `ImportSourcesToConfig`, `Reconcile`, `RegisterModel`,
+  `SetDefaultModel`, `DropModel`, `Backfill` and `EnrichFacts` (both streaming;
+  cancelling the call stops the work at its next progress step),
+  `ListFactPrompts`, `InitDb`, `GetSetting` / `SetSetting`, `McpInstall` /
+  `McpUninstall` / `McpStatus`, and `EnsureLlamaModel` for processes that cannot
+  reach `LlamaXPCService` over NSXPC themselves.
+- **The database facade** the ingest and embed XPC workers persist through
+  (`GrpcIngestStorageGateway`): `BeginIngestSession`, `PersistScan`,
+  `CheckDocumentStat` (the stat and hashes the skip decisions need),
+  `PersistDocument`, `FinalizeIngestSession`, `GetEmbeddingBatches` and
+  `UpdateEmbeddings`. The server side is the same
+  `SqlAlchemyIngestStorageGateway` the in-process pipeline uses.
+
+The server accepts requests up to 256 MiB, since `PersistDocument` carries a
+document's whole text and chunks and a long Messages thread outgrows gRPC's
+4 MiB default.
+
+When `GARAGE_GRPC_TOKEN` is set, the server rejects with `UNAUTHENTICATED` any
+call whose `x-garage-token` metadata is not that token (`service/auth.py`,
+compared in constant time). The app makes a random 32-byte token each launch,
+hands it to `GarageXPCService` and the ingest worker through their XPC
+configuration (never `garage.json`, never a log), and sends it on every call;
+`GarageClient` sends it whenever the variable is set. `EnsureLlamaModel` is the
+one exception, since a stdio `garage-mcp` an MCP client spawned has no token.
+Without the variable (`garage serve` by hand, the tests) the server takes any
+call that only reads or persists corpus data. The methods that write
+configuration (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`,
+`McpInstall`, `McpUninstall`, and `InitDb`, whose `schema_dir` names SQL the
+server runs) are stricter, because `SetSetting embedding.ollama_host` widens
+the egress allowlist and a caller's schema directory runs against the corpus: with no token they are
+answered only by a server bound to the owner-only Unix socket, whose folder mode
+admits this account alone, and a server on a loopback TCP port refuses them with
+`PERMISSION_DENIED` (`_config_change` in `service/server.py`; the decision is made
+from the server's binding, not from `ServicerContext.peer()`, which macOS gRPC does
+not report as `unix:` the way Linux does). This keeps other local processes from driving
+configuration until the app reaches the server over XPC, with code-signing
+checks and no socket.
 
 ## Local inference client
 

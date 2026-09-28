@@ -14,6 +14,8 @@ public struct LauncherEntryPoint {
     let mirrorsOutputToLog: Bool
     /// Whether this invocation talks to the database, so the app has to be running.
     let needsDatabase: ([String]) -> Bool
+    /// Answer `quit` here, before Python and before anything could start the app: `garage` only.
+    let answersQuit: Bool
     /// Hold Python back until Postgres accepts connections. Off for `garage-mcp`: it
     /// only opens the database inside tool calls, and an MCP client times out a
     /// server whose `initialize` waits on a cold start.
@@ -25,6 +27,7 @@ public struct LauncherEntryPoint {
         function: "main_cli",
         mirrorsOutputToLog: true,
         needsDatabase: LauncherEntryPoint.cliNeedsDatabase,
+        answersQuit: true,
         waitsForDatabase: true
     )
 
@@ -34,18 +37,29 @@ public struct LauncherEntryPoint {
         function: "main",
         mirrorsOutputToLog: false,
         needsDatabase: { arguments in !arguments.contains("--help") && !arguments.contains("-h") },
+        answersQuit: false,
         waitsForDatabase: false
     )
 
     /// Subcommands that never open the database.
     static let commandsWithoutDatabase: Set<String> = ["config", "mcp-install", "mcp-uninstall", "mcp-status", "version"]
 
-    /// `garage [global options] COMMAND ...`: false for help, bare `garage` and
+    /// `garage quit`, which the launcher answers itself (`AppQuit`).
+    static let quitCommand = "quit"
+
+    /// `garage [global options] COMMAND ...`: false for help, bare `garage`, `quit` and
     /// `commandsWithoutDatabase`, so those work without starting the app.
     static func cliNeedsDatabase(_ arguments: [String]) -> Bool {
         if arguments.contains("--help") || arguments.contains("-h") {
             return false
         }
+        guard let command = command(in: arguments), command != quitCommand else { return false }
+        return !commandsWithoutDatabase.contains(command)
+    }
+
+    /// The subcommand of `garage [global options] COMMAND ...` (`arguments` includes the program
+    /// name), past `--config PATH` / `-c PATH` and other options; nil when there is none.
+    static func command(in arguments: [String]) -> String? {
         var remaining = arguments.dropFirst()
         while let option = remaining.first, option.hasPrefix("-") {
             remaining = remaining.dropFirst()
@@ -53,14 +67,21 @@ public struct LauncherEntryPoint {
                 remaining = remaining.dropFirst()
             }
         }
-        guard let command = remaining.first else { return false }
-        return !commandsWithoutDatabase.contains(command)
+        return remaining.first
+    }
+
+    /// Whether this is `garage quit`, which never reaches Python.
+    func isQuit(_ arguments: [String]) -> Bool {
+        answersQuit && LauncherEntryPoint.command(in: arguments) == LauncherEntryPoint.quitCommand
     }
 }
 
 public enum Launcher {
     /// Runs `entry` in the embedded interpreter and exits with its status.
     public static func run(_ entry: LauncherEntryPoint) -> Never {
+        if entry.isQuit(CommandLine.arguments) {
+            exit(AppQuit.run(CommandLine.arguments))
+        }
         let executable = executablePath()
         let appBundle = containingAppBundle(of: executable)
         exportMCPLauncherPath(appBundle: appBundle, executable: executable)

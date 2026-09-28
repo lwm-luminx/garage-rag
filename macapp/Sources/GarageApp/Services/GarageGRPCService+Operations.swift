@@ -17,8 +17,8 @@ extension GarageGRPCService {
         if status != .running {
             try await start()
         }
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
-        var options = CallOptions()
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
+        var options = GarageGRPCAuth.callOptions()
         if let timeout {
             options.timeLimit = .timeout(timeout)
         }
@@ -48,7 +48,9 @@ extension GarageGRPCService {
     func removeSource(slug: String) async throws -> Garage_RemoveSourceResponse {
         var request = Garage_RemoveSourceRequest()
         request.slug = slug
-        return try await call { try await $0.removeSource(request, callOptions: $1) }
+        // The delete cascades through every document, chunk and vector of the source, which on a
+        // large source takes far longer than the default two minutes.
+        return try await call(timeout: .minutes(30)) { try await $0.removeSource(request, callOptions: $1) }
     }
 
     /// Counts items per source, handing each status (the running count while a source is
@@ -210,15 +212,19 @@ extension GarageGRPCService {
         case all
     }
 
-    func mcpInstall(scope: McpInstallScope, host: String, port: Int, force: Bool = false) async throws -> Garage_McpInstallResponse {
+    /// With `stdio`, the entry runs the bundled `garage-mcp` launcher; otherwise it is the HTTP address.
+    func mcpInstall(scope: McpInstallScope, host: String, port: Int, stdio: Bool = false, force: Bool = false) async throws -> Garage_McpInstallResponse {
         var request = Garage_McpInstallRequest()
         switch scope {
         case .target(let key): request.target = key
         case .path(let path): request.path = path
         case .all: request.all = true
         }
-        request.host = host
-        request.port = Int32(port)
+        request.stdio = stdio
+        if !stdio {
+            request.host = host
+            request.port = Int32(port)
+        }
         request.force = force
         return try await call { try await $0.mcpInstall(request, callOptions: $1) }
     }

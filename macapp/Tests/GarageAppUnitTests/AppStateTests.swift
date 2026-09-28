@@ -135,11 +135,25 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
-    func testPresetModelsInitialization() {
+    func testPresetModelsComeFromTheCatalog() {
+        // The presets are whatever models.json the loader finds; there is no hand-written list
+        // behind it, so without a catalog (as in this test bundle) the app offers none.
         let state = AppState()
-        XCTAssertFalse(state.presetModels.isEmpty)
-        XCTAssertTrue(state.presetModels.contains { $0.slug == "bge-m3" })
-        XCTAssertTrue(state.presetModels.contains { $0.slug == "nomic-embed-text" })
+        let catalog = GarageConfigLoader.loadModelPresets()
+        XCTAssertEqual(state.presetModels.map(\.slug), catalog.map(\.slug))
+        XCTAssertEqual(state.factDistilPresets.map(\.slug), GarageConfigLoader.loadFactDistilPresets().map(\.slug))
+        if !catalog.isEmpty {
+            XCTAssertTrue(state.presetModels.contains { $0.slug == "bge-m3" })
+            XCTAssertTrue(state.presetModels.contains { $0.slug == "nomic-embed-text" })
+        }
+    }
+
+    @MainActor
+    func testADatabaseResetIsNotBeingFinishedAtLaunch() {
+        let state = AppState()
+        XCTAssertFalse(state.isFinishingDatabaseReset)
+        XCTAssertNil(state.databaseResetOutcome)
+        XCTAssertTrue(AppState.databaseResetInProgressMessage.hasPrefix("Finishing the database reset"))
     }
 
     @MainActor
@@ -787,6 +801,41 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
+    func testAQueuedSourceKeepsStopUpAndStopEmptiesTheQueue() {
+        let state = AppState()
+        // A Scan & Ingest of one source between its scan and its ingest: nothing runs, the source waits.
+        state.setQueuesForTesting(ingest: ["notes"])
+        XCTAssertTrue(state.hasCancellableWork, "Stop went away between the scan and the ingest")
+
+        state.cancelAll()
+
+        XCTAssertTrue(state.ingestQueue.isEmpty, "Stop left the source queued, so its ingest would still start")
+    }
+
+    @MainActor
+    func testAScanAndIngestThatCannotScanLeavesNothingQueued() async {
+        let state = AppState()
+        XCTAssertEqual(state.postgres.status, .stopped)
+
+        let result = await state.scanAndIngestSource(slug: "notes")
+
+        XCTAssertFalse(result)
+        XCTAssertTrue(state.ingestQueue.isEmpty)
+        XCTAssertFalse(state.isIngesting, "the ingest ran although the scan did not")
+    }
+
+    @MainActor
+    func testAScanAndIngestOfAQueuedSourceIsTurnedAway() async {
+        let state = AppState()
+        state.setQueuesForTesting(ingest: ["notes"])
+
+        let result = await state.scanAndIngestSource(slug: "notes")
+
+        XCTAssertFalse(result)
+        XCTAssertEqual(state.ingestQueue, ["notes"], "the second run took the first run's place in the queue")
+    }
+
+    @MainActor
     func testASecondIngestOfAllIsTurnedAway() async {
         let state = AppState()
         state.setIngestingAllForTesting(true)
@@ -795,5 +844,48 @@ final class AppStateTests: XCTestCase {
 
         XCTAssertFalse(result)
         XCTAssertEqual(state.lastCommandOutput, "An ingest of every source is already running.")
+    }
+
+    // MARK: - Update Everything and updates at launch
+
+    @MainActor
+    func testUpdateEverythingDoesNothingWhileTheDatabaseIsDown() async {
+        let state = AppState()
+        XCTAssertEqual(state.postgres.status, .stopped)
+
+        await state.updateEverything()
+
+        XCTAssertFalse(state.isUpdatingEverything)
+        XCTAssertFalse(state.isScanning, "Update Everything scanned with the database down")
+        XCTAssertFalse(state.backfill.isRunning)
+        XCTAssertFalse(state.enrichFacts.isRunning)
+        XCTAssertNil(state.lastCommandSucceeded, "a run that never started reports no outcome")
+    }
+
+    @MainActor
+    func testUpdateEverythingIsNotUnderWayAtLaunch() {
+        let state = AppState()
+        XCTAssertFalse(state.isUpdatingEverything)
+        XCTAssertFalse(state.hasCancellableWork)
+    }
+
+    @MainActor
+    func testUpdatesAtLaunchFollowTheSavedPreference() {
+        let state = AppState()
+        XCTAssertEqual(state.maintenanceRunsAtLaunch, UserDefaults.standard.bool(forKey: "scheduledMaintenanceRunsAtLaunch"))
+    }
+
+    @MainActor
+    func testUpdatesAtLaunchWaitForTheDatabase() async {
+        let state = AppState()
+        // Called before any launch and with the database down, it must neither start a run nor fail.
+        state.runMaintenanceAtLaunchIfEnabled()
+        // The run is gated on the backend and the helpers too; give a wrongly scheduled one time to show.
+        try? await Task.sleep(nanoseconds: 1_200_000_000)
+
+        XCTAssertFalse(state.isScanning)
+        XCTAssertFalse(state.isUpdatingEverything)
+        XCTAssertFalse(state.hasCancellableWork)
+        XCTAssertFalse(state.isMaintenanceRunning, "a launch run started with the database and the backend down")
     }
 }

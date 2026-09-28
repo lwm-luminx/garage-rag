@@ -19,7 +19,8 @@ This guide provides step-by-step diagnostic procedures and solutions for common 
 | `authorization denied` or `Operation not permitted` | Missing macOS Full Disk Access for Messages or Mail | [Grant Full Disk Access](#tcc-permissions) |
 | `FATAL: lock file "postmaster.pid" already exists` | Orphaned lock file after system crash | [Clear PID Lock File](#postgres-pid-lock) |
 | `FATAL: postmaster became multithreaded during startup` | Locale initialization spawning threads | [Set `LC_ALL=C`](#postgres-multithreaded) |
-| `connection refused to 127.0.0.1:14824` | PostgreSQL service not running or port occupied | [Restart Postgres Service](#postgres-port-issues) |
+| `connection refused` on `localhost:14824` | PostgreSQL service not running or port occupied | [Restart Postgres Service](#postgres-port-issues) |
+| `cannot reach … at http://127.0.0.1:8790` | Garage (and its built-in model engine) not running | [Start the model server](#provider-connection-refused) |
 | `HTTP 421 Misdirected Request` on MCP server | DNS rebinding protection triggered | [Check Host Header](#mcp-dns-rebinding) |
 | `Vector dimension mismatch` on backfill | Registered model dimension differs from provider | [Verify Model Dimensions](#vector-dimensions) |
 | Large unexpected network downloads | Cloud stubs (Dropbox/iCloud) being read | [Configure Placeholder Limits](#cloud-placeholders) |
@@ -31,7 +32,7 @@ This guide provides step-by-step diagnostic procedures and solutions for common 
 <h3 id="postgres-port-issues">Port 14824 Unavailable</h3>
 
 **Symptom**: GarageApp indicates database error or CLI fails with:
-`psycopg2.OperationalError: could not connect to server: Connection refused`
+`psycopg.OperationalError: connection failed: … port 14824 failed: Connection refused`
 
 **Solution**:
 1. Check if another instance or zombie process is using port 14824:
@@ -42,7 +43,7 @@ This guide provides step-by-step diagnostic procedures and solutions for common 
    ```bash
    kill -TERM <PID>
    ```
-3. In `GarageApp`, click the menu bar icon and choose **Restart Database**.
+3. In `GarageApp`, open the **Database** page and click **Start** (or **Restart**). Postgres's own output is at the bottom of that page.
 
 <h3 id="postgres-pid-lock">Orphaned <code>postmaster.pid</code> File</h3>
 
@@ -51,7 +52,7 @@ This guide provides step-by-step diagnostic procedures and solutions for common 
 **Solution**:
 Verify no postgres processes are active, then remove the stale lock file:
 ```bash
-rm -f ~/Library/Application\ Support/GarageApp/pgdata/postmaster.pid
+rm -f ~/Library/Group\ Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application\ Support/GarageApp/pgdata/postmaster.pid
 ```
 
 <h3 id="postgres-multithreaded">Multithreaded Startup Error</h3>
@@ -62,7 +63,7 @@ rm -f ~/Library/Application\ Support/GarageApp/pgdata/postmaster.pid
 
 **Solution**: Ensure `LC_ALL=C` is exported in the environment before launching postgres (handled automatically by `GarageApp`).
 
-### Starting over with an empty database
+<h3 id="starting-over">Starting over with an empty database</h3>
 
 **Database → Reset Database…** deletes everything Garage built from your files and nothing else:
 - **Deleted:** the search index (documents, chunks and embeddings), facts, the conversation memory
@@ -92,18 +93,21 @@ sqlite3: unable to open database ~/Library/Messages/chat.db: authorization denie
 
 **Solution**:
 1. Open **System Settings → Privacy & Security → Full Disk Access**.
-2. Click the lock/add icon and ensure both **GarageApp** and your terminal emulator (e.g. **Terminal**, **iTerm2**, or **Ghostty**) are added with toggle enabled.
-3. If permissions were changed while the app was running, quit and re-launch `GarageApp`.
+2. Click the lock/add icon and ensure both **Garage** and your terminal emulator (e.g. **Terminal**, **iTerm2**, or **Ghostty**) are added with toggle enabled.
+3. If permissions were changed while the app was running, quit and re-launch Garage.
+
+**App Store version**: it runs in the macOS sandbox and can read only the folders you choose. It asks with the standard Open dialog when you add a source, or when it needs the disk (**Select Disk…** at the top of the Sources page). For Messages and Mail, choose the folder and also grant Full Disk Access as above.
 
 ---
 
 <h2 id="embedding-issues">3. Embedding Models & Providers</h2>
 
-<h3 id="provider-connection-refused">Ollama / LM Studio Connection Refused</h3>
+<h3 id="provider-connection-refused">Model Server Connection Refused</h3>
 
-**Symptom**: `garage backfill` fails with `ConnectionRefusedError: [Errno 61] Connection refused`.
+**Symptom**: `garage backfill`, `garage enrich-facts` or a search fails with `cannot reach <server> at <URL>`.
 
 **Solution**:
+- **Built-in engine** (`llama_xpc`, port `8790`): it runs inside Garage, so open Garage. If the error names a model that is not loaded, load it on the **Models** page; one that is not downloaded is named with where to download it.
 - **Ollama**: Verify Ollama is running (`ollama list`). Start Ollama via `ollama serve` or open the Ollama desktop app.
 - **LM Studio**: Open LM Studio, select the **Developer** tab, and click **Start Server** on port `1234`.
 
@@ -144,7 +148,7 @@ Ensure your client sends `Host: 127.0.0.1:8787`. If accessing from a web applica
 
 **Solution**:
 1. Check `~/Library/Application Support/Claude/claude_desktop_config.json`.
-2. Confirm the entry for `garage` exists and has the correct path to `garage-mcp`.
+2. Confirm the `garage-rag` entry exists: the command `/Applications/Garage.app/Contents/MacOS/garage-mcp` (the default, which starts Garage when needed) or, if you turned on the HTTP server, the URL `http://127.0.0.1:8787/mcp`, which needs Garage running. The **MCP Server** page shows each assistant as Connected, or offers **Update** when its entry points at an old address.
 3. Re-install using:
    ```bash
    garage mcp-install --target claude-desktop
@@ -170,23 +174,24 @@ Garage meters cloud stub materialization. In `~/.garage.json`, adjust placeholde
   }
 }
 ```
-Setting `"materialize": false` ensures online-only placeholders are indexed as metadata stubs without downloading their contents.
+Setting `"materialize": false` means online-only placeholders are never downloaded: they are counted as placeholders and get no document until their contents are on your Mac. A file that was indexed before the sync client made it online-only keeps its index entry and is skipped without a download while it stays unchanged. With materialization on, `limit` (files) and `max_bytes` cap what one run downloads; `0` means unlimited. In the app these settings live in `garage.json` in its data folder.
 
 ---
 
 <h2 id="inspecting-logs">6. Inspecting Diagnostic Logs</h2>
 
-When diagnosing issues, check the relevant logs:
+When diagnosing issues, the **Logs** page shows every log live: Unified Log, Postgres, App, Ingest, Embed, MCP Server, Index Manager, Built-in Engine and Downloader. Postgres's output is also at the bottom of the **Database** page.
 
-- **PostgreSQL Database Logs**:
-  `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/postgres.log`
-- **Ingestion & CLI Logs**:
-  `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/ingest.log`
-- **MCP Server Logs**:
-  `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/logs/mcp.log`
+The helper services also write log files, in `~/Library/Logs/Garage/` for the direct-download (Developer ID) build. The App Store build is sandboxed, so each helper writes to `Data/Library/Logs/Garage/` inside its own container, `~/Library/Containers/me.rickmark.garage-rag.<helper>/` (for example `me.rickmark.garage-rag.ingest-xpc` for `ingest-xpc.log`, and `me.rickmark.garage-rag.xpc` for `garage-xpc.log`):
 
-With the direct-download (Developer ID) build, `~/Library/Application Support/GarageApp` is a shortcut
-to the same folder, so `~/Library/Application Support/GarageApp/logs/` works too.
+- **Ingestion**: `ingest-xpc.log`
+- **Embedding**: `embed-xpc.log`
+- **MCP Server**: `mcp-server-xpc.log`
+- **Index Manager** (search, embedding, facts): `garage-xpc.log`
+- **Built-in model engine**: `llama-xpc.log`
+- **Model downloads**: `model-download-xpc.log`
+
+A helper that crashed leaves `<service>-crash.log` beside them.
 
 <div class="callout callout-info">
   <div class="callout-title">Need to Submit Logs for Support?</div>

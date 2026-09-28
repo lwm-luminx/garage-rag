@@ -68,4 +68,26 @@ final class LauncherTests: XCTestCase {
         let launcher = try executable("bin/garage")
         XCTAssertNil(Launcher.mcpLauncherPath(appBundle: nil, executable: launcher))
     }
+
+    // MARK: - garage quit
+
+    func testTheCommandIsFoundPastGlobalOptions() {
+        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "quit"]), "quit")
+        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "--config", "/tmp/g.json", "search", "x"]), "search")
+        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "-c", "quit", "status"]), "status")
+        XCTAssertNil(LauncherEntryPoint.command(in: ["garage", "--verbose"]))
+    }
+
+    /// `garage quit` must not start the app it is about to quit.
+    func testQuitIsAnsweredByTheCLILauncherWithoutTheDatabase() {
+        XCTAssertTrue(LauncherEntryPoint.cli.isQuit(["garage", "quit"]))
+        XCTAssertTrue(LauncherEntryPoint.cli.isQuit(["garage", "--config", "/tmp/g.json", "quit"]))
+        XCTAssertFalse(LauncherEntryPoint.cliNeedsDatabase(["garage", "quit"]))
+        XCTAssertTrue(LauncherEntryPoint.cliNeedsDatabase(["garage", "status"]))
+    }
+
+    func testOnlyTheCLILauncherAnswersQuit() {
+        XCTAssertFalse(LauncherEntryPoint.mcp.isQuit(["garage-mcp", "quit"]))
+        XCTAssertFalse(LauncherEntryPoint.cli.isQuit(["garage", "search", "quit"]))
+    }
 }

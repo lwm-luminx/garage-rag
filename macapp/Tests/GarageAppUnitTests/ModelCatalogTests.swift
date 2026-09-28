@@ -97,11 +97,11 @@ final class ModelCatalogTests: XCTestCase {
         let candidates = [
             Bundle(for: Self.self).url(forResource: "models", withExtension: "json"),
             ProcessInfo.processInfo.environment["TEST_SRCDIR"].map {
-                URL(fileURLWithPath: $0).appendingPathComponent("_main/docs/.data/models.json")
+                URL(fileURLWithPath: $0).appendingPathComponent("_main/data/models/models.json")
             },
         ].compactMap { $0 }
         guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            throw XCTSkip("docs/.data/models.json is not in this test's runfiles")
+            throw XCTSkip("data/models/models.json is not in this test's runfiles")
         }
         XCTAssertTrue(GarageConfigLoader.isUsableModelCatalog(try Data(contentsOf: url)))
     }

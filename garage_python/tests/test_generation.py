@@ -30,6 +30,19 @@ class TestConstruction:
         assert model.provider == "ollama"
         assert model.host == "http://localhost:11434"
 
+    def test_the_inference_section_names_the_chat_model(self) -> None:
+        settings = Settings(inference_model="granite-4.1-8b", fact_model="gemma2-2b", fact_provider="ollama")
+        model = LocalChatModel(settings=settings)
+        # inference.provider is empty, so the chat model is served where facts.provider says.
+        assert (model.provider, model.model_ref) == ("ollama", "granite-4.1-8b")
+        settings = Settings(inference_model="gpt-oss-20b", inference_provider="llama_xpc", fact_provider="ollama")
+        assert LocalChatModel(settings=settings).provider == "llama_xpc"
+
+    def test_an_inference_provider_alone_does_not_move_the_facts_model(self) -> None:
+        settings = Settings(inference_provider="lmstudio", fact_model="gemma2-2b")
+        model = LocalChatModel(settings=settings)
+        assert (model.provider, model.model_ref) == ("llama_xpc", "gemma2-2b")
+
     def test_explicit_arguments_win(self) -> None:
         model = LocalChatModel(provider="ollama", model_ref="phi", settings=Settings())
         assert (model.provider, model.model_ref) == ("ollama", "phi")

@@ -18,7 +18,7 @@ extension GarageGRPCService {
             try await start()
         }
 
-        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel())
+        let client = Garage_GarageServiceAsyncClient(channel: getOrCreateChannel(), defaultCallOptions: GarageGRPCAuth.callOptions())
         var request = Garage_ListFactsRequest()
         if let query, !query.isEmpty {
             request.query = query
@@ -38,7 +38,7 @@ extension GarageGRPCService {
         request.limit = Int32(limit)
         request.offset = Int32(offset)
 
-        let callOptions = CallOptions(timeLimit: .timeout(.seconds(30)))
+        let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
         do {
             return try await client.listFacts(request, callOptions: callOptions)
         } catch {

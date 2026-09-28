@@ -14,13 +14,14 @@ import pytest
 from garage_rag.attribute.resolver import SelfIdentity
 from garage_rag.db.models import CorpusClass, TrustTier
 from garage_rag.extract.messages import (
+    OrphanStats,
     apple_time,
     decode_attributed_body,
     find_databases,
     is_messages_database,
     read_conversations,
 )
-from garage_rag.ingest.conversations import conversation_uri, render, signature
+from garage_rag.ingest.conversations import conversation_uri, ingest_conversation, render, signature
 from garage_rag.ingest.gateway import ExistingDocStat, IngestStorageGateway, SourceContext
 from garage_rag.ingest.pipeline import ingest_source
 
@@ -89,6 +90,41 @@ def write_chat_db(path: Path) -> None:
             (rowid, f"msg-{rowid}", text, 0 if from_me else handle_id, date, from_me, body, assoc, item),
         )
         conn.execute("INSERT INTO chat_message_join VALUES (?, ?, ?)", (chat_id, rowid, date))
+    conn.commit()
+    conn.close()
+
+
+def add_orphans(path: Path) -> None:
+    """Messages in no chat_message_join row, the way older macOS and iCloud sync leave them.
+
+    Adds a second handle row for +15551234567 (SMS) with its own one-to-one chat, a
+    handle with no chat but a group of one, and an orphan of each kind.
+    """
+    conn = sqlite3.connect(path)
+    conn.executescript(
+        """
+        INSERT INTO handle (ROWID, id, service) VALUES (4, 'stranger@example.com', 'iMessage'),
+            (5, '+15551234567', 'SMS');
+        INSERT INTO chat (ROWID, guid, style, chat_identifier, service_name, display_name) VALUES
+            (5, 'SMS;-;+15551234567', 45, '+15551234567', 'SMS', ''),
+            (6, 'iMessage;+;chat77', 43, 'chat77', 'iMessage', 'Just the stranger');
+        INSERT INTO chat_handle_join VALUES (5, 5), (6, 4);
+        """
+    )
+    orphans: list[tuple[int, str, int, int, int]] = [
+        # (ROWID, text, handle_id, is_from_me, seconds after BASE_NS)
+        (30, "orphan from them", 1, 0, 30),  # between chat 1's two messages
+        (31, "orphan from me", 1, 1, 150),  # the owner's own: handle_id names the other party
+        (32, "orphan by SMS", 5, 0, 200),  # the SMS handle row: its own one-to-one chat wins
+        (33, "orphan in a chat that had no text", 3, 0, 210),
+        (34, "orphan with no handle", 0, 0, 220),
+        (35, "orphan whose only chat is a group", 4, 0, 230),
+    ]
+    for rowid, text, handle_id, from_me, seconds in orphans:
+        conn.execute(
+            "INSERT INTO message (ROWID, guid, text, handle_id, date, is_from_me) VALUES (?, ?, ?, ?, ?, ?)",
+            (rowid, f"msg-{rowid}", text, handle_id, BASE_NS + seconds * 10**9, from_me),
+        )
     conn.commit()
     conn.close()
 
@@ -246,7 +282,7 @@ def test_ingest_source_indexes_each_conversation_once(messages_dir: Path) -> Non
     assert doc["title"] == "Climbing crew"
     assert doc["corpus_class"] == "communication"
     assert doc["trust_tier"] == "received"
-    assert doc["chunker"] == signature(1000)
+    assert doc["chunker"] == signature(1000) == "conversation:message:1000:v2"
     assert doc["meta"]["is_group"] is True
     assert [c.text for c in doc["chunks"]] == [
         "[2026-09-24 12:04 UTC] +15551234567: Saturday at the gym?",
@@ -256,12 +292,87 @@ def test_ingest_source_indexes_each_conversation_once(messages_dir: Path) -> Non
         ("+15551234567", "sender"),
         ("friend@example.com", "sender"),
         ("+15559876543", "recipient"),  # a member who never wrote
+        ("Rick", "recipient"),  # the owner is in every thread, here without writing
     }
     assert {a.name: a.identities for a in doc["authors"]}["friend@example.com"] == {"email": "friend@example.com"}
 
     direct = gateway.docs[f"{db}#iMessage;-;+15551234567"]
     owner = [a for a in direct["authors"] if a.is_self]
     assert [a.name for a in owner] == ["Rick"]
+
+
+def test_each_message_chunk_says_which_way_it_went(messages_dir: Path) -> None:
+    """Trust is per thread; chunks.direction and chunks.sender say who wrote each message."""
+    gateway = FakeGateway(messages_dir)
+    ingest_source(gateway=gateway, source_slug="apple-sms")
+    db = messages_dir / "chat.db"
+
+    direct = gateway.docs[f"{db}#iMessage;-;+15551234567"]
+    assert [(c.direction, c.sender) for c in direct["chunks"]] == [("received", "+15551234567"), ("sent", "me")]
+    group = gateway.docs[f"{db}#iMessage;+;chat42"]
+    assert [(c.direction, c.sender) for c in group["chunks"]] == [
+        ("received", "+15551234567"),
+        ("received", "friend@example.com"),
+    ]
+
+
+def test_every_piece_of_a_long_message_carries_its_direction(messages_dir: Path) -> None:
+    db = messages_dir / "chat.db"
+    long_one = next(c for c in read_conversations(db) if c.guid.endswith("friend@example.com"))
+    long_one.messages[0] = replace(long_one.messages[0], text=". ".join(["a sentence of text"] * 30))
+    gateway = FakeGateway(messages_dir)
+    with patch("garage_rag.ingest.conversations.get_settings") as settings:
+        settings.return_value.chunk_size = 120
+        ingest_conversation(
+            gateway, gateway.begin_session("apple-sms"), db, long_one, self_identity=SelfIdentity("Rick", [])
+        )
+    chunks = gateway.docs[conversation_uri(db, long_one)]["chunks"]
+    assert len(chunks) > 1
+    assert {(c.direction, c.sender) for c in chunks} == {("received", "friend@example.com")}
+
+
+def test_orphan_messages_join_the_one_to_one_chat_for_their_address(messages_dir: Path) -> None:
+    add_orphans(messages_dir / "chat.db")
+    stats = OrphanStats()
+    conversations = {c.guid: c for c in read_conversations(messages_dir / "chat.db", stats)}
+
+    # In date order among the chat's own messages; the owner's orphan keeps is_from_me.
+    direct = conversations["iMessage;-;+15551234567"]
+    assert [(m.text, m.direction, m.sender_id) for m in direct.messages] == [
+        ("running late", "received", "+15551234567"),
+        ("orphan from them", "received", "+15551234567"),
+        ("no worries, see you at 7", "sent", "me"),
+        ("orphan from me", "sent", "me"),
+    ]
+    # The SMS handle row has its own one-to-one chat, which wins over the iMessage one.
+    assert [m.text for m in conversations["SMS;-;+15551234567"].messages] == ["orphan by SMS"]
+    # A chat with no text of its own becomes a conversation through its orphan.
+    assert [m.text for m in conversations["SMS;-;+15559876543"].messages] == ["orphan in a chat that had no text"]
+    # A group is never a one-to-one chat, even with one member; and nothing lands in the real group.
+    assert "iMessage;+;chat77" not in conversations
+    assert [m.text for m in conversations["iMessage;+;chat42"].messages] == ["Saturday at the gym?", "I'm in"]
+
+    assert (stats.attached, stats.no_handle, stats.no_chat, stats.skipped) == (4, 1, 1, 2)
+
+
+def test_an_orphan_rebuilds_only_its_thread(messages_dir: Path) -> None:
+    gateway = FakeGateway(messages_dir)
+    ingest_source(gateway=gateway, source_slug="apple-sms")
+
+    conn = sqlite3.connect(messages_dir / "chat.db")
+    conn.execute(
+        "INSERT INTO message (ROWID, guid, text, handle_id, date, is_from_me)"
+        " VALUES (40, 'msg-40', 'late one', 2, ?, 0)",
+        (BASE_NS + 40 * MINUTE_NS,),
+    )
+    conn.commit()
+    conn.close()
+
+    counters, _, _ = ingest_source(gateway=gateway, source_slug="apple-sms")
+    assert (counters.indexed, counters.skipped) == (1, 2)
+    friend = gateway.docs[f"{messages_dir / 'chat.db'}#iMessage;-;friend@example.com"]
+    assert friend["chunks"][-1].text.endswith("friend@example.com: late one")
+    assert (friend["chunks"][-1].direction, friend["chunks"][-1].sender) == ("received", "friend@example.com")
 
 
 def test_unchanged_conversations_are_only_recorded_as_seen(messages_dir: Path) -> None:

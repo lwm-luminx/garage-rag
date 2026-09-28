@@ -16,14 +16,16 @@ import XCTest
 ///
 /// Unzip the bundle first if Bazel produced `GarageStore.app.zip`. The sandbox keeps the app out of
 /// the runner's temporary folder, so each test's data folder lives in the App Group container's
-/// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one place both can reach. On macOS 15 the
+/// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one place both can reach. The runner is
+/// sandboxed too (Xcode's XCTRunner template), so it writes there through the App Group the test
+/// target's entitlements give it; without that, setup fails with Cocoa error 513. On macOS 15 the
 /// first run may ask whether the test runner may access data from other apps.
 class StoreUITestCase: GarageUITestCase {
     static let storeAppVariable = "GARAGE_UITEST_STORE_APP"
     static let appGroup = "DWVXMLB45Y.group.me.rickmark.garage-rag"
 
-    /// The account's real home folder; `NSHomeDirectory()` would do here (the runner is not
-    /// sandboxed), but the app's view of `~` is exactly what these tests check, so say which.
+    /// The account's real home folder. The runner is sandboxed, so `NSHomeDirectory()` is its
+    /// container, and the app's view of `~` is exactly what these tests check.
     static var realHome: String {
         if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
             return String(cString: dir)
@@ -234,7 +236,7 @@ final class StoreMailMessagesUITests: StoreUITestCase {
         open(section: "status", file: file, line: line)
         let documents = element(identifier: "status.figure.documents")
         XCTAssertTrue(
-            waitUntil(timeout: 240) { documents.exists && documents.label == "\(expected)" },
+            waitUntil(timeout: 240) { documents.exists && self.shownText(of: documents) == "\(expected)" },
             "the Status page never counted the \(expected) fixture items",
             file: file,
             line: line

@@ -32,8 +32,8 @@ from garage_rag.db.engine import reset_engine, session_scope
 from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations, sql_dir, to_psycopg_conninfo
 from garage_rag.db.registry import ModelSpec
 from garage_rag.embed.ollama import count_pending
-from garage_rag.ingest.gateway import ChunkPayload, SqlAlchemyIngestStorageGateway
-from garage_rag.ops.facts import EXCERPT_CONTEXT, list_facts
+from garage_rag.ingest.gateway import AuthorPayload, ChunkPayload, SqlAlchemyIngestStorageGateway
+from garage_rag.ops.facts import EXCERPT_CONTEXT, fact_stats, list_facts
 from garage_rag.search import SearchMode
 from garage_rag.search.hybrid import search
 
@@ -290,6 +290,21 @@ class TestMigrations:
         with pytest.raises(Exception, match="embedding_models_distance_check"):
             db.execute(text("UPDATE embedding_models SET distance = 'manhattan'"))
 
+    def test_014_adds_direction_and_sender_to_chunks(self, db: Session) -> None:
+        """Re-applied, 014 leaves one column each and one check; only messages carry a value."""
+        chunk = _chunk(db, _source(db, "sms"), "thread", "[2026-09-24 12:00 UTC] Me: on my way")
+        migration = (sql_dir() / "014_chunk_direction.sql").read_text(encoding="utf-8")
+        db.connection().exec_driver_sql(migration)
+        db.connection().exec_driver_sql(migration)  # and again: idempotent
+
+        assert db.execute(text("SELECT direction, sender FROM chunks WHERE id = :id"), {"id": chunk}).one() == (
+            None,
+            None,
+        )
+        db.execute(text("UPDATE chunks SET direction = 'sent', sender = 'me' WHERE id = :id"), {"id": chunk})
+        with pytest.raises(Exception, match="chunks_direction_check"):
+            db.execute(text("UPDATE chunks SET direction = 'sideways' WHERE id = :id"), {"id": chunk})
+
 
 class TestIngestOutcomes:
     """The no-text and failed outcomes the pipeline remembers, through the SQL gateway."""
@@ -365,9 +380,16 @@ class TestReplaceDocument:
     """Replacing a document keeps the chunks that did not change, and so their vectors."""
 
     @staticmethod
-    def _chunks(*texts: str) -> list[ChunkPayload]:
+    def _chunks(*texts: str, direction: str | None = None, sender: str | None = None) -> list[ChunkPayload]:
         return [
-            ChunkPayload(ord=i, text=t, chunk_sha256=hashlib.sha256(t.encode()).hexdigest(), chunker="test")
+            ChunkPayload(
+                ord=i,
+                text=t,
+                chunk_sha256=hashlib.sha256(t.encode()).hexdigest(),
+                chunker="test",
+                direction=direction,
+                sender=sender,
+            )
             for i, t in enumerate(texts)
         ]
 
@@ -435,6 +457,20 @@ class TestReplaceDocument:
 
         assert self._rows(db) == {0: (first, "first")}
 
+    def test_a_kept_chunk_takes_its_new_direction_and_sender(self, db: Session) -> None:
+        """A message indexed before 014 has no direction; the rebuild fills it in on the same row."""
+        _source(db, "replace")
+        db.commit()
+        gateway = SqlAlchemyIngestStorageGateway(session_factory=session_scope)
+
+        self._replace(gateway, self._chunks("see you at 7"))
+        before = self._rows(db)[0][0]
+        self._replace(gateway, self._chunks("see you at 7", direction="received", sender="+15551234567"))
+
+        db.expire_all()
+        row = db.execute(text("SELECT id, direction, sender FROM chunks")).one()
+        assert tuple(row) == (before, "received", "+15551234567")
+
 
 class TestModelTables:
     @pytest.mark.parametrize(
@@ -498,6 +534,116 @@ class TestSearch:
         _chunk(db, source, "sourdough", "A sourdough starter needs wild yeast and flour.")
         hits = search(db, "wild yeast", mode="fts")
         assert [hit.title for hit in hits] == ["sourdough"]
+
+    def test_direction_keeps_to_messages_that_went_that_way(self, db: Session) -> None:
+        source = _source(db, "notes")
+        _chunk(db, source, "sourdough", "A sourdough starter needs wild yeast and flour.")
+        sent = _chunk(db, source, "thread", "Me: bring the sourdough", corpus_class="communication")
+        document_id = db.execute(text("SELECT document_id FROM chunks WHERE id = :id"), {"id": sent}).scalar_one()
+        db.execute(text("UPDATE chunks SET direction = 'sent', sender = 'me' WHERE id = :id"), {"id": sent})
+        db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, direction, sender) "
+                "VALUES (:doc, 1, 'friend: sourdough again?', :sha, 'test', 'received', 'friend@example.com')"
+            ),
+            {"doc": document_id, "sha": hashlib.sha256(b"received").digest()},
+        )
+
+        everything = search(db, "sourdough", mode="fts")
+        assert len(everything) == 3
+        assert {(h.direction, h.sender) for h in everything} == {
+            (None, None),
+            ("sent", "me"),
+            ("received", "friend@example.com"),
+        }
+        assert [(h.text, h.sender) for h in search(db, "sourdough", mode="fts", direction="sent")] == [
+            ("Me: bring the sourdough", "me")
+        ]
+        assert [h.sender for h in search(db, "sourdough", mode="fts", direction="received")] == ["friend@example.com"]
+        with pytest.raises(ValueError, match="direction must be one of sent, received"):
+            search(db, "sourdough", mode="fts", direction="sideways")
+
+
+class TestMessageAuthors:
+    """Messages authors first named after a phone number take the contact name when it arrives."""
+
+    @staticmethod
+    def _thread(gateway: SqlAlchemyIngestStorageGateway, uri: str, authors: list[AuthorPayload]) -> None:
+        content = f"thread {uri} " + " ".join(a.name for a in authors)
+        with patch("garage_rag.attribute.resolver.ensure_self_author"):
+            gateway.replace_document(
+                0,
+                "sms",
+                uri,
+                title=uri,
+                lang=None,
+                byte_size=len(content),
+                mtime=1.8e9,
+                source_sha256=None,
+                content_sha256=hashlib.sha256(content.encode()).hexdigest(),
+                extractor="messages",
+                extractor_version="1",
+                chunker="test",
+                content=content,
+                meta={},
+                corpus_class="communication",
+                trust_tier="received",
+                authors=authors,
+                chunks=[ChunkPayload(ord=0, text=content, chunk_sha256=hashlib.sha256(content.encode()).hexdigest())],
+            )
+
+    @staticmethod
+    def _handle(handle: str, name: str | None = None) -> AuthorPayload:
+        kind = "email" if "@" in handle else "phone"
+        return AuthorPayload(name=name or handle, role="sender", identities={kind: handle}, evidence="imessage-handle")
+
+    def _authors(self, db: Session) -> dict[str, set[str]]:
+        db.expire_all()
+        rows = db.execute(
+            text(
+                "SELECT a.display_name, ai.value FROM authors a JOIN author_identities ai ON ai.author_id = a.id "
+                "ORDER BY a.id, ai.value"
+            )
+        )
+        found: dict[str, set[str]] = {}
+        for name, value in rows:
+            found.setdefault(name, set()).add(value)
+        return found
+
+    def test_a_handle_named_author_is_renamed_and_its_other_handle_merged(self, db: Session) -> None:
+        _source(db, "sms")
+        db.commit()
+        gateway = SqlAlchemyIngestStorageGateway(session_factory=session_scope)
+        self._thread(gateway, "a", [self._handle("+15551234567")])
+        self._thread(gateway, "b", [self._handle("alex@example.com")])
+        assert self._authors(db) == {"+15551234567": {"+15551234567"}, "alex@example.com": {"alex@example.com"}}
+
+        self._thread(gateway, "a", [self._handle("+15551234567", "Alex Doe")])
+        self._thread(gateway, "c", [self._handle("alex@example.com", "Alex Doe")])
+        assert self._authors(db) == {"Alex Doe": {"+15551234567", "alex@example.com"}}
+        # Thread b was not rebuilt, yet its link followed the merged author.
+        linked = db.execute(
+            text(
+                "SELECT d.uri, a.display_name FROM document_authors da JOIN documents d ON d.id = da.document_id "
+                "JOIN authors a ON a.id = da.author_id ORDER BY d.uri"
+            )
+        ).all()
+        assert [tuple(row) for row in linked] == [("a", "Alex Doe"), ("b", "Alex Doe"), ("c", "Alex Doe")]
+
+        # The author filter finds the threads by name and still by number.
+        by_name = {hit.title for hit in search(db, "thread", mode="fts", author="alex doe")}
+        by_number = {hit.title for hit in search(db, "thread", mode="fts", author="5551234567")}
+        assert by_name == {"a", "b", "c"}
+        assert by_number == {"a", "b", "c"}
+
+    def test_a_named_author_is_not_renamed_by_a_handle(self, db: Session) -> None:
+        _source(db, "sms")
+        db.commit()
+        gateway = SqlAlchemyIngestStorageGateway(session_factory=session_scope)
+        self._thread(gateway, "a", [self._handle("+15551234567", "Alex Doe")])
+        self._thread(gateway, "b", [self._handle("+15551234567")])
+        self._thread(gateway, "c", [self._handle("+15551234567", "Alexander")])
+        assert self._authors(db) == {"Alex Doe": {"+15551234567"}}
 
 
 class TestEgress:
@@ -608,6 +754,16 @@ class TestFacts:
         assert first.total == rest.total == 3
         assert len(first.facts) == 2 and len(rest.facts) == 1
         assert {f.id for f in first.facts}.isdisjoint(f.id for f in rest.facts)
+
+    def test_stats_count_per_source_and_class_under_the_filters(self, db: Session) -> None:
+        self._corpus(db)
+        stats = fact_stats(db)
+        assert (stats.facts, stats.documents) == (3, 2)
+        assert stats.by_source == {"notes": 2, "mail": 1}
+        assert stats.by_class == {"fact": 2, "event": 1}
+        narrowed = fact_stats(db, query="heat pump", fact_class="fact")
+        assert (narrowed.facts, narrowed.documents, narrowed.by_source) == (1, 1, {"notes": 1})
+        assert fact_stats(db, corpus_class="communication").by_source == {"mail": 1}
 
 
 class TestFactPrompts:

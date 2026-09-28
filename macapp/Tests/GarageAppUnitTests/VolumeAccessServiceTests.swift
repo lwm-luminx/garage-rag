@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import PythonXPCService
 @testable import GarageApp
 
 @MainActor
@@ -22,7 +23,7 @@ final class VolumeAccessServiceTests: XCTestCase {
         let mockFS = MockFileSystemAccessor()
         mockFS.readablePaths = ["/"]
 
-        let service = VolumeAccessService(bookmarkStore: mockStore, fileSystem: mockFS)
+        let service = VolumeAccessService(bookmarkStore: mockStore, fileSystem: mockFS, isSandboxed: false)
         let restored = service.restoreAndVerifyAccess()
 
         XCTAssertTrue(restored)
@@ -34,6 +35,20 @@ final class VolumeAccessServiceTests: XCTestCase {
         } else {
             XCTFail("Expected .accessGranted")
         }
+    }
+
+    /// A sandboxed app with no bookmark can still read `/`, but it has no grant: it must not claim
+    /// the whole disk, or the Sources page never offers Select Home Folder….
+    func testSandboxedReadableRootWithoutBookmarkIsNotAGrant() {
+        let mockFS = MockFileSystemAccessor()
+        mockFS.readablePaths = ["/"]
+
+        let service = VolumeAccessService(bookmarkStore: MockVolumeBookmarkStore(), fileSystem: mockFS, isSandboxed: true)
+        let restored = service.restoreAndVerifyAccess()
+
+        XCTAssertFalse(restored)
+        XCTAssertEqual(service.status, .notConfigured)
+        XCTAssertNil(service.activeRootURL)
     }
 
     func testGrantAccessPersistsBookmark() throws {
@@ -50,6 +65,59 @@ final class VolumeAccessServiceTests: XCTestCase {
         XCTAssertEqual(mockStore.storedPath, testDir.path)
         XCTAssertEqual(service.activeRootURL?.path, testDir.path)
         XCTAssertTrue(service.status.isGranted)
+    }
+
+    /// Polls until `condition` holds; the relay runs in a Task.
+    private func waitUntil(timeout: TimeInterval = 2, _ condition: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    /// The services get the granted URL itself, which carries their sandbox extension; the app's
+    /// app-scoped bookmark bytes would resolve to nothing in them.
+    func testGrantAccessRelaysTheRootURLToTheServices() async throws {
+        let relay = RecordingFolderAccessRelay()
+        let mockFS = MockFileSystemAccessor()
+        let testDir = URL(fileURLWithPath: NSTemporaryDirectory())
+        mockFS.readablePaths = [testDir.path]
+
+        let service = VolumeAccessService(bookmarkStore: MockVolumeBookmarkStore(), fileSystem: mockFS, folderAccess: relay)
+        try service.grantAccess(for: testDir)
+
+        await waitUntil { !relay.grants.isEmpty }
+        XCTAssertEqual(relay.grants.map { $0.key }, [GarageFolderAccessKey.root])
+        XCTAssertEqual(relay.grants.first?.path, testDir.path)
+    }
+
+    func testGrantSourceAccessRelaysUnderTheSourceKey() async throws {
+        let relay = RecordingFolderAccessRelay()
+        let mockFS = MockFileSystemAccessor()
+        let folder = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("garage-source-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let service = VolumeAccessService(bookmarkStore: MockVolumeBookmarkStore(), fileSystem: mockFS, folderAccess: relay)
+        try service.grantSourceAccess(for: folder, forSourcePath: folder.path)
+
+        await waitUntil { !relay.grants.isEmpty }
+        XCTAssertEqual(relay.grants.map { $0.key }, [GarageFolderAccessKey.source(folder.path)])
+        XCTAssertEqual(relay.grants.first?.path, folder.path)
+    }
+
+    func testRevokeAccessRevokesTheServicesGrants() async throws {
+        let relay = RecordingFolderAccessRelay()
+        let mockFS = MockFileSystemAccessor()
+        let testDir = URL(fileURLWithPath: NSTemporaryDirectory())
+        mockFS.readablePaths = [testDir.path]
+
+        let service = VolumeAccessService(bookmarkStore: MockVolumeBookmarkStore(), fileSystem: mockFS, folderAccess: relay)
+        try service.grantAccess(for: testDir)
+        service.revokeAccess()
+
+        await waitUntil { relay.revocations > 0 }
+        XCTAssertEqual(relay.revocations, 1)
     }
 
     func testRevokeAccessClearsBookmarkAndState() throws {
@@ -152,7 +220,7 @@ final class VolumeAccessServiceTests: XCTestCase {
         XCTAssertFalse(denied.isGranted)
 
         let stale = VolumeAccessStatus.staleBookmark(url: URL(fileURLWithPath: "/"))
-        XCTAssertTrue(stale.displayDescription.contains("Stale bookmark: / (needs re-grant)"))
+        XCTAssertTrue(stale.displayDescription.contains("Saved access to / no longer works"))
         XCTAssertFalse(stale.isGranted)
     }
 
@@ -196,7 +264,7 @@ final class VolumeAccessServiceTests: XCTestCase {
         XCTAssertEqual(result.sourcePathResults.count, 2)
         XCTAssertTrue(result.sourcePathResults[0].isAccessible)
         XCTAssertFalse(result.sourcePathResults[1].isAccessible)
-        XCTAssertEqual(result.sourcePathResults[1].statusDescription, "Permission denied / not readable")
+        XCTAssertEqual(result.sourcePathResults[1].statusDescription, "Garage isn't allowed to read this folder")
         XCTAssertTrue(result.message.contains("1 of 2 ingest source paths are inaccessible"))
     }
 
@@ -248,16 +316,16 @@ final class VolumeAccessServiceTests: XCTestCase {
 
     func testTCCPermissionCategoryProperties() {
         let messages = TCCPermissionCategory.messages
-        XCTAssertEqual(messages.displayName, "Messages (apple-sms)")
+        XCTAssertEqual(messages.displayName, "Messages")
         XCTAssertEqual(messages.iconName, "message.fill")
         XCTAssertTrue(messages.systemSettingsURL?.absoluteString.contains("Privacy_AllFiles") == true)
-        XCTAssertTrue(messages.helpMessage.contains("Messages databases"))
+        XCTAssertTrue(messages.helpMessage.contains("SMS and iMessage history"))
 
         let mail = TCCPermissionCategory.mail
-        XCTAssertEqual(mail.displayName, "Apple Mail (apple-mail)")
+        XCTAssertEqual(mail.displayName, "Mail")
         XCTAssertEqual(mail.iconName, "envelope.fill")
         XCTAssertTrue(mail.systemSettingsURL?.absoluteString.contains("Privacy_AllFiles") == true)
-        XCTAssertTrue(mail.helpMessage.contains("Mail storage"))
+        XCTAssertTrue(mail.helpMessage.contains("Full Disk Access"))
 
         let docs = TCCPermissionCategory.documents
         XCTAssertEqual(docs.displayName, "Documents")
@@ -282,15 +350,15 @@ final class VolumeAccessServiceTests: XCTestCase {
         XCTAssertFalse(smsResult.isAccessible)
         XCTAssertEqual(smsResult.tccCategory, .messages)
         XCTAssertTrue(smsResult.requiresTCCPermission)
-        XCTAssertEqual(smsResult.statusDescription, "TCC permission required (Messages (apple-sms))")
-        XCTAssertTrue(smsResult.tccHelpMessage?.contains("Messages databases") == true)
+        XCTAssertEqual(smsResult.statusDescription, "Needs permission (Messages)")
+        XCTAssertTrue(smsResult.tccHelpMessage?.contains("SMS and iMessage history") == true)
 
         let mailResult = result.sourcePathResults[1]
         XCTAssertFalse(mailResult.isAccessible)
         XCTAssertEqual(mailResult.tccCategory, .mail)
         XCTAssertTrue(mailResult.requiresTCCPermission)
-        XCTAssertEqual(mailResult.statusDescription, "TCC permission required (Apple Mail (apple-mail))")
-        XCTAssertTrue(mailResult.tccHelpMessage?.contains("Mail storage") == true)
+        XCTAssertEqual(mailResult.statusDescription, "Needs permission (Mail)")
+        XCTAssertTrue(mailResult.tccHelpMessage?.contains("Full Disk Access") == true)
     }
 
     func testUserDefaultsVolumeBookmarkStorePathSpecific() {

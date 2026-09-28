@@ -101,9 +101,15 @@ struct BugReportRedactor: Sendable {
         // carry a SQLAlchemy driver suffix: `PostgresService.connectionURL()`
         // hands out `postgresql+psycopg://`, and that is the form that reaches
         // the logs, so missing it would leave the password in the report.
-        rule("(postgres(?:ql)?(?:\\+[A-Za-z0-9_.-]+)?://[^:/@\\s]+:)[^@\\s]+@", "$1\(secretPlaceholder)@"),
-        // key=value / key: value secrets.
-        rule("(?i)\\b(password|passwd|token|secret|api[-_]?key|authorization)\\b\\s*[=:]\\s*\"?[^\\s\"&,]+\"?",
+        // The slashes may be JSON-escaped (`:\/\/`) when the URL sits inside a JSON value.
+        rule("(postgres(?:ql)?(?:\\+[A-Za-z0-9_.-]+)?:(?:\\\\?/){2}[^:/@\\s]+:)[^@\\s]+@", "$1\(secretPlaceholder)@"),
+        // HTTP credentials: `Bearer <token>`, and `Authorization: Basic <credentials>` (only after
+        // the header name, since "basic" is an ordinary word).
+        rule("(?i)\\b(bearer)\\s+[A-Za-z0-9._~+/=-]{8,}", "$1 \(secretPlaceholder)"),
+        rule("(?i)(authorization\\s*:\\s*basic)\\s+[A-Za-z0-9+/=]+", "$1 \(secretPlaceholder)"),
+        // key=value / key: value secrets, including prefixed names (PGPASSWORD, LMSTUDIO_API_KEY,
+        // lmstudio_api_token) and JSON members ("password": "…").
+        rule("(?i)\\b([A-Za-z0-9_]*(?:password|passwd|token|secret|api[-_]?key)|authorization)\\b\"?\\s*[=:]\\s*\"?[^\\s\"&,]+\"?",
              "$1=\(secretPlaceholder)"),
         // E-mail addresses (senders in Mail/Messages logs, git author lines).
         rule("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", emailPlaceholder),

@@ -157,7 +157,7 @@ struct DatabaseView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(busy != nil)
-                .help("Stop Postgres and start it again, with the MCP and gRPC servers")
+                .help("Stop Postgres and start it again, with the MCP server and Index Manager")
                 .accessibilityIdentifier("database.restart")
             Button("Stop") { Task { await appState.stopPostgres() } }
                 .buttonStyle(.bordered)
@@ -300,7 +300,7 @@ struct DatabaseView: View {
                         EmptyView()
                     }
                     Menu {
-                        Button("Check for Updates") { appState.checkPendingMigrations() }
+                        Button("Check for Schema Updates") { appState.checkPendingMigrations() }
                         Button("Re-apply the Whole Schema") { reapplySchema() }
                             .help("Run every schema file again. They are written to be re-applied, so nothing is lost.")
                     } label: {
@@ -334,40 +334,39 @@ struct DatabaseView: View {
 
     // MARK: - Contents
 
+    /// Titled with `GroupBox("Contents")`, with Refresh beside the figures rather than in a custom
+    /// label: on macOS a GroupBox's custom label is not in the accessibility tree, so neither the
+    /// title nor the button could be reached there.
     private var contentsSection: some View {
         let contents = DatabaseContentsPresentation(stats: appState.corpusStats, sizeBytes: serverDetails?.databaseSizeBytes)
-        return GroupBox {
-            if appState.postgres.status != .running {
-                Text("Shown once the database is running.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(10)
-            } else {
-                HStack(alignment: .top, spacing: 0) {
-                    ForEach(contents.figures) { figure in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(figure.label)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(figure.value)
-                                .font(.system(.title3, design: .rounded).weight(.semibold))
-                                .monospacedDigit()
-                            if let note = figure.note {
-                                Text(note)
-                                    .font(.caption2)
-                                    .foregroundStyle(figure.noteIsWarning ? AnyShapeStyle(Color.orange) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
-                            }
-                        }
+        return GroupBox("Contents") {
+            HStack(alignment: .top, spacing: 8) {
+                if appState.postgres.status != .running {
+                    Text("Shown once the database is running.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    HStack(alignment: .top, spacing: 0) {
+                        ForEach(contents.figures) { figure in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(figure.label)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text(figure.value)
+                                    .font(.system(.title3, design: .rounded).weight(.semibold))
+                                    .monospacedDigit()
+                                if let note = figure.note {
+                                    Text(note)
+                                        .font(.caption2)
+                                        .foregroundStyle(figure.noteIsWarning ? AnyShapeStyle(Color.orange) : AnyShapeStyle(HierarchicalShapeStyle.secondary))
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
                 }
-                .padding(10)
-            }
-        } label: {
-            HStack(spacing: 6) {
-                Text("Contents")
-                Spacer()
+
                 if appState.isFetchingStats {
                     ProgressView().controlSize(.mini)
                 }
@@ -383,6 +382,7 @@ struct DatabaseView: View {
                 .accessibilityLabel("Refresh Contents")
                 .accessibilityIdentifier("database.contents.refresh")
             }
+            .padding(10)
         }
     }
 
@@ -472,6 +472,38 @@ struct DatabaseView: View {
                                 || appState.postgres.status == .starting
                                 || appState.postgres.status == .stopping
                         )
+                }
+
+                // After a reset, the relaunched instance says what it is still doing, then what it
+                // rebuilt, or what went wrong.
+                if appState.isFinishingDatabaseReset, appState.databaseResetOutcome == nil {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityHidden(true)
+                        Text(AppState.databaseResetInProgressMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("database.resetProgress")
+                    }
+                    .font(.caption)
+                    .padding(.leading, 36)
+                }
+                if let outcome = appState.databaseResetOutcome {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: outcome.succeeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                            .foregroundStyle(outcome.succeeded ? Color.green : Color.red)
+                            .accessibilityHidden(true)
+                        Text(outcome.message)
+                            .font(.caption)
+                            .foregroundStyle(outcome.succeeded ? AnyShapeStyle(HierarchicalShapeStyle.secondary) : AnyShapeStyle(Color.red))
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                            .accessibilityIdentifier("database.resetOutcome")
+                    }
+                    .font(.caption)
+                    .padding(.leading, 36)
                 }
             }
             .padding(10)

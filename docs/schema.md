@@ -14,6 +14,12 @@ Migrations are idempotent — `IF NOT EXISTS` plus `duplicate_object` guards for
 enum types — so applying them repeatedly *is* the migration story. Sufficient for
 a single-user local corpus, and it avoids a migration framework.
 
+The files run in order, `001_extensions.sql` through `014_chunk_direction.sql`.
+`001` creates `vector` and `pg_trgm`, and Apache AGE (`age`, graph queries in
+openCypher) only where the server has it installed: the app's bundled Postgres
+always does, Homebrew's and the CI image usually do not, and nothing in the
+schema depends on it yet.
+
 ## The two axes
 
 The design decision worth understanding: **what a thing is** and **how trusted it
@@ -117,6 +123,12 @@ from its first line to its last. They are NULL when the chunk cannot be found
 in the content, and on chunks built before offsets were recorded; those gain
 them the next time the document is re-chunked.
 
+Re-chunking a document keeps every row whose `ord`, `chunk_sha256`, text and
+`chunker` are unchanged, updating only its offsets, heading, direction and
+sender, and replaces the rest. A kept row keeps its `id`, so its vectors in the `emb_*` tables survive and
+backfill embeds only the chunks that actually changed. Fact chunks are always
+replaced.
+
 `chunks.fact_id` (`007_chunk_fact_link.sql`) is a nullable
 `REFERENCES facts(id) ON DELETE CASCADE` column with a partial unique index
 (`WHERE fact_id IS NOT NULL`), so a fact has at most one chunk. It marks a
@@ -126,6 +138,15 @@ row is special — the backfill's anti-join finds it like any other chunk, which
 is what gets facts embedded under every model without a fact-specific path.
 Deleting a fact cascades into its chunk and, through `chunk_id`, into every
 `emb_*` table.
+
+`chunks.direction` and `chunks.sender` (`014_chunk_direction.sql`) say which way a
+message went. A Messages thread is one document holding both sides, and trust is
+per document, so each message chunk carries `direction` (`sent` when the owner
+wrote it, `received` otherwise; a CHECK allows only those) and `sender` (the handle
+that wrote it, or `me`). Both are NULL on every chunk that is not a message, so
+search's `direction` filter (`rag_search`, `garage search --direction`) keeps to
+messages. They are plain columns, not `jsonb`, because both search engines filter
+on `direction` in their `WHERE` clauses.
 
 ### `facts`
 
@@ -143,8 +164,8 @@ leaves every other prompt's alone.
 | `attributes` | `jsonb` extractor attributes, default `'{}'` |
 | `char_start` / `char_end` | span of `documents.content` the fact was grounded to; an ungrounded fact is dropped by the extractor rather than stored |
 | `extractor` / `extractor_model` | provenance, default `'langextract'` and the model id |
-| `prompt_name` | the `facts.prompts` entry that produced the fact; `'default'` (the built-in prompt) for facts from before 012 |
-| `prompt_sha256` | SHA-256 of that prompt's description and examples when it ran; NULL before 012 |
+| `prompt_name` | the `facts.prompts` entry that produced the fact; `'default'` (the built-in prompt) for facts from before 013 |
+| `prompt_sha256` | SHA-256 of that prompt's description and examples when it ran; NULL before 013 |
 | `tsv` | generated `to_tsvector('english', fact)`, GIN-indexed — the keyword half of hybrid search over facts |
 
 ### `fact_runs`
@@ -182,7 +203,8 @@ history to work from.
 
 These tables are not written yet. Messages ingest (`ingest/conversations.py`)
 reads `chat.db` directly on every run and stores each thread as one `documents`
-row with one chunk per message, keyed on `<chat.db path>#<chat GUID>`.
+row with one chunk per message, keyed on `<chat.db path>#<chat GUID>`; who wrote
+each message is on its chunk (`chunks.direction` / `chunks.sender`).
 
 ### `embedding_models` and the `emb_*` tables
 
@@ -218,7 +240,7 @@ pgvector 0.8 HNSW ceilings are hard limits — `vector` ≤ 2000 dims, `halfvec`
 
 `embedding_models.distance` (`009_model_distance.sql`) is the similarity the
 model was trained for: `cosine`, `l2` or `inner_product`. It is declared per
-model in `docs/.data/models.json` (or `register-model --distance` for a model
+model in `data/models/models.json` (or `register-model --distance` for a model
 the catalog does not list) and fixes two things that must agree: the HNSW
 operator class (`vector_cosine_ops`, `halfvec_l2_ops`, `vector_ip_ops`, …) and
 the operator search orders by (`<=>`, `<->`, `<#>`). An index built for one
@@ -230,11 +252,21 @@ cosine, which is its default.
 downloads, and `garage_rag.db.catalog` reads the same file for widths,
 `supports_mrl`, `distance` and per-provider names (`provider_refs`, e.g. an
 Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
-(`docs/.data/models.json`). The site serves that file as
+(`data/models/models.json`). The site serves a copy of that file, which its build
+puts in place (`site_files` in `docs/BUILD.bazel`, and the Pages workflow), as
 `https://garagerag.app/.data/models.json`; the app fetches it at launch, keeps the
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog
-change therefore reaches installed apps without a release.
+change therefore reaches installed apps without a release. It has two lists:
+`text_embedding`, and `inference_models` for the generative models, each tagged
+`inference` (chat, `rag_ask`), `distillation` (`enrich-facts`) or both; the app still
+reads the list's older name, `fact_distil`, as distillation models. Every entry names its
+`maker` (e.g. `IBM`), `country_of_origin` (an ISO 3166-1 alpha-2 code, e.g. `DE`) and
+`origin_zone` (`US`, `EU`, `CN`, `UK`, `CH` or `OTHER`, e.g. `EU` for `DE`), which the app
+shows as a badge and a test holds to the country; `tool_calling: true` marks a
+model trained to call tools, which can drive Garage's MCP tools. Reference embeddings of
+fixed inputs are kept apart from it, keyed by slug, in
+`docs/.data/model_test_vectors.json`, so the catalog the app fetches stays small.
 
 Truncation is only sound for MRL-trained models, so `supports_mrl` is declared
 per model rather than assumed. A CHECK constraint refuses to register an

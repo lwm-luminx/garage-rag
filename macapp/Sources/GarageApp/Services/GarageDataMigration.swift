@@ -73,7 +73,14 @@ enum GarageDataMigration {
         }
     }
 
-    static func migrate(from legacy: URL, to shared: URL, fileManager: FileManager = .default) -> Outcome {
+    /// `isPostmaster` decides whether the pid in `pgdata/postmaster.pid` is a running postgres; tests
+    /// replace it, since no test process is one.
+    static func migrate(
+        from legacy: URL,
+        to shared: URL,
+        fileManager: FileManager = .default,
+        isPostmaster: (Int32) -> Bool = GarageDataMigration.isPostgresProcess
+    ) -> Outcome {
         var outcome = Outcome()
         let legacy = legacy.standardizedFileURL
         let shared = shared.standardizedFileURL
@@ -91,7 +98,7 @@ enum GarageDataMigration {
         for name in entries(of: legacy, fileManager) {
             let source = legacy.appendingPathComponent(name)
             let destination = shared.appendingPathComponent(name)
-            if name == "pgdata", let pid = runningPostmaster(in: source) {
+            if name == "pgdata", let pid = runningPostmaster(in: source, isPostmaster: isPostmaster) {
                 outcome.skipped[name] = "postgres (pid \(pid)) is still running from it"
                 continue
             }
@@ -134,18 +141,30 @@ enum GarageDataMigration {
         return FileManager.default.fileExists(atPath: legacy.appendingPathComponent("pgdata/PG_VERSION").path)
     }
 
-    /// The pid in `pgdata/postmaster.pid` when that process is alive. A stale file (after a crash)
-    /// does not block the move; postgres clears it on the next start.
-    static func runningPostmaster(in pgdata: URL) -> Int32? {
+    /// The pid in `pgdata/postmaster.pid` when that process is alive and is a `postgres`. A stale
+    /// file (after a crash, or a reboot that handed its pid to another process) does not block the
+    /// move; postgres clears it on the next start.
+    static func runningPostmaster(in pgdata: URL, isPostmaster: (Int32) -> Bool = GarageDataMigration.isPostgresProcess) -> Int32? {
         let pidFile = pgdata.appendingPathComponent("postmaster.pid")
         guard let content = try? String(contentsOf: pidFile, encoding: .utf8),
               let firstLine = content.split(separator: "\n").first,
               let pid = Int32(firstLine.trimmingCharacters(in: .whitespaces)),
               pid > 0,
-              kill(pid, 0) == 0 || errno == EPERM else {
+              isPostmaster(pid) else {
             return nil
         }
         return pid
+    }
+
+    /// Whether `pid` may be a live postmaster: a process whose executable is named `postgres`.
+    /// A pid that is gone, or that belongs to another user (the app's postmaster always runs as this
+    /// user), is not. A live process of this user whose path cannot be read counts as one, so a
+    /// failed lookup never lets a running cluster lose its lock file.
+    static func isPostgresProcess(_ pid: Int32) -> Bool {
+        guard kill(pid, 0) == 0 else { return false }
+        var buffer = [CChar](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        guard proc_pidpath(pid, &buffer, UInt32(buffer.count)) > 0 else { return true }
+        return (String(cString: buffer) as NSString).lastPathComponent == "postgres"
     }
 
     private static let ignoredNames: Set<String> = [".DS_Store"]

@@ -99,4 +99,17 @@ final class MainWindowSizingTests: XCTestCase {
         XCTAssertLessThan(size.width, minimum.width * 1.5)
         XCTAssertLessThan(size.height, minimum.height * 1.5)
     }
+
+    func testReadsTheRequestedWindowSize() {
+        let size = MainWindowSizing.requestedSize(in: ["Garage", "--appearance", "dark", "--window-size", "1440x900"])
+
+        XCTAssertEqual(size, NSSize(width: 1440, height: 900))
+    }
+
+    func testIgnoresAMissingOrMalformedWindowSize() {
+        XCTAssertNil(MainWindowSizing.requestedSize(in: ["Garage"]))
+        XCTAssertNil(MainWindowSizing.requestedSize(in: ["Garage", "--window-size"]))
+        XCTAssertNil(MainWindowSizing.requestedSize(in: ["Garage", "--window-size", "1440"]))
+        XCTAssertNil(MainWindowSizing.requestedSize(in: ["Garage", "--window-size", "0x900"]))
+    }
 }

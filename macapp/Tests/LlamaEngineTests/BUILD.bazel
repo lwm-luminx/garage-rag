@@ -1,0 +1,43 @@
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# Runs the real llama.cpp engine (//ext/llama_cpp through LlamaEngine) on the bundled
+# nomic-embed-text Q2_K against llama.cpp's reference vectors, so a llama.cpp bump that changes
+# embeddings fails here. The model and the vectors land in the test bundle's Resources; until
+# ext/nomic_embed/known_answers.json is committed, :known_answers is empty and the tests skip.
+swift_library(
+    name = "LlamaEngineTests_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]),
+    data = [
+        "//ext/nomic_embed:known_answers",
+        "//ext/nomic_embed:selftest_model",
+    ],
+    module_name = "LlamaEngineTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/LlamaEngine",
+    ],
+)
+
+macos_unit_test(
+    name = "LlamaEngineTests",
+    additional_linker_inputs = [
+        "//ext/python:python_framework",
+    ],
+    bundle_id = "me.rickmark.garage-rag.LlamaEngineTests",
+    bundle_name = "LlamaEngineTests",
+    # LlamaEngine -> LlamaClient -> PythonXPCService -> GaragePythonEmbed calls the CPython C
+    # API, so the test bundle has to link the interpreter like the app does.
+    linkopts = [
+        "-F$(location //ext/python:python_framework)/..",
+        "-framework",
+        "Python",
+    ],
+    minimum_os_version = "14.0",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":LlamaEngineTests_lib",
+        "//ext/python:python_framework",
+    ],
+)

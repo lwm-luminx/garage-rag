@@ -243,7 +243,23 @@ class SourceSpec(BaseModel):
 
     @property
     def expanded_root(self) -> Path:
-        return Path(self.root).expanduser()
+        return expand_home(self.root)
+
+
+def expand_home(path: str | Path) -> Path:
+    """``path`` with a leading ``~`` expanded to the account's home folder.
+
+    ``Path.expanduser`` reads ``$HOME``, which in a sandboxed macOS process (the App Store build's
+    XPC services) is the app's container rather than ``/Users/<name>``, so ``~/Documents`` would
+    name the container's empty folder. Such a process carries ``APP_SANDBOX_CONTAINER_ID``; there the
+    home folder comes from the account record instead.
+    """
+    path = Path(path)
+    if not os.environ.get("APP_SANDBOX_CONTAINER_ID") or path.parts[:1] != ("~",):
+        return path.expanduser()
+    import pwd  # Unix only; the Windows build never runs sandboxed.
+
+    return Path(pwd.getpwuid(os.getuid()).pw_dir, *path.parts[1:])
 
 
 def ensure_psycopg_database_url(url: str) -> str:
@@ -420,7 +436,7 @@ class Settings(BaseModel):
             "Slug or alias of the local model used for fact distillation "
             "('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. "
             "For llama_xpc this is the alias the app loaded the model under (the "
-            "'fact_distil' preset slug); for ollama it is the Ollama model name; for "
+            "'inference_models' preset slug); for ollama it is the Ollama model name; for "
             "lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b')."
         ),
     )
@@ -432,6 +448,22 @@ class Settings(BaseModel):
             "'ollama' is the Ollama server on embedding.ollama_host; 'lmstudio' is the "
             "LM Studio server on embedding.lmstudio_host, which loads the model on first "
             "use. Communications are only ever sent to a loopback host."
+        ),
+    )
+    inference_model: str = Field(
+        default="",
+        description=(
+            "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named "
+            "as facts.model is. Empty (the default) uses facts.model, since a distillation model "
+            "answers questions too; set it to chat with a larger or tool-calling model while a "
+            "small one distills facts."
+        ),
+    )
+    inference_provider: Literal["", "llama_xpc", "ollama", "lmstudio"] = Field(
+        default="",
+        description=(
+            "Which inference server runs inference.model, as facts.provider does for facts.model. "
+            "Empty uses facts.provider."
         ),
     )
     fact_prompts: list[FactPrompt] = Field(
@@ -541,6 +573,10 @@ SECTIONS: dict[str, dict[str, str]] = {
         "model": "fact_model",
         "provider": "fact_provider",
         "prompts": "fact_prompts",
+    },
+    "inference": {
+        "model": "inference_model",
+        "provider": "inference_provider",
     },
 }
 

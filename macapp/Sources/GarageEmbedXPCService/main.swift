@@ -26,10 +26,12 @@ final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCS
     override func additionalSelfTests() -> [GarageXPCSelfTest] {
         [
             GarageXPCStandardSelfTests.serviceModule("garage_rag.embed", attributes: ["get_embedder", "embed_via_grpc"]),
+            LlamaModelLoaderBridge.selfTest(),
         ]
     }
 
-    /// Embeddings made here (`embedTexts`, `embed_via_grpc`) load their llama_xpc model on demand.
+    /// Embeddings made here (`embedTexts`, `embed_via_grpc`) load their llama_xpc model on demand,
+    /// through the LlamaXPCService endpoint the app hands this process (`setLlamaEndpoint`).
     override func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {
         LlamaModelLoaderBridge.install()
     }

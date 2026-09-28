@@ -72,6 +72,11 @@ The Aspect CLI takes its own flags only. Pass each Bazel flag as `--bazel-flag=.
 `aspect query`; use `bazel query` (on `PATH` from `bazel_env`), e.g.
 `bazel query 'kind(codesign_test, //...)'`.
 
+Every run writes a manifest of the Python files it loaded (`runtime_files.txt`, one absolute path per
+line, from `sys.modules` at the end of the session; `pytest_unconfigure` in `garage_python/tests/conftest.py`).
+It goes to `$GARAGE_RUNTIME_MANIFEST` when set, under Bazel to `bazel-testlogs/<target>/test.outputs/`,
+and otherwise to `garage_python/.pytest_cache/d/garage/`.
+
 Adding a new test file just needs `aspect gazelle`, which writes the `py_test` entry; the
 `# gazelle:map_kind py_test py_test //tools/pytest:defs.bzl` directive in `garage_python/BUILD.bazel`
 keeps them on the pytest wrapper rather than the stock rule.
@@ -79,7 +84,7 @@ keeps them on the pytest wrapper rather than the stock rule.
 There is also a `uv`-managed venv at `garage_python/.venv` for running things directly with
 `pytest`/`python` outside Bazel when iterating quickly — the Bazel targets remain the source of truth
 for CI. A fresh clone has none. Create it with `uv sync` in `garage_python/` (the lockfile resolves
-for macOS). On Linux use `uv venv --python 3.13 .venv && uv pip install -e '.[dev]'`, which is what the
+for macOS). On Linux use `uv venv --python 3.14 .venv && uv pip install -e '.[dev]'`, which is what the
 web-session hook runs.
 
 ### Testing against Postgres
@@ -119,7 +124,8 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
 
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: the `python` job (ruff and the whole venv pytest suite, with a Postgres service),
-    `swiftcheck`, `format`, `gazelle` and `buildifier`.
+    `python-freethreaded` (the same suite on free-threaded CPython 3.14t, informational until the
+    app ships on it), `swiftcheck`, `format`, `gazelle` and `buildifier`.
   - On macOS: `lint`, which analyzes Apple targets.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
@@ -134,6 +140,15 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
   source on `windows-latest`, from the pins in `ext/*/*.MODULE.bazel` (read by
   `tools/windows/fetch_ext.py`), with each project's own MSVC build rather than Bazel. It then runs
   `test_postgres.py` on the built interpreter against the built server.
+- **`.github/workflows/known-answers.yaml`** (on changes under `ext/llama_cpp`, `ext/nomic_embed`,
+  `tools/llama`) rebuilds `llama-embedding` and regenerates the nomic-embed Q2_K reference vectors
+  (`tools/llama/known_answers.py`). The reference is the Apple silicon CPU job; Metal and a Linux
+  x86-64 job are held to `MIN_COSINE` (0.98) against it, because Q2_K is not bit-exact across
+  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99. LlamaXPCService's "Embedding
+  Known Answers" self-test and `//macapp/Tests/LlamaEngineTests` compare `LlamaCppEngine` against the
+  reference (`LlamaKnownAnswers`). The reference, `ext/nomic_embed/known_answers.json`, is not
+  committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
+  `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 
@@ -151,13 +166,16 @@ open macapp/Garage.xcodeproj
 See `macapp/README.md` for why Postgres can't just use the Homebrew build (it bakes absolute
 `/opt/homebrew` paths).
 
-The bundled Postgres has two externals: `//ext/postgres` (18, the default) and `//ext/postgres19`
-(19 beta). Pick one with `--//ext:postgres_version=19` (or `--config=pg19`). Everything downstream
-depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/`libpq_dylib` aliases, never on a
-version package directly. Each package carries its own sandbox patch: `ext/postgres/appstore.patch`
-(18; adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written
-to be proposed upstream) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
-ported); a change to one usually needs porting to the other.
+The bundled Postgres is one package, `//ext/postgres`, built from 18 (the default) or the 19 beta:
+`--//ext:postgres_version=19` (or `--config=pg19`) switches its source between the `@postgres` and
+`@postgres19` repositories (`postgres.MODULE.bazel`, `postgres19.MODULE.bazel`), as `//ext/age` switches
+AGE's release line. Everything downstream depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/
+`libpq_dylib` aliases. Each major's patches live in `ext/postgres/pg<major>/`, the same two for both:
+`appstore.patch` (adds `--enable-appstore`, off by default upstream and passed by our build: a flock()
+interlock on the data directory instead of the System V shim segment, and pthread semaphores in the
+mmap'd segment; the 19 copy is ported to 19's `PGSemaphoreShmemRequest` API and matches the series
+proposed upstream against master) and `username.patch` (the local getpwuid() workaround, not for
+upstream). A change to one major's patch needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
 line matching the selected major (`ext/age/pg18`, `ext/age/pg19`). `001_extensions.sql` creates it
@@ -215,22 +233,31 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
 
 - **Walk** (`ingest/walker.py`) — stats candidates without opening them; pruning happens during
   descent so excluded subtrees are never entered.
-- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (e.g. Dropbox online-only
-  stubs) are zero-byte; reading one triggers a download, so this is budget-metered
-  (`MaterializationBudget`). Idempotent ingest means hitting the budget cap is fine, not a failure.
+- **Materialize** (`ingest/materialize.py`) — cloud placeholder files (Dropbox and iCloud online-only
+  stubs; dataless under File Provider) download when read, so this is budget-metered
+  (`MaterializationBudget`), and on macOS the dataless-file I/O policy is off for the pipeline's
+  thread so only the materialize thread can start a download. Idempotent ingest means hitting the
+  budget cap is fine, not a failure.
 - **Extract** (`extract/`) — dispatch by extension with lazy imports (Markdown/`text.py`,
   PDF/`pdf.py` with `pypdf`→`pdfplumber` per-page escalation, Office/`office.py`,
   images/`image.py` via Tesseract only, in-process through libtesseract's C API (`extract/tesseract.py`
   over ctypes, fed pixels Pillow decoded; `PythonXPCService.framework` carries `//ext/tesseract` (over a
   codec-less `//ext/leptonica`) in its `Frameworks` folder with `tessdata` beside it and links it, as it does
-  libpq, so `garage_rag.native` finds the loaded copy; elsewhere the linker's search applies), code verbatim
-  via `text.py`).
+  libpq, so `garage_rag.native` finds the loaded copy; elsewhere the linker's search applies; HEIC/HEIF is
+  decoded by macOS ImageIO, `extract/imageio.py`), mail (`.eml`/`.emlx`, `extract/mail.py`, filed as
+  `communication`), code verbatim via `text.py`). Messages `chat.db` (`sqlite` sources) is not walked file
+  by file: `ingest/conversations.py` stores each thread as one document with one chunk per message,
+  each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for
+  search's `direction` filter; messages in no `chat_message_join` row join their sender's one-to-one chat.
 - **Quality gate** (`extract/quality.py`) — content-based backstop against non-prose text (repeated
   line shapes, timestamp prefixes, hex/base64 density) that path rules alone miss.
 - **Attribute** (`attribute/`) — precedence-ordered signals, each recording its `evidence`: git
   history (`git.py`, one `git log --name-only` pass per repo, not per file) → embedded document
   metadata (filtered through `looks_like_tool_name` so `python-pptx`/`openpyxl` don't self-attribute)
-  → path convention (`pathrules.py`, data-driven table) → source default. See `docs/attribution.md`.
+  → path convention (`pathrules.py`, data-driven table) → source default. A mail message is
+  attributed by its sender instead of by metadata (the owner's name or address → `authored`, anyone
+  else → `received`); a Messages thread records its handles as `sender`/`recipient`. See
+  `docs/attribution.md`.
 - **Store** — chunks are model-agnostic; see the schema section below.
 - **Distill facts** (`enrich/facts.py`, `garage enrich-facts`, `EnrichFacts` RPC) — optional
   post-ingest pass: LangExtract (only its local part, vendored as `enrich/langextract`), driven
@@ -262,11 +289,22 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   RPC are both thin presenters over one function), with a `_grpc_errors` decorator mapping
   `LookupError`/`ValueError`/`FileExistsError`/`PermissionError` onto gRPC status codes. Long jobs
   (`Backfill`, `EnrichFacts`) are server-streaming; cancelling the call stops the work at its next
-  progress step.
+  progress step. The server accepts requests up to 256 MiB (`MAX_REQUEST_BYTES`), since
+  `PersistDocument` carries a whole document's text and chunks. When `GARAGE_GRPC_TOKEN` is set (the
+  app sets a random one per launch, passed like `GARAGE_GRPC_PORT` and never logged or saved), every
+  call but `EnsureLlamaModel` must carry it as `x-garage-token` metadata or gets `UNAUTHENTICATED`
+  (`service/auth.py`; `GarageClient` and the app's `GarageGRPCAuth` send it). Without a token, the
+  config-changing methods (`auth.CONFIG_CHANGING_METHODS`: sources, models, `SetSetting`, MCP
+  install/uninstall, and `InitDb`, whose `schema_dir` names SQL to run; `@_config_change` on the handler) are answered only by a server bound to the Unix socket; a server on a
+  TCP port gives `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
 
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction
-per document.
+per document. An unchanged stat skips a file before it is read (`CheckDocumentStat` over the facade);
+a file with no text (empty, whitespace, a textless image) gets no document, and it and a failed
+extraction are remembered in `ingest_outcomes` (`012_ingest_outcomes.sql`) until the file or its
+extractor's `VERSION` changes. Replacing a document keeps every chunk whose `ord`, hash, text and
+chunker are unchanged, so its vectors survive and backfill re-embeds only what changed.
 
 Full detail: `docs/architecture.md`.
 
@@ -348,7 +386,8 @@ schema --publish`) and committed at `docs/.data/garage.schema.json`, which the s
 `https://garagerag.app/.data/garage.schema.json` (every config's `$schema`) — **regenerate it whenever a
 setting is added, renamed, or documented**; a test enforces every field is documented. The `facts`
 section (`facts.model`, `facts.provider`: `llama_xpc` | `ollama` | `lmstudio`) names the model behind
-`enrich-facts` and the `rag_ask`/`rag_generate` MCP tools; `garage config set SECTION.KEY VALUE` /
+`enrich-facts`, and `inference.model` / `inference.provider` the one behind the `rag_ask`/`rag_generate`
+MCP tools (empty: the facts model answers); `garage config set SECTION.KEY VALUE` /
 `garage config get SECTION.KEY` edit and read single settings without touching the JSON by hand.
 `facts.prompts` (`config/fact_prompts.py`) lists named LangExtract prompts, merged by name with the
 built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), each fact records its
@@ -385,13 +424,19 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   which would stop the new instance's Postgres by pid file and XPC services by executable name). It
   calls `terminate:` from the run loop, not from a main-actor task, where AppKit's wait for a
   `.terminateLater` reply deadlocks. The new instance waits for the old one to exit, then initializes a
-  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`).
+  new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`;
+  the Database page shows `isFinishingDatabaseReset` as a progress line until the outcome arrives).
 - Postgres is stopped with SIGINT (fast shutdown), never SIGTERM: a smart shutdown waits on the XPC
   services' pooled connections until the grace period ends in SIGKILL, leaving no shutdown checkpoint.
 - `OperationRunner` runs app operations as gRPC calls (`GarageGRPCService+Operations.swift`) with a
   busy flag and rolling log; AppState keeps dedicated runners for `backfill`/`enrich-facts` so
   long-running jobs don't block ordinary operations. Ingest goes through `IngestService`, which
-  drives `GarageIngestXPCService` via `IngestClient`.
+  drives `GarageIngestXPCService` via `IngestClient`. An ingest of every source takes sources from
+  `AppState.ingestQueue`; `cancelAll()` empties the queue and stops the scan or ingest in progress,
+  plus the backfill of a maintenance run and the facts step of Update Everything, and `cancel(source:)` / `removeSource(slug:)` act on one source even while
+  it is busy. "Update Everything" on the Sources page (`AppState.updateEverything`) runs scan →
+  ingest → embed → glean facts (`EnrichFacts` with `stale_only`) through the same `runPipeline` as
+  scheduled maintenance, which stops after embed.
 - `garage` and `garage-mcp` are Swift launchers (`Sources/GarageLauncher`) for people at a
   terminal and for stdio MCP clients, packaged as helper app bundles in `Contents/Helpers`
   (`garage.app` = `me.rickmark.garage-rag.garage-cli`, `garage-mcp.app` =
@@ -404,16 +449,40 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   database and nothing listens on its socket
   they open the app hidden (`--background`), then read the Postgres password from the Keychain
   and export `GARAGE_DATABASE_URL`; stdio registrations therefore carry no database URL. Only
-  these bundled launchers do this; `garage` from a venv is untouched.
-- `GarageMCPService` owns a separate long-lived `garage-mcp` HTTP process at
-  `127.0.0.1:8787/mcp`; Claude Desktop/Code instead spawn their own stdio `garage-mcp` via `garage
-  mcp-install`, so both transports coexist.
+  these bundled launchers do this; `garage` from a venv is untouched. `garage quit` (launcher only,
+  never Python) posts a distributed notification that makes every running Garage quit as its Quit
+  menu item does, and waits for it; use it before a UI test run, which refuses to share the Mac
+  with a running Garage.
+- MCP clients use stdio by default: the MCP page registers the bundled `garage-mcp` launcher
+  (`McpInstall` with `stdio`), and each assistant spawns its own. `GarageMCPService` can also run a
+  long-lived `garage-mcp` HTTP process at `127.0.0.1:8787/mcp`, the app's only TCP listener, but only
+  once the user starts it (`garage.mcp.httpEnabled`; an upgrade with an HTTP registration keeps it
+  on). While it is off, an HTTP registration shows as out of date and Update rewrites it to stdio.
 - `LlamaXPCService` hosts llama.cpp itself (`macapp/Sources/LlamaEngine`, statically linked from
   `//ext/llama_cpp`, Metal + Accelerate) and serves it two ways: NSXPC for the app (load/unload,
   health, test calls, and `handleServerRequest`, which the Python in the other XPC services calls through
-  `LlamaInferenceBridge`) and a llama-server-compatible HTTP API on its socket for the Python
-  `llama_xpc` provider (`backfill`, `enrich-facts` run in their own process). `MockLlamaServerEngine`
-  in `macapp/Tests/LlamaTestSupport` is the only other `LlamaInferenceEngine` and is test-only.
+  `LlamaInferenceBridge`) and a llama-server-compatible HTTP API on its socket (`s/llama` in the group
+  container, `GARAGE_LLAMA_SOCKET`; a loopback port only with `GARAGE_LLAMA_HTTP_PORT`) for Python outside
+  them, the launchers' `llama_xpc` provider (`backfill`, `enrich-facts` run in their own process). Both front ends live
+  in `macapp/Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`; the other engines
+  are test-only, in `macapp/Tests/LlamaTestSupport`: `MockLlamaServerEngine` for the unit tests,
+  and `DeterministicLlamaEngine` (hashed bag-of-words embeddings, one grounded fact per sentence),
+  which `macapp/Tests/MockLlamaXPCService` serves under LlamaXPCService's bundle identifier in
+  `GarageApp_uitest`, the testonly host of the model UI tests (`macapp/Tests/GarageAppModelUITests`).
+  Both apps come from `garage_macos_application` in `bazel/garage_app.bzl`.
+  The app loads the default `llama_xpc` embedding model once Postgres is up (and again when the
+  default changes), and loads the facts model only for a distillation run, unloading it afterwards
+  unless it is also the search model (`AppState+LlamaModels.swift`). Other models load on demand and
+  stay until the Models page's Unload. The on-demand loads run in garage-xpc, embed-xpc and
+  mcp-server-xpc, which cannot look up a sibling XPC service by name: the app's `LlamaEndpointBroker`
+  (in `XPCServiceManager`) fetches the endpoint of LlamaXPCService's anonymous listener
+  (`getListenerEndpoint`) and hands it to each (`setLlamaEndpoint`, `GarageLlamaEndpointStore`),
+  again whenever either side's connection is lost; until then loads fail with "endpoint not handed over yet".
+- Folder grants reach the sandboxed services as `URL`s over NSXPC, never as the app's bookmark bytes
+  (app-scoped, so they resolve to no access in another process). `VolumeAccessService` hands each
+  grant (root, per source, and an MCP config file picked in a panel) through `XPCFolderAccessRelay` to
+  the ingest service and GarageXPCService (Scan, AddSource, McpInstall), whose
+  `GarageFolderAccessStore` starts accessing it and keeps a bookmark of its own for relaunches.
 - `GarageUpdater` wraps Sparkle (`//ext/sparkle`) for Developer ID builds; App Store builds
   `select()` in an inert backend instead, since Apple rejects self-updating apps, and Sparkle
   never enters that dependency graph. The appcast lives at `docs/appcast.xml` on the Jekyll
@@ -423,19 +492,45 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It
   goes through the same `AppState.addSource` / `registerModel` / `setFactsModel` operations and
   `GarageMCPService` registration as the Sources, Models and MCP pages.
+- The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
+  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Search) and Advanced
+  (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
+  Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
+  `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.
+- Every Python helper runs its self tests at bootstrap, before it has any configuration, so the
+  Database Connection and gRPC Connection tests of the ingest, embed and MCP helpers are skipped
+  then. `AppState.startBackend` therefore pushes the database URL and the backend's address to
+  them (`XPCServiceManager.configureHelpers`, over `updateConfiguration`) once the gRPC server
+  listens and re-runs their tests; the backend helper gets the same keys from `startServer`. A
+  test still skipped is named in the Status page's row ("7 passed, 1 skipped (Model File)").
 - Each `*XPCService` (`GarageEmbedXPCService`, `GarageIngestXPCService`, `LlamaXPCService`,
   `ModelDownloadXPCService`, `PythonXPCService`, …) is a separate XPC service process paired with a
   `*Client` module (`IngestClient`, `LlamaClient`, `ModelDownloadClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
-  gRPC bridge to the Python `garage_rag` package.
+  gRPC bridge to the Python `garage_rag` package. Every connection a listener accepts, from the service
+  listener and the anonymous ones, carries `GarageXPCPeerRequirement` (set on the connection in
+  `listener(_:shouldAcceptNewConnection:)`, never on the listener: on `NSXPCListener.service()` that
+  crashes the service at launch): a peer must be Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
+- The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
+  process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
+  sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each
+  service's delegate lives in a `*Core` library the app links, and the app registers an anonymous
+  listener for it with `GarageInProcessServices`; every connection is made with
+  `GarageInProcessServices.makeConnection(serviceName:)`, which reaches a registered service there
+  and any other by name. `XPCServiceManager` never kills its own pid, so Restart leaves the app up.
+  The Developer ID build is not sandboxed and runs every service out of process.
 
 ## Conventions worth knowing
 
-- Python 3.13 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
+- Python 3.14 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
   `>=3.13,<3.15`). Ruff for lint/format (`E,F,I,UP,B,SIM`, 120-col lines); `ty` for type checking.
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail
   tests, don't silently accumulate them.
+- The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and
+  `garage_rag.db.catalog` reads it. The site serves a copy at `https://garagerag.app/.data/models.json`,
+  which the build puts in place (`site_files` on `//docs:site`, a copy step in
+  `.github/workflows/jekyll-gh-pages.yml`); `docs/.data/models.json` is git-ignored, never edited.
 - PyMuPDF is deliberately avoided (AGPL); PDF extraction uses `pypdf`/`pdfplumber` instead.
 - `data/notices/THIRD_PARTY_NOTICES.txt` (shipped in the app's `Resources`) carries the license text
   of every redistributed component. It's generated by `python3 tools/third_party_notices.py` from

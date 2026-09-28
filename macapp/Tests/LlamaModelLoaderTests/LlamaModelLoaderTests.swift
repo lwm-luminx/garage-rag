@@ -1,7 +1,9 @@
 import XCTest
 import LlamaClient
 @testable import LlamaModelLoader
+import LlamaServiceHost
 import LlamaTestSupport
+import PythonXPCService
 
 // MARK: - Resolver
 
@@ -17,7 +19,7 @@ final class LlamaModelResolverTests: XCTestCase {
         catalog = root.appendingPathComponent("models.json")
         let json: [String: Any] = [
             "text_embedding": [
-                ["slug": "bge-m3", "name": "BGE-M3", "model_ref": "bge-m3", "download_file": "bge-m3-Q8_0.gguf", "context_size": 8192, "native_dims": 1024],
+                ["slug": "bge-m3", "name": "BGE-M3", "model_id": "BAAI/bge-m3", "model_ref": "bge-m3", "download_file": "bge-m3-Q8_0.gguf", "context_size": 8192, "native_dims": 1024],
                 ["slug": "mxbai-embed-xsmall", "name": "mxbai xsmall", "download_file": "gguf/mxbai-embed-xsmall-v1-q8_0.gguf", "context_size": 512],
                 ["slug": "renamed", "name": "Renamed", "model_ref": "renamed-ref", "download_file": "renamed.gguf"],
             ],
@@ -70,6 +72,14 @@ final class LlamaModelResolverTests: XCTestCase {
     func testAnEntryIsFoundByModelRef() throws {
         _ = try touch("renamed.gguf")
         XCTAssertEqual(try resolver.resolve(alias: "renamed-ref").alias, "renamed-ref")
+    }
+
+    func testAnEntryIsFoundByModelID() throws {
+        // A llama_xpc registration whose model_ref is the provider-side id, as the add-model form suggests.
+        _ = try touch("bge-m3-Q8_0.gguf")
+        let plan = try resolver.resolve(alias: "BAAI/bge-m3")
+        XCTAssertEqual(plan.displayName, "BGE-M3")
+        XCTAssertTrue(plan.path.hasSuffix("bge-m3-Q8_0.gguf"), plan.path)
     }
 
     func testAMissingDownloadSaysWhatToDownload() {
@@ -268,6 +278,85 @@ final class LlamaModelLoaderTests: XCTestCase {
     }
 }
 
+// MARK: - Through a handed-over endpoint
+
+/// What garage-xpc, embed-xpc and mcp-server-xpc do: reach LlamaXPCService through the endpoint of
+/// its anonymous listener, handed over by the app, since they cannot look it up by name. Here the
+/// service front end (`LlamaXPCServiceDelegate`) runs in the test process on the mock engine, and
+/// the calls go over real NSXPC connections to its anonymous listener.
+final class LlamaModelLoaderEndpointTests: XCTestCase {
+    private static func plan(_ alias: String) -> LlamaModelLoadPlan {
+        LlamaModelLoadPlan(alias: alias, displayName: alias, path: "/models/\(alias).gguf")
+    }
+
+    private static func service(_ engine: MockLlamaServerEngine) -> LlamaXPCServiceDelegate {
+        LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
+    }
+
+    func testWithoutAnEndpointTheLoaderSaysSo() async {
+        let store = GarageLlamaEndpointStore()
+        let loader = LlamaModelLoader(service: .handedOverEndpoint(store: store), resolve: { Self.plan($0) })
+        do {
+            _ = try await loader.ensureLoaded(alias: "bge-m3")
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? LlamaModelLoaderError, .endpointNotHandedOver)
+            XCTAssertTrue(error.localizedDescription.contains("LlamaXPCService endpoint not handed over yet"), error.localizedDescription)
+        }
+    }
+
+    func testLoadsThroughTheHandedOverEndpoint() async throws {
+        let engine = MockLlamaServerEngine(modelPath: "/tmp/mock-model.gguf", modelAlias: "test-model")
+        let llama = Self.service(engine)
+        let store = GarageLlamaEndpointStore()
+        store.set(llama.anonymousListenerEndpoint())
+        let loader = LlamaModelLoader(service: .handedOverEndpoint(store: store), resolve: { Self.plan($0) })
+
+        let resident = try await loader.ensureLoaded(alias: "test-model")
+        XCTAssertEqual(resident, .alreadyLoaded)
+
+        let outcome = try await loader.ensureLoaded(alias: "bge-m3")
+        guard case .loaded = outcome else {
+            return XCTFail("unexpected \(outcome)")
+        }
+        XCTAssertEqual(engine.currentModelPath, "/models/bge-m3.gguf")
+        // The anonymous listener lives as long as the service object.
+        withExtendedLifetime(llama) {}
+    }
+
+    func testANewEndpointReplacesTheConnection() async throws {
+        let first = MockLlamaServerEngine(modelPath: "/tmp/first.gguf", modelAlias: "first")
+        let second = MockLlamaServerEngine(modelPath: "/tmp/second.gguf", modelAlias: "second")
+        let firstService = Self.service(first)
+        let secondService = Self.service(second)
+        let store = GarageLlamaEndpointStore()
+        let loader = LlamaModelLoader(service: .handedOverEndpoint(store: store), resolve: { Self.plan($0) })
+
+        store.set(firstService.anonymousListenerEndpoint())
+        _ = try await loader.ensureLoaded(alias: "bge-m3")
+        XCTAssertEqual(first.currentModelPath, "/models/bge-m3.gguf")
+
+        // As after LlamaXPCService was relaunched and the app handed its new endpoint over.
+        store.set(secondService.anonymousListenerEndpoint())
+        _ = try await loader.ensureLoaded(alias: "bge-m3")
+        XCTAssertEqual(second.currentModelPath, "/models/bge-m3.gguf")
+        withExtendedLifetime((firstService, secondService)) {}
+    }
+
+    func testStoreCountsHandOvers() {
+        let store = GarageLlamaEndpointStore()
+        XCTAssertNil(store.endpoint)
+        XCTAssertEqual(store.generation, 0)
+        let listener = NSXPCListener.anonymous()
+        store.set(listener.endpoint)
+        XCTAssertNotNil(store.endpoint)
+        XCTAssertEqual(store.generation, 1)
+        store.set(nil)
+        XCTAssertNil(store.endpoint)
+        XCTAssertEqual(store.generation, 2)
+    }
+}
+
 // MARK: - C bridge
 
 final class LlamaModelLoaderBridgeTests: XCTestCase {
@@ -314,6 +403,28 @@ final class LlamaModelLoaderBridgeTests: XCTestCase {
     func testEntryWithoutALoaderOrAlias() {
         XCTAssertEqual(call("bge-m3").0, 3)
         XCTAssertEqual(call(nil).0, 2)
+    }
+
+    func testSelfTestIsSkippedUntilAnEndpointArrives() {
+        let test = LlamaModelLoaderBridge.selfTest(store: GarageLlamaEndpointStore())
+        XCTAssertEqual(test.name, GarageLlamaEndpointStore.dependentSelfTestName)
+        XCTAssertThrowsError(try test.body()) { error in
+            XCTAssertTrue(error is GarageXPCSelfTestSkipped, "unexpected \(error)")
+            XCTAssertTrue(error.localizedDescription.contains("not handed over yet"), error.localizedDescription)
+        }
+        let results = GarageXPCSelfTestRunner.run([test])
+        XCTAssertEqual(results.first?.status, .skipped)
+    }
+
+    func testSelfTestPassesThroughAHandedOverEndpoint() throws {
+        let engine = MockLlamaServerEngine(modelPath: "/tmp/mock-model.gguf", modelAlias: "test-model")
+        let llama = LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
+        let store = GarageLlamaEndpointStore()
+        store.set(llama.anonymousListenerEndpoint())
+        let text = try LlamaModelLoaderBridge.selfTest(store: store).body()
+        XCTAssertTrue(text.contains("pong from LlamaXPCService"), text)
+        XCTAssertTrue(text.contains("test-model"), text)
+        withExtendedLifetime(llama) {}
     }
 
     func testMessagesAreTruncatedOnScalarBoundaries() {

@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import PythonXPCService
 
 /// Full-window setup assistant shown on a fresh install (and on demand from
 /// the "Setup Assistant…" menu item). Four pages: wait for services, pick
@@ -81,7 +82,7 @@ struct FirstRunView: View {
 
             Spacer()
 
-            Text("Garage keeps its index on this Mac and never sends it to the cloud. Agents you connect receive only the excerpts their searches return, and may send those to their own cloud model.")
+            Text("Garage keeps its index on this Mac and never sends it to the cloud. Assistants you connect receive only the excerpts their searches return, and may send those to their own cloud model.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -401,12 +402,17 @@ struct FirstRunSelectDataPage: View {
 
     private var coordinator: FirstRunCoordinator { appState.firstRun }
 
-    // Three columns at the assistant's width (MainWindowSizing.assistantSize).
-    private let columns = [GridItem(.adaptive(minimum: 200, maximum: 320), spacing: 12, alignment: .top)]
+    // Three columns at the assistant's width (MainWindowSizing.assistantSize), also when a mouse makes
+    // the scroll bar take its ~15 pt: 920 less the sidebar and padding leaves about 620 pt.
+    private let columns = [GridItem(.adaptive(minimum: 190, maximum: 320), spacing: 12, alignment: .top)]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
-            if !appState.volumeAccess.status.isGranted {
+            if coordinator.isSandboxed {
+                if !appState.volumeAccess.status.isGranted || !coordinator.hasFullDiskAccess {
+                    storeAccessCard
+                }
+            } else if !appState.volumeAccess.status.isGranted {
                 diskAccessCard
             }
 
@@ -416,7 +422,7 @@ struct FirstRunSelectDataPage: View {
 
             FirstRunSectionTitle(
                 title: "Common locations",
-                subtitle: "Select one or more. Locations that don't exist on this Mac are greyed out."
+                subtitle: "Select one or more. Locations that don't exist on this Mac, or that need Full Disk Access, are greyed out."
             )
 
             LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
@@ -447,17 +453,119 @@ struct FirstRunSelectDataPage: View {
             .disabled(coordinator.isWorking)
             .accessibilityIdentifier("firstRun.addCustomFolder")
 
+            if !coordinator.isSandboxed, coordinator.sourceTemplates.contains(where: \.needsFullDiskAccess) {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "lock")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Mail and Messages need Full Disk Access. Turn it on for Garage in System Settings → Privacy & Security, then quit and reopen Garage to pick them.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("Open Privacy Settings…") {
+                            appState.openPrivacySettings(for: .fullDiskAccess)
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("firstRun.fullDiskAccess")
+                    }
+                }
+            }
+
             if coordinator.selectedSources.contains(where: \.isCommunication) {
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: "lock.shield")
                         .foregroundStyle(.blue)
-                    Text("Messages and Mail are stored as communications: they are never sent to a cloud API, and macOS will ask for Full Disk Access before Garage can read them.")
+                    Text("Messages and Mail are stored as communications: they never leave this Mac.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
+        // Full Disk Access is turned on in System Settings, and the folder grant in a panel, so check
+        // both again every few seconds while this page shows.
+        .task {
+            while !Task.isCancelled {
+                coordinator.refreshAccess()
+                try? await Task.sleep(for: .seconds(2))
+            }
+        }
+    }
+
+    /// The App Store build's access, in the order it works: the home folder first (the sandbox reads
+    /// nothing outside its container without it), then Full Disk Access, which Mail and Messages
+    /// also need. Full Disk Access can be skipped; the warning says what is lost.
+    private var storeAccessCard: some View {
+        let granted = appState.volumeAccess.status.isGranted
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: granted ? "checkmark.circle.fill" : "folder.badge.person.crop")
+                    .font(.title2)
+                    .foregroundStyle(granted ? Color.green : Color.orange)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(granted ? "Folder access granted" : "1. Give Garage your home folder")
+                        .font(.subheadline.weight(.semibold))
+                    if !granted {
+                        Text("Garage runs in the macOS sandbox. Select your home folder once and it can read Documents, Desktop, Downloads, iCloud Drive and the rest, without asking for each folder. Select your startup disk instead to index other disks too.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        HStack {
+                            Button("Select Home Folder…") {
+                                appState.promptAndSelectHomeFolder()
+                                _ = appState.testVolumeAccess()
+                                coordinator.refreshAccess()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .accessibilityIdentifier("firstRun.selectHome")
+                            Button("Select Startup Disk…") {
+                                appState.promptAndSelectRootVolume()
+                                _ = appState.testVolumeAccess()
+                                coordinator.refreshAccess()
+                            }
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                Spacer()
+            }
+
+            if !coordinator.hasFullDiskAccess {
+                HStack(alignment: .top, spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.title2)
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("2. Turn on Full Disk Access, or Mail and Messages won't work")
+                            .font(.subheadline.weight(.semibold))
+                        Text("macOS keeps Mail, Messages and some other folders behind Full Disk Access. Without it Garage can't index them, even with your home folder granted, and their locations stay greyed out below. Turn on Garage in System Settings → Privacy & Security → Full Disk Access, then quit and reopen Garage; setup picks up here. You can skip this and turn it on later.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !granted {
+                            Text("Garage can check Full Disk Access once your home folder is granted.")
+                                .font(.caption2)
+                                .foregroundStyle(.tertiary)
+                        }
+                        Button("Open Privacy Settings…") {
+                            appState.openPrivacySettings(for: .fullDiskAccess)
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("firstRun.fullDiskAccess")
+                    }
+                    Spacer()
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+            }
+        }
+        .padding(12)
+        .background(Color.orange.opacity(0.06))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("firstRun.storeAccess")
     }
 
     private var diskAccessCard: some View {
@@ -473,7 +581,7 @@ struct FirstRunSelectDataPage: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack {
-                    Button("Select Root Hard Drive…") {
+                    Button("Select Startup Disk…") {
                         appState.promptAndSelectRootVolume()
                         _ = appState.testVolumeAccess()
                     }
@@ -529,6 +637,7 @@ struct FirstRunSelectDataPage: View {
                     .font(.system(size: 16))
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                     .padding(.top, 1)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -565,7 +674,9 @@ struct FirstRunSelectDataPage: View {
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
                             .truncationMode(.middle)
-                        if !template.isAvailable {
+                        if template.needsFullDiskAccess {
+                            FirstRunBadge(text: "NEEDS FULL DISK ACCESS", tint: .orange)
+                        } else if !template.isAvailable {
                             FirstRunBadge(text: "NOT FOUND", tint: .secondary)
                         }
                     }
@@ -581,6 +692,7 @@ struct FirstRunSelectDataPage: View {
         }
         .buttonStyle(.plain)
         .disabled(!template.isAvailable || coordinator.isWorking)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("firstRun.source.\(template.id)")
     }
 
@@ -666,7 +778,7 @@ struct FirstRunSelectModelsPage: View {
             .toggleStyle(.checkbox)
             .accessibilityIdentifier("firstRun.downloadModels")
 
-            Text("Downloads run in the background through the model download service and are verified against their published SHA-256. Watch progress on the Models page; embedding starts automatically once a model is on disk.")
+            Text("Downloads run in the background through the model download service and are verified against their published SHA-256. Watch progress on the Models page. Garage embeds after each ingest; if a download finishes later, use Embed All on the Models page.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -682,6 +794,7 @@ struct FirstRunSelectModelsPage: View {
                     .font(.system(size: 16))
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                     .padding(.top, 1)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -695,6 +808,15 @@ struct FirstRunSelectModelsPage: View {
                         }
                         if let ctx = preset.contextSize, ctx > 0 {
                             FirstRunBadge(text: "\(ctx) CTX", tint: .secondary)
+                        }
+                        if preset.toolCalling {
+                            FirstRunBadge(text: "TOOLS", tint: .purple)
+                                .help("Trained to call tools, so it can use Garage's MCP tools")
+                        }
+                        if let region = preset.originRegion {
+                            FirstRunBadge(text: region, tint: .secondary)
+                                .help("Made by \(preset.originSummary)")
+                                .accessibilityLabel("Origin \(preset.originSummary)")
                         }
                         if registered {
                             FirstRunBadge(text: "REGISTERED", tint: .teal)
@@ -729,6 +851,7 @@ struct FirstRunSelectModelsPage: View {
         }
         .buttonStyle(.plain)
         .disabled(coordinator.isWorking)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("firstRun.model.\(preset.slug)")
     }
 }
@@ -747,11 +870,14 @@ struct FirstRunSetupAgentPage: View {
                 FirstRunErrorBanner(message: error)
             }
 
-            serverCard
+            // With HTTP off (the default) there is no server to run: assistants start `garage-mcp`.
+            if appState.mcp.httpEnabled {
+                serverCard
+            }
 
             FirstRunSectionTitle(
-                title: "Installed agents",
-                subtitle: "Garage looked for the configuration files of common MCP clients. Select the ones to connect; each gets a \"garage-rag\" server entry pointing at the endpoint above."
+                title: "Installed assistants",
+                subtitle: "Garage looked for the configuration files of common assistants. Select the ones to connect; each gets a \"garage-rag\" server entry pointing at the endpoint above."
             )
 
             VStack(spacing: 8) {
@@ -764,7 +890,7 @@ struct FirstRunSetupAgentPage: View {
                 Button {
                     Task { await coordinator.registerSelectedClients() }
                 } label: {
-                    Label("Connect selected agents", systemImage: "link")
+                    Label("Connect selected assistants", systemImage: "link")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(coordinator.isWorking || coordinator.selectedClientIDs.isEmpty)
@@ -791,7 +917,7 @@ struct FirstRunSetupAgentPage: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
-            Text("A connected agent receives the excerpts its searches return — only those, not your whole index — and may send them to its own cloud model, including excerpts from Messages and Mail if you index them. What happens to them then is up to that agent's privacy terms, not Garage's.")
+            Text("A connected assistant receives the excerpts its searches return — only those, not your whole index — and may send them to its own cloud model, including excerpts from Messages and Mail if you index them. What happens to them then is up to that assistant's privacy terms, not Garage's.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -879,7 +1005,7 @@ struct FirstRunSetupAgentPage: View {
 
     private func clientRow(_ client: MCPClientConfig) -> some View {
         let selected = coordinator.selectedClientIDs.contains(client.id)
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = GarageAppGroup.realHomeDirectory
 
         return Button {
             coordinator.toggleClient(client)
@@ -889,6 +1015,7 @@ struct FirstRunSetupAgentPage: View {
                     .font(.system(size: 16))
                     .foregroundStyle(selected ? Color.accentColor : Color.secondary)
                     .padding(.top, 1)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
@@ -926,6 +1053,7 @@ struct FirstRunSetupAgentPage: View {
         }
         .buttonStyle(.plain)
         .disabled(coordinator.isWorking)
+        .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityIdentifier("firstRun.client.\(client.id)")
     }
 

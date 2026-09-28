@@ -33,6 +33,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from garage_rag.config import expand_home
+
 log = logging.getLogger(__name__)
 
 DEFAULT_SERVER_NAME = "garage-rag"
@@ -56,8 +58,14 @@ class ClientTarget:
 
 
 def client_targets(project_dir: Path | None = None) -> dict[str, ClientTarget]:
-    """Known client config locations, keyed by ``--target`` value."""
-    home = Path.home()
+    """Known client config locations, keyed by ``--target`` value.
+
+    The home folder is the account's (:func:`~garage_rag.config.expand_home`), not ``Path.home()``:
+    in the App Store build this runs in a sandboxed XPC service whose ``$HOME`` is its own
+    container, where no client keeps its config. The app hands that service its folder grant, so
+    the real files are writable there.
+    """
+    home = expand_home("~")
     project = (project_dir or Path.cwd()).resolve()
     support = home / "Library" / "Application Support"
 
@@ -143,7 +151,7 @@ def target_keys() -> tuple[str, ...]:
     Only the keys are wanted, so the project directory is irrelevant; the home
     directory is passed to avoid depending on (or failing without) a cwd.
     """
-    return tuple(client_targets(project_dir=Path.home()))
+    return tuple(client_targets(project_dir=expand_home("~")))
 
 
 def find_existing_configs(project_dir: Path | None = None) -> dict[str, ClientTarget]:
@@ -183,7 +191,7 @@ def plan_targets(
         table = client_targets(project_dir=project_dir)
         return TargetPlan([table["project"], table["claude-desktop"]], multi=True, fell_back=True)
     if path is not None:
-        return TargetPlan([ClientTarget(key="custom", label="custom path", path=path.expanduser().resolve())])
+        return TargetPlan([ClientTarget(key="custom", label="custom path", path=expand_home(path).resolve())])
     table = client_targets(project_dir=project_dir)
     if target not in table:
         choices = ", ".join([*table, *MULTI_TARGETS])
@@ -229,7 +237,7 @@ def server_command(config_path: Path | None = None) -> tuple[str, list[str]]:
     """
     args: list[str] = []
     if config_path is not None:
-        args = ["--config", str(config_path.expanduser().resolve())]
+        args = ["--config", str(expand_home(config_path).resolve())]
 
     # Inside the macOS app, Python is embedded in the Swift launchers and
     # sys.executable names an interpreter the bundle does not ship.
@@ -302,11 +310,21 @@ def _read_config(path: Path) -> dict[str, Any]:
 
 
 def _backup(path: Path) -> Path | None:
+    """Copy ``path`` aside, or return None when there is nothing to copy or nowhere to put it.
+
+    A sandboxed process that was granted only the file itself (the app's "choose a config file"
+    open panel) may write that file but not create a sibling, so there the backup is skipped
+    rather than the registration refused.
+    """
     if not path.is_file():
         return None
     stamp = datetime.now(tz=UTC).strftime("%Y%m%d%H%M%S")
     backup = path.with_suffix(path.suffix + f".bak-{stamp}")
-    shutil.copy2(path, backup)
+    try:
+        shutil.copy2(path, backup)
+    except PermissionError as exc:
+        log.warning("cannot back up %s beside it (%s); writing without a backup", path, exc)
+        return None
     return backup
 
 
@@ -315,11 +333,22 @@ def _write_atomic(path: Path, data: dict[str, Any]) -> None:
 
     Same directory so the rename stays on one filesystem and is therefore atomic;
     a partial write can never leave the client unable to start.
+
+    When the temporary file cannot be created but ``path`` already exists, it is
+    rewritten in place: a sandboxed process granted only that one file (see
+    :func:`_backup`) has no other way to change it.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_suffix(path.suffix + ".tmp")
     payload = json.dumps(data, indent=2, ensure_ascii=False) + "\n"
-    temp.write_text(payload, encoding="utf-8")
+    try:
+        temp.write_text(payload, encoding="utf-8")
+    except PermissionError:
+        if not path.is_file():
+            raise
+        log.warning("cannot create %s; rewriting %s in place", temp.name, path)
+        path.write_text(payload, encoding="utf-8")
+        return
     temp.replace(path)
 
 

@@ -33,15 +33,24 @@ public enum LlamaInferenceBridge {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var client: LlamaClient?
+    nonisolated(unsafe) private static var clientGeneration = -1
     nonisolated(unsafe) private static var registeredWithPython = false
 
-    /// One NSXPC connection for every request; dropped after a failure so the next request reconnects.
-    private static func sharedClient() -> LlamaClient {
+    /// One NSXPC connection for every request, made through the listener endpoint the app handed this
+    /// process (`GarageLlamaEndpointStore`): a sibling XPC service cannot look LlamaXPCService up by
+    /// name, so `LlamaClient()` would only ever fail here. Dropped after a failure, and replaced when a
+    /// newer endpoint arrives, so the next request reconnects.
+    private static func sharedClient(store: GarageLlamaEndpointStore = .shared) throws -> LlamaClient {
         lock.lock()
         defer { lock.unlock() }
-        if let client { return client }
-        let created = LlamaClient()
+        let generation = store.generation
+        if let client, clientGeneration == generation { return client }
+        guard let endpoint = store.endpoint else {
+            throw LlamaClientError.serviceUnavailable("the app has not handed this process LlamaXPCService's endpoint yet")
+        }
+        let created = LlamaClient(endpoint: endpoint)
         client = created
+        clientGeneration = generation
         return created
     }
 
@@ -53,7 +62,12 @@ public enum LlamaInferenceBridge {
 
     /// Sends one request and waits for LlamaXPCService's reply.
     static func perform(method: String, path: String, body: String?, timeout: TimeInterval) -> Result<(Int, String), Error> {
-        let client = sharedClient()
+        let client: LlamaClient
+        do {
+            client = try sharedClient()
+        } catch {
+            return .failure(error)
+        }
         let semaphore = DispatchSemaphore(value: 0)
         let box = ReplyBox()
         Task.detached {

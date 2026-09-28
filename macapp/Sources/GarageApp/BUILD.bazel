@@ -1,17 +1,32 @@
-load("@rules_apple//apple:macos.bzl", "macos_application")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@rules_swift//swift:swift.bzl", "swift_library")
-load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+load("//bazel:garage_app.bzl", "garage_macos_application")
 load("//bazel:launcher_app.bzl", "bundle_archive")
 load("//bazel:version.bzl", "macapp_version")
 
 # publish_appcast checks the release key against SUPublicEDKey; test_appcast checks the feed URL.
+# The model UI tests' host app (//bazel:garage_app.bzl, like GarageApp) bundles it too.
 exports_files(
     ["Sparkle.plist"],
     visibility = [
         "//garage_python/tests:__pkg__",
+        "//macapp/Tests/GarageAppModelUITests:__pkg__",
         "//macapp/package:__pkg__",
     ],
+)
+
+# The rest of what garage_macos_application bundles from here, for the model UI tests' host app,
+# which lives in its own package: two apps named Garage in one package would write the same
+# Garage.app output.
+exports_files(
+    [
+        "Garage.entitlements",
+        "GarageDeveloperID.entitlements",
+        "Info.plist",
+        "PrivacyInfo.xcprivacy",
+        "link_launchers.sh",
+    ],
+    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
 )
 
 swift_library(
@@ -33,7 +48,9 @@ swift_library(
     module_name = "GarageApp",
     visibility = ["//visibility:public"],
     deps = [
+        "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
+        "//macapp/Sources/GarageXPCService:GarageXPCServiceCore",
         "//macapp/Sources/IngestClient",
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",
@@ -50,74 +67,11 @@ macapp_version(
     visibility = ["//visibility:public"],
 )
 
-macos_application(
+# The app bundle (//bazel:garage_app.bzl), with the real llama.cpp service.
+garage_macos_application(
     name = "GarageApp",
-    additional_contents = {
-        # The launchers: helper bundles, with the bundle identifier, entitlements and provisioning
-        # profile each needs to read the Postgres password from the App Group keychain (see
-        # //bazel:launcher_app.bzl), and the forwarder scripts that link_launchers.sh links from the
-        # documented paths Contents/MacOS/garage and garage-mcp.
-        "//macapp/Sources/GarageCLI:garage_app": "Helpers",
-        "//macapp/Sources/GarageMCPCLI:garage_mcp_app": "Helpers",
-        "//macapp/Sources/GarageCLI:garage": "Resources/launchers",
-        "//macapp/Sources/GarageMCPCLI:garage-mcp": "Resources/launchers",
-        "//macapp/externals:postgres_output": "Resources/postgres",
-        "//macapp/externals:schema_output": "Resources/schema",
-        "//macapp/externals:postgresql.conf": "Resources",
-        "//docs:model_manifest": "Resources",
-        "//docs:config_schema": "Resources",
-        "//data/notices:third_party_notices": "Resources",
-        "//garage_python:LICENSE": "Resources",
-        ":PrivacyInfo.xcprivacy": "Resources",
-    },
-    app_icons = ["//macapp:GarageApp.xcassets"],
-    bundle_id = "me.rickmark.garage-rag",
-    bundle_name = "Garage",
-    codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
-    # Developer ID: the App Group plus the application identifier its profile backs, so the app
-    # keeps the Postgres password in the App Group keychain the launchers read without a prompt.
-    entitlements = select({
-        "//bazel:is_store": ":Garage.entitlements",
-        "//bazel:is_developer_id": ":GarageDeveloperID.entitlements",
-        "//conditions:default": None,
-    }),
-    executable_name = "GarageApp",
-    frameworks = [
-        "//macapp/Sources/PythonXPCService:PythonXPCService_framework",
-    ],
-    # Sparkle's SUFeedURL/SUPublicEDKey only belong in the builds that embed
-    # Sparkle. The App Store build updates through the App Store.
-    infoplists = [":Info.plist"] + select({
-        "//bazel:is_store": [],
-        "//conditions:default": [":Sparkle.plist"],
-    }),
-    # Links Contents/MacOS/garage and garage-mcp to the forwarders in Resources/launchers before
-    # the bundle is signed (a symlink is what codesign accepts there; a script is not).
-    ipa_post_processor = ":link_launchers.sh",
-    minimum_os_version = "14.0",
-    # Store builds sign with Apple Development and this development profile, so they run on
-    # registered Macs; Xcode re-signs with Apple Distribution (GarageMacAppConnect) on upload.
-    # Developer ID builds embed the Developer ID profile, which backs the application identifier
-    # in GarageDeveloperID.entitlements (the data-protection keychain refuses one without it).
-    provisioning_profile = select({
-        "//bazel:is_store": "//macapp:GarageRAGDevelopmentApp.provisionprofile",
-        "//bazel:is_developer_id": "//macapp:GarageRAGDeveloperID.provisionprofile",
-        "//conditions:default": None,
-    }),
-    version = ":GarageAppVersion",
+    llama_xpc_service = "//macapp/Sources/LlamaXPCService:LlamaXPCService",
     visibility = ["//visibility:public"],
-    xpc_services = [
-        "//macapp/Sources/LlamaXPCService:LlamaXPCService",
-        "//macapp/Sources/GarageMCPServerService:GarageMCPServerService",
-        "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
-        "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
-        "//macapp/Sources/GarageXPCService:GarageXPCService",
-        "//macapp/Sources/ModelDownloadXPCService:ModelDownloadXPCService",
-    ],
-    deps = [
-        ":GarageApp_lib",
-        "//ext/python:python_framework",
-    ],
 )
 
 # The bundle's launcher layout: the forwarders in Contents/MacOS, the helper bundles in

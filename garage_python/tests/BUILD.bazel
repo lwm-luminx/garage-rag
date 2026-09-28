@@ -144,6 +144,31 @@ py_test(
 )
 
 py_test(
+    name = "test_launcher_scripts",
+    srcs = ["test_launcher_scripts.py"],
+    data = [
+        "//macapp/Sources/GarageCLI:garage",  # keep
+        "//macapp/Sources/GarageMCPCLI:garage-mcp",  # keep
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_mcp_agent",
+    srcs = ["test_mcp_agent.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/mcp_server",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_mcp_install",
     srcs = ["test_mcp_install.py"],
     deps = [
@@ -152,6 +177,16 @@ py_test(
         "//garage_python/src/garage_rag/mcp_server",
         "@pypi//pytest",
         "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_mcp_stdio",
+    srcs = ["test_mcp_stdio.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/mcp_server",  # keep: run as a child process
+        "@pypi//pytest",
     ],
 )
 
@@ -173,8 +208,8 @@ py_test(
     name = "test_model_catalog",
     srcs = ["test_model_catalog.py"],
     data = [
+        "//data/models",
         "//data/sql:sql_schema",
-        "//docs:model_manifest",
     ],
     deps = [
         ":conftest",
@@ -188,7 +223,7 @@ py_test(
 py_test(
     name = "test_registry_dims",
     srcs = ["test_registry_dims.py"],
-    data = ["//docs:model_manifest"],
+    data = ["//data/models"],
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/config",
@@ -311,6 +346,7 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
     ],
 )
 
@@ -324,10 +360,12 @@ py_test(
         ":conftest",
         "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/enrich",
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/proto",
         "//garage_python/src/garage_rag/service",
+        "@pypi//grpcio",
         "@pypi//pytest",
         "@pypi//python_docx",
     ],
@@ -376,11 +414,51 @@ py_test(
 )
 
 py_test(
+    name = "test_second_brain_corpus",
+    srcs = ["test_second_brain_corpus.py"],
+    # A real-world Markdown corpus and the pipeline output recorded from it.
+    data = [
+        "golden/second_brain_os.json",
+        "//garage_python/tests/corpora:second_brain_os",  # keep
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_sources_ops",
+    srcs = ["test_sources_ops.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/ops",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_materialize",
     srcs = ["test_materialize.py"],
     deps = [
         ":conftest",
+        "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_notarize_release",
+    srcs = ["test_notarize_release.py"],
+    data = ["//macapp/package:notarize_release.sh"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
         "@pypi//pytest",
     ],
 )
@@ -441,6 +519,7 @@ test_suite(
         ":test_embed_egress",
         ":test_embed_xpc",
         ":test_facts",
+        ":test_fixture_corpus",
         ":test_generation",
         ":test_grpc_documents",
         ":test_grpc_operations",
@@ -462,6 +541,8 @@ test_suite(
         ":test_postgres",
         ":test_registry_dims",
         ":test_scanner",
+        ":test_second_brain_corpus",
+        ":test_sources_ops",
     ],
 )
 
@@ -556,6 +637,40 @@ py_test(
 )
 
 py_test(
+    name = "test_cli_commands",
+    srcs = ["test_cli_commands.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/extract",
+        "//garage_python/src/garage_rag/ingest",
+        "//garage_python/src/garage_rag/ops",
+        "//garage_python/src/garage_rag/search",
+        "@pypi//pytest",
+        "@pypi//typer",
+    ],
+)
+
+py_test(
+    name = "test_fixture_corpus",
+    srcs = ["test_fixture_corpus.py"],
+    # The UI tests' corpus, ingested here through the real extractors.
+    data = ["//macapp/Tests/Fixtures:corpus"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/enrich/langextract",
+        "//garage_python/src/garage_rag/inference",
+        "//garage_python/src/garage_rag/ingest",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_inference_bridge",
     srcs = ["test_inference_bridge.py"],
     deps = [
@@ -563,5 +678,27 @@ py_test(
         "//garage_python/src/garage_rag/inference",
         "//garage_python/src/garage_rag/xpc",
         "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_upload_appstore",
+    srcs = ["test_upload_appstore.py"],
+    data = ["//macapp/package:upload_appstore.sh"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_contact_names",
+    srcs = ["test_contact_names.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/attribute",
+        "//garage_python/src/garage_rag/extract",
+        "//garage_python/src/garage_rag/ingest",
     ],
 )

@@ -79,6 +79,7 @@ extension MCPServerView {
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("mcp.try.error")
                 }
 
                 if let answer = tryAnswer {
@@ -311,6 +312,7 @@ extension MCPServerView {
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .textSelection(.enabled)
+                    .accessibilityIdentifier("mcp.try.answer")
             }
             .frame(maxHeight: 220)
             .padding(8)
@@ -345,6 +347,7 @@ extension MCPServerView {
                     Text(citation.title ?? "Untitled")
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
+                        .accessibilityIdentifier("mcp.try.citation.\(citation.n).title")
                     Spacer(minLength: 4)
                     if let score = citation.score {
                         Text(String(format: "%.3f", score))

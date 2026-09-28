@@ -19,7 +19,7 @@ from garage_rag.db.catalog import MANIFEST_ENV, known_models, manifest_path
 from garage_rag.db.emb_tables import resolve_spec
 from garage_rag.db.registry import DISTANCES, check_distance, distance_operator, index_ddl, plan_storage
 
-MODELS_JSON = repo_root() / "docs" / ".data" / "models.json"
+MODELS_JSON = repo_root() / "data" / "models" / "models.json"
 
 
 @pytest.fixture
@@ -28,7 +28,7 @@ def manifest(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     def write(*entries: dict) -> Path:
         path = tmp_path / f"models-{len(list(tmp_path.iterdir()))}.json"
-        path.write_text(json.dumps({"text_embedding": list(entries), "fact_distil": []}))
+        path.write_text(json.dumps({"text_embedding": list(entries), "inference_models": []}))
         monkeypatch.setenv(MANIFEST_ENV, str(path))
         return path
 
@@ -51,6 +51,79 @@ class TestTheCommittedCatalog:
         models = known_models()
         assert "bge-m3" in models
         assert "mistral-7b-instruct-v0.3" not in models  # listed without native_dims
+
+    def test_slugs_are_unique_across_the_catalog(self) -> None:
+        document = json.loads(MODELS_JSON.read_text())
+        slugs = [entry["slug"] for section in ("text_embedding", "inference_models") for entry in document[section]]
+        assert len(slugs) == len(set(slugs))
+
+    def test_every_inference_model_downloads_with_a_checksum(self) -> None:
+        # The app downloads huggingface.co/<download_model_id>/resolve/main/<download_file> and
+        # checks it against sha256, so an inference entry needs all three.
+        document = json.loads(MODELS_JSON.read_text())
+        for entry in document["inference_models"]:
+            assert entry.get("download_model_id") and entry.get("download_file"), entry["slug"]
+            assert entry["download_file"].endswith(".gguf"), entry["slug"]
+            sha = entry.get("sha256", "")
+            assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), entry["slug"]
+            assert not entry.get("native_dims"), f"{entry['slug']} is generative, not an embedding model"
+
+    def test_inference_models_say_what_they_are_for(self) -> None:
+        # One list for chat and distillation: tags say which each model is good for.
+        document = json.loads(MODELS_JSON.read_text())
+        assert "fact_distil" not in document
+        for entry in document["inference_models"]:
+            tags = entry.get("tags") or []
+            assert tags and set(tags) <= {"inference", "distillation"}, entry["slug"]
+        assert all(not entry.get("tags") for entry in document["text_embedding"])
+
+    def test_origin_zone_agrees_with_the_country(self) -> None:
+        # The zone the selection prompt groups by is stored, not derived, so hold it to the country.
+        eu = {
+            "AT",
+            "BE",
+            "BG",
+            "HR",
+            "CY",
+            "CZ",
+            "DK",
+            "EE",
+            "FI",
+            "FR",
+            "DE",
+            "GR",
+            "HU",
+            "IE",
+            "IT",
+            "LV",
+            "LT",
+            "LU",
+            "MT",
+            "NL",
+            "PL",
+            "PT",
+            "RO",
+            "SK",
+            "SI",
+            "ES",
+            "SE",
+        }
+        by_country = {"US": "US", "CN": "CN", "GB": "UK", "CH": "CH"}
+        document = json.loads(MODELS_JSON.read_text())
+        for entry in document["text_embedding"] + document["inference_models"]:
+            country = entry.get("country_of_origin", "")
+            expected = "EU" if country in eu else by_country.get(country, "OTHER")
+            assert entry.get("origin_zone") == expected, entry["slug"]
+
+    def test_every_entry_names_its_origin(self) -> None:
+        # An ISO 3166-1 alpha-2 code, not a region: the app groups codes into US / EU / CN / other.
+        document = json.loads(MODELS_JSON.read_text())
+        for entry in document["text_embedding"] + document["inference_models"]:
+            assert "origin" not in entry, entry["slug"]
+            assert entry.get("maker"), entry["slug"]
+            country = entry.get("country_of_origin", "")
+            assert len(country) == 2 and country.isascii() and country.isupper(), entry["slug"]
+            assert isinstance(entry.get("tool_calling", False), bool), entry["slug"]
 
     def test_qwen3_keeps_its_ollama_tag(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(MANIFEST_ENV, raising=False)

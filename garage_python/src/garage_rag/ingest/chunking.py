@@ -100,10 +100,11 @@ class TextChunk:
         return max(1, len(self.text) // 4)
 
 
-def _recursive_splitter(size: int, overlap: int) -> RecursiveSplitter:
+def _recursive_splitter(size: int, overlap: int, *, keep_indent: bool = False) -> RecursiveSplitter:
     return RecursiveSplitter(
         chunk_size=size,
         chunk_overlap=overlap,
+        keep_indent=keep_indent,
         # Prefer paragraph, then line, then sentence, then word boundaries.
         separators=["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""],
     )
@@ -117,7 +118,8 @@ def _heading_path(metadata: dict) -> str | None:
 def chunk_markdown(text: str, *, size: int, overlap: int) -> list[TextChunk]:
     """Header split, then size split, preserving heading breadcrumbs."""
     header_splitter = MarkdownHeaderSplitter(_MD_HEADERS)
-    size_splitter = _recursive_splitter(size, overlap)
+    # Keeps the indentation of fenced code that a size split starts mid-block.
+    size_splitter = _recursive_splitter(size, overlap, keep_indent=True)
 
     try:
         sections = header_splitter.split_text(text)
@@ -135,8 +137,9 @@ def chunk_markdown(text: str, *, size: int, overlap: int) -> list[TextChunk]:
                 chunks.append(
                     TextChunk(
                         ord=len(chunks),
-                        text=piece.strip(),
-                        chunker=f"markdown-header+recursive:{size}/{overlap}",
+                        # The size splitter already stripped it, keeping a code line's indentation.
+                        text=piece.rstrip(),
+                        chunker=f"markdown-header+recursive/v2:{size}/{overlap}",
                         heading_path=heading,
                     )
                 )
@@ -202,7 +205,9 @@ def _span(source: str, text: str, cursor: int) -> tuple[int, int] | None:
     """Where ``text`` sits in ``source`` at or after ``cursor``.
 
     The exact text first; failing that, from its first line to its last, which
-    covers a chunk whose splitter dropped the blank lines in between.
+    covers a chunk whose splitter dropped the blank lines in between. Each line is
+    looked for after the one before it, so a last line that also appears earlier
+    in the chunk (a closing code fence) ends the span where the chunk ends.
     """
     start = source.find(text, cursor)
     if start >= 0:
@@ -213,10 +218,13 @@ def _span(source: str, text: str, cursor: int) -> tuple[int, int] | None:
     start = source.find(lines[0], cursor)
     if start < 0:
         return None
-    last = source.find(lines[-1], start)
-    if last < 0:
-        return None
-    return start, last + len(lines[-1])
+    end = start + len(lines[0])
+    for line in lines[1:]:
+        at = source.find(line, end)
+        if at < 0:
+            return None
+        end = at + len(line)
+    return start, end
 
 
 def _locate(source: str, chunks: list[TextChunk]) -> list[TextChunk]:

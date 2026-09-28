@@ -1,4 +1,5 @@
 import XCTest
+import PythonXPCService
 @testable import GarageApp
 
 final class GarageMCPServiceTests: XCTestCase {
@@ -109,6 +110,34 @@ final class GarageMCPServiceTests: XCTestCase {
         XCTAssertTrue(ids.contains("zed"))
     }
 
+    /// In the sandbox `homeDirectoryForCurrentUser` is the app's container, where no client keeps
+    /// its config; detection looks in the account's home folder, as install.py does.
+    @MainActor
+    func testDetectClientConfigsUsesTheAccountHome() {
+        let mcp = GarageMCPService(postgres: PostgresService())
+        let home = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
+        let byId = Dictionary(uniqueKeysWithValues: mcp.detectClientConfigs().map { ($0.id, $0.path) })
+
+        XCTAssertEqual(byId["claude-desktop"]?.path, home.appendingPathComponent("Library/Application Support/Claude/claude_desktop_config.json").path)
+        XCTAssertEqual(byId["claude-code-user"]?.path, home.appendingPathComponent(".claude.json").path)
+    }
+
+    /// A config file chosen in the open panel is handed to the service that writes it before the
+    /// McpInstall call, since that service is sandboxed on its own.
+    @MainActor
+    func testCustomConfigFileIsGrantedBeforeRegistering() async {
+        let mcp = GarageMCPService(postgres: PostgresService())
+        let relay = RecordingFolderAccessRelay()
+        mcp.folderAccess = relay
+        let file = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("client-\(UUID().uuidString).json")
+
+        // No gRPC service in the test: the registration itself fails, after the grant.
+        let result = await mcp.registerCustomConfigFile(at: file)
+        XCTAssertFalse(result.success)
+        XCTAssertEqual(relay.grants.map { $0.key }, [GarageFolderAccessKey.file(file.path)])
+        XCTAssertEqual(relay.grants.first?.path, file.path)
+    }
+
     @MainActor
     func testMCPToolInfoAndTestResultModels() {
         let tool = MCPToolInfo(name: "rag_stats", description: "Corpus stats", inputSchemaJson: "{}")
@@ -181,5 +210,48 @@ final class GarageMCPServiceTests: XCTestCase {
         } else {
             XCTFail("Expected status to be .failed, but got \(mcp.status)")
         }
+    }
+
+    @MainActor
+    func testHTTPIsOffByDefaultAndTheChoicePersists() {
+        let suiteName = "GarageMCPServiceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let postgres = PostgresService()
+
+        let mcp = GarageMCPService(postgres: postgres, defaults: defaults)
+        if !GarageMCPService.hasHTTPRegistration(mcp.detectedClients) {
+            XCTAssertFalse(mcp.httpEnabled)
+            XCTAssertNil(mcp.registrationEndpoint)
+        }
+
+        mcp.setHTTPEnabled(true)
+        XCTAssertTrue(defaults.bool(forKey: GarageMCPService.httpEnabledDefaultsKey))
+        XCTAssertEqual(mcp.registrationEndpoint, mcp.endpoint)
+        XCTAssertTrue(GarageMCPService(postgres: postgres, defaults: defaults).httpEnabled)
+
+        mcp.setHTTPEnabled(false)
+        XCTAssertFalse(GarageMCPService(postgres: postgres, defaults: defaults).httpEnabled)
+    }
+
+    @MainActor
+    func testStartIfEnabledLeavesTheServerStoppedWhenHTTPIsOff() async throws {
+        let suiteName = "GarageMCPServiceTests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(false, forKey: GarageMCPService.httpEnabledDefaultsKey)
+        let mcp = GarageMCPService(postgres: PostgresService(), defaults: defaults)
+        try await mcp.startIfEnabled()
+        XCTAssertEqual(mcp.status, .stopped)
+    }
+
+    func testAnHTTPRegistrationKeepsHTTPOnForAnUpgrade() {
+        func client(registered: Bool, url: String?) -> MCPClientConfig {
+            MCPClientConfig(id: "c", label: "c", path: URL(fileURLWithPath: "/tmp/c.json"), existsOnDisk: true, isRegistered: registered, registeredURL: url)
+        }
+        XCTAssertFalse(GarageMCPService.hasHTTPRegistration([]))
+        XCTAssertFalse(GarageMCPService.hasHTTPRegistration([client(registered: true, url: nil)]))
+        XCTAssertFalse(GarageMCPService.hasHTTPRegistration([client(registered: false, url: "http://127.0.0.1:8787/mcp")]))
+        XCTAssertTrue(GarageMCPService.hasHTTPRegistration([client(registered: true, url: nil), client(registered: true, url: "http://127.0.0.1:8787/mcp")]))
     }
 }

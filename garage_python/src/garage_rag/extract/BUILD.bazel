@@ -5,6 +5,7 @@ py_library(
     srcs = [
         "__init__.py",
         "base.py",
+        "contact_names.py",
         "dispatch.py",
         "image.py",
         "imageio.py",

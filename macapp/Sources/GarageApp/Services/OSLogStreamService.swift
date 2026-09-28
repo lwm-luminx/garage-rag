@@ -26,6 +26,12 @@ public enum OSLogTimeWindow: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// A log line and the Logs page sources it belongs to.
+public struct RoutedLogLine: Sendable {
+    public let line: LogLine
+    public let targets: Set<LogsView.LogSource>
+}
+
 /// A service that continuously queries and streams real-time log entries from Apple's Unified Logging System (`OSLogStore`),
 /// distributing logs to per-service streams.
 ///
@@ -80,9 +86,9 @@ public final class OSLogStreamService: ObservableObject {
 
         guard #available(macOS 12.0, *) else { return }
 
-        let predicate = NSPredicate(format: Self.appPredicateFormat)
-
-        streamTask = Task { [weak self] in
+        // Detached: reading OSLogStore takes a while, and on the main actor it stalled the whole app.
+        streamTask = Task.detached(priority: .utility) { [weak self] in
+            let predicate = NSPredicate(format: Self.appPredicateFormat)
             guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else {
                 logger.debug("OSLogStreamService: Failed to open OSLogStore")
                 return
@@ -99,21 +105,19 @@ public final class OSLogStreamService: ObservableObject {
                     do {
                         let entries = try store.getEntries(at: lastPosition, matching: predicate)
                         var maxDate = lastDate
-                        var collected: [OSLogEntry] = []
+                        var routed: [RoutedLogLine] = []
 
                         for entry in entries {
-                            collected.append(entry)
+                            if let line = Self.routedLine(for: entry) {
+                                routed.append(line)
+                            }
                             if entry.date > maxDate {
                                 maxDate = entry.date
                             }
                         }
 
-                        if !collected.isEmpty {
-                            await MainActor.run {
-                                for entry in collected {
-                                    self.processOSLogEntry(entry)
-                                }
-                            }
+                        if !routed.isEmpty {
+                            await self.appendRouted(routed)
                         }
 
                         lastDate = maxDate
@@ -160,20 +164,28 @@ public final class OSLogStreamService: ObservableObject {
     }
 
     /// Drains recent entries from `OSLogStore` within a given time window, routing each to its sources.
-    public func fetchRecentLogs(timeWindow: TimeInterval = 300) {
-        guard #available(macOS 12.0, *) else { return }
+    /// The store is read off the main actor and the entries are added in one batch: a window holds
+    /// thousands of entries, and reading and adding them one by one on the main actor hung the app.
+    @discardableResult
+    public func fetchRecentLogs(timeWindow: TimeInterval = 300) -> Task<Void, Never> {
         let startDate = Date().addingTimeInterval(-timeWindow)
-        guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return }
-        let position = store.position(date: startDate)
-
-        do {
-            let entries = try store.getEntries(at: position, matching: NSPredicate(format: Self.appPredicateFormat))
-            for entry in entries {
-                processOSLogEntry(entry)
-            }
-            lastPolledDate = Date()
-        } catch {
-            logger.debug("OSLogStreamService: OSLogStore fetch failed: \(error.localizedDescription, privacy: .public)")
+        return Task { [weak self] in
+            let routed = await Task.detached(priority: .userInitiated) { () -> [RoutedLogLine]? in
+                guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return nil }
+                do {
+                    let entries = try store.getEntries(
+                        at: store.position(date: startDate),
+                        matching: NSPredicate(format: Self.appPredicateFormat)
+                    )
+                    return entries.compactMap { Self.routedLine(for: $0) }
+                } catch {
+                    logger.debug("OSLogStreamService: OSLogStore fetch failed: \(error.localizedDescription, privacy: .public)")
+                    return nil
+                }
+            }.value
+            guard let self, let routed else { return }
+            self.appendRouted(routed)
+            self.lastPolledDate = Date()
         }
     }
 
@@ -191,7 +203,11 @@ public final class OSLogStreamService: ObservableObject {
     // MARK: - Entry Processing
 
     /// Target mapping: routes an OSLogEntryLog to the appropriate service log streams.
-    public func targetSources(for logEntry: OSLogEntryLog) -> Set<LogsView.LogSource> {
+    nonisolated public func targetSources(for logEntry: OSLogEntryLog) -> Set<LogsView.LogSource> {
+        Self.targetSources(for: logEntry)
+    }
+
+    nonisolated static func targetSources(for logEntry: OSLogEntryLog) -> Set<LogsView.LogSource> {
         var targets: Set<LogsView.LogSource> = [.unifiedLog]
         let category = logEntry.category.lowercased()
         let process = logEntry.process.lowercased()
@@ -248,7 +264,14 @@ public final class OSLogStreamService: ObservableObject {
 
     /// Processes an individual `OSLogEntry` and converts it to a `LogLine`.
     public func processOSLogEntry(_ entry: OSLogEntry) {
-        guard let logEntry = entry as? OSLogEntryLog else { return }
+        guard let routed = Self.routedLine(for: entry) else { return }
+        appendRouted([routed])
+    }
+
+    /// `entry` as a `LogLine` with the sources it belongs to; nil for an entry that is not a log message.
+    /// Pure, so it runs wherever the store is read.
+    nonisolated static func routedLine(for entry: OSLogEntry) -> RoutedLogLine? {
+        guard let logEntry = entry as? OSLogEntryLog else { return nil }
         let category = logEntry.category
         let message = logEntry.composedMessage
         let process = logEntry.process
@@ -285,8 +308,7 @@ public final class OSLogStreamService: ObservableObject {
             pid: logEntry.processIdentifier
         )
 
-        let targets = targetSources(for: logEntry)
-        appendLog(line, for: targets)
+        return RoutedLogLine(line: line, targets: targetSources(for: logEntry))
     }
 
     /// Appends a new `LogLine` to target services while deduplicating by text content, source, and timestamp bucket.
@@ -298,12 +320,18 @@ public final class OSLogStreamService: ObservableObject {
     /// text content, source, and timestamp bucket. Batching avoids triggering a Combine publish (and the array
     /// copy/trim it entails) once per line, which is what stalls the main thread under bursty log volume.
     public func appendLogs(_ lines: [LogLine], for targets: Set<LogsView.LogSource>) {
-        guard !lines.isEmpty else { return }
+        appendRouted(lines.map { RoutedLogLine(line: $0, targets: targets) })
+    }
 
-        var accepted: [LogLine] = []
-        accepted.reserveCapacity(lines.count)
+    /// Appends lines that each name their own sources, in order, with one `@Published` update for the
+    /// whole batch.
+    public func appendRouted(_ routed: [RoutedLogLine]) {
+        guard !routed.isEmpty else { return }
 
-        for line in lines {
+        var accepted: [LogsView.LogSource: [LogLine]] = [:]
+
+        for item in routed {
+            let line = item.line
             let textTrimmed = line.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !textTrimmed.isEmpty else { continue }
 
@@ -315,7 +343,9 @@ public final class OSLogStreamService: ObservableObject {
             }
             seenLogKeys.insert(key)
             seenLogKeyQueue.append(key)
-            accepted.append(line)
+            for target in item.targets {
+                accepted[target, default: []].append(line)
+            }
         }
 
         if seenLogKeyQueue.count > maxSeenKeys {
@@ -328,14 +358,16 @@ public final class OSLogStreamService: ObservableObject {
 
         guard !accepted.isEmpty else { return }
 
-        for target in targets {
-            var current = serviceLogs[target] ?? []
-            current.append(contentsOf: accepted)
+        var updated = serviceLogs
+        for (target, lines) in accepted {
+            var current = updated[target] ?? []
+            current.append(contentsOf: lines)
             if current.count > maxLogLinesPerService {
                 current.removeFirst(LogLine.trimCount(count: current.count, limit: maxLogLinesPerService))
             }
-            serviceLogs[target] = current
+            updated[target] = current
         }
+        serviceLogs = updated
     }
 
     // MARK: - Direct XPC Log Streaming

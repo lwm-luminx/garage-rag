@@ -9,10 +9,13 @@ common --downloader_config=bazel/downloader.cfg
 
 # Select the uv hub's dependency group (matches project name in pyproject.toml).
 common --@pypi//dep_group=garage_rag
-# Select the hermetic 3.13 interpreter from @python_interpreters. Its toolchains
-# are gated on this flag (target_settings = python_version_is_3_13); without it,
-# resolution falls through to a transitively-registered rules_python interpreter.
-common --@aspect_rules_py//py/private/interpreter:python_version=3.13
+# Select the hermetic free-threaded 3.14 (3.14t) interpreter from @python_interpreters.
+# Its toolchains are gated on these flags (target_settings = python_version_is_3_14 and
+# freethreaded_is_true); without them, resolution falls through to a transitively-registered
+# rules_python interpreter. The freethreaded flag also makes the uv hub pick cp314t wheels.
+common --@aspect_rules_py//py/private/interpreter:python_version=3.14
+common --@aspect_rules_py//py/private/interpreter:freethreaded=true
+common --@rules_python//python/config_settings:py_freethreaded=yes
 
 
 

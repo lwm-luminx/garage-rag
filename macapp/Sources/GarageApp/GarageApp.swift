@@ -29,7 +29,7 @@ struct GarageApp: App {
                 }
             }
             CommandGroup(replacing: .help) {
-                Button("Garage Support Guide") {
+                Button("Troubleshooting Guide") {
                     NSWorkspace.shared.open(BugReportLinks.troubleshooting)
                 }
                 Divider()

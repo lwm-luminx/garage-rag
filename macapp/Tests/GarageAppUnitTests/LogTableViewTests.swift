@@ -74,15 +74,14 @@ final class LogTableViewTests: XCTestCase {
         XCTAssertFalse(LogLevelFilter.warningsAndErrors.matches(.debug))
     }
 
-    func testLogStreamFilterMatching() {
-        XCTAssertTrue(LogStreamFilter.all.matches(.stdout))
-        XCTAssertTrue(LogStreamFilter.all.matches(.stderr))
-
-        XCTAssertTrue(LogStreamFilter.stdout.matches(.stdout))
-        XCTAssertFalse(LogStreamFilter.stdout.matches(.stderr))
-
-        XCTAssertTrue(LogStreamFilter.stderr.matches(.stderr))
-        XCTAssertFalse(LogStreamFilter.stderr.matches(.stdout))
+    func testStatusBarCountText() {
+        XCTAssertEqual(LogTableView.countText(shown: 0, matching: 0, total: 0), "0 of 0 entries")
+        XCTAssertEqual(LogTableView.countText(shown: 1, matching: 1, total: 1), "1 of 1 entry")
+        XCTAssertEqual(LogTableView.countText(shown: 3, matching: 3, total: 12), "3 of 12 entries")
+        XCTAssertEqual(
+            LogTableView.countText(shown: 500, matching: 4000, total: 4000),
+            "4000 of 4000 entries, showing the latest 500"
+        )
     }
 
     func testLogTableViewFilteredLines() {
@@ -95,6 +94,23 @@ final class LogTableViewTests: XCTestCase {
 
         let view = LogTableView(lines: lines, sourceName: "TestApp")
         XCTAssertEqual(view.filteredLines.count, 4)
+    }
+
+    /// Past the cap the table keeps the newest lines, then sorts them as asked.
+    func testRowsShownKeepsTheNewestLinesPastTheCap() {
+        let start = Date(timeIntervalSince1970: 1_000)
+        let lines = (0..<10).map { index in
+            LogLine(date: start.addingTimeInterval(Double(index)), stream: .stdout, text: "line \(index)", source: "app")
+        }
+        let byDate = [KeyPathComparator(\LogLine.date, order: .forward)]
+
+        let shown = LogTableView.rowsShown(from: lines.shuffled(), sortOrder: byDate, limit: 3)
+        XCTAssertEqual(shown.map(\.text), ["line 7", "line 8", "line 9"])
+
+        let newestFirst = LogTableView.rowsShown(from: lines, sortOrder: [KeyPathComparator(\LogLine.date, order: .reverse)], limit: 3)
+        XCTAssertEqual(newestFirst.map(\.text), ["line 9", "line 8", "line 7"])
+
+        XCTAssertEqual(LogTableView.rowsShown(from: lines, sortOrder: byDate, limit: 50).count, 10)
     }
 
     @MainActor
@@ -181,6 +197,25 @@ final class LogTableViewTests: XCTestCase {
 
         streamer.clearLogs()
         XCTAssertTrue(streamer.logs(for: .unifiedLog).isEmpty)
+    }
+
+    /// A batch keeps its order in every source and each line lands only in the sources it names; a
+    /// repeated line is dropped once.
+    @MainActor
+    func testARoutedBatchKeepsItsOrderPerSource() {
+        let streamer = OSLogStreamService(startStreaming: false)
+        let lines = (0..<4).map { LogLine(stream: .stdout, text: "line \($0)", source: "test", level: .info) }
+        streamer.appendRouted([
+            RoutedLogLine(line: lines[0], targets: [.unifiedLog, .ingest]),
+            RoutedLogLine(line: lines[1], targets: [.unifiedLog]),
+            RoutedLogLine(line: lines[2], targets: [.unifiedLog, .ingest]),
+            RoutedLogLine(line: lines[0], targets: [.unifiedLog, .ingest]),
+            RoutedLogLine(line: lines[3], targets: [.llama]),
+        ])
+
+        XCTAssertEqual(streamer.logs(for: .unifiedLog).map(\.text), ["line 0", "line 1", "line 2"])
+        XCTAssertEqual(streamer.logs(for: .ingest).map(\.text), ["line 0", "line 2"])
+        XCTAssertEqual(streamer.logs(for: .llama).map(\.text), ["line 3"])
     }
 
     /// The store sees only this process, which logs under the app's bundle identifier;

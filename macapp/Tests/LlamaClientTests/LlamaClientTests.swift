@@ -1,5 +1,6 @@
 import XCTest
 @testable import LlamaClient
+import LlamaServiceHost
 import LlamaTestSupport
 
 final class LlamaClientTests: XCTestCase {
@@ -155,5 +156,39 @@ final class LlamaClientTests: XCTestCase {
         await expectServiceError("complete()") { _ = try await disconnectedClient.complete(prompt: "Hello", maxTokens: 10) }
         await expectServiceError("embed()") { _ = try await disconnectedClient.embed(texts: ["Hello"]) }
         await expectServiceError("unloadModel()") { _ = try await disconnectedClient.unloadModel() }
+    }
+}
+
+/// `getListenerEndpoint` and `LlamaClient(endpoint:)`: how the app hands LlamaXPCService to its
+/// sibling XPC services. The service front end runs in the test process; the calls go over real
+/// NSXPC connections to its anonymous listener.
+final class LlamaClientEndpointTests: XCTestCase {
+    func testAnInProcessEngineHasNoEndpoint() async {
+        let client = LlamaClient(inProcessEngine: MockLlamaServerEngine())
+        do {
+            _ = try await client.listenerEndpoint()
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertTrue(error is LlamaClientError, "unexpected \(error)")
+        }
+    }
+
+    func testAClientOnTheEndpointReachesTheService() async throws {
+        let engine = MockLlamaServerEngine(modelPath: "/tmp/mock-model.gguf", modelAlias: "test-model")
+        let service = LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
+        let client = LlamaClient(endpoint: service.anonymousListenerEndpoint())
+
+        let ping = try await client.ping()
+        XCTAssertTrue(ping.contains("pong from LlamaXPCService"), ping)
+        let models = try await client.listModels()
+        XCTAssertEqual(models.data.map(\.id), ["test-model"])
+
+        // The service hands out its endpoint over that same protocol, and a client on it works too.
+        let handedOut = try await client.listenerEndpoint()
+        let second = LlamaClient(endpoint: handedOut)
+        _ = try await second.ensureModel(path: "/models/bge-m3.gguf", alias: "bge-m3")
+        XCTAssertEqual(engine.currentModelPath, "/models/bge-m3.gguf")
+        // The anonymous listener lives as long as the service object.
+        withExtendedLifetime(service) {}
     }
 }

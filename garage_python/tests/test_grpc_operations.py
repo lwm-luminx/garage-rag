@@ -18,6 +18,7 @@ import grpc
 import pytest
 
 from garage_rag.config import Settings, reset_settings, set_settings
+from garage_rag.ingest.reconcile import ReconcileResult
 from garage_rag.ingest.scanner import SourceScanResult
 from garage_rag.ops.backfill import BackfillEvent
 from garage_rag.ops.facts import EnrichEvent, EnrichSummary
@@ -28,6 +29,8 @@ from garage_rag.proto.garage_pb2 import (
     BackfillRequest,
     EnrichFactsRequest,
     McpInstallRequest,
+    McpUninstallRequest,
+    ReconcileRequest,
     RegisterModelRequest,
 )
 from garage_rag.proto.garage_pb2_grpc import GarageServiceStub
@@ -391,3 +394,111 @@ class TestMcp:
         res = client.mcp_status()
         assert res.server_command
         assert "project" in [c.key for c in res.clients]
+
+    def test_uninstall_removes_the_entry_then_reports_it_gone(self, client: GarageClient, tmp_path: Path) -> None:
+        target = tmp_path / "mcp.json"
+        client.mcp_install(McpInstallRequest(path=str(target), host="127.0.0.1", port=8787))
+
+        res = client.mcp_uninstall(McpUninstallRequest(path=str(target)))
+        assert res.removed
+        assert res.path == str(target.resolve())
+        assert res.message == f"removed garage-rag from {target.resolve()}"
+        assert "garage-rag" not in json.loads(target.read_text()).get("mcpServers", {})
+
+        again = client.mcp_uninstall(McpUninstallRequest(path=str(target)))
+        assert not again.removed
+        assert again.message == f"garage-rag was not configured in {target.resolve()}"
+
+    def test_uninstall_passes_name_and_target(self, client: GarageClient, tmp_path: Path) -> None:
+        with patch("garage_rag.ops.mcp.uninstall_mcp_server", return_value=(tmp_path / "c.json", True)) as op:
+            res = client.mcp_uninstall(McpUninstallRequest(target="claude-desktop", name="garage-dev"))
+        op.assert_called_once_with(target="claude-desktop", path=None, name="garage-dev")
+        assert res.removed and res.message.startswith("removed garage-dev from")
+
+    def test_uninstall_unknown_target_is_invalid_argument(self, client: GarageClient) -> None:
+        with pytest.raises(RuntimeError, match="INVALID_ARGUMENT"):
+            client.mcp_uninstall(McpUninstallRequest(target="no-such-client"))
+
+
+class TestModelDefaults:
+    def test_set_default_model(self, client: GarageClient) -> None:
+        with patch("garage_rag.ops.models.set_default_model") as op:
+            res = client.set_default_model("bge-m3")
+        op.assert_called_once_with("bge-m3")
+        assert res.message == "default model = bge-m3"
+
+    def test_set_default_to_an_unknown_model_is_not_found(self, client: GarageClient) -> None:
+        with (
+            patch("garage_rag.ops.models.set_default_model", side_effect=LookupError("no model 'x' registered")),
+            pytest.raises(RuntimeError, match="NOT_FOUND"),
+        ):
+            client.set_default_model("x")
+
+
+class TestInitDb:
+    def test_lists_what_it_applied_and_redacts_the_url(self, client: GarageClient, tmp_path: Path) -> None:
+        set_settings(Settings(database_url="postgresql+psycopg://rick:s3cret@localhost:5432/garage"))
+        with patch(
+            "garage_rag.db.migrate.apply_migrations", return_value=["001_extensions.sql", "013_fact_prompts.sql"]
+        ) as op:
+            res = client.init_db(schema_dir=str(tmp_path))
+        op.assert_called_once_with(schema_dir=tmp_path)
+        assert list(res.applied) == ["001_extensions.sql", "013_fact_prompts.sql"]
+        assert res.message.splitlines()[:2] == ["applied 001_extensions.sql", "applied 013_fact_prompts.sql"]
+        assert res.message.splitlines()[-1].startswith("schema ready (")
+        assert "s3cret" not in res.message
+
+    def test_default_schema_dir_and_nothing_pending(self, client: GarageClient) -> None:
+        set_settings(Settings())
+        with patch("garage_rag.db.migrate.apply_migrations", return_value=[]) as op:
+            res = client.init_db()
+        op.assert_called_once_with(schema_dir=None)
+        assert list(res.applied) == []
+        assert res.message.startswith("schema ready (")
+
+
+class TestReconcile:
+    def _reconcile(self, client: GarageClient, result: ReconcileResult, **request):
+        with (
+            patch("garage_rag.db.engine.session_scope"),
+            patch("garage_rag.ingest.reconcile.reconcile_source", return_value=result) as op,
+        ):
+            res = client.reconcile(ReconcileRequest(source="notes", **request))
+        return res, op
+
+    def test_dry_run_counts_what_is_missing(self, client: GarageClient) -> None:
+        res, op = self._reconcile(client, ReconcileResult(source="notes", candidates=5, total_documents=200))
+        assert op.call_args.args[1] == "notes"
+        assert op.call_args.kwargs == {"dry_run": True, "force": False}
+        assert (res.candidates, res.total_documents, res.deleted) == (5, 200, 0)
+        assert res.fraction == pytest.approx(0.025)
+        assert res.message == "dry run: 5 of 200 documents in notes are missing (2.5%)"
+
+    def test_apply_deletes(self, client: GarageClient) -> None:
+        res, op = self._reconcile(
+            client, ReconcileResult(source="notes", candidates=5, deleted=5, total_documents=200), apply=True
+        )
+        assert op.call_args.kwargs == {"dry_run": False, "force": False}
+        assert res.deleted == 5
+        assert res.message == "deleted 5 of 200 documents from notes"
+
+    def test_nothing_to_reconcile(self, client: GarageClient) -> None:
+        res, _ = self._reconcile(client, ReconcileResult(source="notes", total_documents=200))
+        assert res.message == "nothing to reconcile for notes"
+
+    def test_refusal_is_reported_not_raised(self, client: GarageClient) -> None:
+        refused = ReconcileResult(
+            source="notes", candidates=180, total_documents=200, refused=True, reason="90% missing"
+        )
+        res, op = self._reconcile(client, refused, apply=True, force=True)
+        assert op.call_args.kwargs == {"dry_run": False, "force": True}
+        assert res.refused and res.reason == "90% missing"
+        assert res.message == "refused: 90% missing"
+
+    def test_unknown_source_is_not_found(self, client: GarageClient) -> None:
+        with (
+            patch("garage_rag.db.engine.session_scope"),
+            patch("garage_rag.ingest.reconcile.reconcile_source", side_effect=LookupError("no such source: nope")),
+            pytest.raises(RuntimeError, match="NOT_FOUND"),
+        ):
+            client.reconcile(ReconcileRequest(source="nope"))

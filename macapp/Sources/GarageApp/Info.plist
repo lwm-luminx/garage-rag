@@ -21,14 +21,12 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.productivity</string>
 	<key>NSHumanReadableCopyright</key>
-	<string>MIT</string>
+	<string>Copyright © 2026 Rick Mark-Penwell. MIT License.</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>Garage needs access to your Documents folder to index documents.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Garage needs access to your Downloads folder to index files.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Garage needs access to your Desktop folder to index files.</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<true/>
 </dict>
 </plist>

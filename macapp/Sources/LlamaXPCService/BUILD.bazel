@@ -1,16 +1,29 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+load("//bazel:framework_linking.bzl", "framework_linked_library")
 
-# Implementation library for LlamaXPCService
+# The UI tests' MockLlamaXPCService stands in for this service under the same bundle identifier,
+# with the same Info.plist and entitlements.
+exports_files(
+    [
+        "Info.plist",
+        "LlamaXPCService.entitlements",
+    ],
+    visibility = ["//macapp/Tests/MockLlamaXPCService:__pkg__"],
+)
+
+# Implementation library for LlamaXPCService: the entry point, which puts LlamaCppEngine behind
+# the shared front end in //macapp/Sources/LlamaServiceHost, and the self-test only that engine
+# can pass ("Embedding Known Answers").
 swift_library(
     name = "LlamaXPCService_lib",
     srcs = glob(["**/*.swift"]),
     module_name = "LlamaXPCService",
     visibility = ["//visibility:private"],
     deps = [
-        "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaEngine",
+        "//macapp/Sources/LlamaServiceHost",
         "//macapp/Sources/PythonXPCService",
     ],
 )
@@ -42,9 +55,24 @@ macos_xpc_service(
         "PythonXPCService",
     ],
     minimum_os_version = "14.0",
+    # The "Embedding Known Answers" self-test: a small nomic-embed-text GGUF and llama.cpp's
+    # reference vectors for fixed inputs, in Contents/Resources. :known_answers is empty until
+    # ext/nomic_embed/known_answers.json is committed, and the self-test skips until then.
+    resources = [
+        "//ext/nomic_embed:known_answers",
+        "//ext/nomic_embed:selftest_model",
+    ],
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":LlamaXPCService_lib",
+        ":LlamaXPCService_linked",
     ],
+)
+
+# The service's library without the static copy of PythonXPCService.framework's code, which it links
+# (see //bazel:framework_linking.bzl).
+framework_linked_library(
+    name = "LlamaXPCService_linked",
+    framework_deps = ["//macapp/Sources/PythonXPCService"],
+    deps = [":LlamaXPCService_lib"],
 )

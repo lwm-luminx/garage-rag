@@ -174,11 +174,11 @@ struct DatabaseContentsPresentation: Equatable {
             documents.note = "\(stats.documentsFailedCount.formatted()) failed"
             documents.noteIsWarning = true
         }
-        var embedded = Figure(label: "Embedded", value: "—")
+        var embedded = Figure(label: "Indexed", value: "—")
         if stats.totalChunks > 0, !stats.modelStats.isEmpty {
             let percent = Int((stats.embeddingProgressFraction * 100).rounded(.down))
             embedded = Figure(
-                label: "Embedded",
+                label: "Indexed",
                 value: "\(percent)%",
                 note: DatabasePagePresentation.count(stats.modelStats.count, "model")
             )

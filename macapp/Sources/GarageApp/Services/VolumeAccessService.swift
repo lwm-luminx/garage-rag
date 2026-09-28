@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import IngestClient
+import PythonXPCService
 
 /// Represents categories of TCC (Transparency, Consent, and Control) permissions in macOS.
 public enum TCCPermissionCategory: String, Sendable, Codable, CaseIterable {
@@ -15,9 +16,9 @@ public enum TCCPermissionCategory: String, Sendable, Codable, CaseIterable {
     public var displayName: String {
         switch self {
         case .messages:
-            return "Messages (apple-sms)"
+            return "Messages"
         case .mail:
-            return "Apple Mail (apple-mail)"
+            return "Mail"
         case .documents:
             return "Documents"
         case .downloads:
@@ -62,9 +63,9 @@ public enum TCCPermissionCategory: String, Sendable, Codable, CaseIterable {
     public var helpMessage: String {
         switch self {
         case .messages:
-            return "macOS protects Messages databases (~/Library/Messages). Full Disk Access in System Settings or selecting the Messages directory directly is required to index SMS and iMessage history."
+            return fullDiskAccessSteps(sandboxed: GarageAppGroup.isSandboxed)
         case .mail:
-            return "macOS protects Mail storage (~/Library/Mail). Full Disk Access in System Settings or selecting the Mail directory directly is required to index email archives."
+            return fullDiskAccessSteps(sandboxed: GarageAppGroup.isSandboxed)
         case .documents:
             return "Permission to access your Documents directory is required to index local documents."
         case .downloads:
@@ -78,10 +79,39 @@ public enum TCCPermissionCategory: String, Sendable, Codable, CaseIterable {
         }
     }
 
+    /// Mail and Messages sit behind Full Disk Access. macOS refuses them to an app without it, and
+    /// choosing the folder in an open panel does not get around that (the panel greys out
+    /// `~/Library/Messages` and a Mail folder chosen there still cannot be read).
+    public var needsFullDiskAccess: Bool {
+        self == .messages || self == .mail
+    }
+
+    /// The folder macOS protects for a Full Disk Access category.
+    public var protectedFolder: String? {
+        switch self {
+        case .messages: return "~/Library/Messages"
+        case .mail: return "~/Library/Mail"
+        default: return nil
+        }
+    }
+
+    /// What someone does, in order, to let Garage index Mail or Messages, and what is missing until
+    /// they do. `sandboxed` (the App Store build) adds the folder grant the sandbox also needs.
+    public func fullDiskAccessSteps(sandboxed: Bool) -> String {
+        let folder = protectedFolder ?? "the folder"
+        let what = self == .messages ? "SMS and iMessage history" : "email"
+        var text = "macOS keeps \(displayName) (\(folder)) behind Full Disk Access, so Garage can't index your \(what) without it, even if you choose the folder. "
+            + "Turn on Garage in System Settings → Privacy & Security → Full Disk Access, then quit and reopen Garage."
+        if sandboxed {
+            text += " Then grant access to \(folder), or select your startup disk, so the App Store version can open it."
+        }
+        return text
+    }
+
     /// Detects the relevant TCC permission category based on the slug or path.
     public static func detect(slug: String, path: String) -> TCCPermissionCategory? {
         let lowerSlug = slug.lowercased()
-        let lowerPath = (path as NSString).expandingTildeInPath.lowercased()
+        let lowerPath = GarageAppGroup.expandingTilde(in: path).lowercased()
 
         if lowerSlug == "apple-sms" || lowerSlug == "sms" || lowerSlug == "messages" || lowerSlug == "imessage"
             || lowerPath.contains("/library/messages") || lowerPath.hasSuffix("/messages") {
@@ -133,7 +163,7 @@ public enum VolumeAccessStatus: Equatable {
         case .accessDenied(let reason):
             return "Denied: \(reason)"
         case .staleBookmark(let url):
-            return "Stale bookmark: \(url.path) (needs re-grant)"
+            return "Saved access to \(url.path) no longer works"
         }
     }
 }
@@ -201,9 +231,9 @@ public struct SourcePathAccessResult: Identifiable, Hashable, Equatable, Sendabl
         }
         if !isReadable {
             if let cat = tccCategory {
-                return "TCC permission required (\(cat.displayName))"
+                return "Needs permission (\(cat.displayName))"
             }
-            return "Permission denied / not readable"
+            return "Garage isn't allowed to read this folder"
         }
         if let error = errorMessage {
             return "Error: \(error)"
@@ -446,11 +476,11 @@ open class MockFileSystemAccessor: FileSystemAccessing, @unchecked Sendable {
     }
 
     open func isReadableFile(atPath path: String) -> Bool {
-        readablePaths.contains(path) || readablePaths.contains((path as NSString).expandingTildeInPath) || path.hasPrefix("/tmp") || path.hasPrefix("/var/folders")
+        readablePaths.contains(path) || readablePaths.contains(GarageAppGroup.expandingTilde(in: path)) || path.hasPrefix("/tmp") || path.hasPrefix("/var/folders")
     }
 
     open func openFile(atPath path: String) -> Bool {
-        if unopenablePaths.contains(path) || unopenablePaths.contains((path as NSString).expandingTildeInPath) {
+        if unopenablePaths.contains(path) || unopenablePaths.contains(GarageAppGroup.expandingTilde(in: path)) {
             return false
         }
         if isReadableFile(atPath: path) {
@@ -472,18 +502,37 @@ public final class VolumeAccessService: ObservableObject {
     private let bookmarkStore: VolumeBookmarkStoring
     private let fileSystem: FileSystemAccessing
     public let ingestClient: IngestClient?
+    /// Passes each grant on to the ingest service and the gRPC host. The bookmarks above are
+    /// app-scoped, so they give those separately sandboxed services nothing; the URL itself does.
+    public let folderAccess: FolderAccessRelaying
+    /// In the sandbox `/` reads as readable, but that shows only the container's view of it and
+    /// grants nothing, so there only a bookmark counts as access.
+    private let isSandboxed: Bool
     private var isAccessingSecurityScope = false
 
     public init(
         bookmarkStore: VolumeBookmarkStoring? = nil,
         fileSystem: FileSystemAccessing? = nil,
-        ingestClient: IngestClient? = nil
+        ingestClient: IngestClient? = nil,
+        folderAccess: FolderAccessRelaying? = nil,
+        isSandboxed: Bool = GarageAppGroup.isSandboxed
     ) {
         let defaultStore: VolumeBookmarkStoring = isRunningInTestEnvironment ? MockVolumeBookmarkStore() : UserDefaultsVolumeBookmarkStore()
         let defaultFS: FileSystemAccessing = isRunningInTestEnvironment ? MockFileSystemAccessor() : DefaultFileSystemAccessor()
+        let defaultRelay: FolderAccessRelaying = isRunningInTestEnvironment ? RecordingFolderAccessRelay() : XPCFolderAccessRelay()
         self.bookmarkStore = bookmarkStore ?? defaultStore
         self.fileSystem = fileSystem ?? defaultFS
         self.ingestClient = ingestClient
+        self.folderAccess = folderAccess ?? defaultRelay
+        self.isSandboxed = isSandboxed
+    }
+
+    /// Hands `url`, which this process can reach right now, to the services that read user files.
+    private func relayGrant(_ url: URL, key: String) {
+        let relay = folderAccess
+        Task {
+            await relay.grant(url, key: key)
+        }
     }
 
     deinit {
@@ -499,9 +548,10 @@ public final class VolumeAccessService: ObservableObject {
         restoreSourceBookmarks()
 
         guard let bookmarkData = bookmarkStore.loadBookmarkData() else {
-            // Check if root is directly accessible (e.g. Non-sandboxed development environment)
+            // Without a sandbox a readable root means the whole disk is reachable (e.g. the
+            // Developer ID build). In the sandbox it means nothing: the user has to pick a folder.
             let rootURL = URL(fileURLWithPath: "/")
-            if fileSystem.isReadableFile(atPath: rootURL.path) {
+            if !isSandboxed, fileSystem.isReadableFile(atPath: rootURL.path) {
                 activeRootURL = rootURL
                 status = .accessGranted(url: rootURL, isSecurityScoped: false)
                 return true
@@ -553,21 +603,13 @@ public final class VolumeAccessService: ObservableObject {
                 }
 
                 _ = IngestEngine.shared.setRootVolumeBookmark(bookmarkData)
-                if let client = ingestClient {
-                    Task {
-                        _ = try? await client.setRootVolumeBookmark(bookmarkData)
-                    }
-                }
+                relayGrant(resolvedURL, key: GarageFolderAccessKey.root)
                 return true
             } else if fileSystem.isReadableFile(atPath: resolvedURL.path) {
                 activeRootURL = resolvedURL
                 status = .accessGranted(url: resolvedURL, isSecurityScoped: false)
                 _ = IngestEngine.shared.setRootVolumeBookmark(bookmarkData)
-                if let client = ingestClient {
-                    Task {
-                        _ = try? await client.setRootVolumeBookmark(bookmarkData)
-                    }
-                }
+                relayGrant(resolvedURL, key: GarageFolderAccessKey.root)
                 return true
             } else {
                 status = .accessDenied(reason: "Failed to start accessing security-scoped resource for \(resolvedURL.path)")
@@ -588,15 +630,11 @@ public final class VolumeAccessService: ObservableObject {
             if let resolvedURL = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale) {
                 if resolvedURL.startAccessingSecurityScopedResource() {
                     activeSourceURLs[path] = resolvedURL
+                    relayGrant(resolvedURL, key: GarageFolderAccessKey.source(path))
                 }
             }
             #endif
             _ = IngestEngine.shared.setSourceBookmark(path: path, bookmarkData: data)
-            if let client = ingestClient {
-                Task {
-                    _ = try? await client.setSourceBookmark(path: path, bookmarkData: data)
-                }
-            }
         }
     }
 
@@ -609,8 +647,8 @@ public final class VolumeAccessService: ObservableObject {
         }
 
         let panel = NSOpenPanel()
-        panel.title = "Select Root Hard Drive"
-        panel.message = "To grant Garage access to index files across your system, select your root hard drive (e.g. Macintosh HD or root '/') and click Grant Access."
+        panel.title = "Select Startup Disk"
+        panel.message = "Select your startup disk (usually Macintosh HD) and click Grant Access."
         panel.prompt = "Grant Access"
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
@@ -632,9 +670,59 @@ public final class VolumeAccessService: ObservableObject {
         }
     }
 
+    /// Asks for the account's home folder: one grant that covers Documents, Desktop, Downloads,
+    /// iCloud Drive, cloud folders, Mail and Messages. The startup disk also works, for sources on
+    /// other folders; either one becomes the root grant every source is read through.
+    public func promptForHomeFolderSelection() -> URL? {
+        let home = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
+        if isRunningInTestEnvironment {
+            try? grantAccess(for: home)
+            return home
+        }
+
+        let panel = NSOpenPanel()
+        panel.title = "Select Your Home Folder"
+        panel.message = "Select your home folder (\(home.lastPathComponent)) and click Grant Access. It covers Documents, Desktop, Downloads, iCloud Drive, Mail and Messages. To index other disks too, select your startup disk instead."
+        panel.prompt = "Grant Access"
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = false
+        panel.showsHiddenFiles = false
+        panel.directoryURL = home
+
+        guard panel.runModal() == .OK, let selectedURL = panel.url else {
+            return nil
+        }
+
+        do {
+            try grantAccess(for: selectedURL)
+            return selectedURL
+        } catch {
+            status = .accessDenied(reason: "Failed to create security-scoped bookmark: \(error.localizedDescription)")
+            return nil
+        }
+    }
+
+    /// Whether this process has Full Disk Access, by opening the account's own TCC database, which
+    /// only Full Disk Access unlocks. In the sandbox the home folder or startup disk must be granted
+    /// first, so until then this reports false whatever System Settings says.
+    public func hasFullDiskAccess() -> Bool {
+        if isRunningInTestEnvironment {
+            return true
+        }
+        let probe = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
+            .appendingPathComponent("Library/Application Support/com.apple.TCC/TCC.db")
+        guard let handle = try? FileHandle(forReadingFrom: probe) else {
+            return false
+        }
+        try? handle.close()
+        return true
+    }
+
     /// Displays an NSOpenPanel configured to select a specific source directory such as Messages or Mail.
     public func promptForSourceDirectoryAccess(slug: String? = nil, suggestedPath: String) -> URL? {
-        let resolvedPath = (suggestedPath as NSString).expandingTildeInPath
+        let resolvedPath = GarageAppGroup.expandingTilde(in: suggestedPath)
         if isRunningInTestEnvironment {
             let defaultURL = URL(fileURLWithPath: resolvedPath)
             try? grantSourceAccess(for: defaultURL, forSourcePath: suggestedPath)
@@ -670,7 +758,7 @@ public final class VolumeAccessService: ObservableObject {
     /// Grants access for a specific source path and persists its security-scoped bookmark.
     public func grantSourceAccess(for url: URL, forSourcePath path: String) throws {
         _ = url.startAccessingSecurityScopedResource()
-        let resolvedPath = (path as NSString).expandingTildeInPath
+        let resolvedPath = GarageAppGroup.expandingTilde(in: path)
         activeSourceURLs[resolvedPath] = url
 
         #if os(macOS)
@@ -690,12 +778,8 @@ public final class VolumeAccessService: ObservableObject {
         }
         bookmarkStore.saveBookmarkData(bookmarkData, forPath: resolvedPath)
         _ = IngestEngine.shared.setSourceBookmark(path: resolvedPath, bookmarkData: bookmarkData)
-        if let client = ingestClient {
-            Task {
-                _ = try? await client.setSourceBookmark(path: resolvedPath, bookmarkData: bookmarkData)
-            }
-        }
         #endif
+        relayGrant(url, key: GarageFolderAccessKey.source(resolvedPath))
 
         _ = testFullVolumeAccess()
     }
@@ -726,17 +810,30 @@ public final class VolumeAccessService: ObservableObject {
         }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "Permission Required: \(category.displayName)"
-        alert.informativeText = "\(category.helpMessage)\n\nYou can grant folder access directly via Open Panel or open macOS System Settings to enable Full Disk Access."
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Select Folder Directly…")
-        alert.addButton(withTitle: "Cancel")
+        if category.needsFullDiskAccess {
+            // Choosing the folder does nothing until Full Disk Access is on, so settings come first
+            // and the folder is offered only where the sandbox also needs it.
+            alert.messageText = "\(category.displayName) needs Full Disk Access"
+            alert.informativeText = category.helpMessage
+            alert.addButton(withTitle: "Open System Settings")
+            if GarageAppGroup.isSandboxed {
+                alert.addButton(withTitle: "Select Folder…")
+            }
+            alert.addButton(withTitle: "Cancel")
+        } else {
+            alert.messageText = "Garage needs permission to read \(category.displayName)"
+            alert.informativeText = "\(category.helpMessage)\n\nSelect the folder, or turn on Full Disk Access in System Settings."
+            alert.addButton(withTitle: "Open System Settings")
+            alert.addButton(withTitle: "Select Folder Directly…")
+            alert.addButton(withTitle: "Cancel")
+        }
 
+        let offersFolder = !category.needsFullDiskAccess || GarageAppGroup.isSandboxed
         let response = alert.runModal()
         if response == .alertFirstButtonReturn {
             openPrivacySettings(for: category)
             return true
-        } else if response == .alertSecondButtonReturn {
+        } else if response == .alertSecondButtonReturn, offersFolder {
             if let path = sourcePath ?? sourceSlug {
                 _ = promptForSourceDirectoryAccess(slug: sourceSlug, suggestedPath: path)
                 return true
@@ -763,12 +860,8 @@ public final class VolumeAccessService: ObservableObject {
 
         if let bookmarkData = bookmarkStore.loadBookmarkData() {
             _ = IngestEngine.shared.setRootVolumeBookmark(bookmarkData)
-            if let client = ingestClient {
-                Task {
-                    _ = try? await client.setRootVolumeBookmark(bookmarkData)
-                }
-            }
         }
+        relayGrant(url, key: GarageFolderAccessKey.root)
 
         _ = testFullVolumeAccess()
     }
@@ -782,10 +875,9 @@ public final class VolumeAccessService: ObservableObject {
         lastTestResult = nil
         status = .notConfigured
         IngestEngine.shared.revokeAccess()
-        if let client = ingestClient {
-            Task {
-                _ = try? await client.revokeAccess()
-            }
+        let relay = folderAccess
+        Task {
+            await relay.revokeAll()
         }
     }
 
@@ -883,7 +975,7 @@ public final class VolumeAccessService: ObservableObject {
         for source in sourcePaths {
             let rawPath = source.root
             let slug = source.slug
-            let resolvedPath = (rawPath as NSString).expandingTildeInPath
+            let resolvedPath = GarageAppGroup.expandingTilde(in: rawPath)
             var isDir: ObjCBool = false
             let exists = fileSystem.fileExists(atPath: resolvedPath, isDirectory: &isDir)
             let isReadable = fileSystem.isReadableFile(atPath: resolvedPath)
@@ -940,9 +1032,9 @@ public final class VolumeAccessService: ObservableObject {
                 canOpenFiles = false
             } else if !isReadable {
                 if let cat = tccCategory {
-                    errorMsg = "TCC permission required (\(cat.displayName))"
+                    errorMsg = "Needs permission (\(cat.displayName))"
                 } else {
-                    errorMsg = "Permission denied / not readable"
+                    errorMsg = "Garage isn't allowed to read this folder"
                 }
                 canOpenFiles = false
             }

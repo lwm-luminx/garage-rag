@@ -18,7 +18,7 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 /// Subclasses override `additionalSelfTests()`, `registerManagedServices(in:)`, `exportedInterface`
 /// and implement their service specific protocol methods, wrapping Python calls in
 /// `GaragePythonRuntime.shared.withGIL { ... }`.
-open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXPCServiceProtocol {
+open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
     public enum Lifecycle: String, Sendable {
         case bootstrapping
         case ready
@@ -37,13 +37,15 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     private let launchDate = Date()
 
     private let stateLock = NSLock()
-    private var _lifecycle: Lifecycle = .bootstrapping
-    private var _configuration: [String: String] = [:]
-    private var _lastTestResults: [GarageXPCTestResult] = []
-    private var _lastTestRun: Date?
-    private var _bootstrapError: String?
-    private var _isRunningTests = false
-    private var _servicesRegistered = false
+    private final var _lifecycle: Lifecycle = .bootstrapping
+    private final var _configuration: [String: String] = [:]
+    private final var _lastTestResults: [GarageXPCTestResult] = []
+    private final var _lastTestRun: Date?
+    private final var _bootstrapError: String?
+    private final var _isRunningTests = false
+    private final var _servicesRegistered = false
+    /// The anonymous listener behind `anonymousListenerEndpoint()`, kept for the life of the process.
+    private final var _anonymousListener: NSXPCListener?
 
     public init(
         serviceName: String,
@@ -61,7 +63,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         super.init()
         // Seed configuration from the process environment (launchd passes the app's environment through).
         let env = ProcessInfo.processInfo.environment
-        for key in [GarageXPCConfigurationKey.databaseURL, GarageXPCConfigurationKey.grpcHost, GarageXPCConfigurationKey.grpcPort, GarageXPCConfigurationKey.grpcSocket, GarageXPCConfigurationKey.logLevel] {
+        for key in [GarageXPCConfigurationKey.databaseURL, GarageXPCConfigurationKey.grpcHost, GarageXPCConfigurationKey.grpcPort, GarageXPCConfigurationKey.grpcToken, GarageXPCConfigurationKey.grpcSocket, GarageXPCConfigurationKey.logLevel] {
             if let value = env[key], !value.isEmpty {
                 _configuration[key] = value
             }
@@ -111,6 +113,12 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         logger.info("\(self.serviceName, privacy: .public) starting (pid \(info.processIdentifier, privacy: .public), bundle \(Bundle.main.bundleIdentifier ?? "?", privacy: .public), macOS \(info.operatingSystemVersionString, privacy: .public))")
         GarageXPCOutputCapture.shared.log(message: "\(serviceName) starting (pid \(info.processIdentifier)); logs in \(GarageFileLogger.logsDirectoryURL.path)")
 
+        // Folder grants this service saved before a relaunch, ahead of any work that reads user files.
+        let restored = GarageFolderAccessStore.shared.restorePersisted()
+        if !restored.isEmpty {
+            GarageXPCOutputCapture.shared.log(message: "Restored access to \(restored.count) granted folder(s)")
+        }
+
         if let crash = GarageXPCCrashHandler.lastCrashReport(serviceName: serviceName) {
             logger.warning("\(self.serviceName, privacy: .public) found a crash report from a previous run (\(crash.count, privacy: .public) bytes)")
         }
@@ -118,6 +126,19 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         host.perform { [self] in
             bootstrapOnHostThread()
         }
+    }
+
+    /// Starts this service inside the app (`GarageInProcessServices`) rather than as its own process:
+    /// the same host-thread start-up as `bootstrap()`, without what belongs to a process of its own
+    /// (crash handlers, capturing stdout/stderr, restoring saved folder grants, which the app holds
+    /// itself). Returns the endpoint of the listener that serves it, to register.
+    public func bootstrapInProcess() -> NSXPCListenerEndpoint {
+        logger.info("\(self.serviceName, privacy: .public) starting in the app process (pid \(ProcessInfo.processInfo.processIdentifier, privacy: .public))")
+        let endpoint = anonymousListenerEndpoint()
+        host.perform { [self] in
+            bootstrapOnHostThread()
+        }
+        return endpoint
     }
 
     /// Creates the service listener, resumes it and blocks in `dispatchMain()`.
@@ -129,24 +150,44 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         dispatchMain()
     }
 
-    private func bootstrapOnHostThread() {
+    /// The endpoint of an anonymous listener that serves exactly like the service listener: its
+    /// connections go through `listener(_:shouldAcceptNewConnection:)`, so they export
+    /// `exportedInterface` and this object. The app hands it to sibling XPC services, which cannot
+    /// look this service up by name. The listener is made once and lives as long as the process.
+    public func anonymousListenerEndpoint() -> NSXPCListenerEndpoint {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        if let listener = _anonymousListener {
+            return listener.endpoint
+        }
+        let listener = NSXPCListener.anonymous()
+        listener.delegate = self
+        listener.resume()
+        _anonymousListener = listener
+        logger.info("\(self.serviceName, privacy: .public): anonymous NSXPCListener resumed")
+        return listener.endpoint
+    }
+
+    private final func bootstrapOnHostThread() {
         if usesPython {
             ensurePythonReady()
         }
-        let results = performSelfTests()
         registerServicesIfNeeded()
+        // The self tests run once the managed services have started: some of them check those
+        // services (llama's HTTP listener), which would otherwise always fail at launch.
         host.startAll { [self] states in
             let failed = states.filter { if case .failed = $0.value { return true } else { return false } }
             if !failed.isEmpty {
                 GarageXPCOutputCapture.shared.log(level: "ERROR", message: "\(failed.count) managed service(s) failed to start: \(failed.keys.sorted().joined(separator: ", "))")
             }
+            let results = performSelfTests()
+            let failures = results.filter { $0.status == .failed }
+            if failures.isEmpty {
+                GarageXPCOutputCapture.shared.log(message: "\(serviceName) self tests passed (\(results.count) tests)")
+            } else {
+                GarageXPCOutputCapture.shared.log(level: "ERROR", message: "\(serviceName) self tests: \(failures.count) failed - \(failures.map { "\($0.name): \($0.summary)" }.joined(separator: "; "))")
+            }
             recomputeLifecycle()
-        }
-        let failures = results.filter { $0.status == .failed }
-        if failures.isEmpty {
-            GarageXPCOutputCapture.shared.log(message: "\(serviceName) self tests passed (\(results.count) tests)")
-        } else {
-            GarageXPCOutputCapture.shared.log(level: "ERROR", message: "\(serviceName) self tests: \(failures.count) failed - \(failures.map { "\($0.name): \($0.summary)" }.joined(separator: "; "))")
         }
         recomputeLifecycle()
     }
@@ -172,7 +213,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
     }
 
-    private func registerServicesIfNeeded() {
+    private final func registerServicesIfNeeded() {
         stateLock.lock()
         let already = _servicesRegistered
         _servicesRegistered = true
@@ -182,7 +223,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
     }
 
-    private func recomputeLifecycle() {
+    private final func recomputeLifecycle() {
         stateLock.lock()
         let tests = _lastTestResults
         let bootstrapError = _bootstrapError
@@ -318,6 +359,37 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         return results
     }
 
+    /// Runs the named tests of the suite again and replaces their earlier results (for a test whose
+    /// precondition has just changed, such as the LlamaXPCService endpoint arriving). Does nothing
+    /// before the suite's first run, which will run them itself; waits and tries again while the
+    /// whole suite is running, so its older result cannot overwrite the new one.
+    public func rerunSelfTests(named names: Set<String>) {
+        host.perform { [self] in
+            stateLock.lock()
+            let hasResults = !_lastTestResults.isEmpty
+            let suiteRunning = _isRunningTests
+            stateLock.unlock()
+            guard hasResults else { return }
+            guard !suiteRunning else {
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 2) { [weak self] in
+                    self?.rerunSelfTests(named: names)
+                }
+                return
+            }
+            let tests = selfTests().filter { names.contains($0.name) && (!$0.requiresPython || runtime.isReady) }
+            guard !tests.isEmpty else { return }
+            let fresh = GarageXPCSelfTestRunner.run(tests, runtime: runtime)
+            stateLock.lock()
+            for result in fresh {
+                if let index = _lastTestResults.firstIndex(where: { $0.name == result.name }) {
+                    _lastTestResults[index] = result
+                }
+            }
+            stateLock.unlock()
+            recomputeLifecycle()
+        }
+    }
+
     public var lastTestResults: [GarageXPCTestResult] {
         stateLock.lock(); defer { stateLock.unlock() }
         return _lastTestResults
@@ -362,9 +434,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
 
         // Only processes signed by this build's team (the app, the other services, the launchers) may
         // talk to the service; messages from anything else are dropped and the connection invalidated.
-        if let requirement = GarageXPCPeerRequirement.current {
-            newConnection.setCodeSigningRequirement(requirement)
-        }
+        GarageXPCPeerRequirement.apply(to: newConnection, serviceName: serviceName)
 
         newConnection.remoteObjectInterface = NSXPCInterface(with: GarageXPCLogReceiverProtocol.self)
         newConnection.exportedInterface = exportedInterface
@@ -433,8 +503,9 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         host.perform { [self] in
             let results = performSelfTests()
             let failed = results.filter { $0.status == .failed }
+            let skipped = results.filter { $0.status == .skipped }.count
             let summary = failed.isEmpty
-                ? "All \(results.count) self tests passed"
+                ? (skipped == 0 ? "All \(results.count) self tests passed" : "\(results.count - skipped) self tests passed, \(skipped) skipped")
                 : "\(failed.count) of \(results.count) self tests failed: \(failed.map { $0.name }.joined(separator: ", "))"
             let details = results.map { "[\($0.status.rawValue.uppercased())] \($0.name): \($0.summary)\(($0.details.isEmpty || $0.status == .passed) ? "" : "\n\($0.details)")" }.joined(separator: "\n")
             reply(failed.isEmpty, summary, details)
@@ -494,6 +565,38 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
         GarageXPCOutputCapture.shared.addConnection(connection)
         logger.info("\(self.serviceName, privacy: .public): pid \(connection.processIdentifier, privacy: .public) subscribed to log streaming")
+        reply(true)
+    }
+
+    // MARK: - GarageLlamaEndpointReceiverProtocol
+
+    /// Keeps the LlamaXPCService endpoint the app handed over for this process's llama clients
+    /// (`LlamaModelLoader`), then re-runs the self test that needs it. Services whose exported
+    /// protocol does not adopt `GarageLlamaEndpointReceiverProtocol` never receive this call.
+    public func setLlamaEndpoint(_ endpoint: NSXPCListenerEndpoint, with reply: @escaping (Bool, String?) -> Void) {
+        GarageLlamaEndpointStore.shared.set(endpoint)
+        logger.info("\(self.serviceName, privacy: .public): received the LlamaXPCService endpoint")
+        GarageXPCOutputCapture.shared.log(message: "Received the LlamaXPCService endpoint from the app")
+        reply(true, "LlamaXPCService endpoint received by \(serviceName)")
+        rerunSelfTests(named: [GarageLlamaEndpointStore.dependentSelfTestName])
+    }
+
+    // MARK: - GarageFolderAccessReceiverProtocol
+
+    /// Starts accessing a folder or file the app granted (the URL carries this process's sandbox
+    /// extension) and keeps a bookmark of its own for relaunches. Services whose exported protocol
+    /// does not adopt `GarageFolderAccessReceiverProtocol` never receive this call.
+    public func grantFolderAccess(_ url: URL, key: String, with reply: @escaping (Bool, String?) -> Void) {
+        let result = GarageFolderAccessStore.shared.grant(url, key: key)
+        logger.info("\(self.serviceName, privacy: .public): folder grant '\(key, privacy: .public)': \(result.message, privacy: .public)")
+        GarageXPCOutputCapture.shared.log(level: result.success ? "INFO" : "WARN", message: result.message)
+        reply(result.success, result.message)
+    }
+
+    public func revokeAllFolderAccess(with reply: @escaping (Bool) -> Void) {
+        GarageFolderAccessStore.shared.revokeAll()
+        logger.info("\(self.serviceName, privacy: .public): revoked every folder grant")
+        GarageXPCOutputCapture.shared.log(message: "Revoked every folder grant")
         reply(true)
     }
 

@@ -9,7 +9,7 @@ final class PagesUITests: GarageUITestCase {
         waitForBackend()
         open(section: "status")
 
-        for heading in ["Health", "Indexing", "Index Manager", "Helper Services"] {
+        for heading in ["Health", "Library", "Index Manager", "Helper Services"] {
             XCTAssertTrue(element(text: heading).waitForExistence(timeout: 15), "Status does not show \"\(heading)\"")
         }
         XCTAssertTrue(element(text: "Nothing to index yet").waitForExistence(timeout: 30), "a new corpus does not say there is nothing to index")

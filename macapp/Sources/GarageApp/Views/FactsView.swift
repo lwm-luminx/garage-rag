@@ -69,6 +69,7 @@ public struct FactsView: View {
                     .foregroundStyle(.secondary)
                 TextField("Search facts…", text: $searchText)
                     .textFieldStyle(.plain)
+                    .accessibilityIdentifier("facts.search")
                     .onSubmit { refreshFacts() }
                 if !searchText.isEmpty {
                     Button(action: { searchText = ""; refreshFacts() }) {
@@ -92,6 +93,7 @@ public struct FactsView: View {
             }
             .frame(width: 160)
             .onChange(of: selectedSource) { _, _ in refreshFacts() }
+            .accessibilityIdentifier("facts.source")
 
             Picker("Kind", selection: $selectedFactClass) {
                 Text("All Kinds").tag(CorpusTaxonomy.allSentinel)
@@ -101,6 +103,7 @@ public struct FactsView: View {
             }
             .frame(width: 170)
             .onChange(of: selectedFactClass) { _, _ in refreshFacts() }
+            .accessibilityIdentifier("facts.kind")
 
             Picker("Class", selection: $selectedCorpusClass) {
                 ForEach(corpusClasses, id: \.self) { c in
@@ -109,6 +112,7 @@ public struct FactsView: View {
             }
             .frame(width: 130)
             .onChange(of: selectedCorpusClass) { _, _ in refreshFacts() }
+            .accessibilityIdentifier("facts.class")
 
             Button(action: refreshFacts) {
                 if isLoading {
@@ -120,6 +124,7 @@ public struct FactsView: View {
                 }
             }
             .accessibilityLabel("Refresh facts")
+            .accessibilityIdentifier("facts.refresh")
             .disabled(isLoading || appState.postgres.status != .running)
             .help("Refresh facts")
         }
@@ -166,7 +171,7 @@ public struct FactsView: View {
         if isLoading && facts.isEmpty {
             VStack(spacing: 12) {
                 Spacer()
-                ProgressView("Loading facts via gRPC…")
+                ProgressView("Loading facts…")
                 Spacer()
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -222,7 +227,7 @@ public struct FactsView: View {
         if isFiltered {
             return "No facts matched the current search and filters."
         }
-        return "Nothing has been distilled yet. Choose Glean Facts on a document, or run Enrich Facts, to distill documents into facts."
+        return "Nothing has been gleaned yet. Choose Glean Facts on a document, or on the Models page's Distillation tab."
     }
 
     private var isFiltered: Bool {
@@ -266,6 +271,7 @@ public struct FactsView: View {
                 Text("\(facts.count) of \(totalCount) fact\(totalCount == 1 ? "" : "s")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("facts.count")
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -279,6 +285,7 @@ public struct FactsView: View {
             Text(fact.fact)
                 .font(.callout)
                 .lineLimit(3)
+                .accessibilityIdentifier("facts.row.fact")
 
             HStack(spacing: 6) {
                 StatusBadge(fact.factClass.capitalized, tint: .orange)
@@ -331,6 +338,7 @@ public struct FactsView: View {
                         .font(.title3)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .accessibilityIdentifier("facts.detail.fact")
                 }
 
                 Divider()
@@ -354,6 +362,7 @@ public struct FactsView: View {
                                     Text(attribute.value)
                                         .font(.caption)
                                         .textSelection(.enabled)
+                                        .accessibilityIdentifier("facts.detail.attribute.\(attribute.key)")
                                 }
                             }
                         }
@@ -378,6 +387,7 @@ public struct FactsView: View {
             Text(fact.documentDisplayTitle)
                 .font(.headline)
                 .textSelection(.enabled)
+                .accessibilityIdentifier("facts.detail.document")
             Text(fact.documentURI)
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.secondary)
@@ -408,6 +418,7 @@ public struct FactsView: View {
                 .font(.callout)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("facts.detail.grounded")
                 .padding(10)
                 .background(Color.orange.opacity(0.08))
                 .clipShape(RoundedRectangle(cornerRadius: 6))

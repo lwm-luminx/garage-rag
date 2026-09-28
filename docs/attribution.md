@@ -49,6 +49,11 @@ the *file*.
 > renamed file is attributed from commits touching its current path, which in
 > practice still identifies the right person.
 
+> **Needs git.** On a Mac this signal runs only when a working `git` is installed, from the
+> Xcode Command Line Tools or Xcode. macOS's own `/usr/bin/git` is a stub that asks to install
+> them, so without them Garage skips git history (it never opens that prompt) and attributes
+> files from the signals below.
+
 ### 2. Embedded document metadata
 
 PDF `/Author`, Office core properties, Markdown frontmatter `author:`.
@@ -113,21 +118,38 @@ somebody else, and your own work is filed as `reference`.
 
 ## Communications
 
-The schema reserves three roles for messages and mail alongside `author` and
-`committer` (`AuthorRole` in `db/models.py`): `sender`, `recipient`, `cc`. The
-intended mapping is:
+The schema has three roles for messages and mail alongside `author` and
+`committer` (`AuthorRole` in `db/models.py`): `sender`, `recipient`, `cc`.
 
-- Outbound → you are `sender`, the handles are `recipient`
-- Inbound → the handle is `sender`, you are `recipient`
-- Mail `Cc:` → `cc`
+**Mail** (`.eml`, `.emlx`) replaces the metadata signal with the sender. For an
+extracted message the resolver reads the `From:` addresses
+(`_sender_attribution` in `attribute/resolver.py`): your name or address makes
+the message `authored` (`message-sender:self`), anyone else's makes it
+`received` (`message-sender:third-party`). A byline on a paper means you
+collected it; a name on a message means it was sent to you, so the
+document-metadata rule, which would call it `reference`, does not apply. The
+senders are recorded with role `author`. Git history still comes first, so a
+message file tracked in a repository is attributed from its commits.
 
-with trust `authored` for what you sent and `received` for what you did not.
+**Messages** threads (`ingest/conversations.py`) record every handle in the
+thread: those who wrote in it as `sender`, those who only read it as
+`recipient` (evidence `imessage-handle`), and you as `sender` when you wrote and
+`identity.name` is set (`imessage-is-from-me`), or as `recipient` in a thread
+you only read (`imessage-owner`): a thread is always you plus one or more
+others. The thread's trust is the source's default (`received` for the app's
+Messages preset). Since a thread holds both sides, each message's chunk says who
+wrote it: `chunks.direction` is `sent` for your own messages and `received` for
+everyone else's, and `chunks.sender` is the handle, or `me`.
 
-**Not yet populated.** Nothing in `attribute/` assigns these roles today: the
-resolver only ever emits `author` and `committer`, and communication sources are
-attributed through the same git → metadata → path → source-default chain as
-everything else. The roles exist so the schema does not need a migration when a
-conversation-aware attributor lands.
+A handle's author is named after the handle (`+15551234567`) until the ingest is
+given a contact name for it (`extract/contact_names.py`). When the name arrives,
+that author row takes it; when another author already has the name (the same
+person's other number or email), the row is merged into that one, identities
+and document links included. An author that already has a real name keeps it.
+The author filter in search matches identities as well as names, so filtering
+by a phone number still finds a named author's threads.
+
+`cc` is not assigned yet.
 
 ## Corpus class
 
@@ -153,6 +175,7 @@ garage extract <file>          # shows author hints and extracted metadata
 garage search "..." --author "Name"
 garage search "..." --trust authored     # only your own writing
 garage search "..." --trust reference    # only QA'ed external material
+garage search "..." --direction sent     # only messages you sent
 ```
 
 The `evidence` column on `document_authors` records exactly which rule fired:

@@ -1,0 +1,20 @@
+load("@rules_apple//apple:resources.bzl", "apple_resource_group")
+
+# make_corpus.py rebuilds corpus/ by hand, with the venv's python-docx; it is not a Bazel target.
+# gazelle:exclude make_corpus.py
+
+# The made-up corpus the UI tests ingest (see README.md). The UI tests copy it out of their
+# bundle's Resources/corpus into each test's throwaway data folder before adding it as a source.
+apple_resource_group(
+    name = "corpus_resources",
+    structured_resources = glob(["corpus/**"]),
+    visibility = ["//macapp/Tests:__subpackages__"],
+)
+
+# The same files for garage_python/tests/test_fixture_corpus.py, which ingests them through the
+# real extractors on Linux too.
+filegroup(
+    name = "corpus",
+    srcs = glob(["corpus/**"]),
+    visibility = ["//garage_python/tests:__pkg__"],
+)

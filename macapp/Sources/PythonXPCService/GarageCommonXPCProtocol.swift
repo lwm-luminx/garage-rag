@@ -55,17 +55,19 @@ public protocol GarageCommonXPCServiceProtocol: NSObjectProtocol {
     func subscribeToLogStream(with reply: @escaping (Bool) -> Void)
 }
 
-/// Objective-C protocol for MCP Server XPC Service communication.
+/// Objective-C protocol for MCP Server XPC Service communication. It receives the LlamaXPCService
+/// endpoint because rag_search / rag_ask load llama_xpc models on demand.
 @objc(GarageMCPServerServiceProtocol)
-public protocol GarageMCPServerServiceProtocol: GarageCommonXPCServiceProtocol {
+public protocol GarageMCPServerServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol {
     func startServer(host: String, port: Int, path: String, options: [String: String], with reply: @escaping (Bool, String?) -> Void)
     func stopServer(with reply: @escaping (Bool, String?) -> Void)
     func isServerRunning(with reply: @escaping (Bool) -> Void)
 }
 
-/// Objective-C protocol for Garage Core Backend XPC Service communication.
+/// Objective-C protocol for Garage Core Backend XPC Service communication. It receives the
+/// LlamaXPCService endpoint because Search, Backfill and EnrichFacts load llama_xpc models on demand.
 @objc(GarageXPCServiceProtocol)
-public protocol GarageXPCServiceProtocol: GarageCommonXPCServiceProtocol {
+public protocol GarageXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
     func startServer(host: String, port: Int, options: [String: String], with reply: @escaping (Bool, String?) -> Void)
     func stopServer(with reply: @escaping (Bool, String?) -> Void)
     func isServerRunning(with reply: @escaping (Bool) -> Void)
@@ -243,6 +245,9 @@ public enum GarageXPCConfigurationKey {
     public static let databaseURL = "GARAGE_DATABASE_URL"
     public static let grpcHost = "GARAGE_GRPC_HOST"
     public static let grpcPort = "GARAGE_GRPC_PORT"
+    /// The app's per-launch token for the gRPC server (`x-garage-token`, `garage_rag.service.auth`).
+    /// A secret: never log it or write it to garage.json.
+    public static let grpcToken = "GARAGE_GRPC_TOKEN"
     /// The Unix-domain socket the gRPC server listens on (`GarageSockets`); wins over host and port.
     public static let grpcSocket = "GARAGE_GRPC_SOCKET"
     public static let logLevel = "GARAGE_LOG_LEVEL"

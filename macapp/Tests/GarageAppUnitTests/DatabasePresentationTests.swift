@@ -106,7 +106,7 @@ final class DatabasePresentationTests: XCTestCase {
             ]
         )
         let contents = DatabaseContentsPresentation(stats: stats, sizeBytes: nil)
-        XCTAssertEqual(contents.figures.map(\.label), ["Sources", "Documents", "Chunks", "Embedded"])
+        XCTAssertEqual(contents.figures.map(\.label), ["Sources", "Documents", "Chunks", "Indexed"])
         XCTAssertEqual(contents.figures[1].value, "1,200")
         XCTAssertEqual(contents.figures[1].note, "4 failed")
         XCTAssertTrue(contents.figures[1].noteIsWarning)
@@ -117,7 +117,7 @@ final class DatabasePresentationTests: XCTestCase {
 
     func testContentsWithoutModelsOrSize() {
         let contents = DatabaseContentsPresentation(stats: CorpusStats(), sizeBytes: 2048)
-        XCTAssertEqual(contents.figures.map(\.label), ["Sources", "Documents", "Chunks", "Embedded", "On Disk"])
+        XCTAssertEqual(contents.figures.map(\.label), ["Sources", "Documents", "Chunks", "Indexed", "On Disk"])
         XCTAssertEqual(contents.figures[3].value, "—")
         XCTAssertEqual(contents.figures[3].note, "No models")
         XCTAssertNil(contents.figures[1].note)

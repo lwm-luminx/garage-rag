@@ -23,8 +23,8 @@ objc_library(
     ],
 )
 
-# The real inference engine (LlamaCppEngine) plus the loopback HTTP listener that exposes it to
-# the Python side. Only LlamaXPCService depends on this; LlamaClient stays engine-free.
+# The real inference engine (LlamaCppEngine). Only LlamaXPCService depends on this; LlamaClient
+# and the service's front end (//macapp/Sources/LlamaServiceHost) stay engine-free.
 swift_library(
     name = "LlamaEngine",
     srcs = glob(["*.swift"]),
@@ -33,6 +33,5 @@ swift_library(
     deps = [
         ":LlamaCAPI",
         "//macapp/Sources/LlamaClient",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
     ],
 )

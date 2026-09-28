@@ -91,7 +91,14 @@ public final class ModelDownloaderEngine: NSObject, @unchecked Sendable {
             targetDir = defaultModelsDirectory
         }
 
-        let destinationFile = targetDir.appendingPathComponent(cleanFilename)
+        // The file name can come from the downloaded models.json catalog: refuse one that climbs out
+        // of the models folder (`../`), keeping subdirectories inside it.
+        let destinationFile = targetDir.appendingPathComponent(cleanFilename).standardizedFileURL
+        let targetPath = targetDir.standardizedFileURL.path
+        guard !cleanFilename.split(separator: "/").contains(".."),
+              destinationFile.path.hasPrefix(targetPath.hasSuffix("/") ? targetPath : targetPath + "/") else {
+            throw NSError(domain: "ModelDownloaderEngine", code: 400, userInfo: [NSLocalizedDescriptionKey: "Invalid model file name: \(filename)"])
+        }
         try? FileManager.default.createDirectory(at: destinationFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         let taskId = UUID().uuidString
 

@@ -57,6 +57,15 @@ extension ModelsView {
                     if preset.effectiveDims > 0 {
                         StatusBadge("\(preset.effectiveDims) DIMS", tint: .blue)
                     }
+                    if preset.toolCalling {
+                        StatusBadge("TOOLS", tint: .purple)
+                            .help("Trained to call tools, so it can use Garage's MCP tools")
+                    }
+                    if let region = preset.originRegion {
+                        StatusBadge(region, tint: .secondary)
+                            .help("Made by \(preset.originSummary)")
+                            .accessibilityLabel("Origin \(preset.originSummary)")
+                    }
                     let presetProvider = ModelProvider.from(string: preset.provider)
                     if presetProvider != .llamaXPC {
                         StatusBadge(presetProvider.displayName.uppercased(), tint: presetProvider == .ollama ? .orange : .teal)
@@ -75,6 +84,13 @@ extension ModelsView {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+
+                if let modelCard = preset.modelCardURL {
+                    Link("Model card and license", destination: modelCard)
+                        .font(.caption2)
+                        .help(modelCard.absoluteString)
+                        .accessibilityIdentifier("models.license.\(preset.slug)")
+                }
             }
 
             Spacer()
@@ -85,10 +101,11 @@ extension ModelsView {
                 if isRegistering {
                     ProgressView().controlSize(.small)
                 } else {
-                    Text("Add")
+                    Image(systemName: "plus")
                 }
             }
             .controlSize(.small)
+            .accessibilityLabel("Add \(preset.slug)")
             .disabled(registeringPresetSlug != nil || notReady)
             .help("Register \(preset.slug) in the database; the first embedding model becomes the default")
             .accessibilityIdentifier("models.add.\(preset.slug)")
@@ -116,7 +133,7 @@ extension ModelsView {
 
     var customModelForm: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("A model models.json does not list. Ollama and LM Studio serve it from their own library; Llama XPC needs its GGUF file in the models folder under this slug.")
+            Text("A model models.json does not list. Ollama and LM Studio serve it from their own library; the built-in engine needs its GGUF file in the models folder under this slug.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -137,12 +154,14 @@ extension ModelsView {
                     }
                     .labelsHidden()
                     .frame(maxWidth: 200, alignment: .leading)
+                    .accessibilityIdentifier("models.custom.provider")
                 }
                 GridRow {
                     formLabel("Dimensions")
                     TextField("e.g. 1024", text: $dims)
                         .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: 120, alignment: .leading)
+                        .accessibilityIdentifier("models.custom.dims")
                 }
                 GridRow {
                     formLabel("Model ref")
@@ -153,6 +172,7 @@ extension ModelsView {
                     Color.clear.frame(width: 0, height: 0)
                     Toggle("Use for search and embedding by default", isOn: $makeDefault)
                         .toggleStyle(.checkbox)
+                        .accessibilityIdentifier("models.custom.makeDefault")
                 }
             }
 

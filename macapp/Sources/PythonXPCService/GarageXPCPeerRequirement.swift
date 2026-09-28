@@ -32,6 +32,18 @@ public enum GarageXPCPeerRequirement {
         return requirement
     }()
 
+    /// Puts `current` on a connection a listener has just been offered, before it is resumed, so
+    /// a peer that does not satisfy it has its messages refused and the connection invalidated.
+    ///
+    /// It goes on each connection rather than on the listener: `NSXPCListener.service()` has no
+    /// underlying connection until it is resumed, and `setConnectionCodeSigningRequirement(_:)` on it
+    /// crashes the service at launch (SIGSEGV inside the setter).
+    public static func apply(to connection: NSXPCConnection, serviceName: String) {
+        guard let requirement = current else { return }
+        connection.setCodeSigningRequirement(requirement)
+        logger.debug("\(serviceName, privacy: .public): XPC peer pid \(connection.processIdentifier, privacy: .public) must satisfy \(requirement, privacy: .public)")
+    }
+
     /// `anchor apple generic and certificate leaf[subject.OU] = "<team>"`. The team is validated
     /// first (ten upper-case letters and digits), so it cannot change the requirement's meaning.
     public static func requirement(forTeam team: String) -> String {

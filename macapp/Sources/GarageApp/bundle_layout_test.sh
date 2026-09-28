@@ -9,7 +9,11 @@
 # marked LSUIElement, and `garage version` running through the forwarder: the forwarder resolves
 # the helper, the helper resolves the app bundle, and the embedded interpreter starts from the
 # app's PythonXPCService.framework. `version` needs no database, so no app is started and no
-# Keychain is read.
+# Keychain is read. It also checks that PythonXPCService's code is only in the app's framework:
+# `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
+# service binary defines the framework's types. Every versioned framework in Contents/Frameworks
+# is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
+# validation needs.
 set -euo pipefail
 
 archive="$1"
@@ -36,6 +40,30 @@ pass() {
     echo "[PASS] $*"
 }
 
+check_framework_links() {
+    local fw="$1" name
+    name="$(basename "$fw")"
+    if [ ! -d "$fw/Versions" ]; then
+        fail "$name: flat framework (no Versions); the Mac App Store needs the versioned layout"
+        return
+    fi
+    if [ ! -L "$fw/Versions/Current" ]; then
+        fail "$name: Versions/Current is not a symlink"
+        return
+    fi
+    local entry top ok=1
+    for entry in "$fw/Versions/Current"/*; do
+        top="$fw/$(basename "$entry")"
+        # Entries with no top-level counterpart (_CodeSignature, Python's bin) need no link.
+        [ -e "$top" ] || [ -L "$top" ] || [ "$(basename "$entry")" = "${name%.framework}" ] || continue
+        if [ ! -L "$top" ] || [ "$(readlink "$top")" != "Versions/Current/$(basename "$entry")" ]; then
+            fail "$name: $(basename "$entry") is not a symlink to Versions/Current/$(basename "$entry")"
+            ok=0
+        fi
+    done
+    [ "$ok" = 1 ] && pass "$name: Versions/Current and its top-level entries are symlinks"
+}
+
 check_forwarder() {
     local name="$1" helper="$2"
     local link="$app/Contents/MacOS/$name"
@@ -57,7 +85,9 @@ check_forwarder() {
         fail "$name: forwarder is a Mach-O, not a script"
     fi
     head -n 1 "$script" | grep -q '^#!/bin/sh' || fail "$name: forwarder does not start with #!/bin/sh"
-    grep -q "Helpers/$helper/Contents/MacOS" "$script" || fail "$name: forwarder does not name Helpers/$helper"
+    # The forwarder names its helper as Helpers/$name.app, with name="<helper>" set above it.
+    { grep -q "^name=\"${helper%.app}\"$" "$script" && grep -qF 'Helpers/$name.app/Contents/MacOS' "$script"; } ||
+        fail "$name: forwarder does not name Helpers/$helper"
     pass "$name: Contents/MacOS/$name -> Resources/launchers/$name, forwarding to Helpers/$helper"
 }
 
@@ -81,10 +111,13 @@ check_helper() {
 
     [ -x "$executable" ] || { fail "$name: helper executable missing or not executable"; return; }
     file -b "$executable" | grep -q "Mach-O" || fail "$name: helper executable is not a Mach-O"
-    otool -l "$executable" | grep -q "path @executable_path/../../../../Frameworks (offset" \
+    local load_commands linked
+    load_commands="$(otool -l "$executable" 2>/dev/null || true)"
+    linked="$(otool -L "$executable" 2>/dev/null || true)"
+    grep -qF -- "path @executable_path/../../../../Frameworks (offset" <<<"$load_commands" \
         || fail "$name: helper lacks the @executable_path/../../../../Frameworks rpath"
-    otool -L "$executable" | grep -q "Python.framework" || fail "$name: helper does not link Python.framework"
-    otool -L "$executable" | grep -q "PythonXPCService.framework" \
+    grep -q -- "Python.framework" <<<"$linked" || fail "$name: helper does not link Python.framework"
+    grep -q -- "PythonXPCService.framework" <<<"$linked" \
         || fail "$name: helper does not link PythonXPCService.framework"
 
     local signing_id
@@ -97,6 +130,9 @@ check_forwarder garage garage.app
 check_forwarder garage-mcp garage-mcp.app
 check_helper garage me.rickmark.garage-rag.garage-cli
 check_helper garage-mcp me.rickmark.garage-rag.mcp-server-cli
+for fw in "$app"/Contents/Frameworks/*.framework; do
+    check_framework_links "$fw"
+done
 
 # No stray bare launchers left in Contents/MacOS: the app's executable and the two forwarders only.
 for entry in "$app/Contents/MacOS"/*; do
@@ -115,6 +151,58 @@ if [ "$status" -ne 0 ]; then
 else
     pass "garage version through the forwarder: $(printf '%s' "$output" | head -n 1)"
 fi
+# A class compiled into the helper and into PythonXPCService.framework is loaded twice, and the
+# Objective-C runtime says so on stderr ("Class ... is implemented in both ...").
+if grep -q -- "is implemented in both" <<<"$output"; then
+    fail "garage version loads classes twice:"
+    printf '%s\n' "$output" | grep "is implemented in both" | sed 's/^/       /'
+else
+    pass "garage version loads no class twice"
+fi
+
+# One PythonXPCService.framework, the app's, and no helper or XPC service with its own copy of the
+# framework's code (//bazel:framework_linking.bzl): each links the framework instead. The check
+# looks for the Swift type descriptors of a class from each module the framework carries, and
+# first confirms the framework itself defines them, so a stripped binary cannot pass unchecked.
+copies="$(find "$app" -type d -name PythonXPCService.framework | wc -l | tr -d ' ')"
+if [ "$copies" = "1" ] && [ -d "$app/Contents/Frameworks/PythonXPCService.framework" ]; then
+    pass "one PythonXPCService.framework, in Contents/Frameworks"
+else
+    fail "expected one PythonXPCService.framework, in Contents/Frameworks; found $copies:"
+    find "$app" -type d -name PythonXPCService.framework | sed 's/^/       /'
+fi
+# The descriptors are ones whose mangled names spell the type out: Swift's word substitution
+# shortens a name that repeats its module's words (GarageXPCServiceBase is 06GarageB4BaseCMn).
+# Symbol lists go to grep as here-strings, not through a pipe: `grep -q` exits at the first match,
+# and under pipefail the writer's SIGPIPE would turn that match into a failure.
+descriptors=(
+    '16GarageFileLoggerCMn'
+    '9PythonKit11PyReferenceCMn'
+)
+framework_binary="$app/Contents/Frameworks/PythonXPCService.framework/PythonXPCService"
+framework_symbols="$(/usr/bin/nm -U -j "$framework_binary" 2>/dev/null || true)"
+for descriptor in "${descriptors[@]}"; do
+    grep -q -- "$descriptor" <<<"$framework_symbols" \
+        || fail "PythonXPCService.framework does not define $descriptor; the duplicate check below cannot see it"
+done
+for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPCServices/*.xpc/Contents/MacOS/*; do
+    [ -f "$binary" ] || continue
+    name="${binary#"$app"/Contents/}"
+    symbols="$(/usr/bin/nm -U -j "$binary" 2>/dev/null || true)"
+    duplicated=""
+    for descriptor in "${descriptors[@]}"; do
+        if grep -q -- "$descriptor" <<<"$symbols"; then
+            duplicated="$duplicated $descriptor"
+        fi
+    done
+    if [ -n "$duplicated" ]; then
+        fail "$name defines what PythonXPCService.framework already carries:$duplicated"
+    elif grep -q -- "PythonXPCService.framework/" <<<"$(/usr/bin/otool -L "$binary" 2>/dev/null || true)"; then
+        pass "$name links PythonXPCService.framework and carries none of its code"
+    else
+        fail "$name does not link PythonXPCService.framework"
+    fi
+done
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures check(s) failed"

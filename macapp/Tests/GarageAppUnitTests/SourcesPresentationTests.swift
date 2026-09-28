@@ -141,7 +141,7 @@ final class SourcesPresentationTests: XCTestCase {
             message: "", isCancelling: false
         )
         let row = SourceRowPresentation.make(source: source(), access: nil, activity: .ingesting(snapshot), lastRun: nil)
-        XCTAssertEqual(row.status, "Ingesting 42%")
+        XCTAssertEqual(row.status, "Reading 42%")
         XCTAssertEqual(row.statusTone, .active)
         XCTAssertEqual(row.progress, 0.42)
         XCTAssertFalse(row.isIndeterminate)
@@ -244,28 +244,57 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(stale.first?.primary.title, "Re-grant…")
     }
 
-    func testAProtectedSourceGetsAFolderGrantWithTheSystemOptionsBehindIt() {
+    func testMailAndMessagesLeadWithFullDiskAccessAndTheStoreBuildAddsTheFolder() {
         let messages = source(slug: "apple-sms", kind: "sqlite", root: "~/Library/Messages", corpusClass: "communication")
         let mail = source(slug: "apple-mail", kind: "maildir", root: "~/Library/Mail", corpusClass: "communication")
         let results = [
             access(slug: "apple-sms", path: "~/Library/Messages", readable: false, category: .messages, requiresTCC: true),
             access(slug: "apple-mail", path: "~/Library/Mail", readable: false, category: .mail, requiresTCC: true),
         ]
-        let items = SourcesAttention.attentions(
+        let store = SourcesAttention.attentions(
             volumeStatus: .accessGranted(url: URL(fileURLWithPath: "/"), isSecurityScoped: true),
             testResult: testResult(accessible: false, results: results),
-            sources: [mail, messages]
+            sources: [mail, messages],
+            sandboxed: true
         )
-        XCTAssertEqual(items.map(\.title), ["Apple Mail needs permission", "Messages needs permission"], "in the order the sources are listed")
-        XCTAssertEqual(items.map(\.primary.title), ["Grant Folder Access…", "Grant Folder Access…"])
-        XCTAssertEqual(items.first?.primary.action, .grantFolder(slug: "apple-mail", path: "~/Library/Mail"))
-        XCTAssertEqual(items.first?.secondary.map(\.action), [
-            .tccPrompt(.mail, slug: "apple-mail", path: "~/Library/Mail"),
-            .openPrivacySettings(.mail),
+        XCTAssertEqual(store.map(\.title), ["Apple Mail needs Full Disk Access", "Messages needs Full Disk Access"], "in the order the sources are listed")
+        XCTAssertEqual(store.map(\.primary.action), [.openPrivacySettings(.mail), .openPrivacySettings(.messages)])
+        XCTAssertEqual(store.first?.secondary.map(\.action), [
+            .grantFolder(slug: "apple-mail", path: "~/Library/Mail"),
+            .recheck,
         ])
-        XCTAssertEqual(items.first?.detail, TCCPermissionCategory.mail.helpMessage)
+        XCTAssertEqual(store.first?.detail, TCCPermissionCategory.mail.fullDiskAccessSteps(sandboxed: true))
+        XCTAssertTrue(store.first?.detail.contains("quit and reopen Garage") ?? false)
+        XCTAssertTrue(store.first?.detail.contains("select your startup disk") ?? false)
+
+        let developerID = SourcesAttention.attentions(
+            volumeStatus: .accessGranted(url: URL(fileURLWithPath: "/"), isSecurityScoped: false),
+            testResult: testResult(accessible: false, results: results),
+            sources: [messages],
+            sandboxed: false
+        )
+        XCTAssertEqual(developerID.first?.primary.action, .openPrivacySettings(.messages))
+        XCTAssertEqual(developerID.first?.secondary.map(\.action), [.recheck], "no sandbox, so no folder to grant")
+        XCTAssertFalse(developerID.first?.detail.contains("startup disk") ?? true)
     }
 
+    func testAnotherProtectedFolderStillGetsAFolderGrant() {
+        let documents = source(slug: "documents", kind: "folder", root: "~/Documents", corpusClass: "document")
+        let items = SourcesAttention.attentions(
+            volumeStatus: .accessGranted(url: URL(fileURLWithPath: "/"), isSecurityScoped: true),
+            testResult: testResult(accessible: false, results: [
+                access(slug: "documents", path: "~/Documents", readable: false, category: .documents, requiresTCC: true),
+            ]),
+            sources: [documents],
+            sandboxed: true
+        )
+        XCTAssertEqual(items.first?.title, "Documents needs permission", "named by its preset's title")
+        XCTAssertEqual(items.first?.primary.action, .grantFolder(slug: "documents", path: "~/Documents"))
+        XCTAssertEqual(items.first?.secondary.map(\.action), [
+            .tccPrompt(.documents, slug: "documents", path: "~/Documents"),
+            .openPrivacySettings(.documents),
+        ])
+    }
     func testAnUnreadableSourceIsReportedWithItsPath() {
         let items = SourcesAttention.attentions(
             volumeStatus: .accessGranted(url: URL(fileURLWithPath: "/"), isSecurityScoped: false),
@@ -316,7 +345,7 @@ final class SourcesPresentationTests: XCTestCase {
             subject: "notes", current: "notes", fraction: 0.42, hasTotal: true, percent: "42%",
             counts: "1,204 of 2,860 documents · 1,180 indexed", currentItem: "~/Notes/a.md", isCancelling: false
         )
-        XCTAssertEqual(one.title, "Ingesting notes")
+        XCTAssertEqual(one.title, "Reading notes")
         XCTAssertEqual(one.percent, "42%")
         XCTAssertEqual(one.progress, 0.42)
         XCTAssertEqual(one.currentItem, "~/Notes/a.md")
@@ -325,7 +354,7 @@ final class SourcesPresentationTests: XCTestCase {
             subject: nil, current: "mail", fraction: 0.1, hasTotal: false, percent: "10%",
             counts: "12 messages · 12 indexed", currentItem: "", isCancelling: false
         )
-        XCTAssertEqual(all.title, "Ingesting all sources · mail")
+        XCTAssertEqual(all.title, "Reading all sources · mail")
         XCTAssertNil(all.percent, "no percentage without a total")
         XCTAssertTrue(all.isIndeterminate)
         XCTAssertNil(all.currentItem)

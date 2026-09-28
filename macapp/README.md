@@ -13,7 +13,7 @@ every module, the client libraries included, depends on `PythonXPCService`,
 which in turn needs PythonKit, the CPython embedding shim and the vendored
 Python / Postgres / llama.cpp that only the Bazel build provides. For an IDE
 loop, generate the Xcode project (`aspect run //:xcodeproj`), which carries
-the app, every XPC service and all three test bundles.
+the app, every XPC service and every test bundle.
 
 ```bash
 # Ad-hoc signed app bundle (alias of //macapp/Sources/GarageApp:GarageApp)
@@ -38,20 +38,27 @@ aspect test //macapp/Tests/LlamaModelLoaderTests:LlamaModelLoaderTests
 aspect run //:xcodeproj
 xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests -destination 'platform=macOS'
 
-# Distribution: thinned + notarized apps and .pkg installers (Developer ID),
+# XCUITests of the paths that need a model (search results, Embed All, Glean Facts and the Facts
+# page, MCP Try It), run the same way. Their host, GarageApp_uitest, is the app with the testonly
+# MockLlamaXPCService in place of llama.cpp, so no model is downloaded.
+xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppModelUITests -destination 'platform=macOS'
+
+# Distribution: thinned + signed apps and .pkg installers (Developer ID),
 # or an App Store xcarchive
 aspect build //:package                  # //macapp/package:package
-aspect build //:installer                # //macapp/package:GarageInstaller (arm64 .pkg)
+aspect build //:installer                # //macapp/package:GarageInstaller (arm64 .pkg, not notarized)
 aspect run //:install                    # installs the .pkg locally
+aspect run //macapp/package:notarize_all # the release: notarized, stapled zip and .pkg in dist/
 aspect build //macapp:xcarchive          # //macapp:GarageStore.xcarchive
 aspect run //macapp:xcarchive_open       # copies the archive into Xcode's Archives folder and opens it
+aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release  # export, validate, upload to TestFlight
 
 # Smoke test of the embedded Python runtime, exactly as the XPC services start it
 aspect run //macapp/Sources/PythonXPCService:python_embed_smoke -- /path/to/Garage.app
 ```
 
-What ends up in the bundle is declared in `Sources/GarageApp/BUILD.bazel`
-(`macos_application(name = "GarageApp")`):
+What ends up in the bundle is declared in `bazel/garage_app.bzl` (`garage_macos_application`,
+instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
 
 - `Helpers/garage.app` and `Helpers/garage-mcp.app` — the Swift launchers
   (`//macapp/Sources/GarageCLI:garage_app`, `//macapp/Sources/GarageMCPCLI:garage_mcp_app`,
@@ -67,6 +74,8 @@ What ends up in the bundle is declared in `Sources/GarageApp/BUILD.bazel`
   `garage mcp-install --stdio` registrations and the docs name: symlinks to
   `Resources/launchers/garage` and `garage-mcp`, `/bin/sh` forwarders that `exec` the helper
   bundle's executable (`Contents/Helpers/garage.app/Contents/MacOS/garage`) by its real path.
+  A forwarder copied out of the app (onto the PATH) finds Garage by bundle identifier instead,
+  through Launch Services and then Spotlight (`test_launcher_scripts.py`).
   Three constraints pick this shape. Codesign treats every file in `Contents/MacOS` as nested code
   that must carry its own signature, which a script cannot, but it seals a symlink there as a
   symlink (`link_launchers.sh`, the app's `ipa_post_processor`, creates the two links before
@@ -80,6 +89,11 @@ What ends up in the bundle is declared in `Sources/GarageApp/BUILD.bazel`
   hidden (`--background`: services start, no window) and waits for Postgres; it then reads the
   database password from the Keychain and exports `GARAGE_DATABASE_URL` itself. An explicit
   `GARAGE_DATABASE_URL` wins; `GARAGE_NO_APP_LAUNCH=1` fails instead of opening the app.
+  `garage quit` is the other way round: the launcher answers it before Python starts, posts
+  `GarageAppLaunch.quitNotification` (a distributed notification, which the sandboxed launcher may
+  send where an Apple event to the app would be refused or ask for Automation consent), and waits up
+  to 30s for every running Garage to exit. The app quits as its Quit menu item does. It never
+  starts the app, and says so when Garage is not running.
   `garage-mcp` does not wait for Postgres (only its tool calls use the database, and the MCP
   handshake must not sit behind a cold start) unless the app has never stored a password, and
   never mirrors its stdout (the MCP stream) into the unified log. The launcher finds the app it
@@ -214,7 +228,28 @@ the app, `macapp/GarageRAGAppStoreCLI.provisionprofile` for `Contents/Helpers/ga
 `macapp/GarageRAGAppStoreMCP.provisionprofile` for `Contents/Helpers/garage-mcp.app` (one per
 bundle identifier; see "Provisioning profiles" below for how Organizer picks them). Run
 Validate App first so Xcode confirms it re-signs the nested code (Postgres in `Resources/`, the
-site-packages extensions, `Python.framework`, the two helper bundles). To run a store build on
+site-packages extensions, `Python.framework`, the two helper bundles).
+
+`aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release` does the same
+without Organizer: it exports the archive with `xcodebuild -exportArchive` (manual signing, Apple
+Distribution, the three store profiles, which it installs into Xcode's profile folder first), then
+runs `xcrun altool --validate-app` and `--upload-app`, and leaves the uploaded
+`dist/Garage-<version>-<build>-AppStore.pkg`. `-- --validate-only` stops after validation and
+`-- --export-only` after the export, which needs no credentials. It authenticates with an App Store
+Connect API key (Users and Access → Integrations → Team Keys, role Developer or App Manager), kept
+in the login keychain. It uses the item the `asc` App Store Connect CLI saves for this Mac (account
+`asc:credential:<LocalHostName>`, with the key and issuer IDs in its kind field as
+`asc:metadata:{"key_id":…,"issuer_id":…}`), or one labelled `ASC API Key (<LocalHostName>)`;
+`GARAGE_ASC_KEYCHAIN_ACCOUNT` or `GARAGE_ASC_KEYCHAIN_LABEL` names another. Without one, store it once:
+
+```bash
+security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \
+    -a <KEY ID> -j <ISSUER ID> -w "$(base64 < AuthKey_<KEY ID>.p8)"
+```
+
+`GARAGE_ASC_KEY_ID`, `GARAGE_ASC_ISSUER_ID` and `GARAGE_ASC_KEY_PATH` (the `.p8`) override the item.
+The export signs with the Apple Distribution and Mac Installer Distribution keys, so the keychain may
+ask once to let `codesign` and `productbuild` use them: answer **Always Allow**. To run a store build on
 another Mac, add that Mac to the development profiles in the developer portal and replace the files.
 
 `--config=appstore` is a fastbuild, so it shares the `//ext` builds (Postgres, ICU, Python,
@@ -253,9 +288,11 @@ identifier: `me.rickmark.garage-rag`, `.garage-cli` and `.mcp-server-cli`. With 
 signing it matches them by bundle identifier from the team's profiles (the App IDs must exist in
 the portal with App Groups enabled); with manual signing the Distribute App sheet lists the app
 and each helper and asks for a profile for each: `GarageMacAppConnect` for `Garage.app`,
-`GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`. There is no
-`ExportOptions.plist` export path in this repository; if one is added, its `provisioningProfiles`
-map must name all three bundle identifiers.
+`GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`.
+`//macapp/package:upload_appstore` writes its `ExportOptions.plist` with the same three in its
+`provisioningProfiles` map, by each file's `UUID` rather than its name, since an older profile of
+the same name for a previous distribution certificate may still be installed; a new helper bundle
+needs a `--profile` there too.
 
 Each helper App ID (developer portal → Identifiers → App IDs, platform macOS) needs the **App
 Groups** capability with `group.me.rickmark.garage-rag` assigned; the portal writes the
@@ -303,15 +340,16 @@ postgres's fork-safety check runs.
 
 ## Building against Postgres 19 (beta)
 
-The Bazel build carries two Postgres externals: `//ext/postgres` (18, the
-default) and `//ext/postgres19` (19beta4, pinned by commit). Both share one
-build definition (`ext/postgres/postgres.bzl`); each has its own sandbox patch.
-18 carries `appstore.patch`, which adds a `--enable-appstore` configure/meson
-option (no System V IPC: a `flock()` on `postmaster.pid` as the interlock against
-orphaned backends, and process-shared pthread semaphores in the mmap'd segment)
-and is the version being prepared for upstream. 19 still carries the older
-`sysv_shmem.patch`, since 19 replaced the semaphore/shmem sizing API and the
-port is pending; it ignores `--enable-appstore` with an autoconf warning. Select 19 for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
+`//ext/postgres` builds either 18 (the default) or 19beta4 (pinned by
+commit): `--//ext:postgres_version` selects the source repository, and each
+version's sandbox patches live in `ext/postgres/pg<major>/`, the same two for
+each: `appstore.patch` adds a `--enable-appstore` configure/meson option (no
+System V IPC: a `flock()` on the data directory as the interlock against
+orphaned backends, and process-shared pthread semaphores in the mmap'd
+segment); the 19 copy is ported to 19's `PGSemaphoreShmemRequest`/
+`ShmemRequestStruct` API, which is also what the upstream series against
+master uses. `username.patch` is the local getpwuid() workaround. Select 19
+for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
 server, libpq) with:
 
 ```bash
@@ -371,8 +409,14 @@ refuses that). The marketing version is `short_version_string` in
    `bazel-bin/macapp/package/GarageApp.zip`: a zip of `Garage.app`, which is exactly the
    shape Sparkle wants to download. This is also the step that re-signs Sparkle's nested
    code (see below).
-2. `aspect run //macapp/package:notarize_all` submits that archive and the installer `.pkg`
-   to the notary service.
+2. `aspect run //macapp/package:notarize_all` notarizes and staples, in the order Gatekeeper
+   needs: it notarizes that archive, staples the ticket to `Garage.app`, builds and signs the
+   installer from the stapled app, then notarizes and staples the installer. It writes the
+   release's two files, `dist/Garage-<version>.zip` (the stapled app) and
+   `dist/GarageInstaller_arm64.pkg` (a stapled installer carrying the stapled app, which
+   always installs to `/Applications`). The installer is built by this script rather than by
+   a build action because stapling needs the ticket, so it has to come after notarization;
+   `//macapp/package:GarageInstaller` is an unnotarized installer for local installs only.
 3. Add the release to the feed:
 
    ```bash
@@ -380,21 +424,29 @@ refuses that). The marketing version is `short_version_string` in
    ```
 
    `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
-   in Sparkle's update window. Before signing anything the script checks that the archive's
-   version matches the tag, that it is notarized, arm64 only and newer than every entry
+   in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
+   and refuses one whose build is not the one in `bazel-bin`. Before signing anything the
+   script checks that the archive's version matches the tag, that it is notarized and
+   stapled, arm64 only and newer than every entry
    already in `docs/appcast.xml`, and that the EdDSA key in the login Keychain is the one
    `SUPublicEDKey` names. It then runs `//ext/sparkle:generate_appcast` with the
    `--download-url-prefix` of that tag's GitHub release, which reads the version and
    architectures from the app, signs the entry with the Keychain key (macOS asks to allow
    access), and adds `sparkle:hardwareRequirements` `arm64` so Intel Macs are never offered
    it. The script verifies that entry against the archive and leaves `docs/appcast.xml`
-   updated and the signed archive at `dist/Garage-<version>.zip`.
-4. Publish in this order, so the feed never names a download that is not there yet:
+   updated.
+4. Publish in this order, so the feed never names a download that is not there yet. The
+   site's download buttons (`docs/assets/download.js`) look for an asset named exactly
+   `GarageInstaller_arm64.pkg`, the name step 2 gives the installer:
 
    ```bash
-   gh release upload v1.5 dist/Garage-1.5.zip
+   gh release create v1.5 --verify-tag --title "Garage 1.5" --notes-file path/to/notes.md \
+     dist/Garage-1.5.zip dist/GarageInstaller_arm64.pkg
    git add docs/appcast.xml && git commit -S -m "Add Garage 1.5 to the appcast" && git push
    ```
+
+   `--verify-tag` makes `gh` refuse to create the release unless the signed `v1.5` tag is
+   already pushed.
 
    Upload `dist/Garage-<version>.zip` under exactly that name: the entry's signature and
    length are of that file, and its URL is
@@ -419,8 +471,9 @@ the directory generate_appcast reads. That also means it builds no delta updates
 the previous release's archive beside the new one), so every user downloads the whole app.
 `//ext/sparkle:binary_delta` is there for when that becomes worth doing.
 
-Sparkle first shipped in 1.5 (#34). v1.0 has no update check at all, so its users have to
-download 1.5 themselves; from 1.5 on, every release reaches them through the feed.
+Sparkle arrives with 1.5 (#34); the feed stays empty until the first Developer ID release is
+published. v1.0 has no update check at all, so its users will have to download 1.5 themselves;
+from 1.5 on, every release reaches them through the feed.
 
 ### Why the framework is re-signed
 
@@ -449,12 +502,12 @@ four-page assistant instead of the sidebar UI:
    second section is not missed below a long embedding list. "Next" sends `RegisterModel` for each
    embedding model, sets `facts.model`/`facts.provider` for the distillation pick, and, if enabled,
    queues GGUF downloads through the model download XPC service.
-4. **Set up your agent** — MCP server status/port and the detected client configs (Claude Desktop,
+4. **Set up your assistant** — MCP server status/port and the detected client configs (Claude Desktop,
    Claude Code, Cursor, …); "Connect selected agents" registers Garage in each selected config.
 
 The flow lives in `Services/FirstRunCoordinator.swift` (state + the commands each page runs) and
 `Views/FirstRunView.swift` (the pages). It can be re-run any time from **Garage ▸ Setup Assistant…**
-or the menu bar item, and skipped from any page.
+and skipped from any page.
 
 **Reset Database…** relaunches into the assistant too, whether or not it was completed before. There
 page 1 also creates the new, empty database and registers the sources in `~/.garage.json` again
@@ -470,19 +523,52 @@ with the Status page listing the missing sources and model under Health.
 - `GarageMCPService` — owns the loopback HTTP `garage-mcp` server at `http://127.0.0.1:8787/mcp`, hosted inside the `GarageMCPServerService` XPC helper; started after Postgres and stopped before it.
 - `GarageGRPCService` — owns the `GarageService` gRPC backend hosted inside the `GarageXPCService` helper, on the socket `s/grpc` in the group container (port 50051 only when that path would be too long); the Search and Documents views talk to it over gRPC-Swift, and the launchers find it through `GARAGE_GRPC_SOCKET`.
 - `LlamaService` / `ModelDownloadService` — drive the `LlamaXPCService` and `ModelDownloadXPCService` helpers through the `LlamaClient` / `ModelDownloadClient` modules.
-- `LlamaXPCService` runs llama.cpp in-process (`Sources/LlamaEngine`, linked from `//ext/llama_cpp` with Metal and Accelerate). Its XPC interface carries the same llama-server routes (`handleServerRequest`), which the Python embedded in the other XPC services calls directly (`LlamaInferenceBridge`). For Python outside them (the launchers), it also serves the routes (`/health`, `/props`, `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/completion`, `/tokenize`, `/detokenize`, `/v1/rerank`) over HTTP on the socket `s/llama` in the group container, which the launchers export as `GARAGE_LLAMA_SOCKET`. `GARAGE_LLAMA_HTTP_PORT` in the helper's environment moves it to that loopback port instead; the Python side then reads `embedding.llama_host` from `garage.json`.
+- `LlamaXPCService` runs llama.cpp in-process (`Sources/LlamaEngine`, linked from `//ext/llama_cpp` with Metal and Accelerate). Its XPC interface carries the same llama-server routes (`handleServerRequest`), which the Python embedded in the other XPC services calls directly (`LlamaInferenceBridge`). For Python outside them (the launchers), it also serves the routes (`/health`, `/props`, `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/completion`, `/tokenize`, `/detokenize`, `/v1/rerank`) over HTTP on the socket `s/llama` in the group container, which the launchers export as `GARAGE_LLAMA_SOCKET`. `GARAGE_LLAMA_HTTP_PORT` in the helper's environment moves it to that loopback port instead; the Python side then reads `embedding.llama_host` from `garage.json`. Both front ends (the NSXPC delegate and the HTTP listener) are `Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`: the model UI tests' host app (`GarageApp_uitest`) embeds `Tests/MockLlamaXPCService` instead, the same front end on the testonly `DeterministicLlamaEngine`, under the same bundle identifier.
 - `XPCServiceManager` — pings all six helpers, streams their logs into the app, runs their in-service self tests and can restart or terminate them.
 - `AppDelegate` — keeps the app running in the menu bar after the window closes, and signals Postgres and every helper to stop on every quit path (Cmd+Q, Dock quit, menu item).
-- Views: Status, Sources, Models, Search, Documents, Logs, MCP Server. Sources
-  provides manual ingestion and an optional persisted schedule that ingests all
-  sources and then backfills every registered model. The Models view
-  provides controls for Llama models and embedding models: it includes
-  the model catalog (`docs/.data/models.json`, refreshed at launch from `https://garagerag.app/.data/models.json`) and fills each selection's slug, dimensions,
-  provider-side reference, and default provider. The provider can then be
-  changed between Ollama and LM Studio; start the selected provider locally
-  before backfilling embeddings. An LM Studio API token can be saved in the
-  macOS Keychain from this view and is passed as `GARAGE_LMSTUDIO_API_TOKEN`
-  to the gRPC server.
+- `AppState+LlamaModels` — decides which models `LlamaXPCService` holds: the default `llama_xpc`
+  embedding model from the moment Postgres is up (and again when the default changes), so a search
+  embeds its query at once, and the facts model only while a distillation run lasts (unloaded
+  afterwards unless it is also the search model). Anything else loads on demand and stays until the
+  Models page unloads it.
+- `LlamaEndpointBroker` (owned by `XPCServiceManager`) — the on-demand loads happen inside
+  `GarageXPCService`, `GarageEmbedXPCService` and `GarageMCPServerService`, and an XPC service can't
+  look up its sibling `LlamaXPCService` by name (only the app can). So the broker asks
+  `LlamaXPCService` for its anonymous listener's endpoint and hands it to those three, and does it again
+  whenever one of the connections is interrupted or invalidated (a restart or a crash). Their "Llama
+  Loader" self test is skipped until the endpoint arrives and re-runs when it does.
+- Views, in sidebar order (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`): **Status** on
+  a row of its own, then **Configuration** (Sources, Models, MCP Server), **Data** (Documents, Facts,
+  Search) and **Advanced** (Database, Logs).
+  - **Status** — Health (one "All systems go" row, or one row per problem with the button that
+    fixes it and the page it belongs to), Library (one bar over reading, indexing and
+    gleaning, Update Everything or Stop, the running stage's own progress and the
+    Scan › Read › Index › Glean trail, then the corpus figures), Index Manager (the gRPC
+    backend's state and job), Helper Services (one row per XPC helper with Test, Restart and a
+    chevron to its status report, self tests, errors and crash report) and the helpers' log folded
+    at the bottom as Service Output. The wording lives in `Views/StatusPagePresentation.swift` as
+    plain values, tested in `StatusPagePresentationTests`.
+  - **Sources** — an Attention module while something cannot be read (with the button that fixes it),
+    an Activity module while the pipeline runs (with one Stop), then one row per source with Scan &
+    Ingest (Cancel while queued or running) and a ⋯ menu. **Update Everything** runs scan, read,
+    index and glean facts as one run; **Scan & Ingest All** only scans and ingests, leaving embedding to the next
+    automatic update. Sources are added from
+    location cards (the setup assistant's eight locations), **Add Folder…**, or **Custom Source…**,
+    whose Name fills itself in from the folder. Automatic Updates is an optional persisted schedule
+    that scans, ingests every source and backfills every registered model, optionally also at launch.
+  - **Models** — three tabs. **Overall** has one card each for search (embedding) and distillation,
+    with a headline, its one action (Embed All, Glean Facts) and Manage…. **Embedding** lists one row
+    per model (state, actions, details with SHA-256 Verify), unregistered presets from the model
+    catalog (`data/models/models.json`, refreshed at launch from
+    `https://garagerag.app/.data/models.json`) with Add, a Custom model… form, and Test an Embedding.
+    **Distillation** holds the facts-model presets and the fact prompts editor. The Providers box lists
+    each model Llama XPC holds, with Unload, and keeps the LM Studio API token in the login Keychain,
+    passed as `GARAGE_LMSTUDIO_API_TOKEN` to the gRPC server.
+  - **MCP Server** — the server's state and tool count, Connected Assistants (Connect, Update,
+    Disconnect per client config) and Try It (tool tester and prompt playground).
+  - **Database** — Postgres status (Start, Restart, Stop), the connection URL, schema updates,
+    Contents (corpus counts, size on disk), Backups (**Back Up…**, **Restore…**), **Reset
+    Database…** under Start Over, and Postgres's own output folded at the bottom.
 
 The app-managed HTTP MCP server has its own lifecycle and logs. Claude
 Desktop/Code can instead spawn the bundled `garage-mcp` over stdio when
@@ -490,9 +576,11 @@ registered with `garage mcp-install --stdio`; this allows both connection modes.
 The app hands the authenticated database URL to its XPC helpers as
 `GARAGE_DATABASE_URL`. A stdio registration names the bundled `garage-mcp`,
 which starts the app if needed and reads the password from the Keychain, so the
-client's config carries no database URL or password. The first connection from
-a launcher may show a Keychain prompt; choose Always Allow.
+client's config carries no database URL or password. Signed builds read it from
+the App Group keychain without a prompt; a locally signed or ad-hoc build may
+show a login-keychain prompt on the first connection from a launcher (choose
+Always Allow).
 
-The Status view also provides database reset, backup, and restore controls.
-Backups are PostgreSQL custom-format dumps; restore replaces the private Garage
-database, while reset recreates it empty.
+The Database page provides the backup, restore and reset controls. Backups are
+PostgreSQL custom-format dumps; restore replaces the private Garage database,
+while reset recreates it empty.

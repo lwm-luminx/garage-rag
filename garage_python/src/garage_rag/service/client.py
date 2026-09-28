@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from types import TracebackType
-from typing import Any
+from typing import Any, NamedTuple, cast
 
 import grpc
 
@@ -28,6 +28,8 @@ from garage_rag.proto.garage_pb2 import (
     EnrichFactsStatus,
     EnsureLlamaModelRequest,
     EnsureLlamaModelResponse,
+    FactStatsRequest,
+    FactStatsResponse,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
     GetDocumentRequest,
@@ -44,6 +46,8 @@ from garage_rag.proto.garage_pb2 import (
     ListDocumentsResponse,
     ListFactPromptsRequest,
     ListFactPromptsResponse,
+    ListFactsRequest,
+    ListFactsResponse,
     ListModelsRequest,
     ListModelsResponse,
     ListSourcesRequest,
@@ -86,6 +90,7 @@ from garage_rag.proto.garage_pb2 import (
     VersionResponse,
 )
 from garage_rag.proto.garage_pb2_grpc import GarageServiceStub
+from garage_rag.service.auth import METADATA_KEY, token_from_env
 from garage_rag.service.server import GarageRpcServicer
 
 
@@ -109,6 +114,59 @@ class _InProcessServicerContext:
 
     def is_active(self) -> bool:
         return True
+
+    def peer(self) -> str:
+        """The caller is this process; gRPC would answer ``unix:`` or ``ipv4:...``."""
+        return "inprocess:"
+
+
+class _CallDetails(NamedTuple):
+    method: str
+    timeout: float | None
+    metadata: Any
+    credentials: Any
+    wait_for_ready: bool | None
+    compression: Any
+
+
+class _TokenMetadataInterceptor(grpc.UnaryUnaryClientInterceptor, grpc.UnaryStreamClientInterceptor):
+    """Adds the per-launch ``x-garage-token`` to every call (see :mod:`garage_rag.service.auth`)."""
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def _with_token(self, details: grpc.ClientCallDetails) -> grpc.ClientCallDetails:
+        metadata = [(k, v) for k, v in (details.metadata or ()) if k != METADATA_KEY]
+        metadata.append((METADATA_KEY, self._token))
+        return cast(
+            grpc.ClientCallDetails,
+            _CallDetails(
+                details.method,
+                details.timeout,
+                metadata,
+                details.credentials,
+                getattr(details, "wait_for_ready", None),
+                getattr(details, "compression", None),
+            ),
+        )
+
+    def intercept_unary_unary(
+        self, continuation: Any, client_call_details: grpc.ClientCallDetails, request: Any
+    ) -> Any:
+        return continuation(self._with_token(client_call_details), request)
+
+    def intercept_unary_stream(
+        self, continuation: Any, client_call_details: grpc.ClientCallDetails, request: Any
+    ) -> Any:
+        return continuation(self._with_token(client_call_details), request)
+
+
+def authenticated_channel(channel: grpc.Channel) -> grpc.Channel:
+    """``channel``, sending ``GARAGE_GRPC_TOKEN`` on every call when it is set."""
+    token = token_from_env()
+    if not token:
+        return channel
+    return grpc.intercept_channel(channel, _TokenMetadataInterceptor(token))
 
 
 class GarageClient:
@@ -149,7 +207,7 @@ class GarageClient:
                 target = f"{host}:{self.port}"
                 egress.check_destination(f"http://{target}", purpose="grpc-facade", loopback_only=True)
             self._channel = grpc.insecure_channel(target)
-            self._stub = GarageServiceStub(self._channel)
+            self._stub = GarageServiceStub(authenticated_channel(self._channel))
         return self._stub
 
     def close(self) -> None:
@@ -275,6 +333,12 @@ class GarageClient:
 
     def enrich_facts(self, request: EnrichFactsRequest) -> Iterator[EnrichFactsStatus]:
         return self._invoke_stream("EnrichFacts", request, EnrichFactsStatus)
+
+    def list_facts(self, request: ListFactsRequest | None = None) -> ListFactsResponse:
+        return self._invoke_unary("ListFacts", request or ListFactsRequest(), ListFactsResponse)
+
+    def get_fact_stats(self, request: FactStatsRequest | None = None) -> FactStatsResponse:
+        return self._invoke_unary("GetFactStats", request or FactStatsRequest(), FactStatsResponse)
 
     def list_fact_prompts(self) -> ListFactPromptsResponse:
         return self._invoke_unary("ListFactPrompts", ListFactPromptsRequest(), ListFactPromptsResponse)

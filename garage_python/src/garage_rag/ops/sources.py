@@ -14,6 +14,7 @@ from garage_rag.config import (
     CONFIG_FILENAME,
     ConfigError,
     Settings,
+    expand_home,
     flatten,
     get_settings,
     read_config_document,
@@ -59,9 +60,15 @@ def add_source(
     tier = TrustTier(trust)
     klass = CorpusClass(corpus_class)
 
-    expanded = Path(root).expanduser()
-    if not expanded.exists():
-        raise SourceArgumentError(f"{expanded} does not exist", "ROOT")
+    expanded = expand_home(root)
+    try:
+        expanded.stat()
+    except PermissionError:
+        # A sandboxed caller (the App Store build's XPC service) may not look outside its container;
+        # the ingest service, which holds the folder grant, reads the root.
+        pass
+    except OSError:
+        raise SourceArgumentError(f"{expanded} does not exist", "ROOT") from None
 
     with session_scope() as session:
         existing = session.query(Source).filter_by(slug=slug).one_or_none()
@@ -96,21 +103,67 @@ def document_count(slug: str) -> int:
 class RemoveSourceResult:
     slug: str
     deleted_documents: int
+    # The config file the source was also dropped from, when it was declared there.
+    config_path: Path | None = None
+    # Why the config file could not be updated, when it could not.
+    config_error: str | None = None
 
     @property
     def message(self) -> str:
-        return f"removed {self.slug} ({self.deleted_documents:,} documents)"
+        text = f"removed {self.slug} ({self.deleted_documents:,} documents)"
+        if self.config_path is not None:
+            text += f" and dropped it from {self.config_path}"
+        if self.config_error:
+            text += f"; {self.config_error}"
+        return text
 
 
 def remove_source(slug: str) -> RemoveSourceResult:
     """Deregister a source; its documents, chunks and vectors cascade away with it."""
+    count = 0
     with session_scope() as session:
         source = session.query(Source).filter_by(slug=slug).one_or_none()
+        if source is not None:
+            count = session.query(func.count(Document.id)).filter(Document.source_id == source.id).scalar() or 0
+            session.delete(source)
+    try:
+        config_path = _drop_from_config(slug)
+    except (ConfigError, OSError) as exc:
         if source is None:
-            raise LookupError(f"no such source: {slug}")
-        count = session.query(func.count(Document.id)).filter(Document.source_id == source.id).scalar() or 0
-        session.delete(source)
-    return RemoveSourceResult(slug=slug, deleted_documents=int(count))
+            raise
+        return RemoveSourceResult(
+            slug=slug,
+            deleted_documents=int(count),
+            config_error=f"it is still declared in the config file, so Sync will add it again: {exc}",
+        )
+    # A source only the config file declares (never synced) is removed from the file alone.
+    if source is None and config_path is None:
+        raise LookupError(f"no such source: {slug}")
+    return RemoveSourceResult(slug=slug, deleted_documents=int(count), config_path=config_path)
+
+
+def _drop_from_config(slug: str) -> Path | None:
+    """Remove ``slug`` from the config file's sources; the file's path when it was declared there.
+
+    Sync registers every source the file declares (and the app's Sync first copies every
+    database source into the file), so a source removed only from the database would come
+    back. Like :func:`import_sources_into_config`, the file is rebuilt from what it already
+    says, never from the loaded settings, which carry the app-managed database URL.
+    """
+    target = get_settings().config_path
+    if target is None:
+        return None
+    target = target.expanduser()
+    try:
+        settings = Settings(**flatten(read_config_document(target)))
+    except ValidationError as exc:
+        raise ConfigError(f"{target}: {exc}") from exc
+    kept = [spec for spec in settings.sources if spec.slug != slug]
+    if len(kept) == len(settings.sources):
+        return None
+    settings.sources = kept
+    save_config(settings, target)
+    return target
 
 
 ScanPhase = Literal["progress", "source"]

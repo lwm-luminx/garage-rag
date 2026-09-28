@@ -200,7 +200,7 @@ public struct SearchView: View {
         if isSearching && results.isEmpty {
             VStack(spacing: 12) {
                 Spacer()
-                ProgressView("Searching via gRPC…")
+                ProgressView("Searching…")
                     .controlSize(.regular)
                 Spacer()
             }
@@ -218,6 +218,7 @@ public struct SearchView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 40)
+                    .accessibilityIdentifier("search.error")
                 Button("Retry") { runSearch() }
                     .controlSize(.small)
                 Spacer()
@@ -248,7 +249,7 @@ public struct SearchView: View {
                         .foregroundStyle(.secondary)
                     Text("Search Knowledge Base")
                         .font(.title3.bold())
-                    Text("Enter a search query to retrieve relevant document chunks using hybrid semantic and keyword retrieval over gRPC.")
+                    Text("Enter a search query to retrieve relevant document chunks using hybrid semantic and keyword search.")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
@@ -279,7 +280,11 @@ public struct SearchView: View {
                 .frame(minWidth: 400, maxWidth: .infinity, maxHeight: .infinity)
 
             if let item = selectedResult {
+                // Rebuilt for each hit: kept across hits, the inspector's selectable text went on
+                // reporting the first hit to accessibility after another was clicked, and its scroll
+                // position carried over.
                 resultDetailInspector(for: item)
+                    .id(item.id)
                     .frame(minWidth: 280, idealWidth: 360, maxWidth: 500, maxHeight: .infinity)
             }
         }
@@ -309,6 +314,7 @@ public struct SearchView: View {
                     Text(item.displayTitle)
                         .font(.system(.body, weight: .medium))
                         .lineLimit(1)
+                        .accessibilityIdentifier("search.result.\(item.rank).title")
                     if !item.headingPath.isEmpty {
                         Text(item.headingPath)
                             .font(.system(.caption2))
@@ -384,6 +390,7 @@ public struct SearchView: View {
                         Text(item.displayTitle)
                             .font(.headline)
                             .textSelection(.enabled)
+                            .accessibilityIdentifier("search.detail.title")
                         HStack(spacing: 6) {
                             Text("Rank #\(item.rank)")
                                 .font(.caption.bold())
@@ -499,6 +506,7 @@ public struct SearchView: View {
                         Text(item.text.isEmpty ? item.snippet : item.text)
                             .font(.system(.caption, design: .monospaced))
                             .textSelection(.enabled)
+                            .accessibilityIdentifier("search.detail.text")
                             .padding(8)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color.primary.opacity(0.04))
@@ -517,13 +525,14 @@ public struct SearchView: View {
         HStack {
             if isSearching {
                 ProgressView().controlSize(.small)
-                Text("Searching via gRPC…")
+                Text("Searching…")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else if hasSearched {
                 Text("\(results.count) results for '\(lastSearchedQuery)'")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("search.status")
                 if let latency = lastSearchLatencyMs {
                     Text("•")
                         .foregroundStyle(.secondary)
@@ -581,10 +590,15 @@ public struct SearchView: View {
                     self.lastSearchedQuery = trimmed
                     self.lastSearchLatencyMs = elapsedMs
                     self.isSearching = false
+                    self.selectedResultID = nil
+                    // Open the first hit once the table has taken the new rows. Selected in this same
+                    // update, the table dropped it as a row it did not have yet, so only the first
+                    // search of a visit opened its hit in the inspector.
                     if let first = hits.first {
-                        self.selectedResultID = first.id
-                    } else {
-                        self.selectedResultID = nil
+                        DispatchQueue.main.async {
+                            guard self.selectedResultID == nil, self.results.first?.id == first.id else { return }
+                            self.selectedResultID = first.id
+                        }
                     }
                 }
             } catch {

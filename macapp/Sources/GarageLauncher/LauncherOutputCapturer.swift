@@ -85,18 +85,47 @@ final class LauncherOutputCapturer {
         }
     }
 
+    /// Hands stdout/stderr back to the original descriptors and drains what the pipes
+    /// still hold, on this thread, before the process exits. The readability handlers run
+    /// on a background queue, so without this a line written just before exit could reach
+    /// neither the terminal nor the log about one run in six.
     func flush() {
         fflush(stdout)
         fflush(stderr)
+        if origStdout >= 0 { dup2(origStdout, STDOUT_FILENO) }
+        if origStderr >= 0 { dup2(origStderr, STDERR_FILENO) }
+        drain(pipe: stdoutPipe, to: origStdout, isStderr: false)
+        drain(pipe: stderrPipe, to: origStderr, isStderr: true)
+        stdoutPipe = nil
+        stderrPipe = nil
+
         lock.lock()
         defer { lock.unlock() }
         if !stdoutBuffer.isEmpty, let line = String(data: stdoutBuffer, encoding: .utf8), !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             launcherLogger.info("\(line, privacy: .public)")
-            stdoutBuffer.removeAll()
         }
+        stdoutBuffer.removeAll()
         if !stderrBuffer.isEmpty, let line = String(data: stderrBuffer, encoding: .utf8), !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             launcherLogger.error("\(line, privacy: .public)")
-            stderrBuffer.removeAll()
         }
+        stderrBuffer.removeAll()
+    }
+
+    /// Closes the pipe's write end (its last writer, now that the standard descriptors
+    /// point elsewhere) and reads the rest synchronously, writing it through like the handler.
+    private func drain(pipe: Pipe?, to original: Int32, isStderr: Bool) {
+        guard let pipe else { return }
+        pipe.fileHandleForReading.readabilityHandler = nil
+        try? pipe.fileHandleForWriting.close()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        guard !data.isEmpty else { return }
+        if original >= 0 {
+            data.withUnsafeBytes { ptr in
+                if let base = ptr.baseAddress {
+                    _ = write(original, base, data.count)
+                }
+            }
+        }
+        process(data: data, isStderr: isStderr)
     }
 }

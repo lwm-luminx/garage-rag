@@ -147,11 +147,19 @@ public enum GarageAppGroup {
     }
 
     /// The account's home folder, also in the sandbox (where `NSHomeDirectory()` is the container).
-    private static var realHomeDirectory: String {
+    public static var realHomeDirectory: String {
         if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
             return String(cString: dir)
         }
         return NSHomeDirectory()
+    }
+
+    /// `path` with a leading `~` expanded against the account's home folder. `expandingTildeInPath`
+    /// uses `NSHomeDirectory()`, which in the sandbox is the app's container, so `~/Library/Mail`
+    /// would name the container's empty copy instead of the user's Mail.
+    public static func expandingTilde(in path: String) -> String {
+        guard path == "~" || path.hasPrefix("~/") else { return path }
+        return realHomeDirectory + path.dropFirst()
     }
 
     /// Path components after resolving links in the longest existing prefix, so a folder that does

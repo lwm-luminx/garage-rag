@@ -1,0 +1,63 @@
+load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+load("//bazel:framework_linking.bzl", "framework_linked_library")
+
+# LlamaXPCService's entry point on DeterministicLlamaEngine instead of llama.cpp.
+swift_library(
+    name = "MockLlamaXPCService_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]),
+    module_name = "MockLlamaXPCService",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//macapp/Sources/LlamaServiceHost",
+        "//macapp/Tests/LlamaTestSupport",
+    ],
+)
+
+# A stand-in for //macapp/Sources/LlamaXPCService with the same bundle identifier, name, Info.plist
+# and entitlements, so the app connects to it as to the real one. Only the UI tests' host app
+# (//macapp/Tests/GarageAppModelUITests:GarageApp_uitest) embeds it; testonly keeps it out of the
+# shipped app.
+macos_xpc_service(
+    name = "MockLlamaXPCService",
+    testonly = True,
+    additional_linker_inputs = [
+        "//ext/python:python_framework",
+        "//ext/pythonkit:PythonKit",
+        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
+    ],
+    bundle_id = "me.rickmark.garage-rag.llama-xpc",
+    bundle_name = "LlamaXPCService",
+    codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
+    entitlements = select({
+        "//bazel:is_store": "//macapp/Sources/LlamaXPCService:LlamaXPCService.entitlements",
+        "//bazel:is_developer_id": "//macapp/externals:GarageAppGroup.entitlements",
+        "//conditions:default": None,
+    }),
+    infoplists = ["//macapp/Sources/LlamaXPCService:Info.plist"],
+    linkopts = [
+        "-F$(location //ext/python:python_framework)/..",
+        "-framework",
+        "Python",
+        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
+        "-framework",
+        "PythonXPCService",
+    ],
+    minimum_os_version = "14.0",
+    version = "//macapp/Sources/GarageApp:GarageAppVersion",
+    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
+    deps = [
+        ":MockLlamaXPCService_linked",
+    ],
+)
+
+# The service's library without the static copy of PythonXPCService.framework's code, which it links
+# (see //bazel:framework_linking.bzl).
+framework_linked_library(
+    name = "MockLlamaXPCService_linked",
+    testonly = True,
+    framework_deps = ["//macapp/Sources/PythonXPCService"],
+    deps = [":MockLlamaXPCService_lib"],
+)

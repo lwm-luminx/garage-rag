@@ -144,4 +144,15 @@ final class GarageAppGroupTests: XCTestCase {
             XCTFail("the unit test host should not be able to read the shared password item")
         }
     }
+
+    /// `~` expands against the account's home folder, not `NSHomeDirectory()`: in the sandbox that
+    /// is the app's container, and the grant dialog for `~/Library/Mail` opened in its empty copy.
+    func testTildeExpandsAgainstTheRealHomeFolder() {
+        let home = GarageAppGroup.realHomeDirectory
+        XCTAssertEqual(GarageAppGroup.expandingTilde(in: "~/Library/Mail"), home + "/Library/Mail")
+        XCTAssertEqual(GarageAppGroup.expandingTilde(in: "~"), home)
+        XCTAssertEqual(GarageAppGroup.expandingTilde(in: "/Users/someone/Mail"), "/Users/someone/Mail")
+        XCTAssertEqual(GarageAppGroup.expandingTilde(in: "~other/Mail"), "~other/Mail")
+        XCTAssertFalse(home.contains("/Library/Containers/"))
+    }
 }

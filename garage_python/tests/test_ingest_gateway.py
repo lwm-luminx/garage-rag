@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import threading
 import time
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import grpc
 import pytest
 
 from garage_rag.attribute.resolver import SelfIdentity
@@ -355,15 +357,24 @@ def test_ingest_gateway_via_live_grpc_server(grpc_server, tmp_path: Path):
         assert ctx.source_id == 1
         assert ctx.slug == "live-grpc-src"
 
-        # 2. persist_scan over live gRPC
+        # 2. persist_scan over live gRPC. The details are what the sqlite scanner records for a
+        # Messages source: lists and a nested table as well as counts, which the request used to
+        # carry as a string-to-int map and so refused with "'list' object cannot be interpreted
+        # as an integer".
         scan_result = SourceScanResult(
             source_slug="live-grpc-src",
             kind="filesystem",
             root=tmp_path,
             item_count=1,
             item_type="files",
+            details={"databases_count": 1, "databases": ["chat.db"], "tables": {"message": 3}, "ok": True},
         )
-        gateway.persist_scan("live-grpc-src", scan_result)
+        with patch("garage_rag.ingest.scanner.persist_scan_result") as persisted:
+            gateway.persist_scan("live-grpc-src", scan_result)
+        stored = persisted.call_args.args[1]
+        assert stored.details == {"databases_count": 1, "databases": ["chat.db"], "tables": {"message": 3}, "ok": True}
+        assert stored.item_count == 1
+        assert stored.error is None
 
         # 3. check_stat over live gRPC (no Document row yet)
         stat = gateway.check_stat("live-grpc-src", "doc.txt")
@@ -793,6 +804,41 @@ def test_unmaterialized_placeholder_writes_no_document(tmp_path: Path):
     gateway.replace_document.assert_not_called()
 
 
+def test_a_read_the_kernel_refused_is_a_placeholder_not_a_failure(tmp_path: Path):
+    import errno
+
+    stub = tmp_path / "online-only.pdf"
+    stub.write_bytes(b"%PDF-1.4 dataless stand-in")
+    refused = OSError(errno.EDEADLK, "Resource deadlock avoided")
+    with patch("garage_rag.ingest.pipeline.extract", side_effect=refused):
+        gateway, counters = _ingest_one(tmp_path, _candidate(stub), ExistingDocStat(exists=False))
+
+    assert counters.placeholders == 1
+    assert counters.failed == 0
+    gateway.record_placeholder.assert_called_once()
+    gateway.record_extract_failed.assert_not_called()
+    gateway.replace_document.assert_not_called()
+
+
+def test_ingest_source_runs_with_dataless_reads_refused(tmp_path: Path):
+    entered: list[bool] = []
+
+    @contextmanager
+    def fake_guard():
+        entered.append(True)
+        yield
+
+    inner = MagicMock(return_value=(IngestCounters(), None, MaterializationBudget()))
+    with (
+        patch("garage_rag.ingest.pipeline.refusing_dataless_reads", fake_guard),
+        patch("garage_rag.ingest.pipeline._ingest_source", inner),
+    ):
+        ingest_source(gateway=MagicMock(), source_slug="src")
+
+    assert entered == [True]
+    inner.assert_called_once()
+
+
 def test_sql_record_placeholder_only_records_the_file_as_seen(tmp_path: Path):
     session = MagicMock()
     session.__enter__.return_value = session
@@ -1033,13 +1079,16 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
             trust_tier="authored",
             authors=[],
             chunks=[
-                ChunkPayload(ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01"),
+                ChunkPayload(
+                    ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01", direction="sent", sender="me"
+                ),
                 ChunkPayload(ord=1, text="reflowed", chunk_sha256="02"),
             ],
         )
     sent = mock_doc.call_args.args[0].chunks
     assert sent[0].HasField("char_start") and sent[0].char_start == 0
     assert not sent[1].HasField("char_start")
+    assert [(c.direction, c.sender) for c in sent] == [("sent", "me"), ("", "")]
 
     server_side = MagicMock()
     server_side.replace_document.return_value = 2
@@ -1049,7 +1098,9 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
         uri="a.md",
         action="replace",
         chunks=[
-            DocumentChunkPayload(ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01"),
+            DocumentChunkPayload(
+                ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01", direction="received", sender="a@b.c"
+            ),
             DocumentChunkPayload(ord=1, text="reflowed", chunk_sha256="02"),
         ],
     )
@@ -1058,6 +1109,8 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
     received = server_side.replace_document.call_args.kwargs["chunks"]
     assert (received[0].char_start, received[0].char_end) == (0, 5)
     assert (received[1].char_start, received[1].char_end) == (None, None)
+    # Empty proto strings arrive as None, so a chunk that is not a message has no direction.
+    assert [(c.direction, c.sender) for c in received] == [("received", "a@b.c"), (None, None)]
 
 
 def test_session_kind_crosses_the_grpc_facade():
@@ -1087,3 +1140,262 @@ def test_session_kind_crosses_the_grpc_facade():
     with patch.object(client, "begin_ingest_session", return_value=response):
         ctx = GrpcIngestStorageGateway(client).begin_session("apple-sms")
     assert ctx.kind == "sqlite"
+
+
+def _chunk_row(id: int, ord: int, text: str, sha: bytes, chunker: str = "markdown", fact_id: int | None = None):
+    """A stored ``chunks`` row as replace_document reads it back."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        id=id,
+        ord=ord,
+        text=text,
+        chunk_sha256=sha,
+        chunker=chunker,
+        fact_id=fact_id,
+        token_count=None,
+        char_start=0,
+        char_end=len(text),
+        heading_path=None,
+    )
+
+
+def test_replace_document_keeps_unchanged_chunks_and_replaces_the_rest():
+    """A chunk whose ord, hash, text and chunker are unchanged keeps its row (and so its
+    vectors in every model table); every other chunk, and every fact chunk, is replaced."""
+    from garage_rag.db.models import Chunk
+
+    unchanged = _chunk_row(101, 0, "Intro paragraph.", b"\x01")
+    edited = _chunk_row(102, 1, "Old second paragraph.", b"\x02")
+    rechunked = _chunk_row(103, 2, "Same text, new chunker.", b"\x03")
+    fact = _chunk_row(104, 3, "A fact.", b"\x04", chunker="facts:default", fact_id=9)
+    dropped = _chunk_row(105, 4, "A paragraph the new version cut.", b"\x05")
+
+    source = MagicMock(spec=Source)
+    source.id = 1
+    source.default_class = CorpusClass.DOCUMENT
+    source.default_trust = TrustTier.AUTHORED
+    doc = MagicMock()
+    doc.id = 7
+
+    session = MagicMock()
+    session.__enter__.return_value = session
+    chunk_query = MagicMock()
+    chunk_query.filter.return_value.all.return_value = [unchanged, edited, rechunked, fact, dropped]
+    by_entity = {Source: source, Document: doc}
+
+    def query(entity, *rest):
+        if entity is Chunk:
+            return chunk_query
+        found = MagicMock()
+        found.filter_by.return_value.one_or_none.return_value = by_entity.get(entity)
+        return found
+
+    session.query.side_effect = query
+    gateway = SqlAlchemyIngestStorageGateway(session_factory=lambda: session)
+
+    written = gateway.replace_document(
+        run_id=0,
+        source_slug="notes",
+        uri="note.md",
+        title="Note",
+        lang="en",
+        byte_size=100,
+        mtime=1700000000.0,
+        source_sha256="aa",
+        content_sha256="bb",
+        extractor="text",
+        extractor_version="1",
+        chunker="markdown",
+        content="...",
+        meta={},
+        corpus_class="document",
+        trust_tier="authored",
+        authors=[],
+        chunks=[
+            ChunkPayload(
+                ord=0,
+                text="Intro paragraph.",
+                chunk_sha256="01",
+                char_start=5,
+                char_end=21,
+                heading_path="H",
+                direction="sent",
+                sender="me",
+            ),
+            ChunkPayload(
+                ord=1, text="New second paragraph.", chunk_sha256="12", direction="received", sender="+15551234567"
+            ),
+            ChunkPayload(ord=2, text="Same text, new chunker.", chunk_sha256="03", chunker="heading"),
+        ],
+    )
+
+    assert written == 3
+    # Only the stale rows are deleted and let go of; the unchanged one stays in the session.
+    chunk_query.filter.return_value.delete.assert_called_once_with(synchronize_session=False)
+    expunged = [c.args[0] for c in session.expunge.call_args_list]
+    assert expunged == [edited, rechunked, fact, dropped]
+    # The kept row is updated in place with the new offsets and heading, not re-added.
+    # A message chunk's direction and sender are rewritten in place too: they cost no re-embedding.
+    assert (unchanged.char_start, unchanged.char_end, unchanged.heading_path) == (5, 21, "H")
+    assert (unchanged.direction, unchanged.sender) == ("sent", "me")
+    added = [c.args[0] for c in session.add.call_args_list]
+    assert all(isinstance(row, Chunk) for row in added)
+    assert [(row.ord, row.text, row.chunker, bytes(row.chunk_sha256)) for row in added] == [
+        (1, "New second paragraph.", "markdown", b"\x12"),
+        (2, "Same text, new chunker.", "heading", b"\x03"),
+    ]
+    assert [(row.direction, row.sender) for row in added] == [("received", "+15551234567"), (None, None)]
+    session.commit.assert_called_once()
+
+
+def test_replace_document_with_identical_chunks_deletes_nothing():
+    from garage_rag.db.models import Chunk
+
+    rows = [_chunk_row(201, 0, "One.", b"\xaa"), _chunk_row(202, 1, "Two.", b"\xbb")]
+    source = MagicMock(spec=Source)
+    source.id = 1
+    source.default_class = CorpusClass.DOCUMENT
+    source.default_trust = TrustTier.AUTHORED
+    doc = MagicMock()
+    doc.id = 8
+
+    session = MagicMock()
+    session.__enter__.return_value = session
+    chunk_query = MagicMock()
+    chunk_query.filter.return_value.all.return_value = rows
+    by_entity = {Source: source, Document: doc}
+
+    def query(entity, *rest):
+        if entity is Chunk:
+            return chunk_query
+        found = MagicMock()
+        found.filter_by.return_value.one_or_none.return_value = by_entity.get(entity)
+        return found
+
+    session.query.side_effect = query
+    gateway = SqlAlchemyIngestStorageGateway(session_factory=lambda: session)
+    gateway.replace_document(
+        run_id=0,
+        source_slug="notes",
+        uri="same.md",
+        title="Same",
+        lang="en",
+        byte_size=8,
+        mtime=0.0,
+        source_sha256="cc",
+        content_sha256="dd",
+        extractor="text",
+        extractor_version="1",
+        chunker="markdown",
+        content="One. Two.",
+        meta={},
+        corpus_class="document",
+        trust_tier="authored",
+        authors=[],
+        chunks=[
+            ChunkPayload(ord=0, text="One.", chunk_sha256=b"\xaa"),
+            ChunkPayload(ord=1, text="Two.", chunk_sha256="bb"),
+        ],
+    )
+
+    chunk_query.filter.return_value.delete.assert_not_called()
+    session.expunge.assert_not_called()
+    session.add.assert_not_called()
+
+
+def test_persist_document_larger_than_grpcs_default_limit_is_accepted(grpc_server):
+    """PersistDocument carries a document's whole text; a long Messages thread outgrows gRPC's
+    4 MiB default, which the server raises so such a document can be stored at all."""
+    from garage_rag.proto.garage_pb2 import DocumentChunkPayload
+    from garage_rag.proto.garage_pb2_grpc import GarageServiceStub
+
+    port, _ = grpc_server
+    content = "a long thread of messages. " * (6 * 1024 * 1024 // 27)
+    assert len(content) > 4 * 1024 * 1024
+    server_side = MagicMock()
+    server_side.replace_document.return_value = 1
+    request = PersistDocumentRequest(
+        run_id=1,
+        source_slug="apple-sms",
+        uri="thread-1",
+        action="replace",
+        content=content,
+        chunks=[DocumentChunkPayload(ord=0, text=content[:1000], chunk_sha256="01")],
+    )
+    with (
+        patch.object(GarageRpcServicer, "_ingest_gateway", return_value=server_side),
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        response = GarageServiceStub(channel).PersistDocument(request)
+    assert response.success
+    assert server_side.replace_document.call_args.kwargs["content"] == content
+
+
+def _replace_over(existing: list) -> dict[type, MagicMock]:
+    """Re-ingest one document whose stored chunks are ``existing``; return each queried model's mock."""
+    source = MagicMock(spec=Source)
+    source.id = 1
+    source.default_class = CorpusClass.DOCUMENT
+    source.default_trust = TrustTier.AUTHORED
+    doc = MagicMock()
+    doc.id = 9
+    by_entity = {Source: source, Document: doc}
+    queries: dict[type, MagicMock] = {}
+
+    def query(entity, *rest):
+        q = queries.setdefault(entity, MagicMock())
+        q.filter_by.return_value.one_or_none.return_value = by_entity.get(entity)
+        q.filter.return_value.all.return_value = existing
+        return q
+
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.query.side_effect = query
+    SqlAlchemyIngestStorageGateway(session_factory=lambda: session).replace_document(
+        run_id=0,
+        source_slug="notes",
+        uri="note.md",
+        title="Note",
+        lang="en",
+        byte_size=100,
+        mtime=1700000000.0,
+        source_sha256="aa",
+        content_sha256="bb",
+        extractor="text",
+        extractor_version="1",
+        chunker="markdown",
+        content="One.",
+        meta={},
+        corpus_class="document",
+        trust_tier="authored",
+        authors=[],
+        chunks=[ChunkPayload(ord=0, text="One.", chunk_sha256="aa")],
+    )
+    return queries
+
+
+def test_force_reingest_that_drops_fact_chunks_clears_the_document_fact_runs():
+    """Re-index Everything keeps the text but drops the fact chunks; the document's fact_runs go with
+    them, so a stale-only Glean Facts extracts it again instead of counting it as current."""
+    from garage_rag.db.models import FactRun
+    from garage_rag.enrich.facts import default_prompt, is_stale
+
+    queries = _replace_over(
+        [_chunk_row(301, 0, "One.", b"\xaa"), _chunk_row(302, 1, "A fact.", b"\x04", chunker="facts:x", fact_id=5)]
+    )
+
+    fact_runs = queries[FactRun]
+    fact_runs.filter.return_value.delete.assert_called_once_with(synchronize_session=False)
+    (criterion,) = fact_runs.filter.call_args.args
+    assert str(criterion.compile(compile_kwargs={"literal_binds": True})) == "fact_runs.document_id = 9"
+    # With its run gone, the document reads as stale whatever its content hash.
+    assert is_stale(None, MagicMock(spec=Document, content_sha256=b"\xbb"), default_prompt(), "m")
+
+
+def test_reingest_without_fact_chunks_keeps_the_fact_runs():
+    from garage_rag.db.models import FactRun
+
+    queries = _replace_over([_chunk_row(311, 0, "Old one.", b"\x01")])
+
+    assert FactRun not in queries

@@ -14,9 +14,14 @@ extension StatusView {
         }
     }
 
+    /// Titled with `GroupBox("Helper Services")`, with the box's buttons on its first row rather
+    /// than in a custom label: on macOS a GroupBox's custom label is not in the accessibility tree,
+    /// so neither the title nor Test All, Restart All and Refresh could be reached there.
     var servicesSection: some View {
-        GroupBox {
+        GroupBox("Helper Services") {
             VStack(spacing: 0) {
+                servicesToolbar
+                    .padding(.bottom, 8)
                 ForEach(Array(appState.xpcServices.services.enumerated()), id: \.element.id) { index, service in
                     if index > 0 {
                         Divider()
@@ -26,49 +31,50 @@ extension StatusView {
                 }
             }
             .padding(10)
-        } label: {
-            HStack(spacing: 8) {
-                Text("Helper Services")
-                Spacer()
-                if let lastRefreshed = appState.xpcServices.lastRefreshedAt {
-                    Text("Checked \(lastRefreshed, style: .time)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if appState.xpcServices.isRefreshingAll || appState.xpcServices.isTestingAll || isTestingGrpc {
-                    ProgressView().controlSize(.mini)
-                }
-                Button("Test All") {
-                    runAllTests()
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(appState.xpcServices.isTestingAll || isTestingGrpc)
-                .help("Run every helper's tests, and query the gRPC backend")
-                .accessibilityIdentifier("status.services.testAll")
-                Button("Restart All") {
-                    Task { await appState.xpcServices.restartAll() }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .disabled(appState.xpcServices.isRefreshingAll || appState.xpcServices.isRestartingAll)
-                .help("Stop every helper process; each starts again on its next request")
-                .accessibilityIdentifier("status.services.restartAll")
-                Button {
-                    Task {
-                        await appState.xpcServices.refreshAll()
-                        await appState.grpc.refreshStatus()
-                    }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                }
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .disabled(appState.xpcServices.isRefreshingAll || appState.xpcServices.isRestartingAll)
-                .help("Check every helper again")
-                .accessibilityLabel("Refresh Services")
-                .accessibilityIdentifier("status.services.refresh")
+        }
+    }
+
+    private var servicesToolbar: some View {
+        HStack(spacing: 8) {
+            if let lastRefreshed = appState.xpcServices.lastRefreshedAt {
+                Text("Checked \(lastRefreshed, style: .time)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
+            Spacer()
+            if appState.xpcServices.isRefreshingAll || appState.xpcServices.isTestingAll || isTestingGrpc {
+                ProgressView().controlSize(.mini)
+            }
+            Button("Test All") {
+                runAllTests()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(appState.xpcServices.isTestingAll || isTestingGrpc)
+            .help("Run every helper's tests, and query the Index Manager")
+            .accessibilityIdentifier("status.services.testAll")
+            Button("Restart All") {
+                Task { await appState.xpcServices.restartAll() }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(appState.xpcServices.isRefreshingAll || appState.xpcServices.isRestartingAll)
+            .help("Stop every helper process; each starts again on its next request")
+            .accessibilityIdentifier("status.services.restartAll")
+            Button {
+                Task {
+                    await appState.xpcServices.refreshAll()
+                    await appState.grpc.refreshStatus()
+                }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .disabled(appState.xpcServices.isRefreshingAll || appState.xpcServices.isRestartingAll)
+            .help("Check every helper again")
+            .accessibilityLabel("Refresh Services")
+            .accessibilityIdentifier("status.services.refresh")
         }
     }
 
@@ -129,7 +135,7 @@ extension StatusView {
     private var grpcRow: some View {
         let row = ServiceRowPresentation.grpc(
             status: appState.grpc.status,
-            address: appState.grpc.shortAddress,
+            listening: appState.grpc.listeningPhrase,
             lastTest: grpcTestResult.map { (isSuccess: $0.isSuccess, summary: $0.summary) }
         )
         let isExpanded = expandedServiceIds.contains(row.id)
@@ -146,13 +152,14 @@ extension StatusView {
                     if isTestingGrpc {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("Test")
+                        Label("Test", systemImage: "flask")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(isTestingGrpc || appState.grpc.status != .running)
-                .help("Call GetStatus, GetVersion, ListModels, ListSources and GetStats")
+                .help("Test: call GetStatus, GetVersion, ListModels, ListSources and GetStats")
                 .accessibilityIdentifier("status.service.grpc.test")
             }
 
@@ -192,22 +199,31 @@ extension StatusView {
                     if isTesting {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("Test")
+                        Label("Test", systemImage: "flask")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(isTesting || service.isChecking)
-                .help(ServiceDiagnosticTest.primary(for: service.id).description)
+                .help("Test: \(ServiceDiagnosticTest.primary(for: service.id).description)")
                 .accessibilityIdentifier("status.service.\(service.id).test")
 
-                Button("Restart") {
+                Button {
                     Task { await appState.xpcServices.restart(serviceId: service.id) }
+                } label: {
+                    if isRestarting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Restart", systemImage: "restart")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(row.restartTint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(service.isChecking || isRestarting || appState.xpcServices.isRestartingAll)
-                .help("Stop the helper process; it starts again on its next request")
+                .help("Restart: stop the helper process; it starts again on its next request")
                 .accessibilityIdentifier("status.service.\(service.id).restart")
             }
 

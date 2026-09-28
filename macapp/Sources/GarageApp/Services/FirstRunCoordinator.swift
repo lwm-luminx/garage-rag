@@ -40,7 +40,7 @@ enum FirstRunStep: Int, CaseIterable, Identifiable, Comparable {
         case .settingUp: "Setting things up"
         case .selectData: "Select your data"
         case .selectModels: "Select your models"
-        case .setupAgent: "Set up your agent"
+        case .setupAgent: "Set up your assistant"
         }
     }
 
@@ -97,7 +97,8 @@ enum FirstRunReadiness {
         pendingMigrations: [String],
         isApplyingMigrations: Bool,
         grpc: GarageGRPCStatus,
-        mcp: GarageMCPStatus
+        mcp: GarageMCPStatus,
+        mcpHTTPEnabled: Bool = true
     ) -> [FirstRunServiceCheck] {
         let database: FirstRunServiceCheck.State = switch postgres {
         case .stopped: .pending
@@ -133,7 +134,7 @@ enum FirstRunReadiness {
         case .failed(let message): .failed(message)
         }
 
-        return [
+        var checks = [
             FirstRunServiceCheck(
                 id: "postgres",
                 title: "Database",
@@ -148,17 +149,21 @@ enum FirstRunReadiness {
             ),
             FirstRunServiceCheck(
                 id: "grpc",
-                title: "Pipeline service",
-                detail: "Starting the gRPC bridge used for ingest, search and models",
+                title: "Index Manager",
+                detail: "Starting the service that runs ingest, search and models",
                 state: grpcState
             ),
-            FirstRunServiceCheck(
+        ]
+        // With HTTP off there is no server to wait for: assistants start `garage-mcp` themselves.
+        if mcpHTTPEnabled {
+            checks.append(FirstRunServiceCheck(
                 id: "mcp",
                 title: "MCP server",
-                detail: "Starting the local MCP endpoint your agents connect to",
+                detail: "Starting the local MCP endpoint your assistants connect to",
                 state: mcpState
-            ),
-        ]
+            ))
+        }
+        return checks
     }
 
     /// Everything the rest of the assistant depends on is up. The MCP server
@@ -200,6 +205,9 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
     let isAvailable: Bool
     /// True for the extra entries the user picked through the folder chooser.
     let isCustom: Bool
+    /// Mail or Messages that macOS will not let Garage read: the folder is there but its contents
+    /// are behind Full Disk Access. Such a template is unavailable, with its own badge.
+    var needsFullDiskAccess = false
 
     var isCommunication: Bool { corpusClass == "communication" }
 
@@ -208,24 +216,56 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
         SourceSpec(slug: slug, root: root, kind: kind, corpusClass: corpusClass, trust: trust)
     }
 
+    /// A template root as a path on disk: `~` and `~/…` against `home`; an absolute root (the
+    /// Dropbox folder `info.json` names may sit on another volume) stays as it is.
+    static func resolvedPath(_ root: String, home: URL) -> String {
+        if root == "~" { return home.path }
+        if root.hasPrefix("~/") { return home.appendingPathComponent(String(root.dropFirst(2))).path }
+        return root
+    }
+
     /// The built-in templates, with availability resolved against the file
-    /// system. `home` and `exists` are injectable so tests can pin them.
+    /// system. `home`, `exists` and `readable` are injectable so tests can pin them.
+    ///
+    /// `home` is the account's real home folder, also in the sandbox, where
+    /// `homeDirectoryForCurrentUser` is the app's container. Mail and Messages count
+    /// as available only when their contents can be listed: macOS lets anyone see
+    /// that `~/Library/Mail` exists but keeps what is inside behind Full Disk Access.
+    /// `assumeAvailable` (the sandbox before any folder is granted, when nothing
+    /// outside the container can be checked) marks every template available.
     static func builtIn(
-        home: URL = FileManager.default.homeDirectoryForCurrentUser,
-        exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }
+        home: URL = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true),
+        assumeAvailable: Bool = false,
+        exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) },
+        readable: (String) -> Bool = FirstRunSourceTemplate.canListContents
     ) -> [FirstRunSourceTemplate] {
-        func path(_ relative: String) -> String {
-            home.appendingPathComponent(relative).path
-        }
-        /// Availability of a `~/…` root, resolved against `home`.
+        /// Availability of a root, `~/…` resolved against `home`, an absolute path as it is.
         func available(_ root: String) -> Bool {
-            let relative = root.hasPrefix("~/") ? String(root.dropFirst(2)) : root
-            return exists(path(relative))
+            exists(resolvedPath(root, home: home))
         }
         /// Wraps one of the shared `SourcePreset`s so the assistant can never
         /// disagree with the Sources/Status pages on a slug, root or class.
         func shared(_ preset: SourcePreset, subtitle: String, symbol: String) -> FirstRunSourceTemplate {
-            FirstRunSourceTemplate(
+            if preset.spec.corpusClass == "communication", !assumeAvailable {
+                let canRead = readable(resolvedPath(preset.spec.root, home: home))
+                return FirstRunSourceTemplate(
+                    id: preset.id,
+                    title: preset.title,
+                    subtitle: subtitle,
+                    symbol: symbol,
+                    slug: preset.spec.slug,
+                    root: preset.spec.root,
+                    kind: preset.spec.kind,
+                    corpusClass: preset.spec.corpusClass,
+                    trust: preset.spec.trust,
+                    isAvailable: canRead,
+                    isCustom: false,
+                    // Whether the folder is there cannot be told apart from whether it is closed to
+                    // Garage (Messages hides even that), so an unreadable one is put down to access.
+                    needsFullDiskAccess: !canRead
+                )
+            }
+            return FirstRunSourceTemplate(
                 id: preset.id,
                 title: preset.title,
                 subtitle: subtitle,
@@ -235,7 +275,7 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
                 kind: preset.spec.kind,
                 corpusClass: preset.spec.corpusClass,
                 trust: preset.spec.trust,
-                isAvailable: available(preset.spec.root),
+                isAvailable: assumeAvailable || available(preset.spec.root),
                 isCustom: false
             )
         }
@@ -259,7 +299,7 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
                 kind: kind,
                 corpusClass: corpusClass,
                 trust: trust,
-                isAvailable: available(root),
+                isAvailable: assumeAvailable || available(root),
                 isCustom: false
             )
         }
@@ -276,10 +316,16 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
         ]
     }
 
+    /// Whether the folder's contents can be listed, which for Mail and Messages is what Full Disk
+    /// Access decides.
+    static func canListContents(_ path: String) -> Bool {
+        (try? FileManager.default.contentsOfDirectory(atPath: path)) != nil
+    }
+
     /// Builds a template for a folder the user picked in the open panel.
     static func custom(folder: URL, existingSlugs: Set<String>) -> FirstRunSourceTemplate {
         let slug = uniqueSlug(base: slug(forFolderNamed: folder.lastPathComponent), taken: existingSlugs)
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let home = GarageAppGroup.realHomeDirectory
         let display = folder.path.hasPrefix(home + "/") ? "~" + String(folder.path.dropFirst(home.count)) : folder.path
         return FirstRunSourceTemplate(
             id: "custom:" + folder.path,
@@ -371,6 +417,11 @@ final class FirstRunCoordinator: ObservableObject {
     private var hasFinishedDatabaseReset = false
 
     // Page 2 — data
+    /// The App Store build: the data page leads with the home folder grant and Full Disk Access.
+    let isSandboxed: Bool
+    /// Whether Mail and Messages can be read (`VolumeAccessService.hasFullDiskAccess`). Checked while
+    /// the data page shows, since the switch is turned on in System Settings.
+    @Published private(set) var hasFullDiskAccess = true
     @Published private(set) var sourceTemplates: [FirstRunSourceTemplate] = []
     @Published var selectedSourceIDs: Set<String> = []
 
@@ -385,6 +436,12 @@ final class FirstRunCoordinator: ObservableObject {
     @Published private(set) var registrationSummary: String?
 
     private let defaults: UserDefaults
+    /// Whether finishing records completion in `defaults`. On an overridden data folder (the UI
+    /// tests' throwaway folders) it lasts for this launch only, the way that folder's database
+    /// password and LM Studio token stay out of the Keychain: finishing or skipping there must not
+    /// change what the real install shows at its next launch.
+    private let persistsCompletion: Bool
+    private var completedThisLaunch = false
     private weak var appState: AppState?
     private var readinessTask: Task<Void, Never>?
 
@@ -392,8 +449,15 @@ final class FirstRunCoordinator: ObservableObject {
     /// assistant: deciding in `AppState.launch()` let the window draw the main
     /// pages first and then swap to the assistant, which showed as a flash.
     /// `begin` still runs from launch to start the readiness loop.
-    init(defaults: UserDefaults = .standard, arguments: [String] = CommandLine.arguments) {
+    init(
+        defaults: UserDefaults = .standard,
+        arguments: [String] = CommandLine.arguments,
+        persistsCompletion: Bool = GarageAppGroup.dataDirectoryOverride == nil,
+        isSandboxed: Bool = GarageAppGroup.isSandboxed
+    ) {
         self.defaults = defaults
+        self.isSandboxed = isSandboxed
+        self.persistsCompletion = persistsCompletion
         let afterDatabaseReset = arguments.contains(GarageAppLaunch.databaseResetArgument)
         isAfterDatabaseReset = afterDatabaseReset
         isActive = afterDatabaseReset || shouldPresentAtLaunch
@@ -405,7 +469,7 @@ final class FirstRunCoordinator: ObservableObject {
 
     /// True until the user has finished or skipped the assistant once.
     var hasCompleted: Bool {
-        defaults.bool(forKey: FirstRunPreferences.completedKey)
+        completedThisLaunch || defaults.bool(forKey: FirstRunPreferences.completedKey)
     }
 
     /// Whether launch should open straight into the assistant.
@@ -440,7 +504,7 @@ final class FirstRunCoordinator: ObservableObject {
         registrationSummary = nil
         step = .settingUp
         isActive = true
-        sourceTemplates = FirstRunSourceTemplate.builtIn()
+        sourceTemplates = currentTemplates()
         selectedSourceIDs = []
         selectedEmbeddingSlugs = []
         selectedDistillationSlug = nil
@@ -452,7 +516,11 @@ final class FirstRunCoordinator: ObservableObject {
     func finish() {
         readinessTask?.cancel()
         readinessTask = nil
-        defaults.set(true, forKey: FirstRunPreferences.completedKey)
+        if persistsCompletion {
+            defaults.set(true, forKey: FirstRunPreferences.completedKey)
+        } else {
+            completedThisLaunch = true
+        }
         isActive = false
         isWorking = false
         let resetStillPending = isAfterDatabaseReset && !hasFinishedDatabaseReset
@@ -462,8 +530,7 @@ final class FirstRunCoordinator: ObservableObject {
         // assistant, so the main window comes up on the new, unconfigured database.
         if resetStillPending {
             Task {
-                await appState.startPostgres()
-                await appState.finishDatabaseReset()
+                await appState.finishDatabaseReset(startingPostgres: true)
                 appState.resumeMaintenanceAfterFirstRun()
             }
             return
@@ -485,6 +552,7 @@ final class FirstRunCoordinator: ObservableObject {
 
     /// Debug/test helper that forgets the completed flag.
     func resetCompletion() {
+        completedThisLaunch = false
         defaults.removeObject(forKey: FirstRunPreferences.completedKey)
     }
 
@@ -503,7 +571,8 @@ final class FirstRunCoordinator: ObservableObject {
             pendingMigrations: appState.postgres.pendingMigrations,
             isApplyingMigrations: appState.isApplyingMigrations,
             grpc: appState.grpc.status,
-            mcp: appState.mcp.status
+            mcp: appState.mcp.status,
+            mcpHTTPEnabled: appState.mcp.httpEnabled
         )
     }
 
@@ -540,8 +609,9 @@ final class FirstRunCoordinator: ObservableObject {
         if Task.isCancelled { return }
 
         if appState.postgres.status == .running {
-            if Self.needsStart(appState.grpc.status) { try? await appState.grpc.start() }
-            if Self.needsStart(appState.mcp.status) { try? await appState.mcp.start() }
+            // startBackend, not grpc.start(): it also hands the helpers the database and the backend's address.
+            if Self.needsStart(appState.grpc.status) { await appState.startBackend() }
+            if Self.needsStart(appState.mcp.status) { try? await appState.mcp.startIfEnabled() }
         }
 
         // Wait for the required services to settle, polling because each one
@@ -606,8 +676,30 @@ final class FirstRunCoordinator: ObservableObject {
 
     // MARK: Page 2 — data
 
+    /// The built-in templates as this process can read them now. In the sandbox nothing outside the
+    /// container can be checked until a folder is granted, so they all count as available until then.
+    private func currentTemplates() -> [FirstRunSourceTemplate] {
+        let granted = appState?.volumeAccess.status.isGranted ?? false
+        return FirstRunSourceTemplate.builtIn(assumeAvailable: isSandboxed && !granted)
+    }
+
+    /// Checks the folder grant and Full Disk Access again (the data page calls this every few seconds
+    /// while it shows) and refreshes which locations can be picked, keeping the custom folders and
+    /// every pick that can still be made.
+    func refreshAccess() {
+        guard let appState else { return }
+        hasFullDiskAccess = appState.volumeAccess.hasFullDiskAccess()
+        let custom = sourceTemplates.filter(\.isCustom)
+        let refreshed = currentTemplates() + custom
+        guard refreshed != sourceTemplates else { return }
+        sourceTemplates = refreshed
+        let pickable = Set(refreshed.filter(\.isAvailable).map(\.id))
+        selectedSourceIDs.formIntersection(pickable)
+    }
+
     private func prepareDataPage() {
-        sourceTemplates = FirstRunSourceTemplate.builtIn()
+        sourceTemplates = currentTemplates()
+        hasFullDiskAccess = appState?.volumeAccess.hasFullDiskAccess() ?? true
         if selectedSourceIDs.isEmpty, let documents = sourceTemplates.first(where: { $0.id == "documents" }), documents.isAvailable {
             selectedSourceIDs = [documents.id]
         }
@@ -856,6 +948,7 @@ final class FirstRunCoordinator: ObservableObject {
         guard let appState else { return }
         isWorking = true
         defer { isWorking = false }
+        appState.mcp.setHTTPEnabled(true)
         if appState.postgres.status != .running {
             await appState.startPostgres()
         } else {

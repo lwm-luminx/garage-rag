@@ -34,8 +34,7 @@ final class LaunchUITests: GarageUITestCase {
             waitUntil(timeout: 5) { abs(window.frame.width - 920) < 2 && window.frame.height >= 648 },
             "the setup assistant opened at \(window.frame.size), not its 920×650"
         )
-        // Skip and Finish save `garage.firstRun.completed` to the real defaults, so this test
-        // stops at what the assistant shows.
+        // SetupAssistantUITests walks it to Finish and skips it.
     }
 
     /// The data page at the assistant's size: the locations lay out in three columns and the footer is

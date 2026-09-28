@@ -51,6 +51,8 @@ from garage_rag.proto.garage_pb2 import (
     EnsureLlamaModelResponse,
     FactClassCount,
     FactPrompt,
+    FactStatsRequest,
+    FactStatsResponse,
     FactSummary,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
@@ -122,6 +124,14 @@ from garage_rag.proto.garage_pb2 import (
 from garage_rag.proto.garage_pb2_grpc import (
     GarageServiceServicer,
     add_GarageServiceServicer_to_server,
+)
+from garage_rag.service.auth import (
+    CONFIG_CHANGING_METHODS,
+    METADATA_KEY,
+    UNAUTHENTICATED_METHODS,
+    config_change_allowed,
+    token_from_env,
+    token_matches,
 )
 
 if TYPE_CHECKING:
@@ -257,11 +267,42 @@ def _enum_value(value: Any) -> str:
     return value.value if hasattr(value, "value") else str(value)
 
 
+def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
+    """Refuse a config-changing method to a caller the server cannot vouch for.
+
+    See :data:`garage_rag.service.auth.CONFIG_CHANGING_METHODS`: with no token
+    configured, only a server bound to the owner-only Unix socket answers them
+    (``GarageRpcServicer.callers_vouched_for``). Applied outside ``_grpc_errors`` so
+    its abort is not re-mapped.
+    """
+    name = cast(Any, handler).__name__
+    assert name in CONFIG_CHANGING_METHODS, name
+
+    @functools.wraps(handler)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        servicer = cast("GarageRpcServicer", args[0])
+        context = cast(grpc.ServicerContext, args[2] if len(args) > 2 else kwargs["context"])
+        if not servicer.callers_vouched_for:
+            context.abort(
+                grpc.StatusCode.PERMISSION_DENIED,
+                f"{name} changes configuration; it needs the {METADATA_KEY} token or the Unix socket",
+            )
+        return handler(*args, **kwargs)
+
+    cast(Any, wrapper).__garage_config_change__ = True  # the test checks every listed method carries it
+    return wrapper
+
+
 class GarageRpcServicer(GarageServiceServicer):
     """gRPC servicer implementing ``GarageService``."""
 
-    def __init__(self, stop_event: threading.Event | None = None) -> None:
+    def __init__(self, stop_event: threading.Event | None = None, *, callers_vouched_for: bool = True) -> None:
         self.stop_event = stop_event or threading.Event()
+        # Whether every caller of this server is one it can vouch for (see
+        # ``_config_change``): the per-launch token guards it, or it is bound to the
+        # owner-only Unix socket. A servicer built directly, as the in-process client and
+        # the tests do, is trusted.
+        self.callers_vouched_for = callers_vouched_for
 
     # -----------------------------------------------------------------------
     # System / Lifecycle
@@ -334,6 +375,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 trust_tiers=list(request.trust_tiers) or None,
                 sources=list(request.sources) or None,
                 author=request.author or None,
+                direction=request.direction or None,
             )
 
         proto_hits: list[SearchHit] = []
@@ -351,6 +393,8 @@ class GarageRpcServicer(GarageServiceServicer):
                     authors=hit.authors or [],
                     text=hit.text or "",
                     snippet=hit.text if request.full else snippet(hit.text),
+                    direction=hit.direction or "",
+                    sender=hit.sender or "",
                 )
             )
 
@@ -573,6 +617,29 @@ class GarageRpcServicer(GarageServiceServicer):
             formatted_output=f"{len(summaries)} of {page.total} facts",
         )
 
+    @_grpc_errors
+    def GetFactStats(self, request: FactStatsRequest, context: grpc.ServicerContext) -> FactStatsResponse:
+        """Count facts under ListFacts' filters: overall, per source and per class."""
+        from garage_rag.db.engine import session_scope
+        from garage_rag.ops.facts import fact_stats
+
+        with session_scope() as session:
+            stats = fact_stats(
+                session,
+                query=request.query,
+                source=request.source,
+                fact_class=request.fact_class,
+                corpus_class=request.corpus_class,
+                document_id=request.document_id or None,
+            )
+        return FactStatsResponse(
+            facts=stats.facts,
+            documents=stats.documents,
+            facts_by_source=stats.by_source,
+            facts_by_class=stats.by_class,
+            formatted_output=stats.message,
+        )
+
     # -----------------------------------------------------------------------
     # Sources
     # -----------------------------------------------------------------------
@@ -684,6 +751,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # `sync` / `config import-sources` / `reconcile`)
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def AddSource(self, request: AddSourceRequest, context: grpc.ServicerContext) -> AddSourceResponse:
         """Register a source root, or update the one registered under the slug."""
@@ -700,6 +768,7 @@ class GarageRpcServicer(GarageServiceServicer):
             slug=result.slug, root=str(result.root), created=result.created, message=result.message
         )
 
+    @_config_change
     @_grpc_errors
     def RemoveSource(self, request: RemoveSourceRequest, context: grpc.ServicerContext) -> RemoveSourceResponse:
         """Deregister a source and delete its documents, chunks and vectors."""
@@ -775,6 +844,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join(result.lines),
         )
 
+    @_config_change
     @_grpc_errors
     def ImportSourcesToConfig(
         self, request: ImportSourcesToConfigRequest, context: grpc.ServicerContext
@@ -819,6 +889,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # Model operations
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def RegisterModel(self, request: RegisterModelRequest, context: grpc.ServicerContext) -> RegisterModelResponse:
         """Register an embedding model and create its table and index."""
@@ -851,6 +922,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join([row.message, *row.notes]),
         )
 
+    @_config_change
     @_grpc_errors
     def SetDefaultModel(
         self, request: SetDefaultModelRequest, context: grpc.ServicerContext
@@ -861,6 +933,7 @@ class GarageRpcServicer(GarageServiceServicer):
         set_default_model(request.slug)
         return SetDefaultModelResponse(message=f"default model = {request.slug}")
 
+    @_config_change
     @_grpc_errors
     def DropModel(self, request: DropModelRequest, context: grpc.ServicerContext) -> DropModelResponse:
         """Deregister a model and drop its vectors."""
@@ -1019,9 +1092,10 @@ class GarageRpcServicer(GarageServiceServicer):
     # Schema & settings
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def InitDb(self, request: InitDbRequest, context: grpc.ServicerContext) -> InitDbResponse:
-        """Apply the schema migrations (idempotent)."""
+        """Apply the schema migrations (idempotent). Guarded: ``schema_dir`` names SQL the server runs."""
         from garage_rag.config import get_settings
         from garage_rag.db.migrate import apply_migrations, redact_url
 
@@ -1037,6 +1111,7 @@ class GarageRpcServicer(GarageServiceServicer):
 
         return GetSettingResponse(name=request.name, value_json=json.dumps(get_setting(request.name)))
 
+    @_config_change
     @_grpc_errors
     def SetSetting(self, request: SetSettingRequest, context: grpc.ServicerContext) -> SetSettingResponse:
         """Change one setting in the config file, validated before writing."""
@@ -1049,6 +1124,7 @@ class GarageRpcServicer(GarageServiceServicer):
     # MCP client registration
     # -----------------------------------------------------------------------
 
+    @_config_change
     @_grpc_errors
     def McpInstall(self, request: McpInstallRequest, context: grpc.ServicerContext) -> McpInstallResponse:
         """Register this MCP server with a client (no prompts: the app asked)."""
@@ -1088,6 +1164,7 @@ class GarageRpcServicer(GarageServiceServicer):
             message="\n".join(report.lines),
         )
 
+    @_config_change
     @_grpc_errors
     def McpUninstall(self, request: McpUninstallRequest, context: grpc.ServicerContext) -> McpUninstallResponse:
         """Remove this server from one client's config."""
@@ -1173,7 +1250,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 item_count=request.item_count,
                 item_type=request.item_type,
                 duration_seconds=request.duration_seconds,
-                details=dict(request.details) if request.details else {},
+                details=json.loads(request.details_json) if request.details_json else {},
                 error=request.error or None,
             ),
         )
@@ -1281,6 +1358,8 @@ class GarageRpcServicer(GarageServiceServicer):
                             heading_path=c.heading_path or None,
                             chunk_sha256=c.chunk_sha256,
                             chunker=c.chunker or None,
+                            direction=c.direction or None,
+                            sender=c.sender or None,
                         )
                         for c in request.chunks
                     ],
@@ -1394,6 +1473,44 @@ class GarageRpcServicer(GarageServiceServicer):
 MAX_REQUEST_BYTES = 256 * 1024 * 1024
 
 
+def _deny_unauthenticated(request: Any, context: grpc.ServicerContext) -> Any:
+    context.abort(grpc.StatusCode.UNAUTHENTICATED, f"missing or invalid {METADATA_KEY}")
+
+
+class TokenAuthInterceptor(grpc.ServerInterceptor):
+    """Rejects every call whose ``x-garage-token`` metadata is not the per-launch token.
+
+    Installed by :func:`create_grpc_server` when ``GARAGE_GRPC_TOKEN`` is set; see
+    :mod:`garage_rag.service.auth`.
+    """
+
+    def __init__(self, token: str) -> None:
+        self._token = token
+
+    def _authorized(self, metadata: Any) -> bool:
+        for key, value in metadata or ():
+            if key == METADATA_KEY:
+                return token_matches(value, self._token)
+        return False
+
+    def intercept_service(self, continuation: Any, handler_call_details: grpc.HandlerCallDetails) -> Any:
+        method = (handler_call_details.method or "").rsplit("/", 1)[-1]
+        handler = continuation(handler_call_details)
+        if handler is None or method in UNAUTHENTICATED_METHODS:
+            return handler
+        if self._authorized(handler_call_details.invocation_metadata):
+            return handler
+        # Answer with the same cardinality as the real method, so the client sees
+        # UNAUTHENTICATED rather than a protocol error.
+        if handler.request_streaming and handler.response_streaming:
+            return grpc.stream_stream_rpc_method_handler(_deny_unauthenticated)
+        if handler.request_streaming:
+            return grpc.stream_unary_rpc_method_handler(_deny_unauthenticated)
+        if handler.response_streaming:
+            return grpc.unary_stream_rpc_method_handler(_deny_unauthenticated)
+        return grpc.unary_unary_rpc_method_handler(_deny_unauthenticated)
+
+
 def create_grpc_server(
     host: str = "127.0.0.1",
     port: int = 50051,
@@ -1411,14 +1528,24 @@ def create_grpc_server(
 
     When ``stop_event`` is given, setting it stops the server with ``stop_grace``
     seconds of grace; ``serve_grpc`` sets it from SIGINT/SIGTERM.
+
+    When ``GARAGE_GRPC_TOKEN`` is set, every call must carry it as ``x-garage-token``
+    metadata (the app sets a fresh one each launch). Unset, the server takes any call
+    except the config-changing ones (``auth.CONFIG_CHANGING_METHODS``), which it then
+    answers only over the Unix socket, where the folder's mode is the peer check.
     """
+    token = token_from_env()
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=max_workers),
+        interceptors=[TokenAuthInterceptor(token)] if token else None,
         # PersistDocument carries a document's whole text and every chunk; a
         # years-long Messages thread outgrows gRPC's 4 MiB default.
         options=[("grpc.max_receive_message_length", MAX_REQUEST_BYTES)],
     )
-    servicer = GarageRpcServicer(stop_event=stop_event)
+    servicer = GarageRpcServicer(
+        stop_event=stop_event,
+        callers_vouched_for=config_change_allowed(token_configured=token is not None, unix_socket=bool(socket_path)),
+    )
     add_GarageServiceServicer_to_server(servicer, server)
 
     if socket_path:

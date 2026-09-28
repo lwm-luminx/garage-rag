@@ -58,6 +58,28 @@ final class BugReportTests: XCTestCase {
         XCTAssertEqual(redactor.redact("token=\"ghp_deadbeef\""), "token=<redacted>")
     }
 
+    func testRedactsJSONEscapedConnectionString() {
+        XCTAssertEqual(
+            redactor.redact("{\"database_url\":\"postgresql+psycopg:\\/\\/garage:hunter2@localhost:14824\\/garage-rag\"}"),
+            "{\"database_url\":\"postgresql+psycopg:\\/\\/garage:<redacted>@localhost:14824\\/garage-rag\"}"
+        )
+    }
+
+    func testRedactsPrefixedAndJSONSecrets() {
+        XCTAssertEqual(redactor.redact("PGPASSWORD=hunter2 psql"), "PGPASSWORD=<redacted> psql")
+        XCTAssertEqual(redactor.redact("LMSTUDIO_API_KEY=abc123"), "LMSTUDIO_API_KEY=<redacted>")
+        XCTAssertEqual(redactor.redact("{\"password\": \"hunter2\", \"n\": 1}"), "{\"password=<redacted>, \"n\": 1}")
+        XCTAssertEqual(redactor.redact("\"lmstudio_api_token\":\"tok123\""), "\"lmstudio_api_token=<redacted>")
+        // Counts and limits named after tokens are not secrets.
+        XCTAssertEqual(redactor.redact("max_tokens=512"), "max_tokens=512")
+    }
+
+    func testRedactsBearerAndBasicCredentials() {
+        XCTAssertFalse(redactor.redact("Authorization: Bearer sk-abcdef123456").contains("sk-abcdef123456"))
+        XCTAssertFalse(redactor.redact("Authorization: Basic Z2FyYWdlOmh1bnRlcjI=").contains("Z2FyYWdlOmh1bnRlcjI="))
+        XCTAssertEqual(redactor.redact("basic search mode"), "basic search mode")
+    }
+
     func testRedactsBareUserName() {
         XCTAssertEqual(redactor.redact("ingest failed for testuser"), "ingest failed for <user>")
     }

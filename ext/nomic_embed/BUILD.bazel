@@ -8,13 +8,23 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# known_answers.json is not committed yet: the known-answers workflow (.github/workflows/
+# known-answers.yaml) produces it as its known-answers-macos-cpu artifact, or run
+# tools/llama/gen_known_answers.sh on an Apple silicon Mac. A filegroup naming a missing file would
+# fail every `aspect test //...` on a clean checkout, so this one globs: it is empty until the file
+# is committed, and LlamaXPCService's self-test and LlamaEngineTests skip their comparison until then.
+# TODO: once known_answers.json is committed, name it directly (srcs = ["known_answers.json"]) so a
+# deleted reference fails the build instead of silently skipping.
 filegroup(
     name = "known_answers",
-    srcs = ["known_answers.json"],
+    srcs = glob(
+        ["known_answers.json"],
+        allow_empty = True,
+    ),
     visibility = ["//visibility:public"],
 )
 
-# The pins, read by garage_python/tests/test_llama_known_answers.py to check the known answers
+# The pins, read by tools/llama/known_answers.py to check the known answers
 # name this model and llama.cpp.
 exports_files(
     [

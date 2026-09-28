@@ -322,4 +322,18 @@ public enum GarageAppLaunch {
     /// `--data-directory <path>`: run on this data folder instead of the real one, with no migration,
     /// no link and a separate Keychain item. For UI tests, which reset the database.
     public static let dataDirectoryArgument = "--data-directory"
+
+    /// `--appearance light|dark`: draw the app in this appearance whatever the system's is. For the
+    /// App Store screenshot tests, which shoot every page in both.
+    public static let appearanceArgument = "--appearance"
+
+    /// `--window-size <width>x<height>`: open the main window at this frame size in points, title bar
+    /// included, at the top left of its screen. For the App Store screenshot tests, which need an exact
+    /// store size and cannot count on dragging the window's corner.
+    public static let windowSizeArgument = "--window-size"
+
+    /// Posted by `garage quit` as a distributed notification: every running Garage quits as its Quit
+    /// menu item would. A notification rather than an Apple event, which the sandboxed App Store
+    /// launcher may not send and which would ask for Automation consent.
+    public static let quitNotification = "me.rickmark.garage-rag.quit"
 }

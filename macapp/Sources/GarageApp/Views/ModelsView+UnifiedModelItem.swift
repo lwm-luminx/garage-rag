@@ -1,6 +1,5 @@
 import SwiftUI
 import LlamaClient
-import ModelDownloadClient
 
 extension ModelsView {
     // MARK: - Unified Model Item
@@ -17,7 +16,6 @@ extension ModelsView {
         let downloadModelId: String?
         let downloadFile: String?
         let sha256: String?
-        let catalogItem: ModelCatalogItem?
         let registeredModel: RegisteredModel?
         let presetEntry: ModelPresetEntry?
 
@@ -38,18 +36,18 @@ extension ModelsView {
                !downloadModelId.isEmpty, !downloadFile.isEmpty {
                 return "https://huggingface.co/\(downloadModelId)/resolve/main/\(downloadFile)"
             }
-            return catalogItem?.downloadUrl
+            return nil
         }
 
         var effectiveFilename: String? {
             if let downloadFile = downloadFile, !downloadFile.isEmpty {
                 return downloadFile
             }
-            return catalogItem?.filename
+            return nil
         }
 
         var effectiveSha256: String? {
-            sha256 ?? presetEntry?.sha256 ?? catalogItem?.sha256
+            sha256 ?? presetEntry?.sha256
         }
     }
 
@@ -61,7 +59,6 @@ extension ModelsView {
         for reg in appState.registeredModels {
             let prov = ModelProvider.from(string: reg.provider)
             let preset = appState.presetModels.first { $0.slug == reg.slug || $0.modelId == reg.modelRef }
-            let catItem = ModelPresetCatalog.item(forModelIdOrSlug: reg.slug) ?? (preset != nil ? ModelPresetCatalog.item(forModelIdOrSlug: preset!.slug) : nil)
             items.append(
                 UnifiedModelItem(
                     name: preset?.name ?? reg.slug,
@@ -74,8 +71,7 @@ extension ModelsView {
                     isDefault: reg.isDefault,
                     downloadModelId: preset?.downloadModelId,
                     downloadFile: preset?.downloadFile,
-                    sha256: preset?.sha256 ?? catItem?.sha256,
-                    catalogItem: catItem,
+                    sha256: preset?.sha256,
                     registeredModel: reg,
                     presetEntry: preset
                 )
@@ -99,6 +95,7 @@ extension ModelsView {
             $0.name.lowercased().contains(trimmed) ||
             $0.slug.lowercased().contains(trimmed) ||
             $0.provider.displayName.lowercased().contains(trimmed) ||
+            $0.provider.rawValue.lowercased().contains(trimmed) ||
             $0.modelRef.lowercased().contains(trimmed)
         }
     }
@@ -120,7 +117,7 @@ extension ModelsView {
 // MARK: - UnifiedModelItem from a preset
 extension ModelsView.UnifiedModelItem {
     /// Wraps a `models.json` preset that has no database registration (e.g. a
-    /// `fact_distil` entry) so the download / load helpers can treat it like a row.
+    /// `inference_models` entry) so the download / load helpers can treat it like a row.
     /// Declared in an extension to keep the struct's memberwise initializer.
     init(preset: ModelPresetEntry) {
         self.init(
@@ -135,7 +132,6 @@ extension ModelsView.UnifiedModelItem {
             downloadModelId: preset.downloadModelId,
             downloadFile: preset.downloadFile,
             sha256: preset.sha256,
-            catalogItem: ModelPresetCatalog.item(forModelIdOrSlug: preset.slug),
             registeredModel: nil,
             presetEntry: preset
         )

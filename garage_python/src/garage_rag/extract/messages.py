@@ -16,8 +16,19 @@ What is read, and what is left out:
   messages have no text of their own and are skipped. A chat left with no text
   at all yields no conversation.
 * **People.** Participants are the chat's handles (phone numbers and email
-  addresses) as Messages stores them. Contact names live in the Address Book,
-  which this reader does not open.
+  addresses) as Messages stores them; ``chat.db`` has no names for them apart
+  from a group's own ``display_name``. The ingest can attach names from
+  elsewhere (:mod:`garage_rag.extract.contact_names`) through
+  :attr:`Conversation.names`; this reader does not look them up.
+* **Orphans.** A chat's messages are its ``chat_message_join`` rows plus the
+  messages no ``chat_message_join`` row names at all, which older macOS and
+  iCloud sync leave behind by the thousand. An orphan with a ``handle_id``
+  belongs to the one-to-one chat for that address: a chat that is not a group
+  and has exactly one ``chat_handle_join`` handle with the same ``handle.id``
+  (handle rows are per address *and* service, so the match is on the address).
+  With several such chats, the one joined to the message's own handle row wins,
+  then the lowest ROWID. An orphan with no handle, or whose address has no
+  one-to-one chat, is skipped and counted (:class:`OrphanStats`).
 
 The database is opened read-only, and never written: Messages holds it open
 while it runs.
@@ -37,8 +48,18 @@ from pathlib import Path
 log = logging.getLogger(__name__)
 
 EXTRACTOR_NAME = "messages"
-# Bump when the rendered text changes, so every conversation's chunks are rebuilt.
-EXTRACTOR_VERSION = "1"
+# Bump when what is read or how it is rendered changes, so every conversation is rebuilt
+# (it is part of the chunker signature, :func:`garage_rag.ingest.conversations.signature`).
+# 2: orphan messages join their one-to-one chat; chunks carry direction and sender.
+EXTRACTOR_VERSION = "2"
+
+# chunks.direction (014_chunk_direction.sql), and chunks.sender for the owner's own messages.
+SENT = "sent"
+RECEIVED = "received"
+SELF_SENDER = "me"
+
+# chat.style for a group chat, even one down to a single other member.
+_GROUP_STYLE = 43
 
 # chat.db always carries these tables together; no other known database does.
 SIGNATURE_TABLES = frozenset({"chat", "message", "handle", "chat_message_join"})
@@ -66,6 +87,16 @@ class ChatMessage:
     sender: str | None
     text: str
 
+    @property
+    def direction(self) -> str:
+        """``sent`` when the owner wrote it, else ``received`` (``chunks.direction``)."""
+        return SENT if self.is_from_me else RECEIVED
+
+    @property
+    def sender_id(self) -> str | None:
+        """``chunks.sender``: ``me``, the sender's handle, or None when chat.db does not say."""
+        return SELF_SENDER if self.is_from_me else self.sender
+
 
 @dataclass
 class Conversation:
@@ -77,6 +108,12 @@ class Conversation:
     service: str
     participants: list[str] = field(default_factory=list)
     messages: list[ChatMessage] = field(default_factory=list)
+    # Names for some of the handles above, when the ingest was given any.
+    names: dict[str, str] = field(default_factory=dict)
+
+    def label(self, handle: str) -> str:
+        """A handle's name when one is known, else the handle itself."""
+        return self.names.get(handle) or handle
 
     @property
     def is_group(self) -> bool:
@@ -87,12 +124,27 @@ class Conversation:
         if self.display_name:
             return self.display_name
         if self.participants:
-            return ", ".join(self.participants)
+            return ", ".join(self.label(handle) for handle in self.participants)
         return self.chat_identifier or self.guid
 
     @property
     def last_message_at(self) -> datetime | None:
         return self.messages[-1].sent_at if self.messages else None
+
+
+@dataclass
+class OrphanStats:
+    """What became of the messages in no ``chat_message_join`` row, for one database."""
+
+    attached: int = 0
+    # No handle_id, so no address to find a chat by.
+    no_handle: int = 0
+    # An address with no one-to-one chat.
+    no_chat: int = 0
+
+    @property
+    def skipped(self) -> int:
+        return self.no_handle + self.no_chat
 
 
 def apple_time(value: int | float | None) -> datetime | None:
@@ -215,8 +267,55 @@ def is_messages_database(path: Path) -> bool:
     return messages_database_status(path) is True
 
 
-def read_conversations(path: Path) -> Iterator[Conversation]:
+def _one_to_one_chats(
+    conn: sqlite3.Connection, tables: set[str], chat_columns: set[str]
+) -> dict[str, list[tuple[int, int]]]:
+    """Address -> ``(handle ROWID, chat ROWID)`` for every non-group chat with exactly one handle."""
+    if "chat_handle_join" not in tables:
+        return {}
+    not_group = f" WHERE COALESCE(c.style, 0) <> {_GROUP_STYLE}" if "style" in chat_columns else ""
+    solo: dict[str, list[tuple[int, int]]] = {}
+    for chat_id, handle_rowid, address in conn.execute(
+        "SELECT s.chat_id, s.handle_id, h.id FROM ("
+        " SELECT chj.chat_id AS chat_id, min(chj.handle_id) AS handle_id"
+        f" FROM chat_handle_join AS chj JOIN chat AS c ON c.ROWID = chj.chat_id{not_group}"
+        " GROUP BY chj.chat_id HAVING count(*) = 1"
+        ") AS s JOIN handle AS h ON h.ROWID = s.handle_id"
+    ):
+        if address:
+            solo.setdefault(address, []).append((handle_rowid, chat_id))
+    return solo
+
+
+def _assign_orphans(
+    rows: list[tuple],
+    solo: dict[str, list[tuple[int, int]]],
+    handles: dict[int, str],
+    stats: OrphanStats,
+) -> dict[int, list[tuple]]:
+    """Chat ROWID -> the orphan message rows that belong to it (see the module docstring)."""
+    by_chat: dict[int, list[tuple]] = {}
+    for row in rows:
+        handle_rowid = row[4]
+        address = handles.get(handle_rowid) if handle_rowid else None
+        if not address:
+            stats.no_handle += 1
+            continue
+        candidates = solo.get(address)
+        if not candidates:
+            stats.no_chat += 1
+            continue
+        _handle, chat_id = min(candidates, key=lambda c: (c[0] != handle_rowid, c[1]))
+        by_chat.setdefault(chat_id, []).append(row)
+        stats.attached += 1
+    return by_chat
+
+
+def read_conversations(path: Path, stats: OrphanStats | None = None) -> Iterator[Conversation]:
     """Every chat in the database that has at least one message with text.
+
+    ``stats``, when given, is filled in with what became of the orphan messages
+    (before the first conversation is yielded).
 
     Raises :class:`sqlite3.Error` when the file is not a readable Messages database.
     """
@@ -256,11 +355,23 @@ def read_conversations(path: Path) -> Iterator[Conversation]:
         if "item_type" in message_columns:
             filters.append("COALESCE(m.item_type, 0) = 0")
         where = " AND ".join(["cmj.chat_id = ?", *filters])
-        message_sql = (
+        select = (
             f"SELECT m.ROWID, m.guid, m.text, {col(message_columns, 'attributedBody', 'NULL')}, "
             f"m.handle_id, m.date, m.is_from_me "
-            "FROM chat_message_join AS cmj JOIN message AS m ON m.ROWID = cmj.message_id "
-            f"WHERE {where} ORDER BY m.date, m.ROWID"
+        )
+        message_sql = (
+            f"{select}FROM chat_message_join AS cmj JOIN message AS m ON m.ROWID = cmj.message_id WHERE {where}"
+        )
+        orphan_sql = (
+            f"{select}FROM message AS m "
+            "WHERE NOT EXISTS (SELECT 1 FROM chat_message_join AS j WHERE j.message_id = m.ROWID)"
+            + "".join(f" AND {f}" for f in filters)
+        )
+        orphans = _assign_orphans(
+            conn.execute(orphan_sql).fetchall(),
+            _one_to_one_chats(conn, tables, chat_columns),
+            handles,
+            stats if stats is not None else OrphanStats(),
         )
 
         for chat_rowid, guid, identifier, display_name, service in chats:
@@ -276,9 +387,10 @@ def read_conversations(path: Path) -> Iterator[Conversation]:
                 service=service or "",
                 participants=members,
             )
-            for rowid, message_guid, text, attributed, handle_id, date, is_from_me in conn.execute(
-                message_sql, (chat_rowid,)
-            ):
+            rows = conn.execute(message_sql, (chat_rowid,)).fetchall() + orphans.get(chat_rowid, [])
+            # ORDER BY m.date, m.ROWID, with NULL dates first as SQLite sorts them.
+            rows.sort(key=lambda r: (r[5] is not None, r[5] or 0, r[0]))
+            for rowid, message_guid, text, attributed, handle_id, date, is_from_me in rows:
                 body = clean_text(text) or clean_text(decode_attributed_body(attributed))
                 sent_at = apple_time(date)
                 if not body or sent_at is None:
@@ -308,8 +420,12 @@ def read_conversations(path: Path) -> Iterator[Conversation]:
 __all__ = [
     "EXTRACTOR_NAME",
     "EXTRACTOR_VERSION",
+    "RECEIVED",
+    "SELF_SENDER",
+    "SENT",
     "ChatMessage",
     "Conversation",
+    "OrphanStats",
     "apple_time",
     "clean_text",
     "decode_attributed_body",

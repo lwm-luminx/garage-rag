@@ -85,7 +85,8 @@ final class GarageDataMigrationTests: XCTestCase {
         try write("pgdata/postmaster.pid", in: legacy, "\(getpid())\n\(legacy.path)/pgdata\n")
         try write("models/model.gguf", in: legacy)
 
-        let outcome = GarageDataMigration.migrate(from: legacy, to: shared)
+        // No test process is a postgres, so stand one in for the check.
+        let outcome = GarageDataMigration.migrate(from: legacy, to: shared, isPostmaster: { $0 == getpid() })
 
         XCTAssertEqual(outcome.moved, ["models"])
         XCTAssertNotNil(outcome.skipped["pgdata"])
@@ -105,6 +106,18 @@ final class GarageDataMigrationTests: XCTestCase {
 
         XCTAssertEqual(outcome.moved, ["pgdata"])
         XCTAssertFalse(GarageDataMigration.hasUnmigratedCluster(legacy: legacy, shared: shared))
+    }
+
+    func testAPidFileNamingAnotherLiveProcessDoesNotBlockTheMove() throws {
+        // After a reboot the stale file's pid can belong to any process; this test's own is alive
+        // and is not a postgres.
+        try write("pgdata/PG_VERSION", in: legacy, "18")
+        try write("pgdata/postmaster.pid", in: legacy, "\(getpid())\n\(legacy.path)/pgdata\n")
+
+        let outcome = GarageDataMigration.migrate(from: legacy, to: shared)
+
+        XCTAssertEqual(outcome.moved, ["pgdata"])
+        XCTAssertFalse(GarageDataMigration.isPostgresProcess(getpid()))
     }
 
     func testNothingToDoWithoutAnOldFolder() throws {

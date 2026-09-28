@@ -1,4 +1,5 @@
 import AppKit
+import PythonXPCService
 import SwiftUI
 
 /// The main window's size follows what it shows. The setup assistant opens at `assistantSize`, also
@@ -56,6 +57,48 @@ enum MainWindowSizing {
               let frame = frameForFirstRun(current: window.frame, visible: visible, target: target)
         else { return }
         window.setFrame(frame, display: animate, animate: animate)
+    }
+
+    /// The frame size `--window-size <width>x<height>` asks for (see `GarageAppLaunch`), or nil.
+    static func requestedSize(in arguments: [String] = CommandLine.arguments) -> NSSize? {
+        guard let index = arguments.firstIndex(of: GarageAppLaunch.windowSizeArgument),
+              arguments.indices.contains(index + 1) else { return nil }
+        let parts = arguments[index + 1].lowercased().split(separator: "x")
+        guard parts.count == 2, let width = Double(parts[0]), let height = Double(parts[1]),
+              width > 0, height > 0 else { return nil }
+        return NSSize(width: width, height: height)
+    }
+
+    /// Puts the window at `size` (a frame size) at the top left of its screen's visible frame, when
+    /// the launch asked for one. Not while the setup assistant shows, which has a fixed size. The
+    /// window may reach below the visible frame (behind the Dock): the store screenshots want exactly
+    /// 1440 × 900 points, and a 1512 × 982 display with the Dock showing leaves 893.
+    @MainActor
+    static func applyRequestedSize(_ window: NSWindow) {
+        guard let size = requestedSize(),
+              !window.styleMask.contains(.fullScreen),
+              let visible = (window.screen ?? NSScreen.main)?.visibleFrame
+        else { return }
+        allowFramesBeyondVisibleFrame()
+        let frame = NSRect(x: visible.minX, y: visible.maxY - size.height, width: size.width, height: size.height)
+        guard frame != window.frame else { return }
+        window.setFrame(frame, display: true, animate: false)
+    }
+
+    @MainActor private static var framesAllowedBeyondVisibleFrame = false
+
+    /// AppKit fits a titled window into its screen's visible frame whenever it is shown or its frame
+    /// set (`constrainFrameRect(_:to:)`), and SwiftUI owns the window's class, so no subclass can
+    /// override that. Only for a launch with `--window-size`, a UI test's: every window's frame is
+    /// then taken as given.
+    @MainActor
+    private static func allowFramesBeyondVisibleFrame() {
+        guard !framesAllowedBeyondVisibleFrame,
+              let method = class_getInstanceMethod(NSWindow.self, #selector(NSWindow.constrainFrameRect(_:to:)))
+        else { return }
+        framesAllowedBeyondVisibleFrame = true
+        let unconstrained: @convention(block) (NSWindow, NSRect, NSScreen?) -> NSRect = { _, frame, _ in frame }
+        method_setImplementation(method, imp_implementationWithBlock(unconstrained))
     }
 
     private static func centred(width: CGFloat, height: CGFloat, around current: NSRect, in visible: NSRect) -> NSRect {

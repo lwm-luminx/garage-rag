@@ -72,11 +72,17 @@ final class AppState: ObservableObject {
     @Published var autoStartPostgres = true
     @Published private(set) var lmStudioTokenConfigured = false
     @Published private(set) var presetModels: [ModelPresetEntry] = []
-    /// Generative presets (models.json `fact_distil`) offered for fact distillation / `rag_ask`.
+    /// Every generative preset (models.json `inference_models`), for chat, `rag_ask` and distillation.
+    @Published private(set) var inferencePresets: [ModelPresetEntry] = []
+    /// The inference presets tagged for fact distillation, which the setup assistant offers.
     @Published private(set) var factDistilPresets: [ModelPresetEntry] = []
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
     @Published private(set) var factsProvider: String = GarageConfigLoader.defaultFactsProvider
+    /// The `inference` section: the chat model `rag_ask` / `rag_generate` use. nil follows the
+    /// distillation model, which is how a fresh install (the setup assistant asks only for that) runs.
+    @Published private(set) var inferenceModel: String?
+    @Published private(set) var inferenceProvider: String?
     /// The effective fact-extraction prompts (`ListFactPrompts`): the built-in default and `facts.prompts`.
     @Published private(set) var factPrompts: [FactPromptItem] = []
     /// `facts.prompts` as configured, a JSON array; edits are applied to it and written back whole.
@@ -148,6 +154,13 @@ final class AppState: ObservableObject {
     private var commandInProgress = false
     /// True from the moment "Reset Database" starts stopping services until this instance quits.
     @Published private(set) var isResettingDatabase = false
+    /// How the second half of a reset went (`finishDatabaseReset`), for the Database page. Kept apart
+    /// from `lastCommandOutput`, which the next operation overwrites and no page shows any more.
+    @Published private(set) var databaseResetOutcome: (succeeded: Bool, message: String)?
+    /// `finishDatabaseReset` is running: the Database page says so until `databaseResetOutcome`
+    /// arrives, since after "Skip setup" that second half starts from scratch (cluster, schema,
+    /// services) and can take a minute on a busy Mac.
+    @Published private(set) var isFinishingDatabaseReset = false
     private var hasLaunched = false
     private var hasTerminated = false
     /// Set once "Reset Database" has asked a new instance to start. From then on this instance's
@@ -156,6 +169,11 @@ final class AppState: ObservableObject {
     private(set) var hasHandedOffToRelaunch = false
     private var scheduledMaintenanceTask: Task<Void, Never>?
     private var pendingMaintenanceTask: Task<Void, Never>?
+    /// `startBackend`'s hand-over of the database URL and the backend's address to the helpers,
+    /// which the launch run of automatic updates waits for: until the ingest and embed helpers
+    /// have taken their configuration, a scan started at launch fails against helpers that have
+    /// no database yet.
+    private var helperConfigurationTask: Task<Void, Never>?
     private var queuedSourceScanTask: Task<Void, Never>?
     /// Maintenance came due while the setup assistant was open; run it when it closes.
     private(set) var isMaintenanceDeferredForFirstRun = false
@@ -165,6 +183,8 @@ final class AppState: ObservableObject {
     @Published private(set) var isUpdatingEverything = false
 
     convenience init() {
+        // Before anything below connects to the services the sandboxed app hosts itself.
+        InProcessServiceHost.startIfSandboxed()
         self.init(llama: LlamaService(), volumeAccess: VolumeAccessService(), modelDownload: ModelDownloadService())
     }
 
@@ -186,8 +206,9 @@ final class AppState: ObservableObject {
         scanner = OperationRunner(label: "garage scan")
         let grpcService = GarageGRPCService(postgres: postgres)
         let mcpService = GarageMCPService(postgres: postgres)
-        // Client registration (McpInstall) goes over gRPC.
+        // Client registration (McpInstall) goes over gRPC, to a service that writes only what it was granted.
         mcpService.grpc = grpcService
+        mcpService.folderAccess = self.volumeAccess.folderAccess
         mcp = mcpService
         grpc = grpcService
 
@@ -282,9 +303,17 @@ final class AppState: ObservableObject {
         // Before anything reads the data folder's contents or starts Postgres / an XPC service.
         GarageDataMigration.runAtLaunch()
         fetchPresetModels()
-        Task {
-            if await ModelCatalog.refresh() {
-                fetchPresetModels()
+        // UI tests turn this off, so the page shows the bundled catalog of the build under test
+        // rather than whatever the website serves.
+        // `bool(forKey:)` because a launch argument's "NO" arrives as a string, which `as? Bool` misses.
+        let defaults = UserDefaults.standard
+        let refreshesCatalog = defaults.object(forKey: ModelCatalog.refreshAtLaunchDefaultsKey) == nil
+            || defaults.bool(forKey: ModelCatalog.refreshAtLaunchDefaultsKey)
+        if refreshesCatalog {
+            Task {
+                if await ModelCatalog.refresh() {
+                    fetchPresetModels()
+                }
             }
         }
         volumeAccess.restoreAndVerifyAccess()
@@ -307,6 +336,17 @@ final class AppState: ObservableObject {
         Task { await startPostgres() }
     }
 
+    /// Starts the gRPC backend and, once it listens, hands the ingest, embed and MCP helpers the
+    /// database URL and its address (`XPCServiceManager.configureHelpers`), off this task so the
+    /// pages fill without waiting on the helpers' self tests.
+    func startBackend() async {
+        try? await grpc.start()
+        guard grpc.status == .running, let options = try? grpc.helperConfiguration() else { return }
+        helperConfigurationTask = Task { [xpcServices] in
+            await xpcServices.configureHelpers(options)
+        }
+    }
+
     func startPostgres() async {
         do {
             try await postgres.start()
@@ -320,8 +360,8 @@ final class AppState: ObservableObject {
             }
             if postgres.status == .running {
                 // Each daemon starts independently: an MCP failure must not keep the gRPC backend down.
-                try? await mcp.start()
-                try? await grpc.start()
+                try? await mcp.startIfEnabled()
+                await startBackend()
             }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -334,7 +374,8 @@ final class AppState: ObservableObject {
 
     func fetchPresetModels() {
         self.presetModels = GarageConfigLoader.loadModelPresets()
-        self.factDistilPresets = GarageConfigLoader.loadFactDistilPresets()
+        self.inferencePresets = GarageConfigLoader.loadInferencePresets()
+        self.factDistilPresets = inferencePresets.filter(\.isForDistillation)
         fetchFactsSettings()
     }
 
@@ -343,6 +384,25 @@ final class AppState: ObservableObject {
         let facts = GarageConfigLoader.loadFactsSettings()
         self.factsModel = facts.model
         self.factsProvider = facts.provider
+        let inference = GarageConfigLoader.loadInferenceSettings()
+        self.inferenceModel = inference.model
+        self.inferenceProvider = inference.provider
+    }
+
+    /// The model that answers chat: `inference.model`, else the distillation model.
+    var effectiveInferenceModel: String { inferenceModel ?? factsModel }
+
+    /// Points `rag_ask` / `rag_generate` at a model, or with nil clears `inference.*` so chat
+    /// follows the distillation model again.
+    @discardableResult
+    func setInferenceModel(_ slug: String?, provider: String = GarageConfigLoader.defaultFactsProvider) async -> Bool {
+        let succeeded = await runOperation { grpc in
+            let model = try await grpc.setSetting("inference.model", to: slug ?? "")
+            let chosen = try await grpc.setSetting("inference.provider", to: slug == nil ? "" : provider)
+            return [model.summary, chosen.summary].joined(separator: "\n")
+        }
+        fetchFactsSettings()
+        return succeeded
     }
 
     /// Points `enrich-facts` / `rag_ask` at a model: sets `facts.model`, then `facts.provider`.
@@ -597,17 +657,27 @@ final class AppState: ObservableObject {
     /// Second half of a reset, once Postgres has initialized a new cluster: apply the schema,
     /// start the gRPC and MCP services, and register the sources garage.json declares again.
     /// The setup assistant runs it from its first page after a reset, or in the background
-    /// when the user skips the assistant before that page gets this far.
-    func finishDatabaseReset() async {
+    /// when the user skips the assistant before that page gets this far; that path passes
+    /// `startingPostgres`, so the cluster's creation, the slowest stage, also counts as the
+    /// reset in progress on the Database page.
+    func finishDatabaseReset(startingPostgres: Bool = false) async {
+        isFinishingDatabaseReset = true
+        defer { isFinishingDatabaseReset = false }
+        if startingPostgres { await startPostgres() }
+        // "Skip setup" can land here while the assistant's first start is still initializing the
+        // cluster or applying the schema: wait for that to finish rather than calling the reset failed.
+        await waitForPostgresToSettle()
         do {
             if postgres.status == .needsMigration {
+                isApplyingMigrations = true
+                defer { isApplyingMigrations = false }
                 try await postgres.applyMigrations()
             }
             guard postgres.status == .running else {
                 throw PostgresError.other("Postgres did not start with the new database; see the Database page.")
             }
-            try? await grpc.start()
-            try? await mcp.start()
+            await startBackend()
+            try? await mcp.startIfEnabled()
             let synced = await runOperation { try await $0.syncSources().message }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -621,7 +691,21 @@ final class AppState: ObservableObject {
             lastCommandSucceeded = false
             lastCommandOutput = "Database reset: the new database could not be set up: \(error.localizedDescription)"
         }
+        databaseResetOutcome = (lastCommandSucceeded == true, lastCommandOutput)
     }
+
+    /// Polls, as the setup assistant's readiness loop does, until Postgres is no longer starting and
+    /// no migration run is in flight, for at most `timeout` seconds.
+    private func waitForPostgresToSettle(timeout: TimeInterval = 150) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !Task.isCancelled, postgres.status == .starting || isApplyingMigrations, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+    }
+
+    /// What the Database page shows while `finishDatabaseReset` runs.
+    static let databaseResetInProgressMessage =
+        "Finishing the database reset: creating the database, applying the schema and starting the services…"
 
     nonisolated static func databaseResetMessage(registeredSourceCount: Int) -> String {
         let sources = switch registeredSourceCount {
@@ -634,6 +718,8 @@ final class AppState: ObservableObject {
     }
 
     func applyMigrations() async {
+        // One run at a time: startPostgres, the setup assistant and the Database page can each ask.
+        guard !isApplyingMigrations else { return }
         guard postgres.status == .running || postgres.status == .needsMigration else { return }
         isApplyingMigrations = true
         defer { isApplyingMigrations = false }
@@ -644,10 +730,10 @@ final class AppState: ObservableObject {
             await fetchCorpusStats()
             if postgres.status == .running {
                 if mcp.status == .stopped {
-                    try? await mcp.start()
+                    try? await mcp.startIfEnabled()
                 }
                 if grpc.status == .stopped {
-                    try? await grpc.start()
+                    await startBackend()
                 }
             }
             lastCommandSucceeded = true
@@ -663,10 +749,10 @@ final class AppState: ObservableObject {
             await postgres.refreshPendingMigrations()
             guard postgres.status == .running else { return }
             if mcp.status == .stopped {
-                try? await mcp.start()
+                try? await mcp.startIfEnabled()
             }
             if grpc.status == .stopped {
-                try? await grpc.start()
+                await startBackend()
             }
         }
     }
@@ -795,6 +881,17 @@ final class AppState: ObservableObject {
 
     func openPrivacySettings(for category: TCCPermissionCategory = .fullDiskAccess) {
         volumeAccess.openPrivacySettings(for: category)
+    }
+
+    /// The App Store build's one grant for the usual sources: the home folder.
+    @discardableResult
+    func promptAndSelectHomeFolder() -> URL? {
+        let url = volumeAccess.promptForHomeFolderSelection()
+        if let url {
+            lastCommandSucceeded = true
+            lastCommandOutput = "Granted folder access for: \(url.path)"
+        }
+        return url
     }
 
     @discardableResult
@@ -938,6 +1035,20 @@ final class AppState: ObservableObject {
         }
 
         return result.succeeded
+    }
+
+    /// Scan & Ingest of one source. The source waits in `ingestQueue` from the start of its scan until its
+    /// ingest ends, so there is no moment between the scan and the ingest with nothing running: the page
+    /// keeps its Stop button, and Stop (or the row's Cancel) in that hand-over takes the source out of the
+    /// queue, so the ingest never starts.
+    @discardableResult
+    func scanAndIngestSource(slug: String, options: IngestOptions = .default) async -> Bool {
+        guard !ingestQueue.contains(slug) else { return false }
+        ingestQueue.append(slug)
+        defer { ingestQueue.removeAll { $0 == slug } }
+        guard await scanSources(source: slug, includeCode: options.includeCode) else { return false }
+        guard ingestQueue.contains(slug), !isCancellingAll else { return false }
+        return await ingestSource(slug: slug, options: options)
     }
 
     /// Runs ingestion through the configured execution mode (XPC helper or CLI) streaming real-time progress.
@@ -1104,17 +1215,17 @@ final class AppState: ObservableObject {
         case "Embedding", "Backfill", "Embed":
             backfill.clearLogs()
             osLogStreamService.clearLogs(for: .embed)
-        case "Enrich Facts", "garage enrich-facts":
+        case "Glean Facts", "Enrich Facts", "garage enrich-facts":
             enrichFacts.clearLogs()
         case "Scan", "garage scan":
             scanner.clearLogs()
         case "MCP Server":
             mcp.clearLogs()
             osLogStreamService.clearLogs(for: .mcp)
-        case "gRPC Server":
+        case "Index Manager", "gRPC Server":
             grpc.clearLogs()
             osLogStreamService.clearLogs(for: .grpc)
-        case "Llama Service", "Llama XPC", "LLaMa":
+        case "Built-in Engine", "Llama Service", "Llama XPC", "LLaMa":
             llama.clearLogs()
             osLogStreamService.clearLogs(for: .llama)
         case "Model Downloader", "Model Download XPC", "Downloader":
@@ -1294,7 +1405,7 @@ final class AppState: ObservableObject {
     /// A scan, ingest, queued source scan or maintenance run is under way: what `cancelAll()` stops.
     var hasCancellableWork: Bool {
         isScanning || scanningSource != nil || isIngesting || isIngestingAll || isMaintenanceRunning
-            || !sourcesAwaitingScan.isEmpty || queuedSourceScanTask != nil
+            || !sourcesAwaitingScan.isEmpty || !ingestQueue.isEmpty || queuedSourceScanTask != nil
     }
 
     /// Stops everything: empties the queues (the sources an ingest of every source has yet to reach, and
@@ -1453,15 +1564,22 @@ final class AppState: ObservableObject {
         lastCommandSucceeded = ingestSucceeded && backfillSucceeded && factsSucceeded
     }
 
-    /// The "also run when Garage starts" option: once per launch, after the database is up and the
-    /// gRPC backend the scan goes through is listening. The setup assistant, when it is open, holds
-    /// the run until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
+    /// The "also run when Garage starts" option: once per launch, after every system is go: the
+    /// database is up, the gRPC backend the scan goes through is listening, and the helpers have
+    /// taken the database URL and the backend's address (`startBackend`), since a run kicked off
+    /// before that fails in the ingest helper. The setup assistant, when it is open, holds the run
+    /// until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
     /// garage.json registers right after start shares the run rather than starting its own.
     func runMaintenanceAtLaunchIfEnabled() {
         guard maintenanceAtLaunchPending, postgres.status == .running else { return }
         maintenanceAtLaunchPending = false
         guard scheduledMaintenanceEnabled, maintenanceRunsAtLaunch else { return }
-        scheduleDebouncedMaintenanceTrigger()
+        let configured = helperConfigurationTask
+        Task { [weak self] in
+            await configured?.value
+            guard let self, self.postgres.status == .running, self.grpc.status == .running else { return }
+            self.scheduleDebouncedMaintenanceTrigger()
+        }
     }
 
     /// Kicks off ingest + embedding backfill for all sources when the user has enabled

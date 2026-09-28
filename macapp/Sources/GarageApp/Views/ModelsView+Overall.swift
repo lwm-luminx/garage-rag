@@ -18,7 +18,19 @@ extension ModelsView {
     var embeddingHeadline: OverallHeadline {
         let stats = appState.corpusStats
         let count = unifiedModels.count
-        if count == 0 {
+        let models = "\(count) model\(count == 1 ? "" : "s")"
+        let missingFiles = unifiedModels.filter { $0.provider == .llamaXPC && !isModelFileDownloaded(item: $0) && getActiveDownloadTask(item: $0) == nil }
+        let (required, missing) = embeddingsRequiredAndMissing
+        let fraction = required > 0 ? Double(max(0, required - missing)) / Double(required) : 0
+        let kind = ModelsPresentation.embeddingHeadlineKind(
+            modelCount: count,
+            missingFileNames: missingFiles.map(\.name),
+            totalChunks: stats.totalChunks,
+            missing: missing,
+            backfillRunning: appState.backfill.isRunning
+        )
+        switch kind {
+        case .noModel:
             return OverallHeadline(
                 symbol: "circle.hexagongrid",
                 tint: .orange,
@@ -26,20 +38,15 @@ extension ModelsView {
                 title: "No embedding model",
                 detail: "Search needs one. Add a recommended model on the Embedding tab."
             )
-        }
-        let models = "\(count) model\(count == 1 ? "" : "s")"
-        let missingFiles = unifiedModels.filter { $0.provider == .llamaXPC && !isModelFileDownloaded(item: $0) && getActiveDownloadTask(item: $0) == nil }
-        if !missingFiles.isEmpty {
-            let names = missingFiles.map(\.name).joined(separator: ", ")
+        case .filesMissing(let names):
             return OverallHeadline(
                 symbol: "arrow.down",
                 tint: .orange,
                 isActive: false,
                 title: "Model file missing",
-                detail: "\(names) \(missingFiles.count == 1 ? "is" : "are") not downloaded, so nothing can be embedded with \(missingFiles.count == 1 ? "it" : "them")."
+                detail: "\(names.joined(separator: ", ")) \(names.count == 1 ? "is" : "are") not downloaded, so nothing can be embedded with \(names.count == 1 ? "it" : "them")."
             )
-        }
-        if stats.totalChunks == 0 {
+        case .waitingForIngest:
             return OverallHeadline(
                 symbol: "circle.hexagongrid",
                 tint: .secondary,
@@ -47,10 +54,7 @@ extension ModelsView {
                 title: "Waiting for ingest",
                 detail: "\(models) registered; there are no chunks to embed until a source is ingested."
             )
-        }
-        let (required, missing) = embeddingsRequiredAndMissing
-        let fraction = required > 0 ? Double(max(0, required - missing)) / Double(required) : 0
-        if missing == 0 {
+        case .ready:
             return OverallHeadline(
                 symbol: "checkmark",
                 tint: .green,
@@ -58,8 +62,7 @@ extension ModelsView {
                 title: "Search ready",
                 detail: "\(stats.totalChunks.formatted()) chunks embedded under \(models)."
             )
-        }
-        if appState.backfill.isRunning {
+        case .embedding:
             return OverallHeadline(
                 symbol: "circle.hexagongrid.fill",
                 tint: .blue,
@@ -68,15 +71,16 @@ extension ModelsView {
                 detail: "\(missing.formatted()) of \(required.formatted()) embeddings to go across \(models).",
                 progress: fraction
             )
+        case .toGo:
+            return OverallHeadline(
+                symbol: "circle.hexagongrid",
+                tint: .orange,
+                isActive: false,
+                title: "\(missing.formatted()) embedding\(missing == 1 ? "" : "s") to go",
+                detail: "Search finds only embedded chunks. Embed All picks up where the last run stopped.",
+                progress: fraction
+            )
         }
-        return OverallHeadline(
-            symbol: "circle.hexagongrid",
-            tint: .orange,
-            isActive: false,
-            title: "\(missing.formatted()) embedding\(missing == 1 ? "" : "s") to go",
-            detail: "Search finds only embedded chunks. Embed All picks up where the last run stopped.",
-            progress: fraction
-        )
     }
 
     var distillationHeadline: OverallHeadline {
@@ -154,6 +158,7 @@ extension ModelsView {
                     }
                     .disabled(notReady || appState.enrichFacts.isRunning)
                     .help("Run every enabled prompt over every document that has no facts from it yet")
+                    .accessibilityIdentifier("models.gleanFacts")
 
                     Button("Manage…") {
                         selectedTab = .distillation

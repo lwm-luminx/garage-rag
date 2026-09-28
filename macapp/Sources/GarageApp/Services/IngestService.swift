@@ -406,7 +406,8 @@ final class IngestService: ObservableObject {
             grpcHost: options.grpcHost,
             grpcPort: options.grpcPort,
             databaseUrl: prep.dbURL,
-            lmStudioApiToken: prep.lmToken
+            lmStudioApiToken: prep.lmToken,
+            grpcToken: GarageGRPCAuth.token
         )
 
         if let dbURL = prep.dbURL {

@@ -238,7 +238,11 @@ mkdir -p "$(dirname "$out_zip")"
 app_name="$(basename "$app_bundle")"
 (
     cd "$(dirname "$app_bundle")"
-    /usr/bin/ditto -c -k --keepParent "$app_name" "$tmp_dir/output.zip"
+    # No resource forks or extended attributes (com.apple.provenance and the like): ditto
+    # stores them as AppleDouble `._*` entries, which a plain `unzip` turns into real files
+    # that break the bundle's sealed resources. Every signature lives in the Mach-O files
+    # and _CodeSignature, so nothing the signature needs is dropped.
+    /usr/bin/ditto -c -k --norsrc --noextattr --keepParent "$app_name" "$tmp_dir/output.zip"
 )
 /bin/mv "$tmp_dir/output.zip" "$out_zip"
 """,

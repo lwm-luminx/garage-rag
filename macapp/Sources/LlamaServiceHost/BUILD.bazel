@@ -1,0 +1,20 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# LlamaXPCService's front end: the NSXPC delegate and the llama-server HTTP listener (on its socket,
+# or a loopback port), in front of any LlamaInferenceEngine. It carries no engine and does not link llama.cpp, so the
+# shipped service (//macapp/Sources/LlamaXPCService, on LlamaCppEngine) and the UI tests' mock
+# service (//macapp/Tests/MockLlamaXPCService) run the same code in front of their engines.
+swift_library(
+    name = "LlamaServiceHost",
+    srcs = glob(["*.swift"]),
+    module_name = "LlamaServiceHost",
+    visibility = [
+        "//macapp/Sources/LlamaXPCService:__pkg__",
+        "//macapp/Tests:__subpackages__",
+    ],
+    deps = [
+        "//macapp/Sources/LlamaClient",
+        "//macapp/Sources/PythonXPCService",
+        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
+    ],
+)

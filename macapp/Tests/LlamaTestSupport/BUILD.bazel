@@ -1,8 +1,9 @@
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
-# Test double for the llama engine. `LlamaClient(inProcessEngine:)` and `LlamaService` tests drive
-# the client against it without a helper process; it is testonly so no production target can link
-# a fake engine.
+# Test doubles for the llama engine. `LlamaClient(inProcessEngine:)` and `LlamaService` tests drive
+# the client against MockLlamaServerEngine without a helper process; DeterministicLlamaEngine is
+# the engine of the UI tests' MockLlamaXPCService. Testonly, so no production target can link a
+# fake engine.
 swift_library(
     name = "LlamaTestSupport",
     testonly = True,

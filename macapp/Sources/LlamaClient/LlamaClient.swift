@@ -49,6 +49,16 @@ public final class LlamaClient: @unchecked Sendable {
         self.inProcessEngine = nil
     }
 
+    /// Initialize client connecting through a listener endpoint of `LlamaXPCService`: how a sibling
+    /// XPC service reaches it, since only the app can look the service up by name. The app hands the
+    /// endpoint over (`GarageLlamaEndpointReceiverProtocol`).
+    public convenience init(endpoint: NSXPCListenerEndpoint) {
+        let conn = NSXPCConnection(listenerEndpoint: endpoint)
+        conn.remoteObjectInterface = NSXPCInterface(with: LlamaXPCServiceProtocol.self)
+        conn.resume()
+        self.init(connection: conn)
+    }
+
     /// Initialize client against an in-process engine. Only tests use this (with `MockLlamaServerEngine`);
     /// the app always talks to `LlamaXPCService` over XPC.
     public init(inProcessEngine: any LlamaInferenceEngine) {
@@ -629,6 +639,24 @@ public final class LlamaClient: @unchecked Sendable {
                     relay.resume(returning: msg ?? "Model loaded")
                 } else {
                     relay.resume(throwing: LlamaClientError.serverError(statusCode: 500, message: msg ?? "Failed to load model"))
+                }
+            }
+        }
+    }
+
+    /// The endpoint of the service's anonymous listener, for handing to a sibling XPC service.
+    public func listenerEndpoint() async throws -> NSXPCListenerEndpoint {
+        if inProcessEngine != nil {
+            throw LlamaClientError.serviceUnavailable("An in-process engine has no listener endpoint")
+        }
+        return try await performRemoteCall { proxy, relay in
+            proxy.getListenerEndpoint { endpoint, error in
+                if let error = error {
+                    relay.resume(throwing: error)
+                } else if let endpoint = endpoint {
+                    relay.resume(returning: endpoint)
+                } else {
+                    relay.resume(throwing: LlamaClientError.invalidResponse("No listener endpoint"))
                 }
             }
         }

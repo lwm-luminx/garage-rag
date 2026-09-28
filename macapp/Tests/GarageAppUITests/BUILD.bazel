@@ -1,6 +1,19 @@
 load("@rules_apple//apple:macos.bzl", "macos_ui_test")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
+# The base test case and the fixture corpus's description, compiled into
+# //macapp/Tests/GarageAppModelUITests too. That bundle cannot link this library: XCTest would
+# then run every test here in it as well.
+filegroup(
+    name = "support_srcs",
+    testonly = True,
+    srcs = [
+        "FixtureCorpus.swift",
+        "GarageUITestCase.swift",
+    ],
+    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
+)
+
 swift_library(
     name = "GarageAppUITests_lib",
     testonly = True,
@@ -21,6 +34,8 @@ macos_ui_test(
     bundle_id = "me.rickmark.garage-rag.GarageAppUITests",
     bundle_name = "GarageAppUITests",
     minimum_os_version = "14.0",
+    # The made-up corpus the tests ingest, as Resources/corpus (GarageUITestCase.copyFixtureCorpus).
+    resources = ["//macapp/Tests/Fixtures:corpus_resources"],
     tags = [
         "exclusive",
         "local",

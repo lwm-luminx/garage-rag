@@ -29,6 +29,8 @@ struct ModelsView: View {
     @State var showUnloadConfirmation: Bool = false
     @State var pendingUnloadAlias: String? = nil
     @State var settingFactsModelSlug: String? = nil
+    /// The slug "Use for Inference" is setting, or "" while Follow Distillation clears it.
+    @State var settingInferenceModelSlug: String? = nil
     @State var registeringPresetSlug: String? = nil
     /// The model an Embed started from this page runs for, or "*" for Embed All; nil while no
     /// run was started here (a run started elsewhere, such as Update Everything, covers every model).
@@ -60,7 +62,13 @@ struct ModelsView: View {
 
         public var id: Self { self }
 
-        public var displayName: String { rawValue }
+        /// The name on screen. `rawValue` stays as it was: it is the enum's coded form.
+        public var displayName: String {
+            switch self {
+            case .llamaXPC: "Built-in engine"
+            case .ollama, .lmStudio: rawValue
+            }
+        }
 
         public var cliValue: String {
             switch self {
@@ -82,11 +90,12 @@ struct ModelsView: View {
 
     // MARK: - Body
 
-    /// The page's three tabs: a glance at everything, then one page per kind of model.
+    /// The page's tabs: a glance at everything, then one page per kind of model.
     enum Page: String, CaseIterable, Identifiable {
         case overall = "Overall"
         case embedding = "Embedding"
         case distillation = "Distillation"
+        case inference = "Inference"
 
         var id: Self { self }
     }
@@ -105,7 +114,7 @@ struct ModelsView: View {
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()
-                .frame(width: 360)
+                .frame(width: 440)
                 .accessibilityIdentifier("models.tab")
 
                 HStack(spacing: 8) {
@@ -131,25 +140,29 @@ struct ModelsView: View {
             Divider()
 
             ScrollView {
+                // Each section is type-erased: together their concrete types make one view value large enough that an
+                // unoptimized (Debug) build overflows the main thread's stack copying it.
                 VStack(alignment: .leading, spacing: 20) {
                     switch selectedTab {
                     case .overall:
-                        overallEmbeddingSection
-                        overallDistillationSection
-                        providersSection
-                        activitySection
+                        AnyView(overallEmbeddingSection)
+                        AnyView(overallDistillationSection)
+                        AnyView(providersSection)
+                        AnyView(activitySection)
                     case .embedding:
-                        embeddingModelsSection
-                        embeddingTestSection
+                        AnyView(embeddingModelsSection)
+                        AnyView(embeddingTestSection)
                         if !appState.backfill.logs.isEmpty {
-                            backfillOutputBox
+                            AnyView(backfillOutputBox)
                         }
                     case .distillation:
-                        distillationSection
+                        AnyView(distillationSection)
                         FactPromptsSection()
                         if !appState.enrichFacts.logs.isEmpty {
-                            enrichFactsOutputBox
+                            AnyView(enrichFactsOutputBox)
                         }
+                    case .inference:
+                        AnyView(inferenceSection)
                     }
                 }
                 .padding(20)
@@ -179,7 +192,7 @@ struct ModelsView: View {
                 }
             }
         } message: {
-            Text("This frees the model's memory in Llama XPC. Embedding and fact distillation load it again when they need it.")
+            Text("This frees the model's memory in the built-in engine. Embedding and fact distillation load it again when they need it.")
         }
     }
 
@@ -235,34 +248,23 @@ struct ModelsView: View {
 
     /// "2 models · 9,120 of 10,000 chunks embedded", or what is missing for that to be true.
     var embeddingSummary: String {
-        let count = unifiedModels.count
-        let stats = appState.corpusStats
-        if count == 0 {
-            return "Text embedding models turn each chunk into a vector for semantic search. Each keeps its own vector table; search uses the default one."
-        }
-        let models = "\(count) model\(count == 1 ? "" : "s")"
-        if stats.totalChunks == 0 {
-            return "\(models) · no chunks to embed until a source is ingested"
-        }
         let (required, missing) = embeddingsRequiredAndMissing
-        if missing == 0 {
-            return "\(models) · every chunk embedded"
-        }
-        let done = max(0, required - missing)
-        return "\(models) · \(done.formatted()) of \(required.formatted()) embeddings done"
+        return ModelsPresentation.embeddingSummary(
+            modelCount: unifiedModels.count,
+            totalChunks: appState.corpusStats.totalChunks,
+            required: required,
+            missing: missing
+        )
     }
 
     /// Embeddings the registered models need and how many are missing, counted over the models
     /// registered now rather than the stats' model list, which lags a registration until the next
     /// stats fetch.
     var embeddingsRequiredAndMissing: (required: Int, missing: Int) {
-        let stats = appState.corpusStats
-        let required = unifiedModels.count * stats.totalChunks
-        let missing = unifiedModels.reduce(0) { sum, item in
-            let embedded = stats.modelStats.first { $0.slug == item.slug }?.embeddedCount ?? 0
-            return sum + max(0, stats.totalChunks - embedded)
-        }
-        return (required, missing)
+        ModelsPresentation.embeddingsRequiredAndMissing(
+            modelSlugs: unifiedModels.map(\.slug),
+            stats: appState.corpusStats
+        )
     }
 
     func emptyState(symbol: String, title: String, detail: String?) -> some View {
@@ -287,16 +289,18 @@ struct ModelsView: View {
 
     // MARK: - Fact distillation
 
-    /// The `fact_distil` presets, wrapped so the download/load helpers written for
-    /// embedding rows apply unchanged.
+    /// The `inference_models` presets, those tagged for distillation first, wrapped so the
+    /// download/load helpers written for embedding rows apply unchanged.
     var distillationModelItems: [UnifiedModelItem] {
-        appState.factDistilPresets.map { UnifiedModelItem(preset: $0) }
+        let presets = appState.inferencePresets
+        return (presets.filter(\.isForDistillation) + presets.filter { !$0.isForDistillation })
+            .map { UnifiedModelItem(preset: $0) }
     }
 
     /// The facts model garage.json names, when it is not one of the presets on the page.
     var unlistedFactsModel: String? {
         let slug = appState.factsModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !slug.isEmpty, !appState.factDistilPresets.contains(where: { $0.slug == slug }) else { return nil }
+        guard !slug.isEmpty, !appState.inferencePresets.contains(where: { $0.slug == slug }) else { return nil }
         return slug
     }
 
@@ -304,7 +308,7 @@ struct ModelsView: View {
         GroupBox("Fact Distillation Model") {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(alignment: .center, spacing: 8) {
-                    Text("A small instruction-tuned model that gleans atomic facts from each document and answers rag_ask over MCP. One model is in use at a time.")
+                    Text("A small instruction-tuned model that gleans atomic facts from each document. It also answers rag_ask over MCP unless the Inference tab names another model. One model is in use at a time.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -334,7 +338,7 @@ struct ModelsView: View {
                     emptyState(
                         symbol: "text.quote",
                         title: "No distillation presets",
-                        detail: "models.json lists no fact_distil models. Facts and rag_ask stay off until one is configured."
+                        detail: "models.json lists no inference models. Facts and rag_ask stay off until one is configured."
                     )
                 } else {
                     VStack(spacing: 8) {
@@ -353,6 +357,96 @@ struct ModelsView: View {
         Task {
             await appState.setFactsModel(item.slug, provider: item.provider.cliValue)
             settingFactsModelSlug = nil
+        }
+    }
+
+    // MARK: - Inference
+
+    /// The `inference_models` presets tagged for inference, those that call tools first.
+    var inferenceModelItems: [UnifiedModelItem] {
+        let presets = appState.inferencePresets.filter(\.isForInference)
+        return (presets.filter(\.toolCalling) + presets.filter { !$0.toolCalling })
+            .map { UnifiedModelItem(preset: $0) }
+    }
+
+    /// The inference model garage.json names, when it is not one of the presets on the page.
+    var unlistedInferenceModel: String? {
+        guard let slug = appState.inferenceModel,
+              !appState.inferencePresets.contains(where: { $0.slug == slug }) else { return nil }
+        return slug
+    }
+
+    var inferenceSection: some View {
+        GroupBox("Inference Model") {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 8) {
+                    Text(inferenceSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer()
+
+                    Button {
+                        useForInference(slug: nil, provider: nil)
+                    } label: {
+                        if settingInferenceModelSlug == "" {
+                            ProgressView().controlSize(.mini)
+                        } else {
+                            Text("Follow Distillation")
+                        }
+                    }
+                    .disabled(appState.inferenceModel == nil || settingInferenceModelSlug != nil || notReady)
+                    .help("Clears inference.model in garage.json so rag_ask uses the distillation model")
+                    .accessibilityIdentifier("models.inference.followDistillation")
+                }
+
+                if let unlisted = unlistedInferenceModel {
+                    HStack(spacing: 6) {
+                        Image(systemName: "info.circle")
+                            .foregroundStyle(.secondary)
+                        Text("garage.json names \(unlisted) via \(appState.inferenceProvider ?? appState.factsProvider), which is not one of the presets below.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if inferenceModelItems.isEmpty {
+                    emptyState(
+                        symbol: "bubble.left.and.text.bubble.right",
+                        title: "No inference presets",
+                        detail: "models.json lists no models tagged for inference. rag_ask uses the distillation model."
+                    )
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(inferenceModelItems) { item in
+                            modelRow(role: .inference, item: item)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// Says which model answers chat, and whether it is the distillation model.
+    var inferenceSummary: String {
+        let lead = "The model that answers rag_ask and rag_generate over MCP. Models marked TOOLS can call Garage's tools."
+        if let chosen = appState.inferenceModel {
+            return "\(lead) In use: \(chosen)."
+        }
+        return "\(lead) None is chosen, so the distillation model (\(appState.factsModel)) answers."
+    }
+
+    /// Sets `inference.*` to a model, or with a nil slug clears it to follow the distillation model.
+    func useForInference(slug: String?, provider: String?) {
+        settingInferenceModelSlug = slug ?? ""
+        Task {
+            if let slug {
+                await appState.setInferenceModel(slug, provider: provider ?? GarageConfigLoader.defaultFactsProvider)
+            } else {
+                await appState.setInferenceModel(nil)
+            }
+            settingInferenceModelSlug = nil
         }
     }
 
@@ -385,7 +479,7 @@ struct ModelsView: View {
                 ModelSymbolCircle(symbol: "cpu", tint: llama.statusColor, isActive: llama.isConnected)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Llama XPC")
+                    Text("Built-in engine")
                         .font(.system(size: 13, weight: .medium))
                     Text(llamaDetail)
                         .font(.caption)
@@ -399,12 +493,15 @@ struct ModelsView: View {
                     ProgressView().controlSize(.small)
                 }
                 if !llama.models.isEmpty {
-                    Button("Unload All") {
+                    Button {
                         pendingUnloadAlias = nil
                         showUnloadConfirmation = true
+                    } label: {
+                        Label("Unload All", systemImage: "eject.fill")
                     }
                     .controlSize(.small)
                     .disabled(llama.isBusy)
+                    .help("Unload every model from the built-in engine")
                 }
                 Button("Refresh") {
                     Task { await llama.refreshStatus() }
@@ -437,17 +534,13 @@ struct ModelsView: View {
     func residentModelRow(alias: String) -> some View {
         let known = unifiedModels.first { $0.slug == alias || $0.effectiveFilename == alias }
             ?? distillationModelItems.first { $0.slug == alias || $0.effectiveFilename == alias }
-        var roles: [String] = []
-        if let known, known.registeredModel != nil {
-            roles.append(known.isDefault ? "default embedding model" : "embedding model")
-        }
-        if appState.factsModel == alias {
-            roles.append("facts model")
-        }
-        if llama.activeModelId == alias {
-            roles.append("answers requests that name no model")
-        }
-        let detail = roles.isEmpty ? "Loaded" : "Loaded · \(roles.joined(separator: " · "))"
+        let isEmbeddingModel = known?.registeredModel != nil
+        let detail = ModelsPresentation.residentModelDetail(
+            isEmbeddingModel: isEmbeddingModel,
+            isDefaultEmbeddingModel: isEmbeddingModel && known?.isDefault == true,
+            isFactsModel: appState.factsModel == alias,
+            answersUnnamedRequests: llama.activeModelId == alias
+        )
 
         return HStack(spacing: 8) {
             Circle()
@@ -471,12 +564,17 @@ struct ModelsView: View {
                     .lineLimit(1)
             }
             Spacer()
-            Button("Unload") {
+            Button {
                 pendingUnloadAlias = alias
                 showUnloadConfirmation = true
+            } label: {
+                Label("Unload", systemImage: "eject.fill")
+                    .labelStyle(.iconOnly)
             }
             .controlSize(.small)
             .disabled(llama.isBusy)
+            .help("Unload '\(alias)' from the built-in engine")
+            .accessibilityIdentifier("models.llama.resident.\(alias).unload")
         }
         .padding(.vertical, 4)
         .padding(.horizontal, 8)
@@ -487,15 +585,13 @@ struct ModelsView: View {
 
     /// "Running · 2 models loaded · 3 slots idle", from the service's own status line.
     var llamaDetail: String {
-        var parts: [String] = [llama.statusMessage]
-        if llama.isConnected {
-            let loaded = llama.loadedModelIds.count
-            parts.append(loaded == 0 ? "no model loaded" : "\(loaded) model\(loaded == 1 ? "" : "s") loaded")
-            if let health = llama.health, let idle = health.slotsIdle, let proc = health.slotsProcessing {
-                parts.append("\(idle) slot\(idle == 1 ? "" : "s") idle, \(proc) processing")
-            }
-        }
-        return parts.joined(separator: " · ")
+        ModelsPresentation.llamaDetail(
+            statusMessage: llama.statusMessage,
+            isConnected: llama.isConnected,
+            loadedCount: llama.loadedModelIds.count,
+            slotsIdle: llama.health?.slotsIdle,
+            slotsProcessing: llama.health?.slotsProcessing
+        )
     }
 
     var lmStudioProviderRow: some View {
@@ -565,7 +661,7 @@ struct ModelsView: View {
         GroupBox("Fact Distillation Output") {
             LogTableView(
                 lines: appState.enrichFacts.logs,
-                sourceName: "Enrich Facts",
+                sourceName: "Glean Facts",
                 onClear: { appState.enrichFacts.clearLogs() }
             )
             .frame(minHeight: 180, maxHeight: 300)
@@ -667,7 +763,7 @@ struct ModelsView: View {
             displayName: item.name,
             path: dl.path,
             contextSize: item.contextSize ?? LlamaModelLoadDefaults.contextSize,
-            gpuLayers: item.catalogItem?.defaultGpuLayers ?? LlamaModelLoadDefaults.gpuLayers
+            gpuLayers: LlamaModelLoadDefaults.gpuLayers
         )
         Task {
             await llama.loadModel(path: plan.path, alias: plan.alias, config: plan.config)
@@ -723,9 +819,7 @@ struct ModelsView: View {
 
     /// Whether the running backfill, if any, embeds under `slug`.
     func isEmbedding(slug: String) -> Bool {
-        guard appState.backfill.isRunning else { return false }
-        guard let target = backfillTarget else { return true }
-        return target == "*" || target == slug
+        ModelsPresentation.isEmbedding(slug: slug, backfillRunning: appState.backfill.isRunning, target: backfillTarget)
     }
 
     func enrichAllFacts() {

@@ -24,6 +24,8 @@ struct MenuBarStatus: Equatable {
         case running(clients: Int)
         case stopping
         case failed(String)
+        /// The HTTP server is off by choice: assistants run `garage-mcp` over stdio, so nothing is wrong.
+        case stdio(clients: Int)
     }
 
     /// A running ingest, as the popover reports it.
@@ -81,9 +83,9 @@ struct MenuBarStatus: Equatable {
         var title: String {
             switch self {
             case .scan: "Scan"
-            case .ingest: "Ingest"
-            case .embed: "Embed"
-            case .distill: "Distill"
+            case .ingest: "Read"
+            case .embed: "Index"
+            case .distill: "Glean"
             }
         }
     }
@@ -134,10 +136,11 @@ struct MenuBarStatus: Equatable {
         case .failed(let message): .failed(message)
         }
 
+        let clients = appState.mcp.detectedClients.filter(\.isRegistered).count
         let mcp: Server = switch appState.mcp.status {
-        case .stopped: .stopped
+        case .stopped: appState.mcp.httpEnabled ? .stopped : .stdio(clients: clients)
         case .starting: .starting
-        case .running: .running(clients: appState.mcp.detectedClients.filter(\.isRegistered).count)
+        case .running: .running(clients: clients)
         case .stopping: .stopping
         case .failed(let message): .failed(message)
         }
@@ -238,17 +241,27 @@ struct MenuBarStatus: Equatable {
     /// The database runs and the MCP server serves: the popover folds both service rows into one
     /// green "All systems go" row, and spells them out again only when one of them is not fine.
     var allSystemsGo: Bool {
-        guard database == .running, case .running = mcp else { return false }
-        return true
+        guard database == .running else { return false }
+        switch mcp {
+        case .running, .stdio: return true
+        case .stopped, .starting, .stopping, .failed: return false
+        }
     }
 
     /// The line under "All systems go": what is up, and how many clients reach it.
     var allSystemsGoDetail: String {
+        if case .stdio(let clients) = mcp {
+            switch clients {
+            case 0: return "Database running · no assistants connected"
+            case 1: return "Database running · 1 assistant connected"
+            default: return "Database running · \(clients) assistants connected"
+            }
+        }
         guard case .running(let clients) = mcp else { return "Database and MCP running" }
         switch clients {
-        case 0: return "Database and MCP running · no clients registered"
-        case 1: return "Database and MCP running · 1 client"
-        default: return "Database and MCP running · \(clients) clients"
+        case 0: return "Database and MCP running · no assistants connected"
+        case 1: return "Database and MCP running · 1 assistant connected"
+        default: return "Database and MCP running · \(clients) assistants connected"
         }
     }
 
@@ -267,7 +280,7 @@ struct MenuBarStatus: Equatable {
         case .failed(let message):
             return Summary(symbol: "exclamationmark", title: "Database failed to start", detail: Self.firstLine(message) ?? fix, tint: .red)
         case .needsMigration:
-            return Summary(symbol: "exclamationmark", title: "Database needs a migration", detail: "Open Status to apply it.", tint: .orange)
+            return Summary(symbol: "exclamationmark", title: "Database needs a schema update", detail: "Open Status to apply it.", tint: .orange)
         case .stopped:
             return Summary(symbol: "pause.fill", title: "Database stopped", detail: "Open Status to start it.", tint: .gray)
         case .starting:
@@ -278,7 +291,7 @@ struct MenuBarStatus: Equatable {
             break
         }
         switch mcp {
-        case .running:
+        case .running, .stdio:
             return Summary(symbol: "checkmark", title: "All systems go", detail: allSystemsGoDetail, tint: .green)
         case .failed(let message):
             return Summary(symbol: "exclamationmark", title: "MCP server failed", detail: Self.firstLine(message) ?? fix, tint: .red)
@@ -310,6 +323,13 @@ struct MenuBarStatus: Equatable {
     /// Quick search needs the database; the gRPC bridge starts with it.
     var canSearch: Bool {
         database == .running
+    }
+
+    /// "Ask Garage" runs `rag_agent` on the MCP server, so it needs the server up as well as the
+    /// database. The local model loads on demand, so it is not a condition.
+    var canAsk: Bool {
+        guard canSearch, case .running = mcp else { return false }
+        return true
     }
 
     // MARK: - Menu bar item
@@ -345,16 +365,16 @@ struct MenuBarStatus: Equatable {
         case .stopped: return "Database stopped"
         case .starting: return "Starting…"
         case .stopping: return "Stopping…"
-        case .needsMigration: return "Migration needed"
+        case .needsMigration: return "Schema update needed"
         case .failed: return "Database failed"
         case .running: break
         }
         switch activity {
         case .idle: return "Ready"
         case .scanning: return "Scanning sources"
-        case .ingesting(let progress): return progress.source.isEmpty ? "Ingesting" : "Ingesting \(progress.source)"
-        case .embedding: return "Embedding chunks"
-        case .distilling: return "Distilling facts"
+        case .ingesting(let progress): return progress.source.isEmpty ? "Reading" : "Reading \(progress.source)"
+        case .embedding: return "Indexing chunks"
+        case .distilling: return "Gleaning facts"
         }
     }
 
@@ -399,7 +419,7 @@ struct MenuBarStatus: Equatable {
         case .starting: "Starting…"
         case .stopping: "Stopping…"
         case .running: "Running"
-        case .needsMigration: "Schema needs a migration"
+        case .needsMigration: "Schema update needed"
         case .failed(let message): message
         }
     }
@@ -421,9 +441,13 @@ struct MenuBarStatus: Equatable {
         case .starting:
             return "Starting…"
         case .running(let clients):
-            if clients == 0 { return "Serving · no clients registered" }
-            if clients == 1 { return "Serving · 1 client" }
-            return "Serving · \(clients) clients"
+            if clients == 0 { return "Serving · no assistants connected" }
+            if clients == 1 { return "Serving · 1 assistant connected" }
+            return "Serving · \(clients) assistants connected"
+        case .stdio(let clients):
+            if clients == 0 { return "Over stdio · no assistants connected" }
+            if clients == 1 { return "Over stdio · 1 assistant connected" }
+            return "Over stdio · \(clients) assistants connected"
         case .stopping:
             return "Stopping…"
         case .failed(let message):
@@ -433,7 +457,7 @@ struct MenuBarStatus: Equatable {
 
     var mcpTint: Color {
         switch mcp {
-        case .running: .green
+        case .running, .stdio: .green
         case .starting, .stopping: .yellow
         case .failed: database == .running ? .red : .secondary
         case .stopped: .secondary

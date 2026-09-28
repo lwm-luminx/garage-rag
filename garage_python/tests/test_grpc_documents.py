@@ -254,3 +254,151 @@ def test_grpc_list_facts_defaults_the_page_size():
     assert list_facts.call_args.kwargs["limit"] == 200
     assert list_facts.call_args.kwargs["document_id"] == 4
     assert response.total_count == 0
+
+
+def test_grpc_get_fact_stats_maps_the_counts():
+    from garage_rag.ops.facts import FactStats
+    from garage_rag.proto.garage_pb2 import FactStatsRequest
+
+    servicer = GarageRpcServicer()
+    stats = FactStats(facts=12, documents=3, by_source={"notes": 9, "mail": 3}, by_class={"fact": 10, "event": 2})
+    with (
+        patch("garage_rag.db.engine.session_scope"),
+        patch("garage_rag.ops.facts.fact_stats", return_value=stats) as fact_stats,
+    ):
+        response = servicer.GetFactStats(FactStatsRequest(corpus_class="communication"), MagicMock())
+
+    assert fact_stats.call_args.kwargs == {
+        "query": "",
+        "source": "",
+        "fact_class": "",
+        "corpus_class": "communication",
+        "document_id": None,
+    }
+    assert (response.facts, response.documents) == (12, 3)
+    assert dict(response.facts_by_source) == {"notes": 9, "mail": 3}
+    assert dict(response.facts_by_class) == {"fact": 10, "event": 2}
+    assert response.formatted_output == "12 facts across 3 documents"
+
+
+def test_grpc_get_fact_stats_rejects_an_unknown_corpus_class():
+    from garage_rag.proto.garage_pb2 import FactStatsRequest
+
+    servicer = GarageRpcServicer()
+    context = MagicMock()
+    context.abort.side_effect = grpc.RpcError()
+    with patch("garage_rag.db.engine.session_scope"), pytest.raises(grpc.RpcError):
+        servicer.GetFactStats(FactStatsRequest(corpus_class="memo"), context)
+    assert context.abort.call_args.args[0] == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_grpc_list_sources_counts_documents_per_source():
+    from types import SimpleNamespace
+
+    from garage_rag.db.models import Source
+    from garage_rag.proto.garage_pb2 import ListSourcesRequest
+
+    sources = [
+        SimpleNamespace(
+            id=1,
+            slug="notes",
+            kind="filesystem",
+            default_class=CorpusClass.DOCUMENT,
+            default_trust=TrustTier.AUTHORED,
+            enabled=True,
+            root="/Users/rick/Notes",
+            expected_elements=40,
+        ),
+        SimpleNamespace(
+            id=2,
+            slug="mail",
+            kind="maildir",
+            default_class=CorpusClass.COMMUNICATION,
+            default_trust=TrustTier.RECEIVED,
+            enabled=False,
+            root="/Users/rick/Library/Mail",
+            expected_elements=None,
+        ),
+    ]
+    session = MagicMock()
+    source_query = MagicMock()
+    source_query.order_by.return_value.all.return_value = sources
+    count_query = MagicMock()
+    count_query.group_by.return_value.all.return_value = [(1, 37)]
+    session.query.side_effect = lambda *entities: source_query if entities[0] is Source else count_query
+
+    with patch("garage_rag.db.engine.session_scope") as mock_scope:
+        mock_scope.return_value.__enter__.return_value = session
+        response = GarageRpcServicer().ListSources(ListSourcesRequest(), MagicMock())
+
+    assert response.formatted_output == "2 sources registered"
+    notes, mail = response.sources
+    assert (notes.slug, notes.kind, notes.corpus_class, notes.trust_tier) == (
+        "notes",
+        "filesystem",
+        "document",
+        "authored",
+    )
+    assert notes.enabled and notes.document_count == 37 and notes.expected_elements == 40
+    assert notes.root == "/Users/rick/Notes"
+    assert (mail.corpus_class, mail.trust_tier) == ("communication", "received")
+    assert not mail.enabled
+    # A source with no documents, and one whose scan never counted anything, report zeros.
+    assert mail.document_count == 0 and mail.expected_elements == 0
+
+
+def test_grpc_get_stats_counts_the_corpus_per_source_and_model():
+    from types import SimpleNamespace
+
+    from garage_rag.proto.garage_pb2 import StatsRequest
+
+    session = MagicMock()
+    # Documents, chunks, sources, in the order the handler counts them.
+    session.query.return_value.scalar.side_effect = [1234, 56789, 2]
+    session.query.return_value.outerjoin.return_value.group_by.return_value.all.return_value = [
+        ("notes", 1234),
+        ("empty", 0),
+    ]
+    models = [SimpleNamespace(slug="bge-m3"), SimpleNamespace(slug="nomic")]
+    vectors = {"bge-m3": 56789, "nomic": 100}
+
+    with (
+        patch("garage_rag.db.engine.session_scope") as mock_scope,
+        patch("garage_rag.db.emb_tables.list_models", return_value=models),
+        patch("garage_rag.db.emb_tables.count_vectors", side_effect=lambda _session, m: vectors[m.slug]),
+    ):
+        mock_scope.return_value.__enter__.return_value = session
+        response = GarageRpcServicer().GetStats(StatsRequest(), MagicMock())
+
+    assert (response.documents, response.chunks, response.sources, response.models) == (1234, 56789, 2, 2)
+    assert dict(response.documents_by_source) == {"notes": 1234, "empty": 0}
+    assert dict(response.chunks_by_model) == {"bge-m3": 56789, "nomic": 100}
+    assert response.formatted_output == "Corpus: 1,234 documents, 56,789 chunks across 2 sources, 2 embedding models"
+
+
+def test_grpc_get_stats_on_an_empty_database_reports_zeros():
+    from garage_rag.proto.garage_pb2 import StatsRequest
+
+    session = MagicMock()
+    session.query.return_value.scalar.return_value = None
+    session.query.return_value.outerjoin.return_value.group_by.return_value.all.return_value = []
+
+    with (
+        patch("garage_rag.db.engine.session_scope") as mock_scope,
+        patch("garage_rag.db.emb_tables.list_models", return_value=[]),
+    ):
+        mock_scope.return_value.__enter__.return_value = session
+        response = GarageRpcServicer().GetStats(StatsRequest(), MagicMock())
+
+    assert (response.documents, response.chunks, response.sources, response.models) == (0, 0, 0, 0)
+    assert not response.chunks_by_model and not response.documents_by_source
+
+
+def test_grpc_get_stats_database_outage_is_an_error_not_zeros():
+    from garage_rag.proto.garage_pb2 import StatsRequest
+
+    with (
+        patch("garage_rag.db.engine.session_scope", side_effect=RuntimeError("connection refused")),
+        pytest.raises(RuntimeError, match="connection refused"),
+    ):
+        GarageRpcServicer().GetStats(StatsRequest(), MagicMock())

@@ -83,13 +83,19 @@ struct ContentView: View {
     var body: some View {
         Group {
             if appState.firstRun.isActive {
-                // A fixed size, which `.windowResizability(.contentSize)` makes the window's minimum
-                // and maximum. Setting the frame alone did not hold after "Reset Database": the
+                // At most `assistantSize`, which `.windowResizability(.contentSize)` makes the window's
+                // maximum: setting the frame alone did not hold after "Reset Database", where the
                 // relaunch restores the last frame after the window is built, over the size set in
-                // `WindowReader`. The content's size range is applied whenever the window lays out,
-                // so it wins over a restored or autosaved frame.
+                // `WindowReader`. Not a fixed size, though: a window that still comes up smaller (a
+                // restored frame, a small screen) would clip the footer, with Next and Skip, below its
+                // bottom edge. The page scrolls instead, and `sizeForFirstRun` grows the window.
                 FirstRunView()
-                    .frame(width: MainWindowSizing.assistantSize.width, height: MainWindowSizing.assistantSize.height)
+                    .frame(
+                        minWidth: MainWindowSizing.minimumSize.width,
+                        maxWidth: MainWindowSizing.assistantSize.width,
+                        minHeight: MainWindowSizing.minimumSize.height,
+                        maxHeight: MainWindowSizing.assistantSize.height
+                    )
             } else {
                 mainWindow
             }
@@ -105,6 +111,11 @@ struct ContentView: View {
             // Not animated: the window is not on screen yet, so it should simply open at that size.
             if appState.firstRun.isActive {
                 MainWindowSizing.sizeForFirstRun(resolved, animate: false)
+            } else {
+                // After SwiftUI applies the pages' size range and any restored frame.
+                DispatchQueue.main.async {
+                    MainWindowSizing.applyRequestedSize(resolved)
+                }
             }
         })
         .onChange(of: appState.firstRun.isActive) { wasActive, isActive in

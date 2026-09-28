@@ -41,9 +41,18 @@ def _read(path: Path) -> dict:
 
 
 class TestCliInstall:
-    def test_cli_defaults_to_http_url(self, tmp_path: Path) -> None:
+    def test_cli_defaults_to_stdio(self, tmp_path: Path) -> None:
+        """Like the app's McpInstall: the HTTP server is off until the user starts it."""
         target_path = tmp_path / "mcp.json"
         result = CliRunner().invoke(app, ["mcp-install", "--path", str(target_path), "--yes"])
+        assert result.exit_code == 0, result.output
+        entry = _read(target_path)["mcpServers"]["garage-rag"]
+        assert "command" in entry
+        assert "url" not in entry
+
+    def test_cli_http_flag_registers_a_url(self, tmp_path: Path) -> None:
+        target_path = tmp_path / "mcp.json"
+        result = CliRunner().invoke(app, ["mcp-install", "--path", str(target_path), "--http", "--yes"])
         assert result.exit_code == 0, result.output
         entry = _read(target_path)["mcpServers"]["garage-rag"]
         assert entry["type"] == "http"
@@ -260,6 +269,38 @@ class TestInstallMerge:
         install(target)
         assert not list(target.path.parent.glob("*.tmp"))
 
+    def test_single_file_grant_rewrites_in_place(self, target: ClientTarget, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A sandboxed service granted only the chosen file cannot create siblings, but can still register."""
+        target.path.write_text(json.dumps({"preferences": {"x": 1}, "mcpServers": {"other": {}}}))
+        real_write_text = Path.write_text
+
+        def no_siblings(self: Path, *args, **kwargs):
+            if self != target.path:
+                raise PermissionError(1, "Operation not permitted", str(self))
+            return real_write_text(self, *args, **kwargs)
+
+        def no_copy(src, dst, *args, **kwargs):
+            raise PermissionError(1, "Operation not permitted", str(dst))
+
+        monkeypatch.setattr(Path, "write_text", no_siblings)
+        monkeypatch.setattr("garage_rag.mcp_server.install.shutil.copy2", no_copy)
+        result = install(target, force=True)
+        assert result.backup is None
+        data = _read(target.path)
+        assert data["preferences"] == {"x": 1}
+        assert set(data["mcpServers"]) == {"other", "garage-rag"}
+        assert [p.name for p in target.path.parent.iterdir()] == [target.path.name]
+
+    def test_missing_file_without_directory_access_is_still_an_error(
+        self, target: ClientTarget, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def denied(self: Path, *args, **kwargs):
+            raise PermissionError(1, "Operation not permitted", str(self))
+
+        monkeypatch.setattr(Path, "write_text", denied)
+        with pytest.raises(PermissionError):
+            install(target)
+
 
 class TestUninstall:
     def test_removes_only_our_entry(self, target: ClientTarget) -> None:
@@ -297,6 +338,26 @@ class TestClientTargets:
     def test_user_level_targets_are_absolute(self) -> None:
         for key in ("claude-desktop", "lmstudio", "cursor"):
             assert client_targets()[key].path.is_absolute()
+
+    def test_sandboxed_service_targets_the_account_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """In the App Store build $HOME is the XPC service's container; the configs live in the real home."""
+        import os
+        import pwd
+
+        container = "/Users/me/Library/Containers/me.rickmark.garage-rag.xpc/Data"
+        monkeypatch.setenv("HOME", container)
+        monkeypatch.setenv("APP_SANDBOX_CONTAINER_ID", "me.rickmark.garage-rag.xpc")
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+        targets = client_targets(project_dir=tmp_path)
+        assert targets["claude-desktop"].path == home / "Library/Application Support/Claude/claude_desktop_config.json"
+        assert targets["claude-code-user"].path == home / ".claude.json"
+        assert not any(str(t.path).startswith(container) for t in targets.values())
+        assert plan_targets(path=Path("~/x.json")).targets[0].path == (home / "x.json").resolve()
+
+    def test_unsandboxed_targets_follow_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.delenv("APP_SANDBOX_CONTAINER_ID", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        assert client_targets()["claude-code-user"].path == tmp_path / ".claude.json"
 
 
 class TestHttpEntry:
@@ -444,7 +505,7 @@ class TestPlanTargets:
             },
         )
 
-        result = CliRunner().invoke(app, ["mcp-install", "--all", "--yes"])
+        result = CliRunner().invoke(app, ["mcp-install", "--all", "--http", "--yes"])
         assert result.exit_code == 0
         assert "garage-rag" in _read(mcp1)["mcpServers"]
         assert _read(mcp1)["mcpServers"]["garage-rag"]["url"] == "http://127.0.0.1:8787/mcp"

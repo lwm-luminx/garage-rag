@@ -10,6 +10,8 @@ swift_library(
     deps = [
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",
+        "//macapp/Sources/LlamaServiceHost",
+        "//macapp/Sources/PythonXPCService",
         "//macapp/Tests/LlamaTestSupport",
     ],
 )

@@ -9,18 +9,26 @@ import grpc
 import pytest
 
 from garage_rag.proto.garage_pb2 import (
+    BackfillRequest,
+    EnsureLlamaModelRequest,
     GetEmbeddingBatchesRequest,
     PingRequest,
+    SetSettingRequest,
     StatusRequest,
     VersionRequest,
 )
 from garage_rag.proto.garage_pb2_grpc import GarageServiceStub
-from garage_rag.service.server import create_grpc_server
+from garage_rag.service.auth import CONFIG_CHANGING_METHODS, METADATA_KEY, TOKEN_ENV, config_change_allowed
+from garage_rag.service.client import GarageClient
+from garage_rag.service.server import GarageRpcServicer, create_grpc_server
+
+TOKEN = "0123456789abcdef" * 4
 
 
 @pytest.fixture
-def grpc_server():
+def grpc_server(monkeypatch):
     """Start an in-memory / local gRPC server on an ephemeral port."""
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
     stop_event = threading.Event()
     # Port 0 lets OS assign an ephemeral available port
     server, servicer = create_grpc_server(host="127.0.0.1", port=0, stop_event=stop_event)
@@ -91,6 +99,167 @@ def test_grpc_get_embedding_batches_db_outage_is_an_error(grpc_server):
         with pytest.raises(grpc.RpcError) as excinfo:
             stub.GetEmbeddingBatches(GetEmbeddingBatchesRequest(model_slug="bge-m3"))
     assert excinfo.value.code() != grpc.StatusCode.OK
+
+
+# ---------------------------------------------------------------------------
+# Per-launch token (GARAGE_GRPC_TOKEN / x-garage-token)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def token_server(monkeypatch):
+    """A server started with ``GARAGE_GRPC_TOKEN`` set, as the app starts it."""
+    monkeypatch.setenv(TOKEN_ENV, TOKEN)
+    server, _ = create_grpc_server(host="127.0.0.1", port=0, stop_event=threading.Event())
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    yield port
+    server.stop(grace=None)
+
+
+def test_token_server_rejects_a_call_without_the_token(token_server):
+    with grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel, pytest.raises(grpc.RpcError) as excinfo:
+        GarageServiceStub(channel).Ping(PingRequest(message="hi"))
+    assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+def test_token_server_rejects_a_wrong_token(token_server):
+    with grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel, pytest.raises(grpc.RpcError) as excinfo:
+        GarageServiceStub(channel).Ping(PingRequest(message="hi"), metadata=[(METADATA_KEY, "nope")])
+    assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+def test_token_server_rejects_a_streaming_call_without_the_token(token_server):
+    with grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel, pytest.raises(grpc.RpcError) as excinfo:
+        list(GarageServiceStub(channel).Backfill(BackfillRequest(model="m")))
+    assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+def test_token_server_accepts_the_token(token_server):
+    with grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel:
+        response = GarageServiceStub(channel).Ping(PingRequest(message="hi"), metadata=[(METADATA_KEY, TOKEN)])
+    assert response.message == "hi"
+
+
+def test_token_server_lets_ensure_llama_model_through_without_the_token(token_server):
+    """A stdio garage-mcp outside the app has no token but still asks the app to load its model."""
+    with grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel, pytest.raises(grpc.RpcError) as excinfo:
+        GarageServiceStub(channel).EnsureLlamaModel(EnsureLlamaModelRequest(model="m"))
+    # No loader is installed in this process, so the servicer itself answers.
+    assert excinfo.value.code() == grpc.StatusCode.FAILED_PRECONDITION
+
+
+def test_garage_client_sends_the_token_from_the_environment(token_server):
+    client = GarageClient(host="127.0.0.1", port=token_server, in_process=False)
+    try:
+        assert client.ping("hi").message == "hi"
+    finally:
+        client.close()
+
+
+def test_garage_client_without_the_token_is_rejected(token_server, monkeypatch):
+    monkeypatch.delenv(TOKEN_ENV)
+    client = GarageClient(host="127.0.0.1", port=token_server, in_process=False)
+    try:
+        with pytest.raises(grpc.RpcError) as excinfo:
+            client.ping("hi")
+    finally:
+        client.close()
+    assert excinfo.value.code() == grpc.StatusCode.UNAUTHENTICATED
+
+
+def test_server_without_the_token_accepts_any_call(grpc_server):
+    port, _ = grpc_server
+    with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+        stub = GarageServiceStub(channel)
+        assert stub.Ping(PingRequest(message="a")).message == "a"
+        assert stub.Ping(PingRequest(message="b"), metadata=[(METADATA_KEY, "anything")]).message == "b"
+
+
+# ---------------------------------------------------------------------------
+# Config-changing methods (auth.CONFIG_CHANGING_METHODS)
+# ---------------------------------------------------------------------------
+
+
+def _set_setting(channel, metadata=None):
+    return GarageServiceStub(channel).SetSetting(SetSettingRequest(name="facts.model", value="m"), metadata=metadata)
+
+
+def test_every_config_changing_method_is_guarded():
+    for name in CONFIG_CHANGING_METHODS:
+        assert getattr(getattr(GarageRpcServicer, name), "__garage_config_change__", False), name
+    # Reads and the ingest facade are not: any caller the token admits may use them.
+    assert not hasattr(GarageRpcServicer.Search, "__garage_config_change__")
+    assert not hasattr(GarageRpcServicer.PersistDocument, "__garage_config_change__")
+
+
+def test_config_change_allowed_by_token_or_unix_socket():
+    assert config_change_allowed(token_configured=True, unix_socket=False)
+    assert config_change_allowed(token_configured=False, unix_socket=True)
+    assert config_change_allowed(token_configured=True, unix_socket=True)
+    assert not config_change_allowed(token_configured=False, unix_socket=False)
+
+
+def test_config_changes_are_refused_on_tcp_without_the_token(grpc_server):
+    """A port with no token is open to every account, so it cannot widen the egress allowlist."""
+    port, _ = grpc_server
+    with (
+        patch("garage_rag.ops.settings.set_setting") as set_setting,
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        with pytest.raises(grpc.RpcError) as excinfo:
+            _set_setting(channel)
+        assert excinfo.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        assert "Unix socket" in excinfo.value.details()
+        set_setting.assert_not_called()
+        # Reads are still answered.
+        assert GarageServiceStub(channel).Ping(PingRequest(message="a")).message == "a"
+
+
+def test_init_db_is_refused_on_tcp_without_the_token(grpc_server):
+    """``InitDb`` runs the SQL files of a caller-chosen ``schema_dir``, so it is guarded like a config write."""
+    from garage_rag.proto.garage_pb2 import InitDbRequest
+
+    port, _ = grpc_server
+    with (
+        patch("garage_rag.db.migrate.apply_migrations") as apply_migrations,
+        grpc.insecure_channel(f"127.0.0.1:{port}") as channel,
+    ):
+        with pytest.raises(grpc.RpcError) as excinfo:
+            GarageServiceStub(channel).InitDb(InitDbRequest(schema_dir="/tmp/anyone-can-write-here"))
+        assert excinfo.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        apply_migrations.assert_not_called()
+
+
+def test_config_changes_are_answered_with_the_token(token_server):
+    from pathlib import Path
+
+    with (
+        patch("garage_rag.ops.settings.set_setting", return_value=(Path("/tmp/garage.json"), "m")) as set_setting,
+        grpc.insecure_channel(f"127.0.0.1:{token_server}") as channel,
+    ):
+        response = _set_setting(channel, metadata=[(METADATA_KEY, TOKEN)])
+    assert response.value_json == '"m"'
+    set_setting.assert_called_once()
+
+
+def test_config_changes_are_answered_over_the_unix_socket(socket_dir, monkeypatch):
+    """The owner-only socket folder is the peer check when there is no token."""
+    import os
+    from pathlib import Path
+
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    path = os.path.join(socket_dir, "grpc")
+    server, _ = create_grpc_server(socket_path=path)
+    server.start()
+    try:
+        with (
+            patch("garage_rag.ops.settings.set_setting", return_value=(Path("/tmp/garage.json"), "m")),
+            grpc.insecure_channel(f"unix:{path}") as channel,
+        ):
+            assert _set_setting(channel).value_json == '"m"'
+    finally:
+        server.stop(grace=None)
 
 
 @pytest.fixture

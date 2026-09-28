@@ -5,6 +5,8 @@ name: CI
 # - `python`: ruff and the whole pytest suite in a uv venv, with a pgvector
 #   Postgres service so test_postgres.py runs instead of skipping. It is the same
 #   recipe the web-session hook uses (.claude/hooks/session-start.sh).
+# - `python-freethreaded`: the pytest suite again on free-threaded CPython 3.14t,
+#   informational (continue-on-error) while grpcio and lxml still re-enable the GIL.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
 # - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
 # - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
@@ -59,7 +61,7 @@ jobs:
         # uv.lock only resolves for macOS, so install from pyproject, as the
         # web-session hook does on Linux.
         run: |
-          uv venv --python 3.13 .venv
+          uv venv --python 3.14 .venv
           uv pip install --python .venv -e '.[dev]'
       - name: ruff
         run: |
@@ -75,6 +77,61 @@ jobs:
           # here: job-wide, it breaks actions/checkout's post-job git config cleanup.
           GIT_CONFIG_GLOBAL: /dev/null
 
+  python-freethreaded:
+    # The same suite on the free-threaded build of CPython 3.14 (the `t` ABI),
+    # twice: once as the interpreter behaves by default (grpcio's extension
+    # re-enables the GIL when it is imported) and once with PYTHON_GIL=0, which
+    # keeps the GIL off regardless. Informational until the app ships on it:
+    # a failure here does not fail the workflow. Notes on what stands between
+    # Garage and a free-threaded build are in the project's evaluation
+    # (2026-09-27): grpcio and lxml re-enable the GIL, protobuf falls back to
+    # pure Python because abi3 wheels do not load, cryptography < 44 does not
+    # build (overridden below until the pin is lifted), and the tree-sitter
+    # dev extras do not build at all, so the dev group is not installed.
+    # grpcio has no free-threaded wheel and compiles from source (about 20
+    # minutes); uv keeps the built wheel in its cache, which setup-uv restores.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      GARAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+    defaults:
+      run:
+        working-directory: garage_python
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: freethreaded
+          cache-dependency-glob: garage_python/pyproject.toml
+      - name: Create the venv
+        run: |
+          echo 'cryptography>=45' > "$RUNNER_TEMP/overrides.txt"
+          uv venv --python 3.14t .venv
+          uv pip install --python .venv --overrides "$RUNNER_TEMP/overrides.txt" -e . pytest-asyncio
+          .venv/bin/python -c 'import sys, sysconfig; print(sys.version); assert sysconfig.get_config_var("Py_GIL_DISABLED") == 1'
+      - name: pytest (GIL re-enabled by extensions that need it)
+        run: env -u GITHUB_ACTIONS .venv/bin/pytest -q
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+      - name: pytest (PYTHON_GIL=0)
+        run: env -u GITHUB_ACTIONS .venv/bin/pytest -q
+        env:
+          GIT_CONFIG_GLOBAL: /dev/null
+          PYTHON_GIL: "0"
+
   swiftcheck:
     runs-on: ubuntu-latest
     steps:
@@ -82,7 +139,7 @@ jobs:
       - uses: astral-sh/setup-uv@v7
       - name: Swift syntax gate (tree-sitter)
         run: |
-          uv venv --python 3.13 "$RUNNER_TEMP/venv"
+          uv venv --python 3.14 "$RUNNER_TEMP/venv"
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
 

@@ -4,6 +4,7 @@ py_library(
     name = "service",
     srcs = [
         "__init__.py",
+        "auth.py",
         "client.py",
         "server.py",
     ],

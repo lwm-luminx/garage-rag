@@ -1,6 +1,7 @@
 import XCTest
 import SwiftUI
 import AppKit
+import PythonXPCService
 @testable import GarageApp
 
 final class SplashViewTests: XCTestCase {
@@ -32,6 +33,28 @@ final class SplashViewTests: XCTestCase {
     func testVersionDisplayFallsBackForMissingOrBlankValues() {
         XCTAssertEqual(AppVersionInfo(shortVersion: nil, build: nil).displayString, "Development build")
         XCTAssertEqual(AppVersionInfo(shortVersion: "  ", build: "").displayString, "Development build")
+    }
+
+    func testVersionDisplayNamesTheDistribution() {
+        XCTAssertEqual(
+            AppVersionInfo(shortVersion: "1.5.0", build: "80", distribution: .appStore).displayString,
+            "Version 1.5.0 (build 80) · App Store"
+        )
+        XCTAssertEqual(
+            AppVersionInfo(shortVersion: "1.5.0", build: nil, distribution: .developerID).displayString,
+            "Version 1.5.0 · Developer ID"
+        )
+    }
+
+    func testOnlyTheAppStoreBuildLeavesOutTheDonationLink() {
+        XCTAssertFalse(AppVersionInfo(shortVersion: "1.5", build: "80", distribution: .appStore).offersDonationLink)
+        XCTAssertTrue(AppVersionInfo(shortVersion: "1.5", build: "80", distribution: .developerID).offersDonationLink)
+        XCTAssertTrue(AppVersionInfo(shortVersion: nil, build: nil).offersDonationLink)
+    }
+
+    func testVersionInfoFromBundleNamesTheRunningDistribution() {
+        let expected: AppVersionInfo.Distribution = GarageAppGroup.isSandboxed ? .appStore : .developerID
+        XCTAssertEqual(AppVersionInfo(bundle: .main).distribution, expected)
     }
 
     func testVersionInfoReadsFromBundle() {

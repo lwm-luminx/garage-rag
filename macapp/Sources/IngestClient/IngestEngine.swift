@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import PythonXPCService
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "IngestEngine")
 
@@ -94,7 +95,7 @@ public final class IngestEngine: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
 
-        let resolvedPath = (path as NSString).expandingTildeInPath
+        let resolvedPath = GarageAppGroup.expandingTilde(in: path)
         logger.info("IngestEngine.setSourceBookmark for path '\(resolvedPath, privacy: .public)' (\(bookmarkData.count) bytes)")
         if let existing = activeSourceURLs[resolvedPath] {
             existing.stopAccessingSecurityScopedResource()
@@ -218,7 +219,7 @@ public final class IngestEngine: @unchecked Sendable {
         for source in request.sourcePaths {
             let rawPath = source.root
             let slug = source.slug
-            let resolvedPath = (rawPath as NSString).expandingTildeInPath
+            let resolvedPath = GarageAppGroup.expandingTilde(in: rawPath)
             var isDir: ObjCBool = false
             let exists = fileManager.fileExists(atPath: resolvedPath, isDirectory: &isDir)
             let isReadable = fileManager.isReadableFile(atPath: resolvedPath)
@@ -281,9 +282,9 @@ public final class IngestEngine: @unchecked Sendable {
                 canOpenFiles = false
             } else if !isReadable {
                 if let cat = tccCategory {
-                    errorMsg = "TCC permission required (\(cat))"
+                    errorMsg = "Needs permission (\(IngestSourcePathAccessResult.permissionName(of: cat)))"
                 } else {
-                    errorMsg = "Permission denied / not readable"
+                    errorMsg = "Garage isn't allowed to read this folder"
                 }
                 canOpenFiles = false
             }
@@ -358,7 +359,7 @@ public final class IngestEngine: @unchecked Sendable {
 
     private func detectTCCCategory(slug: String, path: String) -> String? {
         let lowerSlug = slug.lowercased()
-        let lowerPath = (path as NSString).expandingTildeInPath.lowercased()
+        let lowerPath = GarageAppGroup.expandingTilde(in: path).lowercased()
 
         if lowerSlug == "apple-sms" || lowerSlug == "sms" || lowerSlug == "messages" || lowerSlug == "imessage"
             || lowerPath.contains("/library/messages") || lowerPath.hasSuffix("/messages") {
@@ -383,9 +384,9 @@ public final class IngestEngine: @unchecked Sendable {
     private func tccHelpMessage(category: String?) -> String? {
         switch category {
         case "apple-sms":
-            return "macOS protects Messages databases (~/Library/Messages). Full Disk Access in System Settings or selecting the Messages directory directly is required to index SMS and iMessage history."
+            return "macOS keeps Messages (~/Library/Messages) behind Full Disk Access, so Garage can't index your SMS and iMessage history without it, even if you choose the folder. Turn on Garage in System Settings → Privacy & Security → Full Disk Access, then quit and reopen Garage. The App Store version then also needs access to ~/Library/Messages, or your startup disk, granted on the Sources page."
         case "apple-mail":
-            return "macOS protects Mail storage (~/Library/Mail). Full Disk Access in System Settings or selecting the Mail directory directly is required to index email archives."
+            return "macOS keeps Mail (~/Library/Mail) behind Full Disk Access, so Garage can't index your email without it, even if you choose the folder. Turn on Garage in System Settings → Privacy & Security → Full Disk Access, then quit and reopen Garage. The App Store version then also needs access to ~/Library/Mail, or your startup disk, granted on the Sources page."
         case "documents":
             return "Permission to access your Documents directory is required to index local documents."
         case "downloads":

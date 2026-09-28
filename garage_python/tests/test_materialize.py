@@ -76,3 +76,100 @@ def test_read_errors_count_as_failures(tmp_path):
     assert mat.materialize(tmp_path / "missing", budget) is False
     assert budget.failed == 1
     assert not mat._stalled_reads
+
+
+# --- the dataless-file policy -------------------------------------------------
+
+
+class _FakeIOPolicy:
+    """Stands in for libc's setiopolicy_np/getiopolicy_np, per thread like the real thing."""
+
+    def __init__(self) -> None:
+        self.policies: dict[int, int] = {}
+        self.calls: list[tuple[int, int, int]] = []
+
+    def get(self, iotype: int, scope: int) -> int:
+        assert (iotype, scope) == (mat.IOPOL_TYPE_VFS_MATERIALIZE_DATALESS_FILES, mat.IOPOL_SCOPE_THREAD)
+        return self.policies.get(threading.get_ident(), mat.IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT)
+
+    def set(self, iotype: int, scope: int, policy: int) -> int:
+        self.calls.append((threading.get_ident(), scope, policy))
+        self.policies[threading.get_ident()] = policy
+        return 0
+
+
+@pytest.fixture
+def iopolicy(monkeypatch) -> _FakeIOPolicy:
+    fake = _FakeIOPolicy()
+    monkeypatch.setattr(mat, "_iopolicy", (fake.set, fake.get))
+    return fake
+
+
+def test_refusing_sets_the_thread_policy_off_and_restores_it(iopolicy):
+    me = threading.get_ident()
+    with mat.refusing_dataless_reads():
+        assert iopolicy.policies[me] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+        with mat.allowing_dataless_reads():
+            assert iopolicy.policies[me] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_ON
+        assert iopolicy.policies[me] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+    assert iopolicy.policies[me] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_DEFAULT
+    assert all(scope == mat.IOPOL_SCOPE_THREAD for _, scope, _ in iopolicy.calls)
+
+
+def test_the_download_thread_turns_materialization_on_for_itself_only(tmp_path, monkeypatch, iopolicy):
+    seen: dict[str, int] = {}
+
+    def fake_read(path: Path) -> int:
+        seen["thread"] = threading.get_ident()
+        seen["policy"] = iopolicy.policies[threading.get_ident()]
+        return 5
+
+    monkeypatch.setattr(mat, "_force_read", fake_read)
+    with mat.refusing_dataless_reads():
+        assert mat._read_with_timeout(tmp_path / "stub", 5) == 5
+        assert iopolicy.policies[threading.get_ident()] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_OFF
+
+    assert seen["thread"] != threading.get_ident()
+    assert seen["policy"] == mat.IOPOL_MATERIALIZE_DATALESS_FILES_ON
+
+
+def test_a_failed_policy_call_is_a_no_op(monkeypatch):
+    monkeypatch.setattr(mat, "_iopolicy", (lambda *a: -1, lambda *a: -1))
+    with mat.refusing_dataless_reads(), mat.allowing_dataless_reads():
+        pass
+
+
+def test_without_the_binding_the_guards_are_no_ops(monkeypatch):
+    monkeypatch.setattr(mat, "_iopolicy", None)
+    assert mat._set_thread_dataless_policy(mat.IOPOL_MATERIALIZE_DATALESS_FILES_OFF) is None
+    with mat.refusing_dataless_reads(), mat.allowing_dataless_reads():
+        pass
+
+
+def test_refused_dataless_read_recognises_the_kernel_errnos():
+    import errno
+
+    assert mat.refused_dataless_read(OSError(errno.EDEADLK, "Resource deadlock avoided"))
+    assert mat.refused_dataless_read(OSError(errno.EAGAIN, "Resource temporarily unavailable"))
+    assert not mat.refused_dataless_read(OSError(errno.ENOENT, "No such file"))
+    assert not mat.refused_dataless_read(ValueError("not an OSError"))
+
+
+def test_refused_dataless_read_sees_through_extractor_wrapping():
+    """PDF, Office and image extractors re-raise the read error as ExtractionError."""
+    import errno
+
+    from garage_rag.extract.base import ExtractionError
+
+    def wrapped(inner: BaseException) -> BaseException:
+        try:
+            try:
+                raise inner
+            except OSError as exc:
+                raise ExtractionError(f"unreadable: {exc}") from exc
+        except ExtractionError as outer:
+            return outer
+
+    assert mat.refused_dataless_read(wrapped(OSError(errno.EDEADLK, "Resource deadlock avoided")))
+    assert not mat.refused_dataless_read(wrapped(OSError(errno.EIO, "I/O error")))
+    assert not mat.refused_dataless_read(ExtractionError("no cause at all"))

@@ -1,6 +1,7 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+load("//bazel:framework_linking.bzl", "framework_linked_library")
 
 # Implementation library for ModelDownloadXPCService
 swift_library(
@@ -43,6 +44,14 @@ macos_xpc_service(
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":ModelDownloadXPCService_lib",
+        ":ModelDownloadXPCService_linked",
     ],
+)
+
+# The service's library without the static copy of PythonXPCService.framework's code, which it links
+# (see //bazel:framework_linking.bzl).
+framework_linked_library(
+    name = "ModelDownloadXPCService_linked",
+    framework_deps = ["//macapp/Sources/PythonXPCService"],
+    deps = [":ModelDownloadXPCService_lib"],
 )
