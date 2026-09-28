@@ -267,6 +267,16 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   backfill embeds facts under every model with no fact-specific path. The prompts are
   configurable (`facts.prompts`, more than one). Schema in `data/sql/006_facts.sql` /
   `007_chunk_fact_link.sql` / `013_fact_prompts.sql`.
+- **Distilled facts** (`enrich/clusters.py`, `garage cluster-facts`, `ClusterFacts` RPC) — those
+  facts are *potential* facts. The pass links each one to a `distilled_facts` row
+  (`facts.distilled_fact_id`, `015_distilled_facts.sql`):
+  - It groups restatements by nearest neighbours of their chunk vectors, a numbers/dates/negation
+    guard, and average linkage.
+  - The local chat model confirms each new group and states it once.
+  - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors, filled
+    by the backfill.
+  - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
+    PotentialFact and Fact vertices into the graph `garage`.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model

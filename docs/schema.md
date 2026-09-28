@@ -167,6 +167,43 @@ leaves every other prompt's alone.
 | `prompt_name` | the `facts.prompts` entry that produced the fact; `'default'` (the built-in prompt) for facts from before 013 |
 | `prompt_sha256` | SHA-256 of that prompt's description and examples when it ran; NULL before 013 |
 | `tsv` | generated `to_tsvector('english', fact)`, GIN-indexed — the keyword half of hybrid search over facts |
+| `distilled_fact_id` | the distilled fact this *potential* fact backs (`015_distilled_facts.sql`), `ON DELETE SET NULL`; NULL until `garage cluster-facts` runs |
+| `distilled_similarity` | the fact's average cosine similarity to the rest of its group; NULL when it stands alone |
+
+These rows are *potential* facts: what one prompt extracted from one document.
+The same claim is often extracted many times, so `garage cluster-facts` links
+each to one distilled fact (below).
+
+### `distilled_facts`
+
+The distinct claims of the corpus (`015_distilled_facts.sql`), each backed by the
+potential facts that state it (`facts.distilled_fact_id`). `garage cluster-facts`
+builds them (`enrich/clusters.py`):
+
+- It groups potential facts by their vectors under the default model (nearest
+  neighbours above `facts.cluster_threshold`, average linkage).
+- It splits a group whose members differ in numbers, dates or negation.
+- The local chat model confirms each new group and states its claim once.
+
+A potential fact nothing restates gets a distilled fact of its own. Potential
+facts are never changed, and a re-run keeps a distilled fact whose members are
+unchanged, with its statement and vectors.
+
+| Column | Purpose |
+|---|---|
+| `statement` | the claim: the local model's sentence, or the text of `representative_fact_id` |
+| `statement_generated` | true when the model wrote `statement`, which is then not a quotation |
+| `representative_fact_id` | the longest member; its text is the statement when the model wrote none; `ON DELETE SET NULL` |
+| `members_sha256` | SHA-256 over the sorted member ids, which is how a re-run recognizes an unchanged group |
+| `model_slug` / `threshold` | the embedding model and cosine threshold that grouped the members; NULL for a fact standing alone |
+| `distill_model` | the chat model asked, when one was |
+| `tsv` | generated `to_tsvector('english', statement)`, GIN-indexed |
+
+Each embedding model has a `fact_emb_<slug>` table of distilled-fact vectors
+beside its `emb_<slug>` table, keyed on `distilled_fact_id` (`ON DELETE CASCADE`).
+It is created and dropped with the model, not by a migration, because its width
+is the model's. The backfill fills it: a statement that quotes a potential fact
+copies that fact's chunk vector, and only model-written statements are embedded.
 
 ### `fact_runs`
 
@@ -223,6 +260,9 @@ CREATE TABLE emb_<slug> (
 `chunk_id` as both primary key and cascading foreign key is the load-bearing
 detail: deleting a chunk removes its vectors from *every* model table at once,
 so stale vectors cannot outlive the text they came from.
+
+Each model also has a `fact_emb_<slug>` table of the same shape, keyed on
+`distilled_fact_id` instead (see [`distilled_facts`](#distilled_facts)).
 
 #### Storage selection
 

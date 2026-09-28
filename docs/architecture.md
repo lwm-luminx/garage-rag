@@ -226,6 +226,40 @@ backfill anti-join picks fact chunks up and every registered model ends up with
 a vector for them, with no fact-specific embedding path. Deleting a fact
 cascades into its chunk and, from there, into every `emb_*` table.
 
+#### Distilled facts and the graph (`enrich/clusters.py`, `db/graph.py`)
+
+The facts above are *potential* facts. A claim restated across documents, or in
+every message of a quoted mail thread, is extracted once per statement.
+`garage cluster-facts` (the `ClusterFacts` RPC) links every potential fact to one
+row of `distilled_facts`:
+
+1. **Candidates.** Each fact's nearest neighbours of the same class, from its
+   chunk's vector under the default model, kept above `facts.cluster_threshold`
+   (cosine, default 0.9; `facts.cluster_neighbors` per fact, default 10).
+2. **Guard.** A group is split where its members disagree on numbers, dates or
+   negation. Embeddings place "42 employees" beside "45 employees", and "on
+   Tuesday" beside "not on Tuesday".
+3. **Average linkage.** Groups merge only while their average pairwise
+   similarity clears the threshold, so A≈B and B≈C do not chain A to C.
+4. **Distill.** The local chat model (`inference.*`, else `facts.*`) sees each
+   new group and either confirms it with one sentence stating the claim, or
+   says no, and the group dissolves. A group containing a communication goes
+   only to a loopback model; otherwise it is stated by its longest member.
+5. **Link.** Every other potential fact gets a distilled fact of its own.
+
+Nothing about a potential fact changes but its link. A group whose members are
+unchanged keeps its row, statement and vectors, so a re-run asks the model only
+about new groups. The backfill gives each distilled fact a vector in the model's
+`fact_emb_<slug>` table. It copies the chunk vector where the statement quotes a
+potential fact, and embeds only model-written statements.
+
+Where the server has Apache AGE, the run then re-projects the tables into the
+graph `garage` (`garage graph rebuild` does only that). The vertices are
+`Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
+`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact) and
+`SUPPORTS` (PotentialFact to Fact). Vertices carry the relational ids; text,
+spans and vectors stay in the tables.
+
 ### 8. Search (`search/hybrid.py`)
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200
