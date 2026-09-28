@@ -342,13 +342,14 @@ postgres's fork-safety check runs.
 
 `//ext/postgres` builds either 18 (the default) or 19beta4 (pinned by
 commit): `--//ext:postgres_version` selects the source repository, and each
-version's sandbox patches live in `ext/postgres/pg<major>/`.
-18 carries `pg18/appstore.patch`, which adds a `--enable-appstore` configure/meson
-option (no System V IPC: a `flock()` on `postmaster.pid` as the interlock against
-orphaned backends, and process-shared pthread semaphores in the mmap'd segment)
-and is the version being prepared for upstream. 19 still carries the older
-`sysv_shmem.patch`, since 19 replaced the semaphore/shmem sizing API and the
-port is pending; it ignores `--enable-appstore` with an autoconf warning. Select 19 for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
+version's sandbox patches live in `ext/postgres/pg<major>/`, the same two for
+each: `appstore.patch` adds a `--enable-appstore` configure/meson option (no
+System V IPC: a `flock()` on the data directory as the interlock against
+orphaned backends, and process-shared pthread semaphores in the mmap'd
+segment); the 19 copy is ported to 19's `PGSemaphoreShmemRequest`/
+`ShmemRequestStruct` API, which is also what the upstream series against
+master uses. `username.patch` is the local getpwuid() workaround. Select 19
+for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
 server, libpq) with:
 
 ```bash
