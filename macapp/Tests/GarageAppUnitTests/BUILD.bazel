@@ -7,6 +7,7 @@ swift_library(
     srcs = glob(["**/*.swift"]),
     data = [
         "//data/models",
+        "//macapp/Sources/GarageApp:GarageTips.storekit",
     ],
     module_name = "GarageAppUnitTests",
     visibility = ["//visibility:public"],
