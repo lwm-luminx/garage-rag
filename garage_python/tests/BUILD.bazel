@@ -691,3 +691,14 @@ py_test(
         "@pypi//pytest",
     ],
 )
+
+py_test(
+    name = "test_contact_names",
+    srcs = ["test_contact_names.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/attribute",
+        "//garage_python/src/garage_rag/extract",
+        "//garage_python/src/garage_rag/ingest",
+    ],
+)
