@@ -799,6 +799,8 @@ final class GarageMCPService: ObservableObject {
     private func environment() throws -> [String: String] {
         var env: [String: String] = [:]
         env["GARAGE_DATABASE_URL"] = try postgres.connectionURL()
+        // Where the server finds garage.json, so rag_agent and rag_ask use the models chosen in the app.
+        env[GarageXPCConfigurationKey.workingDirectory] = Paths.garageWorkingDirectory.path
         if let lmStudioToken = try LMStudioTokenStore.load() {
             env["GARAGE_LMSTUDIO_API_TOKEN"] = lmStudioToken
         }
