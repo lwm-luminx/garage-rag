@@ -75,6 +75,12 @@ struct AppVersionInfo: Equatable {
         distribution != .appStore
     }
 
+    /// Whether the splash offers the tip jar (`TipJar`), the App Store build's in-app purchase in
+    /// place of the Patreon link.
+    var offersTipJar: Bool {
+        distribution == .appStore
+    }
+
     /// e.g. "Version 0.9 (build 42) · Developer ID", "Version 0.9", or "Development build".
     var displayString: String {
         guard let distribution else { return versionString }
@@ -184,6 +190,10 @@ struct SplashView: View {
                 .tint(.pink)
                 .controlSize(.large)
                 .accessibilityIdentifier("splash.patreon")
+            }
+
+            if version.offersTipJar {
+                TipJarView()
             }
         }
     }
