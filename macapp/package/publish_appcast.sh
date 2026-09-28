@@ -4,6 +4,8 @@
 #   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md]
 #   aspect run //macapp/package:publish_appcast -- --check-live
 #
+# The tag is v plus the archive's version, or that and a pre-release suffix (v1.5-beta.1).
+#
 # The first form takes the notarized bazel-bin/macapp/package/GarageApp.zip, checks it
 # (version matches the tag, notarized, arm64 only, newer than every entry already in the
 # feed, and the Keychain's EdDSA key is the one the shipped app trusts), runs Sparkle's
@@ -104,7 +106,8 @@ app="$work/unpacked/Garage.app"
 short="$(plist_value "$app/Contents/Info.plist" CFBundleShortVersionString)"
 build="$(plist_value "$app/Contents/Info.plist" CFBundleVersion)"
 echo "==> Garage $short (build $build)"
-[[ "$tag" == "v$short" ]] || die "tag $tag does not match the archive's version $short (expected v$short)"
+[[ "$tag" == "v$short" || "$tag" =~ ^v"$short"-[0-9A-Za-z][0-9A-Za-z.]*$ ]] ||
+    die "tag $tag does not match the archive's version $short (expected v$short or v$short-<suffix>)"
 [[ "$build" =~ ^[0-9]+$ ]] || die "CFBundleVersion '$build' is not a build number; was the build stamped?"
 /usr/libexec/PlistBuddy -c "Print :SUFeedURL" "$app/Contents/Info.plist" >/dev/null 2>&1 ||
     die "the archive has no SUFeedURL; it is not a Developer ID build"
