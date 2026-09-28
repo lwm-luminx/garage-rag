@@ -257,6 +257,7 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/ops",
         "//garage_python/src/garage_rag/proto",
