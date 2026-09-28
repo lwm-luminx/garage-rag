@@ -1,7 +1,7 @@
 """Shared build graph for the bundled PostgreSQL server.
 
 Each supported major version lives in its own package under //ext (//ext/postgres for 18,
-//ext/postgres19 for the 19 beta) with its own source repository and sandbox patch, but the
+//ext/postgres19 for the 19 beta) with its own source repository and sandbox patches, but the
 configure/make invocation, rpath rewriting and libpq extraction are identical. Both packages
 call postgres_targets() so the two builds can't drift; //ext:postgres_version selects which
 one the rest of the tree (pgvector, the app bundle, PythonXPCService) links against.
@@ -56,6 +56,13 @@ def postgres_targets(name, lib_source, tags = []):
             "--with-zlib",
             "--with-template=darwin",
             "--disable-rpath",
+            # Added by ext/postgres/appstore.patch: no System V shared memory or
+            # semaphores, which the App Sandbox denies. The interlock against orphaned
+            # backends is a flock() on postmaster.pid and the semaphores are
+            # process-shared pthread primitives in the mmap'd segment. Postgres 19
+            # still carries the older sysv_shmem.patch and ignores this option (an
+            # autoconf warning) until the patch is ported.
+            "--enable-appstore",
         ],
         copts = [
             "-Wno-error=unguarded-availability-new",

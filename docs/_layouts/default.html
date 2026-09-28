@@ -18,7 +18,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {% assign in_support = false %}{% if page.url contains '/support/' %}{% assign in_support = true %}{% endif %}
   <title>{% if page.url == '/' or page.url == '/index.html' %}Garage — Local-first personal RAG for macOS{% elsif in_support %}{{ page.title }} | Garage Support{% else %}{{ page.title }} | Garage{% endif %}</title>
-  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first, nothing leaves the machine.{% endif %}">
+  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first: your files and the index stay on your Mac.{% endif %}">
+  {% if page.testflight_page and site.testflight_url == "" %}<meta name="robots" content="noindex">{% endif %}
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
   <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
 </head>
@@ -34,6 +35,7 @@
         <a href="{{ '/' | relative_url }}" class="nav-link {% if page.url == '/' or page.url == '/index.html' %}active{% endif %}">Home</a>
         <a href="{{ '/#download' | relative_url }}" class="nav-link">Download</a>
         <a href="{{ '/support/' | relative_url }}" class="nav-link {% if in_support %}active{% endif %}">Support</a>
+        <a href="{{ '/about.html' | relative_url }}" class="nav-link {% if page.url == '/about.html' %}active{% endif %}">About</a>
         <a href="https://github.com/rickmark/garage-rag" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
       </nav>
     </div>
