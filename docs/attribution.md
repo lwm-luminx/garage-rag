@@ -140,6 +140,14 @@ both sides, each message's chunk says who wrote it: `chunks.direction` is `sent`
 for your own messages and `received` for everyone else's, and `chunks.sender` is
 the handle, or `me`.
 
+A handle's author is named after the handle (`+15551234567`) until the ingest is
+given a contact name for it (`extract/contact_names.py`). When the name arrives,
+that author row takes it; when another author already has the name (the same
+person's other number or email), the row is merged into that one, identities
+and document links included. An author that already has a real name keeps it.
+The author filter in search matches identities as well as names, so filtering
+by a phone number still finds a named author's threads.
+
 `cc` is not assigned yet.
 
 ## Corpus class
