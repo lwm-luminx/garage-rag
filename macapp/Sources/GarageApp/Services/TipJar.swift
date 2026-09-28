@@ -1,5 +1,6 @@
 import Foundation
 import StoreKit
+import SwiftUI
 
 /// The App Store build's tip jar: consumable in-app purchases that unlock nothing, offered on the
 /// splash in place of the Patreon link (a link to an outside payment for a tip breaks App Review
