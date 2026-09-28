@@ -1196,6 +1196,30 @@ final class AppState: ObservableObject {
         return result.succeeded
     }
 
+    /// Distills the potential facts into distinct facts ("Distill Facts"): groups restatements by
+    /// their embeddings and has the local model state each group once, on the enrich-facts runner.
+    @discardableResult
+    func runClusterFacts() async -> Bool {
+        let grpc = self.grpc
+        let result = await enrichFacts.run { runner in
+            await self.loadFactsModelForDistilling(runner)
+            let finished = try await grpc.clusterFacts { status in
+                if status.phase != "finished", !status.message.isEmpty {
+                    runner.appendLog(status.message, stream: .stdout)
+                }
+                for error in status.errors {
+                    runner.appendLog(error, stream: .stderr)
+                }
+            }
+            if let finished, !finished.graph.isEmpty {
+                runner.appendLog(finished.graph, stream: .stdout)
+            }
+            return finished?.message ?? ""
+        }
+        await unloadFactsModelAfterDistilling()
+        return result.succeeded
+    }
+
     /// XPC ingestion logs as a chronologically ordered stream.
     var combinedIngestLogs: [LogLine] {
         ingestService.logs.sorted { $0.date < $1.date }

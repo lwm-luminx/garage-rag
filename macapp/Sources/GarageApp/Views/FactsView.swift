@@ -3,7 +3,8 @@ import AppKit
 
 /// Browses the facts `enrich-facts` distilled out of every document: search them,
 /// filter by source, class and corpus class, and read each one in the passage it
-/// was grounded to.
+/// was grounded to. "Distill Facts" (`garage cluster-facts`) groups the facts that
+/// restate one claim; "Group Restatements" then lists each claim once.
 public struct FactsView: View {
     @EnvironmentObject var appState: AppState
 
@@ -21,6 +22,10 @@ public struct FactsView: View {
     @State private var selectedCorpusClass = CorpusTaxonomy.allSentinel
     /// Narrows the list to one document's facts, from "Facts from This Document".
     @State private var documentFilter: (id: Int64, title: String)?
+    /// Lists the facts that restate one claim once, as the claim's representative.
+    @State private var groupRestatements = false
+    /// Narrows the list to the restatements of one claim, from "Show All Statements".
+    @State private var distilledFilter: (id: Int64, statement: String)?
 
     @State private var isLoading = false
     @State private var isLoadingMore = false
@@ -42,6 +47,9 @@ public struct FactsView: View {
             filterHeader
             if let documentFilter {
                 documentFilterBar(documentFilter.title)
+            }
+            if let distilledFilter {
+                distilledFilterBar(distilledFilter.statement)
             }
             Divider()
             mainContentArea
@@ -114,6 +122,26 @@ public struct FactsView: View {
             .onChange(of: selectedCorpusClass) { _, _ in refreshFacts() }
             .accessibilityIdentifier("facts.class")
 
+            Toggle("Group Restatements", isOn: $groupRestatements)
+                .toggleStyle(.checkbox)
+                .onChange(of: groupRestatements) { _, _ in refreshFacts() }
+                .accessibilityIdentifier("facts.group")
+                .help("List facts that state the same claim once")
+
+            Button(action: distillFacts) {
+                if appState.enrichFacts.isRunning {
+                    ProgressView().controlSize(.small)
+                        .frame(width: 20)
+                } else {
+                    Image(systemName: "wand.and.stars")
+                        .frame(width: 20)
+                }
+            }
+            .accessibilityLabel("Distill facts")
+            .accessibilityIdentifier("facts.distill")
+            .disabled(appState.enrichFacts.isRunning || appState.postgres.status != .running)
+            .help("Group the facts that restate one claim, and have the local model state each claim once")
+
             Button(action: refreshFacts) {
                 if isLoading {
                     ProgressView().controlSize(.small)
@@ -158,6 +186,29 @@ public struct FactsView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Show facts from every document")
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, 8)
+    }
+
+    private func distilledFilterBar(_ statement: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "square.stack.3d.up")
+                .foregroundStyle(.secondary)
+            Text("Statements of “\(statement)”")
+                .font(.caption)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Button {
+                distilledFilter = nil
+                refreshFacts()
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Show every fact")
             Spacer()
         }
         .padding(.horizontal, 16)
@@ -236,6 +287,7 @@ public struct FactsView: View {
             || selectedFactClass != CorpusTaxonomy.allSentinel
             || selectedCorpusClass != CorpusTaxonomy.allSentinel
             || documentFilter != nil
+            || distilledFilter != nil
     }
 
     // MARK: - Fact List (Left)
@@ -290,6 +342,11 @@ public struct FactsView: View {
             HStack(spacing: 6) {
                 StatusBadge(fact.factClass.capitalized, tint: .orange)
                 CorpusClassBadge(corpusClass: fact.corpusClass)
+                if fact.hasRestatements {
+                    StatusBadge("×\(fact.distilledSize)", tint: .purple, symbol: "square.stack.3d.up")
+                        .help("Stated \(fact.distilledSize) times")
+                        .accessibilityIdentifier("facts.row.restatements")
+                }
                 Text(fact.documentDisplayTitle)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -342,6 +399,10 @@ public struct FactsView: View {
                 }
 
                 Divider()
+
+                if fact.hasRestatements {
+                    distilledSection(fact)
+                }
 
                 sourceSection(fact)
 
@@ -411,6 +472,33 @@ public struct FactsView: View {
         }
     }
 
+    private func distilledSection(_ fact: FactListItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle("Stated \(fact.distilledSize) Times")
+            Text(fact.distilledStatement)
+                .font(.callout)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("facts.detail.distilled")
+                .padding(10)
+                .background(Color.purple.opacity(0.08))
+                .clipShape(RoundedRectangle(cornerRadius: 6))
+            if fact.distilledGenerated {
+                Text("Written by the local model from the statements below; not a quotation.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if let id = fact.distilledFactID {
+                Button("Show All Statements") {
+                    distilledFilter = (id, fact.distilledStatement)
+                    refreshFacts()
+                }
+                .controlSize(.small)
+                .disabled(distilledFilter?.id == id)
+            }
+        }
+    }
+
     private func groundingSection(_ grounded: (before: String, span: String, after: String), fact: FactListItem) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle("Grounded In")
@@ -467,6 +555,13 @@ public struct FactsView: View {
     }
 
     // MARK: - Data Loading
+
+    private func distillFacts() {
+        Task {
+            await appState.runClusterFacts()
+            refreshFacts()
+        }
+    }
 
     private func refreshFacts() {
         // Every refresh supersedes whatever is in flight, a Load More included.
@@ -539,7 +634,9 @@ public struct FactsView: View {
             corpusClass: selectedCorpusClass == CorpusTaxonomy.allSentinel ? nil : selectedCorpusClass,
             documentID: documentFilter?.id,
             limit: Self.pageSize,
-            offset: offset
+            offset: offset,
+            collapse: groupRestatements && distilledFilter == nil,
+            distilledFactID: distilledFilter?.id
         )
     }
 }

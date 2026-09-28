@@ -23,6 +23,14 @@ public struct FactListItem: Identifiable, Hashable, Sendable {
     public let excerpt: String
     /// Where `excerpt` starts in the document's content.
     public let excerptStart: Int
+    /// The distilled fact this potential fact backs (`garage cluster-facts`), nil before one ran.
+    public let distilledFactID: Int64?
+    /// How many potential facts back that distilled fact; more than one means restatements.
+    public let distilledSize: Int
+    /// The distilled fact's statement: the local model's sentence, or one member's own text.
+    public let distilledStatement: String
+    /// Whether the local model wrote `distilledStatement` (it is then not a quotation).
+    public let distilledGenerated: Bool
 
     public init(summary: Garage_FactSummary) {
         self.id = summary.id
@@ -42,7 +50,14 @@ public struct FactListItem: Identifiable, Hashable, Sendable {
         self.corpusClass = summary.corpusClass
         self.excerpt = summary.excerpt
         self.excerptStart = Int(summary.excerptStart)
+        self.distilledFactID = summary.distilledFactID == 0 ? nil : summary.distilledFactID
+        self.distilledSize = Int(summary.distilledSize)
+        self.distilledStatement = summary.distilledStatement
+        self.distilledGenerated = summary.distilledGenerated
     }
+
+    /// Whether other potential facts state the same claim as this one.
+    public var hasRestatements: Bool { distilledSize > 1 }
 
     public var documentDisplayTitle: String {
         if !documentTitle.isEmpty {

@@ -176,6 +176,24 @@ extension GarageGRPCService {
         }
     }
 
+    /// Links every potential fact to a distilled fact (`garage cluster-facts`), handing each
+    /// status to `onStatus`; returns the final `finished` status (nil if the stream ended without one).
+    func clusterFacts(
+        onStatus: @MainActor (Garage_ClusterFactsStatus) -> Void
+    ) async throws -> Garage_ClusterFactsStatus? {
+        let request = Garage_ClusterFactsRequest()
+        return try await call(timeout: nil) { client, options in
+            var finished: Garage_ClusterFactsStatus?
+            for try await status in client.clusterFacts(request, callOptions: options) {
+                onStatus(status)
+                if status.phase == "finished" {
+                    finished = status
+                }
+            }
+            return finished
+        }
+    }
+
     /// The effective fact prompts, and `facts.prompts` as configured (what `setSetting` takes back).
     func listFactPrompts() async throws -> Garage_ListFactPromptsResponse {
         try await call { try await $0.listFactPrompts(Garage_ListFactPromptsRequest(), callOptions: $1) }
