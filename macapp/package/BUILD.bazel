@@ -5,14 +5,18 @@ load("//bazel:pkgbuild.bzl", "pkg_install", "pkgbuild")
 
 # gazelle:exclude notarize_release.sh
 # gazelle:exclude publish_appcast.sh
+# gazelle:exclude upload_appstore.sh
 
 exports_files(
-    ["notarize_release.sh"],
+    [
+        "notarize_release.sh",
+        "upload_appstore.sh",
+    ],
     visibility = ["//garage_python/tests:__pkg__"],
 )
 
-# Every target here signs with a Developer ID identity or talks to the notary
-# service, so all are `manual`: `bazel build //...` (CI included) skips them and
+# Every target here signs with a Developer ID or App Store identity, or talks to the notary
+# service or App Store Connect, so all are `manual`: `bazel build //...` (CI included) skips them and
 # they build only when named, on a machine that holds those identities.
 
 # 1. Stage the app for distribution: prune, thin to arm64, codesign for Developer ID
@@ -121,5 +125,37 @@ pkg_install(
     name = "install",
     pkg = ":GarageInstaller",
     tags = ["manual"],
+    visibility = ["//visibility:public"],
+)
+
+# 7. The Mac App Store build: export //macapp:GarageStore.xcarchive re-signed with Apple
+#    Distribution and the three Mac App Store profiles, validate it with App Store Connect and
+#    upload it to TestFlight, with the API key in the login keychain:
+#    `aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release`
+#    (`-- --validate-only` stops after validation, `-- --export-only` after the .pkg).
+#    Writes dist/Garage-<version>-<build>-AppStore.pkg. See RELEASING.md, "App Store".
+sh_binary(
+    name = "upload_appstore",
+    srcs = ["upload_appstore.sh"],
+    args = [
+        "--archive",
+        "$(rootpath //macapp:GarageStore.xcarchive)",
+        "--team",
+        "DWVXMLB45Y",
+        "--profile",
+        "me.rickmark.garage-rag=$(rootpath //macapp:GarageMacAppConnect.provisionprofile)",
+        "--profile",
+        "me.rickmark.garage-rag.garage-cli=$(rootpath //macapp:GarageRAGAppStoreCLI.provisionprofile)",
+        "--profile",
+        "me.rickmark.garage-rag.mcp-server-cli=$(rootpath //macapp:GarageRAGAppStoreMCP.provisionprofile)",
+    ],
+    data = [
+        "//macapp:GarageMacAppConnect.provisionprofile",
+        "//macapp:GarageRAGAppStoreCLI.provisionprofile",
+        "//macapp:GarageRAGAppStoreMCP.provisionprofile",
+        "//macapp:GarageStore.xcarchive",
+    ],
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
     visibility = ["//visibility:public"],
 )

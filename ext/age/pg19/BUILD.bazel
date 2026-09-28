@@ -1,6 +1,6 @@
 load("//ext/age:age.bzl", "age_source")
 
-# Apache AGE's PG19 release line, for //ext/postgres19. Tagged manual like that package, so
+# Apache AGE's PG19 release line, for Postgres 19 (--//ext:postgres_version=19). Tagged manual, so
 # `//...` doesn't fetch and generate a second tree by default.
 age_source(
     name = "age_source",

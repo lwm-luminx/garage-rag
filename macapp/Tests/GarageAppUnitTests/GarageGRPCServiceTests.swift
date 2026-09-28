@@ -24,10 +24,10 @@ final class GarageGRPCServiceTests: XCTestCase {
         if let socketPath = grpcService.socketPath {
             XCTAssertTrue(socketPath.hasSuffix("/s/grpc"), socketPath)
             XCTAssertEqual(grpcService.address, "unix:\(socketPath)")
-            XCTAssertEqual(grpcService.shortAddress, "a private socket")
+            XCTAssertEqual(grpcService.listeningPhrase, "Without remote access")
         } else {
             XCTAssertEqual(grpcService.address, "127.0.0.1:50051")
-            XCTAssertEqual(grpcService.shortAddress, "127.0.0.1:50051")
+            XCTAssertEqual(grpcService.listeningPhrase, "On 127.0.0.1:50051")
         }
     }
 

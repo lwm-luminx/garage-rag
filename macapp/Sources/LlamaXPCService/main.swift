@@ -5,7 +5,10 @@ import LlamaServiceHost
 
 // llama.cpp behind the shared XPC/HTTP front end (//macapp/Sources/LlamaServiceHost).
 let engine = LlamaCppEngine()
-let delegate = LlamaXPCServiceDelegate(engine: engine)
+let delegate = LlamaXPCServiceDelegate(
+    engine: engine,
+    engineSelfTests: [embeddingKnownAnswersSelfTest(engine: engine)]
+)
 engine.httpURL = delegate.httpURL
 delegate.bootstrap()
 delegate.run()

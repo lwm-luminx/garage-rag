@@ -32,7 +32,7 @@ redirect_from:
 <details>
   <summary>How is Garage different from cloud RAG solutions?</summary>
   <div class="faq-content">
-    <p>Unlike cloud solutions, Garage stores 100% of your documents, extracted chunks, and vector embeddings in a private local PostgreSQL instance on your machine. Your private communications and personal notes are never transmitted to third-party servers.</p>
+    <p>Unlike cloud solutions, Garage stores 100% of your documents, extracted chunks, and vector embeddings in a private local PostgreSQL instance on your machine. Garage never uploads them. If you connect a cloud assistant like Claude or ChatGPT, the assistant sends the relevant excerpts its searches return, and the documents it opens, to its provider's servers; the rest of the collection never leaves your Mac.</p>
   </div>
 </details>
 
@@ -43,14 +43,19 @@ redirect_from:
 <details>
   <summary>Does my data ever leave my Mac?</summary>
   <div class="faq-content">
-    <p><strong>Not unless you point it at another machine.</strong> Garage sends nothing to the cloud, and the guarantee is enforced by tests rather than by convention:</p>
+    <p><strong>Your files and the index never do.</strong> What leaves your Mac depends only on which AI you connect:</p>
+    <ul>
+      <li><strong>Claude, ChatGPT and other cloud assistants</strong> (what most people use): the assistant's app queries Garage over MCP and gets only the relevant parts of your collection, the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant sends those parts to its provider's servers with your conversation, including excerpts from Messages and Mail if you have indexed them, and handled under the provider's terms.</li>
+      <li><strong>Fully private, on your Mac:</strong> with the built-in llama.cpp engine, or LM Studio or Ollama on this Mac, and an agent that runs its model locally, nothing leaves the machine.</li>
+      <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this Mac even then.</li>
+    </ul>
+    <p>Garage itself sends nothing to the cloud, and that is enforced by tests rather than by convention:</p>
     <ul>
       <li><strong>No cloud AI client:</strong> An automated scan of every source file fails the build if any module imports a cloud AI SDK, and the dependency lockfile must contain none.</li>
       <li><strong>One egress choke point, one allowlist:</strong> Every outbound connection is built by a single tested module, and goes only to this Mac or to the Ollama / LM Studio server you configure. Anything else is refused.</li>
       <li><strong>Local OCR:</strong> Text in images is recognized with Tesseract on your Mac. There is no cloud fallback.</li>
       <li><strong>Communications stay local:</strong> Content classified as <code>communication</code> (e.g., Messages, Mail) is never sent to a server that is not on this Mac, even one you configured.</li>
     </ul>
-    <p>If you connect an MCP client such as Claude Desktop, what Garage returns to it is handled by that client under its own terms.</p>
   </div>
 </details>
 
@@ -131,7 +136,8 @@ redirect_from:
       <li><code>rag_stats</code>: Overview of indexed document counts, chunk counts, and registered embedding models.</li>
       <li><code>rag_list_sources</code>: List all configured knowledge sources and their sync status.</li>
       <li><code>rag_list_authors</code>: List the people the corpus attributes documents to.</li>
-      <li><code>rag_ask</code>: Answer a question from retrieved excerpts with a local model (<code>facts.provider</code> / <code>facts.model</code>), citing them as <code>[n]</code>. Garage sends nothing off the machine; the answer goes back to the agent that asked.</li>
+      <li><code>rag_ask</code>: Answer a question from retrieved excerpts with a local model (<code>inference.model</code>, or <code>facts.model</code> when that is empty), citing them as <code>[n]</code>. Garage sends nothing off the machine; the answer goes back to the agent that asked.</li>
+      <li><code>rag_agent</code>: Let the same local model search and read the corpus itself with the tools above, in a loop, and answer; the result lists the steps it took and the documents it saw. This is what "Ask Garage" in the menu bar runs.</li>
       <li><code>rag_generate</code>: Send a raw prompt to the same local model, with no retrieval.</li>
     </ul>
   </div>

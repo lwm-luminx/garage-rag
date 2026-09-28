@@ -1,5 +1,0 @@
-filegroup(
-    name = "postgres_source",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)

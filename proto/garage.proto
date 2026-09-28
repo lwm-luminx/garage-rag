@@ -708,8 +708,13 @@ message PersistScanRequest {
     int64 item_count = 2;
     string item_type = 3;
     double duration_seconds = 4;
-    map<string, int64> details = 5;
+    // Field 5 was map<string, int64> details; a scanner's details hold lists, nested tables and
+    // strings too (the sqlite scanner's database names and table counts, a root problem), which
+    // that map could not carry.
+    reserved 5;
     string error = 6;
+    // The scanner's details as a JSON object, stored verbatim in sources.scan_details.
+    string details_json = 7;
 }
 
 message PersistScanResponse {

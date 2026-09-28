@@ -749,7 +749,8 @@ class GrpcIngestStorageGateway(IngestStorageGateway):
             item_count=scan_result.item_count,
             item_type=scan_result.item_type,
             duration_seconds=scan_result.duration_seconds,
-            details=scan_result.details or {},
+            # JSON, not a proto map: the details hold lists and nested tables as well as counts.
+            details_json=json.dumps(scan_result.details or {}, default=str),
             error=scan_result.error or "",
         )
         self.client.persist_scan(req)

@@ -218,6 +218,13 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         return tags.contains("distillation")
     }
 
+    /// Whether the preset is tagged for inference (chat, `rag_ask`). Untagged presets, from a
+    /// `fact_distil` list, count as both.
+    public var isForInference: Bool {
+        guard let tags else { return true }
+        return tags.contains("inference")
+    }
+
     /// The origin badge: the catalog's origin zone, else one derived from the country (US, EU,
     /// CN or the country code); nil when the catalog names neither.
     public var originRegion: String? {
@@ -300,6 +307,9 @@ public struct GarageConfigFile: Codable {
     public let sources: [SourceEntry]?
     public let models: [ModelPresetEntry]?
     public let facts: FactsEntry?
+    /// The `inference` section: the chat model behind `rag_ask` / `rag_generate`. Same shape as
+    /// `facts`; left empty, the distillation model answers.
+    public let inference: FactsEntry?
     public let embedding: EmbeddingEntry?
 }
 
@@ -348,8 +358,8 @@ public enum GarageConfigLoader {
 
     /// Loads text-embedding model presets from `models.json`: `fileURL` when given, else the copy
     /// the app last fetched from the website, else the copy in the bundle, else a configuration
-    /// file with a `models` array. There is no built-in list: `docs/.data/models.json` is the one
-    /// catalog, and the bundle carries it (`//docs:model_manifest`), so an empty result means no
+    /// file with a `models` array. There is no built-in list: `data/models/models.json` is the one
+    /// catalog, and the bundle carries it (`//data/models`), so an empty result means no
     /// file described any model.
     public static func loadModelPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
         loadModelManifest(fileURL: fileURL).textEmbedding ?? []
@@ -450,6 +460,27 @@ public enum GarageConfigLoader {
         }
 
         return (defaultFactsModel, defaultFactsProvider)
+    }
+
+    /// Reads the `inference` section of garage.json. Unlike `facts` there is no default: a missing
+    /// or empty `inference.model` means the distillation model (`facts.model`) answers chat too,
+    /// so both values come back nil then. A provider without a model is ignored, as in Python.
+    public static func loadInferenceSettings(fileURL: URL? = nil) -> (model: String?, provider: String?) {
+        let targets = fileURL.map { [$0] } ?? candidateConfigFiles
+
+        for url in targets {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard let data = try? Data(contentsOf: url),
+                  let config = try? JSONDecoder().decode(GarageConfigFile.self, from: data) else {
+                continue
+            }
+            let model = config.inference?.model?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let provider = config.inference?.provider?.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let model, !model.isEmpty else { return (nil, nil) }
+            return (model, (provider?.isEmpty == false) ? provider : nil)
+        }
+
+        return (nil, nil)
     }
 
     /// Default the Python side applies when garage.json names no `embedding.default_model`.

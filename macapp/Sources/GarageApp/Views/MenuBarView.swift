@@ -17,7 +17,7 @@ struct MenuBarView: View {
         VStack(alignment: .leading, spacing: 10) {
             header
 
-            MenuBarQuickSearch(isEnabled: status.canSearch)
+            MenuBarQuickSearch(isEnabled: status.canSearch, canAsk: status.canAsk)
 
             servicesModule(status)
 

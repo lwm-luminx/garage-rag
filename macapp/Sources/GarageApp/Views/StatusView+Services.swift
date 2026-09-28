@@ -135,7 +135,7 @@ extension StatusView {
     private var grpcRow: some View {
         let row = ServiceRowPresentation.grpc(
             status: appState.grpc.status,
-            address: appState.grpc.shortAddress,
+            listening: appState.grpc.listeningPhrase,
             lastTest: grpcTestResult.map { (isSuccess: $0.isSuccess, summary: $0.summary) }
         )
         let isExpanded = expandedServiceIds.contains(row.id)
@@ -152,13 +152,14 @@ extension StatusView {
                     if isTestingGrpc {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("Test")
+                        Label("Test", systemImage: "flask")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(isTestingGrpc || appState.grpc.status != .running)
-                .help("Call GetStatus, GetVersion, ListModels, ListSources and GetStats")
+                .help("Test: call GetStatus, GetVersion, ListModels, ListSources and GetStats")
                 .accessibilityIdentifier("status.service.grpc.test")
             }
 
@@ -198,22 +199,31 @@ extension StatusView {
                     if isTesting {
                         ProgressView().controlSize(.small)
                     } else {
-                        Text("Test")
+                        Label("Test", systemImage: "flask")
+                            .labelStyle(.iconOnly)
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(isTesting || service.isChecking)
-                .help(ServiceDiagnosticTest.primary(for: service.id).description)
+                .help("Test: \(ServiceDiagnosticTest.primary(for: service.id).description)")
                 .accessibilityIdentifier("status.service.\(service.id).test")
 
-                Button("Restart") {
+                Button {
                     Task { await appState.xpcServices.restart(serviceId: service.id) }
+                } label: {
+                    if isRestarting {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Label("Restart", systemImage: "restart")
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(row.restartTint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.primary))
+                    }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .disabled(service.isChecking || isRestarting || appState.xpcServices.isRestartingAll)
-                .help("Stop the helper process; it starts again on its next request")
+                .help("Restart: stop the helper process; it starts again on its next request")
                 .accessibilityIdentifier("status.service.\(service.id).restart")
             }
 

@@ -79,6 +79,10 @@ final class AppState: ObservableObject {
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
     @Published private(set) var factsProvider: String = GarageConfigLoader.defaultFactsProvider
+    /// The `inference` section: the chat model `rag_ask` / `rag_generate` use. nil follows the
+    /// distillation model, which is how a fresh install (the setup assistant asks only for that) runs.
+    @Published private(set) var inferenceModel: String?
+    @Published private(set) var inferenceProvider: String?
     /// The effective fact-extraction prompts (`ListFactPrompts`): the built-in default and `facts.prompts`.
     @Published private(set) var factPrompts: [FactPromptItem] = []
     /// `facts.prompts` as configured, a JSON array; edits are applied to it and written back whole.
@@ -165,6 +169,11 @@ final class AppState: ObservableObject {
     private(set) var hasHandedOffToRelaunch = false
     private var scheduledMaintenanceTask: Task<Void, Never>?
     private var pendingMaintenanceTask: Task<Void, Never>?
+    /// `startBackend`'s hand-over of the database URL and the backend's address to the helpers,
+    /// which the launch run of automatic updates waits for: until the ingest and embed helpers
+    /// have taken their configuration, a scan started at launch fails against helpers that have
+    /// no database yet.
+    private var helperConfigurationTask: Task<Void, Never>?
     private var queuedSourceScanTask: Task<Void, Never>?
     /// Maintenance came due while the setup assistant was open; run it when it closes.
     private(set) var isMaintenanceDeferredForFirstRun = false
@@ -325,7 +334,7 @@ final class AppState: ObservableObject {
     func startBackend() async {
         try? await grpc.start()
         guard grpc.status == .running, let options = try? grpc.helperConfiguration() else { return }
-        Task { [xpcServices] in
+        helperConfigurationTask = Task { [xpcServices] in
             await xpcServices.configureHelpers(options)
         }
     }
@@ -367,6 +376,25 @@ final class AppState: ObservableObject {
         let facts = GarageConfigLoader.loadFactsSettings()
         self.factsModel = facts.model
         self.factsProvider = facts.provider
+        let inference = GarageConfigLoader.loadInferenceSettings()
+        self.inferenceModel = inference.model
+        self.inferenceProvider = inference.provider
+    }
+
+    /// The model that answers chat: `inference.model`, else the distillation model.
+    var effectiveInferenceModel: String { inferenceModel ?? factsModel }
+
+    /// Points `rag_ask` / `rag_generate` at a model, or with nil clears `inference.*` so chat
+    /// follows the distillation model again.
+    @discardableResult
+    func setInferenceModel(_ slug: String?, provider: String = GarageConfigLoader.defaultFactsProvider) async -> Bool {
+        let succeeded = await runOperation { grpc in
+            let model = try await grpc.setSetting("inference.model", to: slug ?? "")
+            let chosen = try await grpc.setSetting("inference.provider", to: slug == nil ? "" : provider)
+            return [model.summary, chosen.summary].joined(separator: "\n")
+        }
+        fetchFactsSettings()
+        return succeeded
     }
 
     /// Points `enrich-facts` / `rag_ask` at a model: sets `facts.model`, then `facts.provider`.
@@ -1528,15 +1556,22 @@ final class AppState: ObservableObject {
         lastCommandSucceeded = ingestSucceeded && backfillSucceeded && factsSucceeded
     }
 
-    /// The "also run when Garage starts" option: once per launch, after the database is up and the
-    /// gRPC backend the scan goes through is listening. The setup assistant, when it is open, holds
-    /// the run until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
+    /// The "also run when Garage starts" option: once per launch, after every system is go: the
+    /// database is up, the gRPC backend the scan goes through is listening, and the helpers have
+    /// taken the database URL and the backend's address (`startBackend`), since a run kicked off
+    /// before that fails in the ingest helper. The setup assistant, when it is open, holds the run
+    /// until it closes (`runScheduledMaintenance`). Debounced, so a source the assistant or
     /// garage.json registers right after start shares the run rather than starting its own.
     func runMaintenanceAtLaunchIfEnabled() {
         guard maintenanceAtLaunchPending, postgres.status == .running else { return }
         maintenanceAtLaunchPending = false
         guard scheduledMaintenanceEnabled, maintenanceRunsAtLaunch else { return }
-        scheduleDebouncedMaintenanceTrigger()
+        let configured = helperConfigurationTask
+        Task { [weak self] in
+            await configured?.value
+            guard let self, self.postgres.status == .running, self.grpc.status == .running else { return }
+            self.scheduleDebouncedMaintenanceTrigger()
+        }
     }
 
     /// Kicks off ingest + embedding backfill for all sources when the user has enabled

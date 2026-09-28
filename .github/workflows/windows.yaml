@@ -16,7 +16,7 @@ name: Windows build
 #   test_postgres.py against the built server (psycopg loads the built libpq.dll).
 #
 # tools/windows/fetch_ext.py reads the url and sha256 out of ext/*/*.MODULE.bazel,
-# so a version bump there moves this build too. The Postgres sysv_shmem patch and
+# so a version bump there moves this build too. The Postgres sandbox patches and
 # the mmap postgresql.conf defaults are not applied: they exist for the macOS App
 # Sandbox, and Windows has its own shared memory implementation.
 on:

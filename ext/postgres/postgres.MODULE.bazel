@@ -8,8 +8,12 @@ http_archive(
         "sed -i.bak -e 's/^[# ]*shared_memory_type = .*/shared_memory_type = mmap/' -e 's/^[# ]*dynamic_shared_memory_type = .*/dynamic_shared_memory_type = mmap/' src/backend/utils/misc/postgresql.conf.sample",
         "rm -f src/backend/utils/misc/postgresql.conf.sample.bak",
     ],
+    # appstore.patch adds --enable-appstore (see postgres.bzl): no System V IPC, so the
+    # server runs inside the App Sandbox. username.patch is a local workaround for
+    # getpwuid() failing in the sandbox; it is not part of the upstream proposal.
     patches = [
-        "//ext/postgres:sysv_shmem.patch",
+        "//ext/postgres:pg18/appstore.patch",
+        "//ext/postgres:pg18/username.patch",
     ],
     sha256 = "983ee554ec53dbeb9b70797bef9fcf4e67e117e7e48ca1463cc80b3ff8e8ff3f",
     strip_prefix = "postgresql-18.6",

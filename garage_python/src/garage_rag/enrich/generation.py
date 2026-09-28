@@ -81,8 +81,9 @@ class ChatReply:
 class LocalChatModel:
     """Chat completions against the configured local model.
 
-    ``provider`` and ``model_ref`` default to ``facts.provider`` and
-    ``facts.model``; the host is the matching ``embedding.*_host`` setting.
+    ``provider`` and ``model_ref`` default to ``inference.provider`` and
+    ``inference.model``, and to ``facts.*`` while ``inference.model`` is empty;
+    the host is the matching ``embedding.*_host`` setting.
     Construction is cheap and makes no network call; :meth:`is_available`
     probes the server, :meth:`chat` runs a completion.
     """
@@ -95,10 +96,12 @@ class LocalChatModel:
         settings: Settings | None = None,
     ) -> None:
         self._settings = settings or get_settings()
-        self.provider = provider or self._settings.fact_provider
+        # inference.* names the chat model; left empty, the distillation model (facts.*) answers.
+        chosen = self._settings.inference_model
+        self.provider = provider or (chosen and self._settings.inference_provider) or self._settings.fact_provider
         if self.provider not in PROVIDERS:
             raise ValueError(f"unknown generation provider {self.provider!r}; expected one of {PROVIDERS}")
-        self.model_ref = model_ref or self._settings.fact_model
+        self.model_ref = model_ref or chosen or self._settings.fact_model
         setting = {"llama_xpc": "llama_host", "ollama": "ollama_host", "lmstudio": "lmstudio_host"}[self.provider]
         self.host = getattr(self._settings, setting)
         # Fail at construction, not at the first request, when the host is not approved.

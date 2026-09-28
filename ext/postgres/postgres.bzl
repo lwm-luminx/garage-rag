@@ -1,10 +1,10 @@
 """Shared build graph for the bundled PostgreSQL server.
 
-Each supported major version lives in its own package under //ext (//ext/postgres for 18,
-//ext/postgres19 for the 19 beta) with its own source repository and sandbox patch, but the
-configure/make invocation, rpath rewriting and libpq extraction are identical. Both packages
-call postgres_targets() so the two builds can't drift; //ext:postgres_version selects which
-one the rest of the tree (pgvector, the app bundle, PythonXPCService) links against.
+//ext/postgres calls postgres_targets() once, with lib_source selected by //ext:postgres_version:
+@postgres (18) or @postgres19 (the 19 beta), each fetched with the patches in pg<major>/. The
+configure/make invocation, rpath rewriting and libpq extraction are the same for every version,
+and the rest of the tree (pgvector, the app bundle, PythonXPCService) links against the one set
+of targets.
 """
 
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
@@ -56,6 +56,13 @@ def postgres_targets(name, lib_source, tags = []):
             "--with-zlib",
             "--with-template=darwin",
             "--disable-rpath",
+            # Added by ext/postgres/pg18/appstore.patch: no System V shared memory or
+            # semaphores, which the App Sandbox denies. The interlock against orphaned
+            # backends is a flock() on postmaster.pid and the semaphores are
+            # process-shared pthread primitives in the mmap'd segment. Postgres 19
+            # still carries the older pg19/sysv_shmem.patch and ignores this option (an
+            # autoconf warning) until the patch is ported.
+            "--enable-appstore",
         ],
         copts = [
             "-Wno-error=unguarded-availability-new",

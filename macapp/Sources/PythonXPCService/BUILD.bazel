@@ -1,8 +1,8 @@
-load("@rules_apple//apple:macos.bzl", "macos_framework")
 load("@rules_apple//apple:resources.bzl", "apple_resource_group")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
 load("//bazel:codesign.bzl", "codesign")
+load("//bazel:macos_framework.bzl", "macos_versioned_framework")
 load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 # Protocol definitions for all XPC services
@@ -112,7 +112,10 @@ apple_resource_group(
     ],
 )
 
-macos_framework(
+# Versioned (Versions/A, Current and top-level links), not rules_apple's flat layout: the Mac App
+# Store rejects a flat framework in Contents/Frameworks (ITMS-90291/90292). Info.plist and the
+# resources above land in Versions/A/Resources. See //bazel:macos_framework.bzl.
+macos_versioned_framework(
     name = "PythonXPCService_framework",
     additional_linker_inputs = [
         "//ext/python:python_framework",

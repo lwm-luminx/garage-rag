@@ -1,0 +1,35 @@
+diff -ruN a/src/common/username.c b/src/common/username.c
+--- a/src/common/username.c	2026-09-14 05:29:09
++++ b/src/common/username.c	2026-09-14 05:29:09
+@@ -32,18 +32,26 @@
+ {
+ #ifndef WIN32
+ 	struct passwd *pw;
+-	uid_t		user_id = geteuid();
++	uid_t		user_id;
++	const char *env_user;
+ 
+ 	*errstr = NULL;
+ 
++	env_user = getenv("PGUSER");
++	if (env_user && env_user[0] != '\0')
++		return env_user;
++
++	env_user = getenv("USER");
++	if (env_user && env_user[0] != '\0')
++		return env_user;
++
++	user_id = geteuid();
+ 	errno = 0;					/* clear errno before call */
+ 	pw = getpwuid(user_id);
+ 	if (!pw)
+ 	{
+-		*errstr = psprintf(_("could not look up effective user ID %ld: %s"),
+-						   (long) user_id,
+-						   errno ? strerror(errno) : _("user does not exist"));
+-		return NULL;
++		/* Fallback immediately rather than crashing on getpwuid inside sandbox */
++		return "postgres";
+ 	}
+ 
+ 	return pw->pw_name;

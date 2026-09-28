@@ -578,20 +578,23 @@ details .faq-content {
 
 /* Landing page */
 .hero-landing {
-  padding-top: 3.5rem;
-  padding-bottom: 3rem;
+  padding-top: 2.25rem;
+  padding-bottom: 2rem;
 }
 
 .hero-logo {
-  width: 96px;
-  height: 96px;
-  margin-bottom: 1.25rem;
+  width: 80px;
+  height: 80px;
+  margin-bottom: 1rem;
   border-radius: 22px;
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
 .hero-landing h1 {
   font-size: 2.8rem;
+  border-bottom: none;
+  padding-bottom: 0;
+  margin-top: 0;
 }
 
 .btn-large {
@@ -652,5 +655,67 @@ details .faq-content {
   }
   .hero-landing h1 {
     font-size: 2rem;
+  }
+}
+
+/* Landing page strips: the test build inside the hero, and the creator's hire line under it */
+.hero-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 1.5rem;
+  flex-wrap: wrap;
+  text-align: left;
+  border: 1px solid;
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  font-size: 0.95rem;
+}
+
+.hero-strip[hidden] {
+  display: none;
+}
+
+.hero-strip-text {
+  flex: 1 1 320px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.hero-strip-text span,
+.hero-strip-text small {
+  color: var(--text-secondary);
+}
+
+.hero-strip-text small {
+  font-weight: 400;
+  margin-left: 0.25rem;
+}
+
+.hero-strip-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.hero-alpha {
+  max-width: 860px;
+  margin: 1.25rem auto 0;
+  padding: 0.75rem 1rem;
+  background-color: var(--callout-warn-bg);
+  border-color: var(--callout-warn-border);
+}
+
+.hero-hire {
+  margin: -1.25rem 0 2.5rem;
+  background-color: var(--callout-info-bg);
+  border-color: var(--callout-info-border);
+}
+
+@media (max-width: 640px) {
+  .hero-strip-actions,
+  .hero-strip-actions .btn {
+    width: 100%;
   }
 }

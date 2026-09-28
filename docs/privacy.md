@@ -12,6 +12,24 @@ Garage sends content only to approved destinations: this machine, and the Ollama
 or LM Studio server you configure. Communications never leave this machine.
 There is no cloud AI client in the codebase.
 
+Garage never uploads your files or its index. What leaves your Mac depends on
+which AI you connect:
+
+- **A cloud assistant over MCP** (Claude, ChatGPT and the like), the usual
+  setup. The assistant's app queries Garage's MCP server on this Mac and
+  receives only the relevant parts of the corpus: the excerpts its searches
+  return and the documents it opens, never the whole index. Garage uploads
+  nothing, but the assistant sends those parts to its provider's servers with
+  your conversation, Messages and Mail excerpts included if you indexed them; see
+  [What connected agents receive](#what-connected-agents-receive).
+- **Fully private, on your Mac.** With the built-in llama.cpp engine, or LM
+  Studio or Ollama on this Mac, and an agent that runs its model locally,
+  nothing leaves the machine.
+- **Your own server on your network.** With `embedding.ollama_host` or
+  `embedding.lmstudio_host` set to another machine, documents and code go to
+  that server, and only that server, for embeddings, facts and answers.
+  Communications never do (layer 4).
+
 This is enforced structurally, in layers that are each tested on their own
 (`garage_python/tests/test_egress_block.py`). Removing any one of them fails the
 test suite.
@@ -84,7 +102,9 @@ anything else when the caller says what it is sending:
   stored facts are touched.
 - **Answers** (`rag_ask`) run every retrieved excerpt's class through the guard
   before building a prompt for an off-box Ollama or LM Studio, so a communication in the
-  results aborts the call.
+  results aborts the call. `rag_agent`, where the model searches for itself, restricts
+  its searches to documents and code and refuses to read a communication when the
+  model host is not loopback, so the model never sees one.
 - **Embeddings** — backfill, in-process or through the embed worker, asks
   `egress.allows_communications` and leaves chunks of communication documents
   out for a provider that is not on this machine. They stay unembedded for that
@@ -233,7 +253,7 @@ network you do not control.
 The MCP server answers whichever client you connect: Claude Desktop, Claude
 Code, Cursor, or anything else you register. An agent receives the excerpts its
 searches return (`rag_search`, `rag_get_document`, and the answers from `rag_ask` /
-`rag_generate`), only those, not the whole index. Most agents run their model in
+`rag_agent` / `rag_generate`), only those, not the whole index. Most agents run their model in
 the cloud, so they send those excerpts, with your conversation, to their model
 provider. That includes excerpts from Messages and Mail if you have indexed
 them: the MCP tools serve communications like any other content, and the egress

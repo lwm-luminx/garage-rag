@@ -2,7 +2,7 @@ import XCTest
 
 /// The paths that need a model, end to end: embedding the ingested fixture corpus and watching the
 /// Status page count it, a search that finds each file by its token and opens the hit, fact
-/// distillation and the Facts page, and the MCP Server page's Try It.
+/// distillation and the Facts page, the MCP Server page's Try It, and the menu bar's Ask Garage.
 ///
 /// The host is `GarageApp_uitest`, whose LlamaXPCService runs `DeterministicLlamaEngine`
 /// (`macapp/Tests/LlamaTestSupport`): hashed bag-of-words embeddings, so a query ranks the chunk
@@ -306,5 +306,38 @@ final class ModelUITests: GarageUITestCase {
         XCTAssertTrue(waitUntil(timeout: 120) { answer.exists || error.exists }, "Prompt the Model produced nothing")
         XCTAssertFalse(error.exists, "rag_generate failed: \(error.exists ? shownText(of: error) : "")")
         XCTAssertTrue(shownText(of: answer).contains("lanterns"), "the completion does not echo the prompt: \(shownText(of: answer))")
+    }
+
+    // MARK: - Menu bar Ask Garage
+
+    /// Ask Garage runs rag_agent on the MCP server: it searches the corpus before the model's first
+    /// reply, so the Markdown note is among the documents the answer rests on, and the footnote says
+    /// it searched and names the model.
+    func testMenuBarAskAnswersFromTheCorpus() throws {
+        try ingestAndEmbed()
+        openPopover()
+        XCTAssertTrue(element(identifier: "menubar.allSystemsGo").waitForExistence(timeout: 60), "the popover never said all systems go")
+
+        typeInPopoverField("When did the \(FixtureCorpus.quillonBridge.token) arch open?")
+        let ask = element(identifier: "menubar.ask")
+        XCTAssertTrue(ask.waitForExistence(timeout: 15), "typing did not offer Ask Garage")
+        ask.click()
+
+        let answer = element(identifier: "menubar.ask.answer")
+        let error = element(identifier: "menubar.ask.error")
+        XCTAssertTrue(waitUntil(timeout: 180) { answer.exists || error.exists }, "Ask Garage produced neither an answer nor an error")
+        XCTAssertFalse(error.exists, "rag_agent failed: \(error.exists ? shownText(of: error) : "")")
+        XCTAssertFalse(shownText(of: answer).isEmpty, "the answer is empty")
+
+        let citations = app.descendants(matching: .any).matching(identifier: "menubar.ask.citation")
+        XCTAssertTrue(waitUntil(timeout: 10) { citations.count > 0 }, "the answer rests on no documents")
+        let note = citations.matching(NSPredicate(format: "label CONTAINS %@", FixtureCorpus.quillonBridge.title)).firstMatch
+        XCTAssertTrue(note.exists, "the Markdown note is not among the documents the answer rests on")
+
+        let footnote = element(identifier: "menubar.ask.footnote")
+        XCTAssertTrue(footnote.exists, "the answer has no footnote")
+        XCTAssertTrue(shownText(of: footnote).hasPrefix("Searched"), "the footnote does not say it searched: \(shownText(of: footnote))")
+        XCTAssertTrue(shownText(of: footnote).contains(Self.model), "the footnote does not name the model: \(shownText(of: footnote))")
+        XCTAssertTrue(button(label: "Copy the answer").exists, "the answer has no Copy button")
     }
 }
