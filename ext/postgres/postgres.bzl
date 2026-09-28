@@ -56,12 +56,10 @@ def postgres_targets(name, lib_source, tags = []):
             "--with-zlib",
             "--with-template=darwin",
             "--disable-rpath",
-            # Added by ext/postgres/pg18/appstore.patch: no System V shared memory or
+            # Added by pg<major>/appstore.patch: no System V shared memory or
             # semaphores, which the App Sandbox denies. The interlock against orphaned
-            # backends is a flock() on postmaster.pid and the semaphores are
-            # process-shared pthread primitives in the mmap'd segment. Postgres 19
-            # still carries the older pg19/sysv_shmem.patch and ignores this option (an
-            # autoconf warning) until the patch is ported.
+            # backends is a flock() on the data directory and the semaphores are
+            # process-shared pthread primitives in the mmap'd segment.
             "--enable-appstore",
         ],
         copts = [

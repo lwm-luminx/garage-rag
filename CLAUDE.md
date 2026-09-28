@@ -170,10 +170,12 @@ The bundled Postgres is one package, `//ext/postgres`, built from 18 (the defaul
 `--//ext:postgres_version=19` (or `--config=pg19`) switches its source between the `@postgres` and
 `@postgres19` repositories (`postgres.MODULE.bazel`, `postgres19.MODULE.bazel`), as `//ext/age` switches
 AGE's release line. Everything downstream depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/
-`libpq_dylib` aliases. Each major's patches live in `ext/postgres/pg<major>/`: `pg18/appstore.patch`
-(adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written to be
-proposed upstream) with `pg18/username.patch`, and `pg19/sysv_shmem.patch` (the older fork of the SysV
-code, not yet ported); a change to one usually needs porting to the other.
+`libpq_dylib` aliases. Each major's patches live in `ext/postgres/pg<major>/`, the same two for both:
+`appstore.patch` (adds `--enable-appstore`, off by default upstream and passed by our build: a flock()
+interlock on the data directory instead of the System V shim segment, and pthread semaphores in the
+mmap'd segment; the 19 copy is ported to 19's `PGSemaphoreShmemRequest` API and matches the series
+proposed upstream against master) and `username.patch` (the local getpwuid() workaround, not for
+upstream). A change to one major's patch needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
 line matching the selected major (`ext/age/pg18`, `ext/age/pg19`). `001_extensions.sql` creates it
