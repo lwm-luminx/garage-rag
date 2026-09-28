@@ -303,9 +303,14 @@ final class AppState: ObservableObject {
         // Before anything reads the data folder's contents or starts Postgres / an XPC service.
         GarageDataMigration.runAtLaunch()
         fetchPresetModels()
-        Task {
-            if await ModelCatalog.refresh() {
-                fetchPresetModels()
+        // UI tests turn this off, so the page shows the bundled catalog of the build under test
+        // rather than whatever the website serves.
+        let refreshesCatalog = (UserDefaults.standard.object(forKey: ModelCatalog.refreshAtLaunchDefaultsKey) as? Bool) ?? true
+        if refreshesCatalog {
+            Task {
+                if await ModelCatalog.refresh() {
+                    fetchPresetModels()
+                }
             }
         }
         volumeAccess.restoreAndVerifyAccess()
