@@ -416,7 +416,8 @@ Build from an up-to-date `main`. Sparkle decides what is newer by `CFBundleVersi
 `bazel/workspace_status.sh` stamps with the commit count of `HEAD`, so a release built from a
 branch or a stale checkout can come out older than one already in the feed (the publish step
 refuses that). The marketing version is `short_version_string` in
-`macapp/Sources/GarageApp/BUILD.bazel`, and the release tag is `v` plus that version.
+`macapp/Sources/GarageApp/BUILD.bazel`, and the release tag is `v` plus that version, with a
+pre-release suffix for a beta in the feed (`v1.5-beta.1`).
 
 1. `aspect build //macapp/package:GarageApp` stages and signs the app, producing
    `bazel-bin/macapp/package/GarageApp.zip`: a zip of `Garage.app`, which is exactly the

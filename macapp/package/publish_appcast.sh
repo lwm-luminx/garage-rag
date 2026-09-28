@@ -4,6 +4,8 @@
 #   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md] [--channel beta]
 #   aspect run //macapp/package:publish_appcast -- --check-live
 #
+# The tag is v plus the archive's version, or that and a pre-release suffix (v1.5-beta.1).
+#
 # The first form takes the stapled dist/Garage-<version>.zip that notarize_all wrote, checks it
 # (version matches the tag, notarized, arm64 only, newer than every entry already in the
 # feed, and the Keychain's EdDSA key is the one the shipped app trusts), runs Sparkle's
@@ -117,7 +119,8 @@ app="$work/unpacked/Garage.app"
 short="$(plist_value "$app/Contents/Info.plist" CFBundleShortVersionString)"
 build="$(plist_value "$app/Contents/Info.plist" CFBundleVersion)"
 echo "==> Garage $short (build $build)"
-[[ "$tag" == "v$short" ]] || die "tag $tag does not match the archive's version $short (expected v$short)"
+[[ "$tag" == "v$short" || "$tag" =~ ^v"$short"-[0-9A-Za-z][0-9A-Za-z.]*$ ]] ||
+    die "tag $tag does not match the archive's version $short (expected v$short or v$short-<suffix>)"
 [[ "$build" == "$built_build" ]] ||
     die "$archive is build $build, but bazel-bin holds build $built_build; run 'aspect run //macapp/package:notarize_all' again"
 [[ "$build" =~ ^[0-9]+$ ]] || die "CFBundleVersion '$build' is not a build number; was the build stamped?"
@@ -125,7 +128,9 @@ echo "==> Garage $short (build $build)"
     die "the archive has no SUFeedURL; it is not a Developer ID build"
 
 # 2. It must be the notarized, arm64-only Developer ID build.
-archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/Garage")"
+# Contents/MacOS/Garage would open the `garage` launcher link on a case-insensitive volume.
+executable="$(plist_value "$app/Contents/Info.plist" CFBundleExecutable)"
+archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/$executable")"
 [[ "$archs" == "arm64" ]] || die "Garage.app is built for '$archs'; releases are arm64 only"
 assessment="$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 || true)"
 grep -q "source=Notarized Developer ID" <<<"$assessment" ||

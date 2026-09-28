@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import plistlib
+import re
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -72,8 +73,12 @@ def feed_problems(xml: str) -> list[str]:
         if enclosure is None:
             problems.append(f"{label}: no enclosure")
             continue
-        expected = f"{DOWNLOADS}/v{short}/Garage-{short}.zip"
-        if enclosure.get("url") != expected:
+        # The release's tag is v<short>, or that with a pre-release suffix such as -beta.1.
+        tag = rf"v{re.escape(short)}(-[0-9A-Za-z][0-9A-Za-z.]*)?"
+        if not re.fullmatch(
+            rf"{re.escape(DOWNLOADS)}/{tag}/Garage-{re.escape(short)}\.zip", enclosure.get("url") or ""
+        ):
+            expected = f"{DOWNLOADS}/v{short}[-suffix]/Garage-{short}.zip"
             problems.append(f"{label}: enclosure url {enclosure.get('url')!r} is not {expected}")
         if not (enclosure.get("length") or "").isdigit() or int(enclosure.get("length", "0")) <= 0:
             problems.append(f"{label}: enclosure has no length")
@@ -140,6 +145,9 @@ class TestTheChecks:
     def test_a_beta_channel_entry_passes(self) -> None:
         assert feed_problems(_feed(_item(channel="beta"))) == []
 
+    def test_a_pre_release_tag_passes(self) -> None:
+        assert feed_problems(_feed(_item(url=f"{DOWNLOADS}/v1.5-beta.1/Garage-1.5.zip"))) == []
+
     def test_an_empty_feed_passes(self) -> None:
         assert feed_problems(_feed()) == []
 
@@ -151,6 +159,8 @@ class TestTheChecks:
             ({"signature": "not base64!"}, "EdDSA signature"),
             ({"url": "Garage-1.5.zip"}, "enclosure url"),
             ({"url": f"{DOWNLOADS}/v1.4/Garage-1.5.zip"}, "enclosure url"),
+            ({"url": f"{DOWNLOADS}/v1.4-beta.1/Garage-1.5.zip"}, "enclosure url"),
+            ({"url": f"{DOWNLOADS}/v1.5-/Garage-1.5.zip"}, "enclosure url"),
             ({"version": "1.5"}, "build number"),
             ({"length": "0"}, "length"),
             ({"channel": "nightly"}, "sparkle:channel"),
