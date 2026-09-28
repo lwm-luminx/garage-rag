@@ -47,13 +47,21 @@ final class ImageModelCatalogTests: XCTestCase {
     }
 
     func testTheCommittedCatalogDescribesSigLIP2() throws {
-        // The bundle carries docs/.data/models.json as the fallback catalog; the test's own bundle
-        // does not, so this reads the repository copy through the source tree when it is there.
+        // The app bundles data/models/models.json as the fallback catalog; the test's own bundle
+        // does not, so this reads the repository copy: from the runfiles under Bazel, else through
+        // the source tree when it is there.
         let here = URL(fileURLWithPath: #filePath)
         let repo = here.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let catalog = repo.appendingPathComponent("docs/.data/models.json")
-        guard let data = try? Data(contentsOf: catalog) else {
-            throw XCTSkip("docs/.data/models.json is not beside the test sources")
+        let candidates = [
+            ProcessInfo.processInfo.environment["TEST_SRCDIR"].map {
+                URL(fileURLWithPath: $0).appendingPathComponent("_main/data/models/models.json")
+            },
+            repo.appendingPathComponent("data/models/models.json"),
+        ].compactMap { $0 }
+        guard let catalog = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }),
+            let data = try? Data(contentsOf: catalog)
+        else {
+            throw XCTSkip("data/models/models.json is not in this test's runfiles or beside the test sources")
         }
         let specs = try XCTUnwrap(ImageModelResolver.parseCatalog(data))
         XCTAssertTrue(specs.contains { $0.slug == "siglip2-base-256" && $0.dims == 768 })

@@ -31,7 +31,7 @@ from garage_rag.proto.garage_pb2 import GetEmbeddingBatchesRequest
 from garage_rag.service.server import GarageRpcServicer
 from garage_rag.xpc import image_host
 
-MODELS_JSON = repo_root() / "docs" / ".data" / "models.json"
+MODELS_JSON = repo_root() / "data" / "models" / "models.json"
 HEX = set("0123456789abcdef")
 
 

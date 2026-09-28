@@ -550,8 +550,8 @@ py_test(
     name = "test_image_embedding",
     srcs = ["test_image_embedding.py"],
     data = [
+        "//data/models",
         "//data/sql:sql_schema",
-        "//docs:model_manifest",
     ],
     deps = [
         ":conftest",

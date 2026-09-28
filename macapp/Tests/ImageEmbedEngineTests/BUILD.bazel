@@ -21,6 +21,7 @@ macos_unit_test(
     ],
     bundle_id = "me.rickmark.garage-rag.ImageEmbedEngineTests",
     bundle_name = "ImageEmbedEngineTests",
+    data = ["//data/models"],
     # ImageEmbedEngine -> PythonXPCService -> GaragePythonEmbed calls the CPython C
     # API, so the test bundle has to link the interpreter like the app does.
     linkopts = [
