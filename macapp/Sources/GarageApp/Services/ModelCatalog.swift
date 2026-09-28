@@ -13,6 +13,8 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 /// bundled catalog is the fallback when nothing has been fetched.
 enum ModelCatalog {
     static let remoteURL = URL(string: "https://garagerag.app/.data/models.json")!
+    /// Whether the app fetches the catalog at launch (default on); UI tests turn it off.
+    static let refreshAtLaunchDefaultsKey = "garage.modelCatalog.refreshAtLaunch"
 
     /// Where a fetched catalog is saved.
     static var fetchedURL: URL { GarageAppGroup.fetchedModelCatalog }

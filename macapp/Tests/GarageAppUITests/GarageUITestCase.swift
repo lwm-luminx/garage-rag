@@ -96,6 +96,8 @@ class GarageUITestCase: XCTestCase {
             "-scheduledMaintenanceEnabled", automaticMaintenance ? "YES" : "NO",
             "-scheduledMaintenanceRunsAtLaunch", "NO",
             "-garage.mcp.httpEnabled", mcpHTTP ? "YES" : "NO",
+            // The build's bundled models.json, not the website's copy, which can lag the branch under test.
+            "-garage.modelCatalog.refreshAtLaunch", "NO",
             // Start from a clean window each time rather than the last run's restored state.
             "-ApplePersistenceIgnoreState", "YES",
         ] + additionalLaunchArguments
