@@ -41,9 +41,11 @@ from pathlib import Path
 from garage_rag.attribute.resolver import SelfIdentity, resolve
 from garage_rag.config import get_settings
 from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult, NoTextFound, file_sha256, sha256_text
+from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.dispatch import extract
 from garage_rag.extract.placeholder import PlaceholderFile
 from garage_rag.extract.quality import assess
+from garage_rag.ingest.author_names import name_authors
 from garage_rag.ingest.chunking import TextChunk, chunk_text
 from garage_rag.ingest.classify import classify
 from garage_rag.ingest.gateway import (
@@ -165,8 +167,12 @@ def ingest_one(
     budget: MaterializationBudget,
     counters: IngestCounters,
     force: bool = False,
+    contact_names: ContactNames | None = None,
 ) -> None:
-    """Index a single file, replacing any previous version of it."""
+    """Index a single file, replacing any previous version of it.
+
+    ``contact_names`` names authors that arrive known only by an email address or number.
+    """
     log.debug("Evaluating %s (size=%d bytes, placeholder=%s)", candidate.uri, candidate.size, candidate.placeholder)
 
     existing_stat = gateway.check_stat(source_ctx.slug, candidate.uri)
@@ -383,6 +389,7 @@ def ingest_one(
         for cand in attribution.authors
         if cand.name
     ]
+    authors = name_authors(authors, contact_names)
 
     chunk_payloads = [
         ChunkPayload(
@@ -441,6 +448,7 @@ def ingest_source(
     force: bool = False,
     progress=None,
     is_cancelled=None,
+    contact_names: ContactNames | None = None,
 ) -> tuple[IngestCounters, WalkStats, MaterializationBudget]:
     """Walk and index one source, recording coverage for reconciliation.
 
@@ -457,6 +465,7 @@ def ingest_source(
             force=force,
             progress=progress,
             is_cancelled=is_cancelled,
+            contact_names=contact_names,
         )
 
 
@@ -470,6 +479,7 @@ def _ingest_source(
     force: bool = False,
     progress=None,
     is_cancelled=None,
+    contact_names: ContactNames | None = None,
 ) -> tuple[IngestCounters, WalkStats, MaterializationBudget]:
     gw = get_storage_gateway(session_factory=session_factory, gateway=gateway)
 
@@ -547,6 +557,7 @@ def _ingest_source(
                 limit=limit,
                 is_cancelled=is_cancelled,
                 on_item=lambda title: _call_progress(phase="ingest", current_item=title),
+                contact_names=contact_names,
             )
         finally:
             _finalize(gw, run_id, source_slug, counters, budget, completed=completed)
@@ -577,6 +588,7 @@ def _ingest_source(
                     budget=budget,
                     counters=counters,
                     force=force,
+                    contact_names=contact_names,
                 )
             except Exception as exc:  # noqa: BLE001 - one file must not end the run
                 counters.note_error(f"{candidate.path.name}: {exc}")

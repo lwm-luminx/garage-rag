@@ -4,6 +4,7 @@ py_library(
     name = "ingest",
     srcs = [
         "__init__.py",
+        "author_names.py",
         "chunking.py",
         "classify.py",
         "conversations.py",

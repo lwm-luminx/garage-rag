@@ -10,12 +10,17 @@ The document's text is a header naming the thread and its members, then the
 whole thread, one message per paragraph::
 
     Climbing crew
-    Participants: +15551234567, friend@example.com
+    Participants: Alex Doe (+15551234567), friend@example.com
     Service: iMessage
 
     [2026-09-24 18:02 UTC] Me: running late
 
-    [2026-09-24 18:03 UTC] +15551234567: no worries
+    [2026-09-24 18:03 UTC] Alex Doe: no worries
+
+A handle shows as a name when ``contact_names`` knows one
+(:mod:`garage_rag.extract.contact_names`), and the header keeps the handle beside
+it so a search for the number still finds the thread. A thread with no named
+members reads, and hashes, exactly as it did before names existed.
 
 Each message is its own chunk, spanning exactly its paragraph, so a search hit
 is one message with its sender and time rather than a window that starts
@@ -48,6 +53,7 @@ from garage_rag.attribute.resolver import SelfIdentity
 from garage_rag.config import get_settings
 from garage_rag.db.models import CorpusClass
 from garage_rag.extract.base import ContentKind, sha256_text
+from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.messages import (
     EXTRACTOR_NAME,
     EXTRACTOR_VERSION,
@@ -81,17 +87,30 @@ def conversation_uri(db_path: Path, conversation: Conversation) -> str:
     return f"{db_path}#{conversation.guid}"
 
 
-def _sender_label(message: ChatMessage) -> str:
+def _sender_label(conversation: Conversation, message: ChatMessage) -> str:
     if message.is_from_me:
         return SELF_LABEL
-    return message.sender or "Unknown"
+    return conversation.label(message.sender) if message.sender else "Unknown"
+
+
+def _member(conversation: Conversation, handle: str) -> str:
+    name = conversation.names.get(handle)
+    return f"{name} ({handle})" if name else handle
+
+
+def attach_names(conversation: Conversation, contact_names: ContactNames | None) -> Conversation:
+    """Give the conversation the names ``contact_names`` knows for its members and senders."""
+    if contact_names:
+        senders = [message.sender for message in conversation.messages if message.sender]
+        conversation.names = contact_names.resolve(dict.fromkeys([*conversation.participants, *senders]))
+    return conversation
 
 
 def _header(conversation: Conversation) -> str:
     """The thread's name and members, so a rename or a new member changes the text (and its hash)."""
     lines = [conversation.title]
     if conversation.participants:
-        lines.append("Participants: " + ", ".join(conversation.participants))
+        lines.append("Participants: " + ", ".join(_member(conversation, h) for h in conversation.participants))
     if conversation.service:
         lines.append("Service: " + conversation.service)
     return "\n".join(lines)
@@ -118,7 +137,7 @@ def _render(conversation: Conversation, *, size: int | None) -> tuple[str, list[
     owners: list[ChatMessage] = []
     for message in conversation.messages:
         stamp = message.sent_at.strftime("%Y-%m-%d %H:%M UTC")
-        paragraph = f"[{stamp}] {_sender_label(message)}: {message.text}"
+        paragraph = f"[{stamp}] {_sender_label(conversation, message)}: {message.text}"
         offset += 2  # the blank line between paragraphs
         pieces = (
             [paragraph] if len(paragraph) <= size else [c.text for c in chunk_prose(paragraph, size=size, overlap=0)]
@@ -152,7 +171,8 @@ def _identity_kind(handle: str) -> str:
 def conversation_authors(conversation: Conversation, self_identity: SelfIdentity) -> list[AuthorPayload]:
     """Senders are the handles that wrote in the thread; members who only read it are recipients.
 
-    The owner is added as a sender when they wrote and their name is configured.
+    A thread is the owner plus one or more others. The owner is added when their
+    name is configured: as a sender when they wrote, else as a recipient.
     """
     senders = {message.sender for message in conversation.messages if message.sender}
     handles = list(dict.fromkeys([*conversation.participants, *sorted(senders)]))
@@ -162,20 +182,22 @@ def conversation_authors(conversation: Conversation, self_identity: SelfIdentity
             continue
         authors.append(
             AuthorPayload(
-                name=handle,
+                name=conversation.label(handle),
                 role="sender" if handle in senders else "recipient",
                 confidence=1.0,
                 evidence="imessage-handle",
                 identities={_identity_kind(handle): handle},
             )
         )
-    if self_identity.name and any(message.is_from_me for message in conversation.messages):
+    if self_identity.name:
+        # Every thread has the owner in it; a member is a recipient until they write.
+        wrote = any(message.is_from_me for message in conversation.messages)
         authors.append(
             AuthorPayload(
                 name=self_identity.name,
-                role="sender",
+                role="sender" if wrote else "recipient",
                 confidence=1.0,
-                evidence="imessage-is-from-me",
+                evidence="imessage-is-from-me" if wrote else "imessage-owner",
                 is_self=True,
             )
         )
@@ -214,6 +236,7 @@ def ingest_conversation(
         "chat_identifier": conversation.chat_identifier,
         "service": conversation.service,
         "participants": conversation.participants,
+        "participant_names": conversation.names,
         "is_group": conversation.is_group,
         "message_count": len(conversation.messages),
         "first_message_at": conversation.messages[0].sent_at.isoformat(),
@@ -266,8 +289,12 @@ def ingest_messages_source(
     limit: int | None = None,
     is_cancelled: Callable[[], bool] | None = None,
     on_item: Callable[[str], None] | None = None,
+    contact_names: ContactNames | None = None,
 ) -> bool:
     """Ingest every conversation in every Messages database under the source's root.
+
+    ``contact_names`` supplies names for the handles; without it threads are
+    labelled by phone number and email address, as ``chat.db`` stores them.
 
     ``counters`` is the pipeline's ``IngestCounters``. Returns True when every
     database was read to the end, which is what lets reconcile retire the
@@ -301,6 +328,7 @@ def ingest_messages_source(
                     log.info("Ingest cancelled by user for source %s", source_ctx.slug)
                     return False
                 counters.seen += 1
+                attach_names(conversation, contact_names)
                 try:
                     written = ingest_conversation(
                         gateway, source_ctx, db_path, conversation, self_identity=self_identity, force=force
@@ -346,6 +374,7 @@ def ingest_messages_source(
 
 
 __all__ = [
+    "attach_names",
     "conversation_authors",
     "conversation_uri",
     "ingest_conversation",
