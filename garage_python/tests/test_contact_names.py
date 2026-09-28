@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from garage_rag.attribute.resolver import SelfIdentity
 from garage_rag.extract.contact_names import ContactNames, handle_key
 from garage_rag.extract.messages import ChatMessage, Conversation
+from garage_rag.ingest.author_names import name_authors
 from garage_rag.ingest.conversations import attach_names, conversation_authors, render
+from garage_rag.ingest.gateway import AuthorPayload
 
 AT = datetime(2026, 9, 24, 12, tzinfo=UTC)
 
@@ -74,3 +76,20 @@ def test_without_names_the_text_is_unchanged() -> None:
     after, _ = render(attach_names(_group(), ContactNames()))
     assert before == after
     assert attach_names(_group(), None).names == {}
+
+
+def test_any_document_author_known_only_by_a_handle_is_named() -> None:
+    names = ContactNames([("alex@example.com", "Alex Doe"), ("rick@example.com", "Someone Else")])
+    authors = [
+        AuthorPayload(name="alex@example.com", role="author", identities={"email": "alex@example.com"}),
+        AuthorPayload(name="Sam Lee", role="author", identities={"email": "alex@example.com"}),
+        AuthorPayload(name="rick@example.com", role="author", identities={"email": "rick@example.com"}, is_self=True),
+        AuthorPayload(name="nobody@example.com", role="author", identities={"email": "nobody@example.com"}),
+    ]
+    assert [a.name for a in name_authors(authors, names)] == [
+        "Alex Doe",  # named after its handle: takes the contact name
+        "Sam Lee",  # arrived with a name: keeps it
+        "rick@example.com",  # the owner is never renamed
+        "nobody@example.com",  # no contact
+    ]
+    assert name_authors(authors, None) is authors
