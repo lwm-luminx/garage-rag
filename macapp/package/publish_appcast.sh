@@ -113,7 +113,9 @@ echo "==> Garage $short (build $build)"
     die "the archive has no SUFeedURL; it is not a Developer ID build"
 
 # 2. It must be the notarized, arm64-only Developer ID build.
-archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/Garage")"
+# Contents/MacOS/Garage would open the `garage` launcher link on a case-insensitive volume.
+executable="$(plist_value "$app/Contents/Info.plist" CFBundleExecutable)"
+archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/$executable")"
 [[ "$archs" == "arm64" ]] || die "Garage.app is built for '$archs'; releases are arm64 only"
 assessment="$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 || true)"
 grep -q "source=Notarized Developer ID" <<<"$assessment" ||
