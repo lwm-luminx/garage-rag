@@ -208,8 +208,8 @@ py_test(
     name = "test_model_catalog",
     srcs = ["test_model_catalog.py"],
     data = [
-        "//data/sql:sql_schema",
         "//data/models",
+        "//data/sql:sql_schema",
     ],
     deps = [
         ":conftest",
