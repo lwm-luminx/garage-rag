@@ -662,3 +662,93 @@ class TestConfigInspection:
         schema = json.loads(target.read_text())
         assert "facts" in schema["properties"]
         assert "sources" in schema["properties"]
+
+
+# ---------------------------------------------------------------------------
+# facts list / stats
+# ---------------------------------------------------------------------------
+class TestFactsBrowse:
+    def _row(self):
+        from garage_rag.ops.facts import FactRow
+
+        return FactRow(
+            id=7,
+            document_id=1,
+            ord=0,
+            fact="The heat pump was installed in March 2024.",
+            fact_class="event",
+            attributes={},
+            char_start=10,
+            char_end=52,
+            extractor="langextract",
+            extractor_model="qwen3",
+            created_at=None,
+            document_title="House",
+            document_uri="/tmp/house.md",
+            source_slug="notes",
+            corpus_class="document",
+            excerpt="Notes: The heat pump was installed in March 2024. More.",
+            excerpt_start=3,
+        )
+
+    def test_list_passes_the_filters_and_shows_the_evidence(self, cfg: Path) -> None:
+        from garage_rag.ops.facts import FactPage
+
+        page = FactPage(facts=[self._row()], total=12)
+        with (
+            patch("garage_rag.cli.session_scope", _scope(MagicMock())),
+            patch("garage_rag.ops.facts.list_facts", return_value=page) as op,
+        ):
+            out = _invoke(cfg, "facts", "list", "-q", "heat", "--class", "event", "--offset", "4", "--evidence")
+        assert out.exit_code == 0, out.output
+        kwargs = op.call_args.kwargs
+        assert (kwargs["query"], kwargs["fact_class"], kwargs["offset"], kwargs["limit"]) == ("heat", "event", 4, 50)
+        assert "facts 5-5 of 12" in out.output
+        assert "“The heat pump was installed in March 2024.”" in out.output
+
+    def test_list_json_carries_the_evidence(self, cfg: Path) -> None:
+        from garage_rag.ops.facts import FactPage
+
+        with (
+            patch("garage_rag.cli.session_scope", _scope(MagicMock())),
+            patch("garage_rag.ops.facts.list_facts", return_value=FactPage(facts=[self._row()], total=1)),
+        ):
+            out = _invoke(cfg, "facts", "list", "--json")
+        assert out.exit_code == 0, out.output
+        body = json.loads(out.output)
+        assert body["total"] == 1
+        assert body["facts"][0]["evidence"] == "The heat pump was installed in March 2024."
+
+    def test_list_with_no_facts_suggests_enrich_facts(self, cfg: Path) -> None:
+        from garage_rag.ops.facts import FactPage
+
+        with (
+            patch("garage_rag.cli.session_scope", _scope(MagicMock())),
+            patch("garage_rag.ops.facts.list_facts", return_value=FactPage(facts=[], total=0)),
+        ):
+            out = _invoke(cfg, "facts", "list")
+        assert out.exit_code == 0, out.output
+        assert "garage enrich-facts" in out.output
+
+    def test_an_unknown_corpus_class_exits_2(self, cfg: Path) -> None:
+        with patch("garage_rag.cli.session_scope", _scope(MagicMock())):
+            listed = _invoke(cfg, "facts", "list", "--corpus-class", "memo")
+            counted = _invoke(cfg, "facts", "stats", "--corpus-class", "memo")
+        assert listed.exit_code == counted.exit_code == 2
+        assert "unknown corpus class 'memo'" in listed.output
+
+    def test_stats_prints_per_source_and_per_class(self, cfg: Path) -> None:
+        from garage_rag.ops.facts import FactStats
+
+        stats = FactStats(facts=1234, documents=56, by_source={"notes": 1200, "mail": 34}, by_class={"fact": 1234})
+        with (
+            patch("garage_rag.cli.session_scope", _scope(MagicMock())),
+            patch("garage_rag.ops.facts.fact_stats", return_value=stats) as op,
+        ):
+            out = _invoke(cfg, "facts", "stats", "--source", "notes")
+            as_json = _invoke(cfg, "facts", "stats", "--json")
+        assert out.exit_code == 0, out.output
+        assert op.call_args_list[0].kwargs["source"] == "notes"
+        assert "1,234 facts across 56 documents" in out.output
+        assert "1,200" in out.output and "mail" in out.output
+        assert json.loads(as_json.output)["by_source"] == {"notes": 1200, "mail": 34}

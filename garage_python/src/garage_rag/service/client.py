@@ -28,6 +28,8 @@ from garage_rag.proto.garage_pb2 import (
     EnrichFactsStatus,
     EnsureLlamaModelRequest,
     EnsureLlamaModelResponse,
+    FactStatsRequest,
+    FactStatsResponse,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
     GetDocumentRequest,
@@ -44,6 +46,8 @@ from garage_rag.proto.garage_pb2 import (
     ListDocumentsResponse,
     ListFactPromptsRequest,
     ListFactPromptsResponse,
+    ListFactsRequest,
+    ListFactsResponse,
     ListModelsRequest,
     ListModelsResponse,
     ListSourcesRequest,
@@ -329,6 +333,12 @@ class GarageClient:
 
     def enrich_facts(self, request: EnrichFactsRequest) -> Iterator[EnrichFactsStatus]:
         return self._invoke_stream("EnrichFacts", request, EnrichFactsStatus)
+
+    def list_facts(self, request: ListFactsRequest | None = None) -> ListFactsResponse:
+        return self._invoke_unary("ListFacts", request or ListFactsRequest(), ListFactsResponse)
+
+    def get_fact_stats(self, request: FactStatsRequest | None = None) -> FactStatsResponse:
+        return self._invoke_unary("GetFactStats", request or FactStatsRequest(), FactStatsResponse)
 
     def list_fact_prompts(self) -> ListFactPromptsResponse:
         return self._invoke_unary("ListFactPrompts", ListFactPromptsRequest(), ListFactPromptsResponse)

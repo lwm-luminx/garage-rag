@@ -33,7 +33,7 @@ from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations
 from garage_rag.db.registry import ModelSpec
 from garage_rag.embed.ollama import count_pending
 from garage_rag.ingest.gateway import AuthorPayload, ChunkPayload, SqlAlchemyIngestStorageGateway
-from garage_rag.ops.facts import EXCERPT_CONTEXT, list_facts
+from garage_rag.ops.facts import EXCERPT_CONTEXT, fact_stats, list_facts
 from garage_rag.search import SearchMode
 from garage_rag.search.hybrid import search
 
@@ -754,6 +754,16 @@ class TestFacts:
         assert first.total == rest.total == 3
         assert len(first.facts) == 2 and len(rest.facts) == 1
         assert {f.id for f in first.facts}.isdisjoint(f.id for f in rest.facts)
+
+    def test_stats_count_per_source_and_class_under_the_filters(self, db: Session) -> None:
+        self._corpus(db)
+        stats = fact_stats(db)
+        assert (stats.facts, stats.documents) == (3, 2)
+        assert stats.by_source == {"notes": 2, "mail": 1}
+        assert stats.by_class == {"fact": 2, "event": 1}
+        narrowed = fact_stats(db, query="heat pump", fact_class="fact")
+        assert (narrowed.facts, narrowed.documents, narrowed.by_source) == (1, 1, {"notes": 1})
+        assert fact_stats(db, corpus_class="communication").by_source == {"mail": 1}
 
 
 class TestFactPrompts:

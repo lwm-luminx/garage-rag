@@ -127,9 +127,9 @@ For detailed architectural and design specifications, see:
    # Or one long-running HTTP server for several clients
    garage mcp-serve
 
-   # Register either with Claude Desktop / Claude Code (HTTP by default, --stdio for garage-mcp)
+   # Register either with Claude Desktop / Claude Code (stdio garage-mcp by default, --http for a URL)
    garage mcp-install --target claude-desktop
-   garage mcp-install --target claude-code-user --stdio
+   garage mcp-install --target claude-code-user --http
    ```
 
 ---
