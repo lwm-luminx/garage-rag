@@ -27,6 +27,7 @@ service GarageService {
 
     // --- Facts ---
     rpc ListFacts (ListFactsRequest) returns (ListFactsResponse);
+    rpc GetFactStats (FactStatsRequest) returns (FactStatsResponse);
 
     // --- Sources ---
     rpc ListSources (ListSourcesRequest) returns (ListSourcesResponse);
@@ -287,6 +288,23 @@ message ListFactsResponse {
     // Fact classes under every filter but fact_class, most common first.
     repeated FactClassCount classes = 3;
     string formatted_output = 4;
+}
+
+// Fact counts under the same filters as ListFactsRequest.
+message FactStatsRequest {
+    string query = 1; // full-text or substring match on the fact; empty = all
+    string source = 2; // source slug filter; empty = all sources
+    string fact_class = 3; // filter; empty = all
+    string corpus_class = 4; // filter; empty = all
+    int64 document_id = 5; // one document's facts; 0 = all
+}
+
+message FactStatsResponse {
+    int64 facts = 1;
+    int64 documents = 2; // documents with at least one matching fact
+    map<string, int64> facts_by_source = 3;
+    map<string, int64> facts_by_class = 4;
+    string formatted_output = 5;
 }
 
 // ---------------------------------------------------------------------------

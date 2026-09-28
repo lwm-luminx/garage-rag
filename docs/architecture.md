@@ -157,6 +157,12 @@ which also runs a disabled one. `garage facts prompts list` and
 Models page lists and edits them (the `ListFactPrompts` RPC reads them;
 `SetSetting facts.prompts` writes the list back).
 
+Stored facts are browsed with `garage facts list` / `garage facts stats`, over the
+same `ops.facts` functions as the `ListFacts` / `GetFactStats` RPCs behind the
+app's Facts page: filtered by text (full-text or substring), source, document,
+extraction class and corpus class, each fact with the document text around its
+grounding span (`--evidence` prints the span), and counted per source and class.
+
 **Recipe: entities as facts.** Nothing constrains `fact_class` to `'fact'`, so an
 `entities` prompt asking for people, places, organizations, projects and events
 runs today with no code change — just a `facts.prompts` entry. Each mention
@@ -370,7 +376,7 @@ presenter over the same function the CLI command calls (`ops/`), and a
 `PermissionError` onto gRPC status codes. The RPCs fall in three groups:
 
 - **Corpus reads** for the app's views: `Search`, `ListDocuments`,
-  `GetDocument`, `ListFacts`, `ListSources`, `ListModels`, `GetStats`,
+  `GetDocument`, `ListFacts`, `GetFactStats`, `ListSources`, `ListModels`, `GetStats`,
   `GetStatus`, `GetVersion`, `Ping`.
 - **Operations**: `AddSource`, `RemoveSource`, `Scan` (streaming),
   `SyncSources`, `ImportSourcesToConfig`, `Reconcile`, `RegisterModel`,
