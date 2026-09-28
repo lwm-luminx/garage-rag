@@ -83,18 +83,23 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
     private let engine: any LlamaInferenceEngine
     private let engineService: LlamaEngineManagedService
     private let httpService: LlamaHTTPManagedService
+    private let engineSelfTests: [GarageXPCSelfTest]
 
     /// Where the HTTP listener serves, e.g. `unix:/path/s/llama` or `http://127.0.0.1:8790`.
     public var httpURL: String { httpService.server.url }
 
     /// `httpPort` is used only when `socketPath` is nil. The defaults are what the shipped service
     /// does: the socket `GarageSockets` names unless `GARAGE_LLAMA_HTTP_PORT` asks for a port.
+    /// `engineSelfTests` run after the front end's own: tests only one engine can pass (the shipped
+    /// service's "Embedding Known Answers", on LlamaCppEngine) come from the service that picks it.
     public init(
         engine: any LlamaInferenceEngine,
         httpPort: UInt16? = LlamaXPCServiceDelegate.configuredHTTPPort(),
-        socketPath: String? = LlamaXPCServiceDelegate.configuredSocketPath()
+        socketPath: String? = LlamaXPCServiceDelegate.configuredSocketPath(),
+        engineSelfTests: [GarageXPCSelfTest] = []
     ) {
         self.engine = engine
+        self.engineSelfTests = engineSelfTests
         self.engineService = LlamaEngineManagedService(engine: engine)
         self.httpService = LlamaHTTPManagedService(server: LlamaHTTPServer(
             engine: engine,
@@ -158,7 +163,7 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
                 }
                 return "Listening on \(server.url)"
             },
-        ]
+        ] + engineSelfTests
     }
 
     public override func registerManagedServices(in host: GarageXPCServiceHost) {
