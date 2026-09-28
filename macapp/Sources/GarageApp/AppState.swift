@@ -305,7 +305,10 @@ final class AppState: ObservableObject {
         fetchPresetModels()
         // UI tests turn this off, so the page shows the bundled catalog of the build under test
         // rather than whatever the website serves.
-        let refreshesCatalog = (UserDefaults.standard.object(forKey: ModelCatalog.refreshAtLaunchDefaultsKey) as? Bool) ?? true
+        // `bool(forKey:)` because a launch argument's "NO" arrives as a string, which `as? Bool` misses.
+        let defaults = UserDefaults.standard
+        let refreshesCatalog = defaults.object(forKey: ModelCatalog.refreshAtLaunchDefaultsKey) == nil
+            || defaults.bool(forKey: ModelCatalog.refreshAtLaunchDefaultsKey)
         if refreshesCatalog {
             Task {
                 if await ModelCatalog.refresh() {
