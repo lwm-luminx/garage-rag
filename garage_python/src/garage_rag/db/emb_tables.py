@@ -34,6 +34,8 @@ log = logging.getLogger(__name__)
 # because these identifiers are interpolated into DDL and search SQL, where bind
 # parameters are not usable.
 _TABLE_RE = re.compile(r"^emb_[a-z0-9_]+$")
+# A model's distilled-fact vectors (data/sql/015_distilled_facts.sql): its table name, prefixed.
+FACT_TABLE_PREFIX = "fact_"
 
 
 def assert_safe_table(name: str) -> str:
@@ -43,16 +45,32 @@ def assert_safe_table(name: str) -> str:
     return name
 
 
-def create_embedding_table(session: Session, table: str, plan: StoragePlan, distance: str = "cosine") -> None:
-    """Create one per-model embedding table and its vector index (built for ``distance``)."""
+def fact_table_name(model_table: str) -> str:
+    """The table of distilled-fact vectors beside a model's chunk table ``model_table``."""
+    return FACT_TABLE_PREFIX + assert_safe_table(model_table)
+
+
+def create_embedding_table(
+    session: Session, table: str, plan: StoragePlan, distance: str = "cosine", *, facts: bool = False
+) -> None:
+    """Create one per-model embedding table and its vector index (built for ``distance``).
+
+    ``facts`` makes the model's distilled-fact table (``table`` is then its
+    chunk table's name), keyed on ``distilled_fact_id`` instead of ``chunk_id``.
+    """
     assert_safe_table(table)
     coltype = column_type_sql(plan)
+    if facts:
+        table = fact_table_name(table)
+        key = "distilled_fact_id bigint PRIMARY KEY REFERENCES distilled_facts(id) ON DELETE CASCADE"
+    else:
+        key = "chunk_id    bigint PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE"
 
     session.execute(
         text(
             f"""
             CREATE TABLE IF NOT EXISTS {table} (
-                chunk_id    bigint PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE,
+                {key},
                 embedding   {coltype} NOT NULL,
                 embedded_at timestamptz NOT NULL DEFAULT now()
             )
@@ -136,6 +154,7 @@ def register_model(
         )
 
     create_embedding_table(session, table, plan, spec.distance)
+    create_embedding_table(session, table, plan, spec.distance, facts=True)
 
     row = EmbeddingModel(
         slug=spec.slug,
@@ -219,5 +238,18 @@ def drop_model(session: Session, slug: str) -> None:
     """Deregister a model and drop its table, discarding its vectors."""
     row = get_model(session, slug)
     table = assert_safe_table(row.table_name)
+    session.execute(text(f"DROP TABLE IF EXISTS {fact_table_name(table)}"))
     session.execute(text(f"DROP TABLE IF EXISTS {table}"))
     session.delete(row)
+
+
+def ensure_fact_table(session: Session, model: EmbeddingModel) -> str:
+    """Create ``model``'s distilled-fact table if it has none (a model registered before 015); its name."""
+    plan = StoragePlan(
+        stored_dims=model.stored_dims,
+        storage_kind=model.storage_kind,
+        index_kind=model.index_kind,
+        truncated_from=model.dims if model.stored_dims < model.dims else None,
+    )
+    create_embedding_table(session, model.table_name, plan, model.distance, facts=True)
+    return fact_table_name(model.table_name)

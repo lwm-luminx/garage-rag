@@ -503,7 +503,12 @@ class TestFactsSection:
         settings = load_config(cfg)
         assert settings.fact_model == "gemma2:2b"
         assert settings.fact_provider == "ollama"
-        assert nest(settings)["facts"] == {"model": "gemma2:2b", "provider": "ollama"}
+        assert nest(settings)["facts"] == {
+            "model": "gemma2:2b",
+            "provider": "ollama",
+            "cluster_threshold": 0.9,
+            "cluster_neighbors": 10,
+        }
 
     def test_provider_is_restricted_to_local_backends(self, tmp_path: Path) -> None:
         cfg = tmp_path / CONFIG_FILENAME
@@ -686,7 +691,12 @@ class TestSetGetHelpers:
         assert settings.fact_provider == "ollama"
         document = json.loads(target.read_text())
         assert document["$schema"] == SCHEMA_URL
-        assert document["facts"] == {"model": "gemma2-2b", "provider": "ollama"}
+        assert document["facts"] == {
+            "model": "gemma2-2b",
+            "provider": "ollama",
+            "cluster_threshold": 0.9,
+            "cluster_neighbors": 10,
+        }
         # Every other section is written at its default, as `config init` does.
         assert document["chunking"]["size"] == Settings().chunk_size
 

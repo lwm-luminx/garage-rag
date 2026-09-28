@@ -190,11 +190,13 @@ class FactRow:
     # document keeps no content.
     excerpt: str | None = None
     excerpt_start: int = 0
-    # The fact's cluster (garage cluster-facts), if it is in one: how many
-    # facts it groups, and the local model's statement of their shared claim.
-    cluster_id: int | None = None
-    cluster_size: int = 0
-    cluster_statement: str | None = None
+    # The distilled fact this potential fact backs (garage cluster-facts), how
+    # many potential facts back it, and its statement; whether the local model
+    # wrote that statement (it is then not a quotation).
+    distilled_fact_id: int | None = None
+    distilled_size: int = 0
+    distilled_statement: str | None = None
+    distilled_generated: bool = False
 
 
 @dataclass
@@ -213,16 +215,13 @@ def _like_pattern(value: str) -> str:
 
 _FACT_JOINS = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id"
 
-# A fact's cluster, for the columns list_facts adds; LEFT JOINed onto _FACT_JOINS.
-_CLUSTER_JOINS = """
-    LEFT JOIN fact_cluster_members fcm ON fcm.fact_id = f.id
-    LEFT JOIN fact_clusters fc ON fc.id = fcm.cluster_id
-"""
+# A fact's distilled fact, for the columns list_facts adds; LEFT JOINed onto _FACT_JOINS.
+_DISTILLED_JOIN = " LEFT JOIN distilled_facts df ON df.id = f.distilled_fact_id"
 
-# With collapse_clusters, a clustered fact is listed only when it is its cluster's representative
-# (or, when the representative is gone, the cluster's lowest id).
-_COLLAPSED = """(fcm.cluster_id IS NULL OR f.id = COALESCE(fc.representative_fact_id,
-    (SELECT min(m2.fact_id) FROM fact_cluster_members m2 WHERE m2.cluster_id = fcm.cluster_id)))"""
+# With collapse, a potential fact is listed only when it stands for its distilled fact: it is the
+# representative (or, when that is gone, the lowest id), or it has none yet.
+_COLLAPSED = """(f.distilled_fact_id IS NULL OR f.id = COALESCE(df.representative_fact_id,
+    (SELECT min(f2.id) FROM facts f2 WHERE f2.distilled_fact_id = f.distilled_fact_id)))"""
 
 
 def _where(clauses: list[str]) -> str:
@@ -279,29 +278,30 @@ def list_facts(
     document_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
-    collapse_clusters: bool = False,
-    cluster_id: int | None = None,
+    collapse: bool = False,
+    distilled_fact_id: int | None = None,
 ) -> FactPage:
     """Facts matching the filters, newest first, or best match first given ``query``.
 
     ``query`` matches a fact's words (Postgres full-text search, stemmed) or any
     substring of it, so a partial word still finds something. Empty filters
-    match everything. ``collapse_clusters`` lists each cluster of restatements
-    once, as its representative fact; ``cluster_id`` lists one cluster's facts.
+    match everything. ``collapse`` lists the potential facts behind one distilled
+    fact once, as its representative; ``distilled_fact_id`` lists one distilled
+    fact's potential facts.
     """
     query = query.strip()
     base, filtered, params = _fact_filters(
         query=query, source=source, fact_class=fact_class, corpus_class=corpus_class, document_id=document_id
     )
     extra: list[str] = []
-    if collapse_clusters:
+    if collapse:
         extra.append(_COLLAPSED)
-    if cluster_id:
-        extra.append("fcm.cluster_id = :cluster_id")
-        params["cluster_id"] = cluster_id
+    if distilled_fact_id:
+        extra.append("f.distilled_fact_id = :distilled_fact_id")
+        params["distilled_fact_id"] = distilled_fact_id
     base = [*base, *extra]
     filtered = [*filtered, *extra]
-    joins = _FACT_JOINS + _CLUSTER_JOINS
+    joins = _FACT_JOINS + _DISTILLED_JOIN
     params["ctx"] = EXCERPT_CONTEXT
 
     order = (
@@ -324,11 +324,12 @@ def list_facts(
                                     f.char_end - GREATEST(f.char_start - :ctx, 0) + :ctx)
                    END AS excerpt,
                    GREATEST(COALESCE(f.char_start, 0) - :ctx, 0) AS excerpt_start,
-                   fcm.cluster_id,
-                   CASE WHEN fcm.cluster_id IS NULL THEN 0 ELSE
-                        (SELECT count(*) FROM fact_cluster_members m3 WHERE m3.cluster_id = fcm.cluster_id)
-                   END AS cluster_size,
-                   fc.statement AS cluster_statement
+                   f.distilled_fact_id,
+                   CASE WHEN f.distilled_fact_id IS NULL THEN 0 ELSE
+                        (SELECT count(*) FROM facts f3 WHERE f3.distilled_fact_id = f.distilled_fact_id)
+                   END AS distilled_size,
+                   df.statement AS distilled_statement,
+                   COALESCE(df.statement_generated, false) AS distilled_generated
             {joins}
             {_where(filtered)}
             ORDER BY {order}
@@ -356,15 +357,17 @@ class FactStats:
     documents: int
     by_source: dict[str, int]
     by_class: dict[str, int]
-    # Clusters of restatements among these facts, and how many facts they group.
+    # Distilled facts backed by these potential facts; how many are backed by
+    # more than one, and how many potential facts those groups hold.
+    distilled: int = 0
     clusters: int = 0
     clustered_facts: int = 0
 
     @property
     def message(self) -> str:
         text = f"{self.facts:,} facts across {self.documents:,} documents"
-        if self.clusters:
-            text += f"; {self.clustered_facts:,} of them in {self.clusters:,} clusters"
+        if self.distilled:
+            text += f", distilled into {self.distilled:,}"
         return text
 
 
@@ -396,10 +399,13 @@ def fact_stats(
             text(f"SELECT f.fact_class, count(*) {scope} GROUP BY f.fact_class ORDER BY 2 DESC, 1"), params
         ).all()
     }
-    clusters, clustered = session.execute(
+    linked = _where([*filtered, "f.distilled_fact_id IS NOT NULL"])
+    distilled, clusters, clustered = session.execute(
         text(
-            f"SELECT count(DISTINCT fcm.cluster_id), count(fcm.cluster_id) {_FACT_JOINS}"
-            f" JOIN fact_cluster_members fcm ON fcm.fact_id = f.id {_where(filtered)}"
+            f"""
+            SELECT count(*), count(*) FILTER (WHERE n > 1), coalesce(sum(n) FILTER (WHERE n > 1), 0)
+            FROM (SELECT f.distilled_fact_id, count(*) AS n {_FACT_JOINS} {linked} GROUP BY f.distilled_fact_id) g
+            """
         ),
         params,
     ).one()
@@ -408,6 +414,7 @@ def fact_stats(
         documents=int(documents or 0),
         by_source=by_source,
         by_class=by_class,
+        distilled=int(distilled or 0),
         clusters=int(clusters or 0),
         clustered_facts=int(clustered or 0),
     )
@@ -422,6 +429,7 @@ class ClusterSummary:
     distill_model: str
     facts: int
     unembedded: int
+    distilled_facts: int
     clusters: int
     clustered_facts: int
     kept: int
@@ -432,7 +440,10 @@ class ClusterSummary:
 
     @property
     def message(self) -> str:
-        text = f"{self.clusters:,} clusters over {self.clustered_facts:,} of {self.facts:,} facts"
+        text = (
+            f"{self.facts:,} potential facts distilled into {self.distilled_facts:,}; "
+            f"{self.clusters:,} of those group {self.clustered_facts:,} restatements"
+        )
         if self.dissolved:
             text += f", {self.dissolved} rejected by the model"
         if self.failed:
@@ -450,11 +461,10 @@ def cluster_facts(
     threshold: float | None = None,
     neighbors: int | None = None,
     distill: bool = True,
-    source: str = "*",
-    fact_class: str = "",
     on_progress: Callable[[object], None] | None = None,
 ) -> ClusterSummary:
-    """Group the facts that state the same claim and have the local model state each group once.
+    """Link every potential fact to a distilled fact, grouping those that state the same claim, and have
+    the local model state each group once.
 
     ``model`` is the embedding model whose vectors are compared (default: the
     default model); ``threshold``/``neighbors`` default to
@@ -483,8 +493,6 @@ def cluster_facts(
             threshold=threshold,
             neighbors=neighbors,
             distiller=distiller,
-            source=source,
-            fact_class=fact_class or None,
             progress=on_progress,
         )
         return ClusterSummary(
@@ -493,6 +501,7 @@ def cluster_facts(
             distill_model=distiller.model_id if distiller is not None else "",
             facts=state.facts,
             unembedded=state.unembedded,
+            distilled_facts=int(state.distilled_facts),
             clusters=int(state.clusters),
             clustered_facts=int(state.clustered_facts),
             kept=state.kept,

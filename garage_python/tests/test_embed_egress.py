@@ -97,6 +97,8 @@ class TestBackfill:
             patch("garage_rag.embed.factory.get_embedder", return_value=embedder),
             patch("garage_rag.embed.ollama.count_pending", side_effect=counts) as count,
             patch("garage_rag.embed.ollama._pending_chunk_batches", batches),
+            # Distilled facts are embedded against the database; test_postgres.py covers them.
+            patch("garage_rag.embed.ollama.backfill_distilled"),
         ):
             state = backfill_model(MagicMock(), model)
         return state, batches, count

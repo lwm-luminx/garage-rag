@@ -72,7 +72,9 @@ def db(database_url: str) -> Iterator[Session]:
     with session_scope() as session:
         yield session
     with session_scope() as session:
-        tables = session.execute(text("SELECT tablename FROM pg_tables WHERE tablename LIKE 'emb\\_%'")).scalars()
+        tables = session.execute(
+            text("SELECT tablename FROM pg_tables WHERE tablename LIKE 'emb\\_%' OR tablename LIKE 'fact\\_emb\\_%'")
+        ).scalars()
         for table in tables:
             session.execute(text(f'DROP TABLE "{table}"'))
         session.execute(text("TRUNCATE sources, authors, embedding_models RESTART IDENTITY CASCADE"))
@@ -924,8 +926,9 @@ class TestAge:
             conn.exec_driver_sql("SELECT drop_graph('garage_test_graph', true)")
 
 
-class TestFactClusters:
-    """cluster-facts over real vectors: neighbours, the guard, average linkage and the overlay."""
+class TestDistilledFacts:
+    """cluster-facts over real vectors: neighbours, the guard, average linkage, the distilled layer and its
+    vectors."""
 
     @staticmethod
     def _direction(angle_degrees: float, axis: int = 0) -> list[float]:
@@ -937,20 +940,16 @@ class TestFactClusters:
         vector[axis + 1] = math.sin(math.radians(angle_degrees))
         return vector
 
-    def _setup(self, db: Session) -> tuple[object, int]:
+    def _setup(self, db: Session, *, corpus_class: str = "document"):
         model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=8))
         source = _source(db, "notes")
-        document = _document(db, source, "house", "The house notes.")
+        document = _document(db, source, "house", "The house notes.", corpus_class=corpus_class)
         return model, document
 
-    def _fact(
-        self, db: Session, model, document_id: int, ord: int, fact: str, vector: list[float] | None, **extra
-    ) -> int:
+    def _fact(self, db: Session, model, document_id: int, ord: int, fact: str, vector: list[float] | None) -> int:
         fact_id = db.execute(
-            text(
-                "INSERT INTO facts (document_id, ord, fact, fact_class) VALUES (:doc, :ord, :fact, :cls) RETURNING id"
-            ),
-            {"doc": document_id, "ord": ord, "fact": fact, "cls": extra.get("fact_class", "fact")},
+            text("INSERT INTO facts (document_id, ord, fact) VALUES (:doc, :ord, :fact) RETURNING id"),
+            {"doc": document_id, "ord": ord, "fact": fact},
         ).scalar_one()
         chunk_id = db.execute(
             text(
@@ -969,24 +968,32 @@ class TestFactClusters:
             _embed(db, model.table_name, chunk_id, vector)
         return fact_id
 
-    def _clusters(self, db: Session) -> list[list[str]]:
+    def _groups(self, db: Session) -> list[list[str]]:
+        """The potential facts behind each distilled fact that has more than one."""
         rows = db.execute(
             text(
-                "SELECT m.cluster_id, f.fact FROM fact_cluster_members m JOIN facts f ON f.id = m.fact_id "
-                "ORDER BY m.cluster_id, f.id"
+                "SELECT f.distilled_fact_id, f.fact FROM facts f WHERE f.distilled_fact_id IN "
+                "(SELECT distilled_fact_id FROM facts GROUP BY 1 HAVING count(*) > 1) ORDER BY 1, f.id"
             )
         ).all()
         grouped: dict[int, list[str]] = {}
-        for cluster_id, fact in rows:
-            grouped.setdefault(cluster_id, []).append(fact)
+        for distilled_id, fact in rows:
+            grouped.setdefault(distilled_id, []).append(fact)
         return list(grouped.values())
 
-    def _run(self, db: Session, model, distiller=None, **kwargs):
+    def _run(self, db: Session, model, distiller=None):
         from garage_rag.enrich.clusters import cluster_facts
 
-        return cluster_facts(db, model, threshold=0.9, neighbors=10, distiller=distiller, **kwargs)
+        return cluster_facts(db, model, threshold=0.9, neighbors=10, distiller=distiller)
 
-    def test_restatements_cluster_and_the_rest_stay_apart(self, db: Session) -> None:
+    def _distiller(self, answer) -> MagicMock:
+        distiller = MagicMock()
+        distiller.model_id = "llama_xpc/test"
+        distiller.may_send.return_value = True
+        distiller.distill.side_effect = answer
+        return distiller
+
+    def test_restatements_share_a_distilled_fact_and_the_rest_stand_alone(self, db: Session) -> None:
         model, doc = self._setup(db)
         self._fact(db, model, doc, 0, "The heat pump was installed in 2024.", self._direction(0))
         self._fact(db, model, doc, 1, "In 2024 the heat pump was installed.", self._direction(5))
@@ -1002,7 +1009,7 @@ class TestFactClusters:
 
         state = self._run(db, model)
 
-        assert self._clusters(db) == [
+        assert self._groups(db) == [
             [
                 "The heat pump was installed in 2024.",
                 "In 2024 the heat pump was installed.",
@@ -1010,10 +1017,20 @@ class TestFactClusters:
             ]
         ]
         assert (state.facts, state.unembedded, state.clusters, state.clustered_facts) == (7, 1, 1, 3)
-        representative, statement = db.execute(
-            text("SELECT f.fact, c.statement FROM fact_clusters c JOIN facts f ON f.id = c.representative_fact_id")
-        ).one()
-        assert (representative, statement) == ("The heat pump was installed in 2024.", None)
+        # Every potential fact is linked; four stand alone, stated by their own text.
+        assert state.distilled_facts == 5
+        assert db.execute(text("SELECT count(*) FROM facts WHERE distilled_fact_id IS NULL")).scalar_one() == 0
+        rows = db.execute(
+            text("SELECT statement, statement_generated, model_slug FROM distilled_facts ORDER BY id")
+        ).all()
+        assert rows[0] == ("The heat pump was installed in 2024.", False, "m")
+        assert {r[0] for r in rows[1:]} == {
+            "The heat pump was installed in 2023.",
+            "The heat pump was not installed in 2024.",
+            "The roof is slate.",
+            "The heat pump was installed in 2024!",
+        }
+        assert all(r[2] is None for r in rows[1:])
 
     def test_average_linkage_does_not_chain(self, db: Session) -> None:
         model, doc = self._setup(db)
@@ -1025,10 +1042,10 @@ class TestFactClusters:
 
         self._run(db, model)
 
-        clusters = self._clusters(db)
-        assert len(clusters) == 1 and len(clusters[0]) == 2
+        groups = self._groups(db)
+        assert len(groups) == 1 and len(groups[0]) == 2
 
-    def test_the_model_states_or_rejects_each_cluster_and_a_rerun_keeps_its_statement(self, db: Session) -> None:
+    def test_the_model_states_or_rejects_each_group_and_a_rerun_keeps_its_statement(self, db: Session) -> None:
         model, doc = self._setup(db)
         self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
         self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
@@ -1036,42 +1053,40 @@ class TestFactClusters:
         self._fact(db, model, doc, 3, "Bob drives the car.", self._direction(5, axis=4))
         db.flush()
 
-        distiller = MagicMock()
-        distiller.model_id = "llama_xpc/test"
-        distiller.may_send.return_value = True
-        distiller.distill.side_effect = lambda facts: (
-            (True, "Ada wrote the notes.") if "Ada" in facts[0] else (False, None)
+        distiller = self._distiller(
+            lambda facts: (True, "Ada wrote the notes.") if "Ada" in facts[0] else (False, None)
         )
         state = self._run(db, model, distiller)
-        assert (state.clusters, state.dissolved) == (1, 1)
-        assert db.execute(text("SELECT statement, distill_model FROM fact_clusters")).one() == (
-            "Ada wrote the notes.",
-            "llama_xpc/test",
-        )
+        assert (state.clusters, state.dissolved, state.distilled_facts) == (1, 1, 3)
+        assert db.execute(
+            text("SELECT statement, statement_generated, distill_model FROM distilled_facts WHERE model_slug = 'm'")
+        ).one() == ("Ada wrote the notes.", True, "llama_xpc/test")
+        first_ids = sorted(db.execute(text("SELECT id FROM distilled_facts")).scalars())
 
-        distiller.distill.reset_mock()
-        distiller.distill.side_effect = lambda facts: (False, None) if "Bob" in facts[0] else (True, "changed")
+        distiller = self._distiller(lambda facts: (False, None) if "Bob" in facts[0] else (True, "changed"))
         state = self._run(db, model, distiller)
-        # The Ada cluster is unchanged, so it is kept without asking; only Bob's is asked again.
+        # Ada's group is unchanged, so it is kept without asking; only Bob's is asked again, and
+        # Bob's two single-fact rows are kept too.
         assert distiller.distill.call_count == 1
         assert (state.kept, state.clusters) == (1, 1)
-        assert db.execute(text("SELECT statement FROM fact_clusters")).scalar_one() == "Ada wrote the notes."
+        assert sorted(db.execute(text("SELECT id FROM distilled_facts")).scalars()) == first_ids
 
     def test_a_communication_is_not_sent_to_a_model_that_may_not_have_it(self, db: Session) -> None:
-        model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=8))
-        mail = _document(db, _source(db, "mail"), "email", "Dinner.", corpus_class="communication")
+        model, mail = self._setup(db, corpus_class="communication")
         self._fact(db, model, mail, 0, "Dinner is at eight.", self._direction(0))
         self._fact(db, model, mail, 1, "Dinner starts at eight.", self._direction(5))
         db.flush()
 
-        distiller = MagicMock()
+        distiller = self._distiller(None)
         distiller.may_send.return_value = False
         state = self._run(db, model, distiller)
         assert distiller.distill.call_count == 0
         assert (state.withheld, state.clusters) == (1, 1)
         assert list(distiller.may_send.call_args.args[0]) == ["communication", "communication"]
+        # Stated by its representative, the longer member.
+        assert db.execute(text("SELECT statement FROM distilled_facts")).scalar_one() == "Dinner starts at eight."
 
-    def test_list_facts_collapses_and_reports_clusters(self, db: Session) -> None:
+    def test_list_facts_collapses_and_reports_distilled_facts(self, db: Session) -> None:
         model, doc = self._setup(db)
         self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
         self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
@@ -1081,26 +1096,66 @@ class TestFactClusters:
 
         page = list_facts(db)
         assert page.total == 3
-        clustered = [f for f in page.facts if f.cluster_id is not None]
-        assert [f.cluster_size for f in clustered] == [2, 2]
+        assert sorted(f.distilled_size for f in page.facts) == [1, 2, 2]
 
-        collapsed = list_facts(db, collapse_clusters=True)
+        collapsed = list_facts(db, collapse=True)
         assert collapsed.total == 2
         assert {f.fact for f in collapsed.facts} == {"The notes were written by Ada.", "The roof is slate."}
 
-        one = list_facts(db, cluster_id=clustered[0].cluster_id)
-        assert one.total == 2
+        grouped = next(f for f in page.facts if f.distilled_size == 2)
+        assert list_facts(db, distilled_fact_id=grouped.distilled_fact_id).total == 2
         stats = fact_stats(db)
-        assert (stats.clusters, stats.clustered_facts) == (1, 2)
+        assert (stats.distilled, stats.clusters, stats.clustered_facts) == (2, 1, 2)
 
-    def test_deleting_a_fact_takes_its_membership_and_a_rerun_drops_the_pair(self, db: Session) -> None:
+    def test_deleting_a_fact_unlinks_it_and_a_rerun_rebuilds_the_rest(self, db: Session) -> None:
         model, doc = self._setup(db)
         first = self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
         self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
         db.flush()
         self._run(db, model)
         db.execute(text("DELETE FROM facts WHERE id = :id"), {"id": first})
-        assert db.execute(text("SELECT count(*) FROM fact_cluster_members")).scalar_one() == 1
 
-        self._run(db, model)
-        assert db.execute(text("SELECT count(*) FROM fact_clusters")).scalar_one() == 0
+        state = self._run(db, model)
+        assert (state.clusters, state.distilled_facts) == (0, 1)
+        assert db.execute(text("SELECT statement, model_slug FROM distilled_facts")).one() == (
+            "The notes were written by Ada.",
+            None,
+        )
+
+    def test_backfill_copies_quoted_statements_and_embeds_written_ones(self, db: Session) -> None:
+        from garage_rag.embed.ollama import backfill_model
+
+        model, doc = self._setup(db)
+        self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        self._fact(db, model, doc, 2, "The roof is slate.", self._direction(0, axis=4))
+        db.flush()
+        self._run(db, model, self._distiller(lambda facts: (True, "Ada wrote the notes.")))
+
+        embedder = MagicMock()
+        embedder.embed.return_value = [self._direction(2)]
+        with patch("garage_rag.embed.factory.get_embedder", return_value=embedder):
+            state = backfill_model(db, model)
+
+        assert state.distilled == 2
+        embedder.embed.assert_called_once_with(["Ada wrote the notes."])
+        vectors = dict(
+            db.execute(
+                text(
+                    "SELECT df.statement, fe.embedding::text FROM fact_emb_m fe "
+                    "JOIN distilled_facts df ON df.id = fe.distilled_fact_id"
+                )
+            ).all()
+        )
+        assert set(vectors) == {"Ada wrote the notes.", "The roof is slate."}
+        # The single fact's vector is its chunk's, copied.
+        assert vectors["The roof is slate."] == "[0,0,0,0,1,0,0,0]"
+        assert backfill_model(db, model).distilled == 0
+
+    def test_dropping_a_model_drops_its_distilled_fact_table(self, db: Session) -> None:
+        from garage_rag.db.emb_tables import drop_model
+
+        register_model(db, ModelSpec(slug="m", model_ref="m", dims=8))
+        assert db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()
+        drop_model(db, "m")
+        assert not db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()

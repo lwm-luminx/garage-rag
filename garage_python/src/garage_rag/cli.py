@@ -888,20 +888,20 @@ def cluster_facts(
         int | None,
         typer.Option("--neighbors", help="Nearest neighbours fetched per fact. Default: facts.cluster_neighbors."),
     ] = None,
-    source: Annotated[str, typer.Option("--source", "-s", help='Source slug, or "*" for all sources.')] = "*",
-    fact_class: Annotated[str, typer.Option("--class", help="Cluster only facts of this class.")] = "",
     distill: Annotated[
         bool,
         typer.Option(
             "--distill/--no-distill",
-            help="Ask the local chat model to confirm each cluster and state its claim once.",
+            help="Ask the local chat model to confirm each group and state its claim once.",
         ),
     ] = True,
 ) -> None:
-    """Group facts that state the same claim, using their embeddings, and distill each group into one statement.
+    """Distill the potential facts into distinct claims: group those that state the same claim, using their
+    embeddings, and have the local model state each group once.
 
-    The facts themselves are never changed: clusters are an overlay, rebuilt on each run, and a cluster
-    whose members are unchanged keeps its statement. Facts need vectors first (garage backfill).
+    Every potential fact is linked to one distilled fact; the potential facts themselves are never changed.
+    A group whose members are unchanged keeps its statement. Facts need vectors first (garage backfill);
+    'garage backfill' then embeds the distilled facts too.
     """
     from garage_rag.enrich.clusters import ClusterProgress
     from garage_rag.ops.facts import cluster_facts as run_clusters
@@ -913,17 +913,11 @@ def cluster_facts(
         if state.phase == "neighbors":
             status.update(f"finding neighbours: {state.scanned:,}/{state.facts - state.unembedded:,} facts")
         elif state.phase == "distill":
-            status.update(f"distilling: {state.distilled:,}/{state.to_distill:,} clusters")
+            status.update(f"distilling: {state.distilled:,}/{state.to_distill:,} groups")
 
     try:
         summary = run_clusters(
-            model=model,
-            threshold=threshold,
-            neighbors=neighbors,
-            distill=distill,
-            source=source,
-            fact_class=fact_class,
-            on_progress=on_progress,
+            model=model, threshold=threshold, neighbors=neighbors, distill=distill, on_progress=on_progress
         )
     except (LookupError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -1044,9 +1038,11 @@ def facts_list(
     offset: Annotated[int, typer.Option(help="Facts to skip.")] = 0,
     evidence: Annotated[bool, typer.Option("--evidence", help="Show the grounded text under each fact.")] = False,
     collapse: Annotated[
-        bool, typer.Option("--collapse", help="List each cluster of restatements once (garage cluster-facts).")
+        bool, typer.Option("--collapse", help="List restatements of one claim once (garage cluster-facts).")
     ] = False,
-    cluster: Annotated[int | None, typer.Option("--cluster", help="Only this cluster's facts.")] = None,
+    distilled: Annotated[
+        int | None, typer.Option("--distilled", help="Only the potential facts behind this distilled fact.")
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
     """List distilled facts, newest first (best match first with --query), with the document each came from."""
@@ -1065,8 +1061,8 @@ def facts_list(
                 document_id=document_id,
                 limit=limit,
                 offset=offset,
-                collapse_clusters=collapse,
-                cluster_id=cluster,
+                collapse=collapse,
+                distilled_fact_id=distilled,
             )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -1095,9 +1091,10 @@ def facts_list(
         grounded = _fact_evidence(f) if evidence else ""
         if grounded:
             text += f"\n[dim]“{grounded}”[/dim]"
-        if f.cluster_id is not None:
-            stated = f": {f.cluster_statement}" if f.cluster_statement else ""
-            text += f"\n[cyan]cluster {f.cluster_id} ({f.cluster_size} facts){stated}[/cyan]"
+        if f.distilled_size > 1:
+            text += (
+                f"\n[cyan]distilled {f.distilled_fact_id} ({f.distilled_size} facts): {f.distilled_statement}[/cyan]"
+            )
         table.add_row(str(f.id), f.fact_class, text, f.document_title or f.document_uri, f.source_slug)
     console.print(table)
 

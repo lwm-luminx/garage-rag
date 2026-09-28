@@ -1,9 +1,11 @@
-"""Grouping facts that state the same claim (``garage cluster-facts``).
+"""Distilling potential facts into distinct claims (``garage cluster-facts``).
 
-Every fact already has a vector: its chunk (``chunks.fact_id``) is embedded by
-the ordinary backfill under every registered model. This pass reads those
-vectors under one model (the default, unless named) and builds an overlay of
-``fact_clusters`` on top of the facts (``data/sql/015_fact_clusters.sql``):
+The rows of ``facts`` are *potential* facts: what one prompt extracted from one
+document, each a verbatim, grounded quote. Every one already has a vector: its
+chunk (``chunks.fact_id``) is embedded by the ordinary backfill under every
+registered model. This pass reads those vectors under one model (the default,
+unless named) and links every potential fact to a *distilled* fact
+(``data/sql/015_distilled_facts.sql``):
 
 1. **Candidates.** Each fact's nearest neighbours among the facts of the same
    class, from the model's ``emb_`` table (its HNSW index, where the model's
@@ -17,16 +19,18 @@ vectors under one model (the default, unless named) and builds an overlay of
    their *average* pairwise similarity clears the threshold, so A~B and B~C do
    not chain A and C together when A and C differ (:func:`average_linkage`).
 4. **Distill.** The local chat model (:class:`~garage_rag.enrich.generation.LocalChatModel`,
-   ``inference.*`` falling back to ``facts.*``) is shown each cluster's facts
-   and asked whether they state one claim; a "no" dissolves the cluster, a
-   "yes" comes with one sentence stating it (``fact_clusters.statement``).
-   A cluster with a communication among its members is only sent to a
-   loopback model; otherwise it keeps no statement.
+   ``inference.*`` falling back to ``facts.*``) is shown each group's facts and
+   asked whether they state one claim; a "no" dissolves the group, a "yes"
+   comes with one sentence stating it (``statement_generated``). A group with a
+   communication among its members is only sent to a loopback model; like a
+   group no model was asked about, it is stated by its representative's text.
+5. **Link.** Each group becomes one distilled fact; every other potential fact
+   gets a distilled fact of its own, stated by its own text.
 
-Clustering never touches a fact: each member keeps its verbatim text and its
-grounded span, and a re-run rebuilds the overlay. A cluster whose members are
-unchanged keeps its row and statement (``members_sha256``), so re-running
-only asks the model about new groups.
+Potential facts are never changed: they are only linked. A distilled fact whose
+members are unchanged keeps its row, statement and vectors (``members_sha256``),
+so a re-run only asks the model about new groups. ``garage backfill`` then gives
+each distilled fact a vector in the model's ``fact_emb_`` table.
 """
 
 from __future__ import annotations
@@ -312,14 +316,17 @@ class ClusterProgress:
 
     phase: str = "neighbors"
     facts: int = 0
-    # Facts of the scope with no vector under the model yet (run the backfill).
+    # Potential facts with no vector under the model yet (run the backfill); each stays alone.
     unembedded: int = 0
     scanned: int = 0
     candidates: int = 0
     distilled: int = 0
     to_distill: int = 0
+    # Distilled facts backing more than one potential fact, and how many they back.
     clusters: int = 0
     clustered_facts: int = 0
+    # Every distilled fact, groups and single facts alike.
+    distilled_facts: int = 0
     kept: int = 0
     dissolved: int = 0
     failed: int = 0
@@ -373,16 +380,12 @@ def _pairwise_sql(table: str) -> str:
     """
 
 
-def _scope(source: str | None, fact_class: str | None) -> tuple[str, dict[str, object]]:
-    clauses = ["TRUE"]
-    params: dict[str, object] = {}
-    if source and source != "*":
-        clauses.append("s.slug = :source")
-        params["source"] = source
-    if fact_class:
-        clauses.append("f.fact_class = :fact_class")
-        params["fact_class"] = fact_class
-    return " AND ".join(clauses), params
+@dataclass
+class _Group:
+    members: list[int]
+    statement: str
+    generated: bool
+    distill_model: str | None
 
 
 def cluster_facts(
@@ -392,16 +395,13 @@ def cluster_facts(
     threshold: float,
     neighbors: int,
     distiller: Distiller | None = None,
-    source: str | None = None,
-    fact_class: str | None = None,
     progress: Callable[[ClusterProgress], None] | None = None,
 ) -> ClusterProgress:
-    """Rebuild the fact clusters of the scope under ``model``'s vectors; see the module docstring.
+    """Rebuild the distilled facts over every potential fact; see the module docstring.
 
-    ``source``/``fact_class`` narrow which facts are clustered (neighbours still
-    come from the whole corpus, so a scoped fact can join a group outside the
-    scope). Without a ``distiller`` every guarded cluster is kept, with no
-    statement. Commits once, at the end; the facts themselves are never changed.
+    Groups come from ``model``'s vectors. Without a ``distiller`` every guarded
+    group is kept and stated by its representative's text. Commits once, at the
+    end; potential facts are only re-linked, never changed.
     """
     table = assert_safe_table(model.table_name)
     state = ClusterProgress()
@@ -411,20 +411,24 @@ def cluster_facts(
         if progress is not None:
             progress(state)
 
-    where, params = _scope(source, fact_class)
-    joins = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id"
-    rows = session.execute(
+    texts: dict[int, str] = {}
+    classes: dict[int, str] = {}
+    embedded: list[int] = []
+    for fid, fact, corpus_class, has_vector in session.execute(
         text(
             f"""
             SELECT f.id, f.fact, d.corpus_class::text,
                    EXISTS (SELECT 1 FROM chunks c JOIN {table} e ON e.chunk_id = c.id WHERE c.fact_id = f.id)
-            {joins} WHERE {where} ORDER BY f.id
+            FROM facts f JOIN documents d ON d.id = f.document_id
+            ORDER BY f.id
             """
-        ),
-        params,
-    ).all()
-    state.facts = len(rows)
-    embedded = [int(r[0]) for r in rows if r[3]]
+        )
+    ).all():
+        texts[int(fid)] = fact
+        classes[int(fid)] = corpus_class
+        if has_vector:
+            embedded.append(int(fid))
+    state.facts = len(texts)
     state.unembedded = state.facts - len(embedded)
     report("neighbors")
 
@@ -441,141 +445,138 @@ def cluster_facts(
         state.scanned += len(batch)
         report("neighbors")
 
-    ids = {i for p in similarity for i in p}
-    texts: dict[int, str] = {}
-    classes: dict[int, str] = {}
-    if ids:
-        for fid, fact, corpus_class in session.execute(
-            text(
-                "SELECT f.id, f.fact, d.corpus_class::text FROM facts f JOIN documents d ON d.id = f.document_id "
-                "WHERE f.id = ANY(CAST(:ids AS bigint[]))"
-            ),
-            {"ids": sorted(ids)},
-        ).all():
-            texts[int(fid)] = fact
-            classes[int(fid)] = corpus_class
-
     # 2-3. Guard and average linkage within each connected group.
     clusters: list[list[int]] = []
     pairwise_sql = text(_pairwise_sql(table))
-    for group in connected_groups(ids, similarity):
+    for group in connected_groups({i for p in similarity for i in p}, similarity):
         if len(group) <= MAX_PAIRWISE:
             for a, b, sim in session.execute(pairwise_sql, {"ids": group}).all():
                 similarity[pair(int(a), int(b))] = float(sim)
         clusters.extend(guarded_clusters(group, texts, similarity, threshold))
     state.candidates = len(clusters)
 
-    # 4. Keep unchanged clusters, distill the new ones, then replace the overlay.
+    # 4. Keep groups whose members are unchanged; distill the new ones.
     existing = {
-        bytes(sha): (int(cid), statement, distill_model)
-        for cid, sha, statement, distill_model in session.execute(
-            text("SELECT id, members_sha256, statement, distill_model FROM fact_clusters WHERE model_slug = :slug"),
-            {"slug": model.slug},
+        bytes(sha): (int(did), bool(generated))
+        for did, sha, generated in session.execute(
+            text("SELECT id, members_sha256, statement_generated FROM distilled_facts WHERE model_slug IS NOT NULL")
         ).all()
     }
-    keep: set[int] = set()
-    fresh: list[tuple[list[int], str | None, str | None]] = []
+    keep: list[int] = []
     to_ask: list[list[int]] = []
     for members in clusters:
         found = existing.get(members_sha256(members))
-        if found is not None and (found[2] is not None or distiller is None):
-            keep.add(found[0])
+        if found is not None and (found[1] or distiller is None):
+            keep.append(found[0])
         else:
             to_ask.append(members)
     state.kept = len(keep)
     state.to_distill = len(to_ask) if distiller is not None else 0
     report("distill")
 
+    fresh: list[_Group] = []
     for members in to_ask:
+        stated = texts[representative(members, texts)]
         if distiller is None:
-            fresh.append((members, None, None))
+            fresh.append(_Group(members, stated, False, None))
             continue
         if not distiller.may_send(classes[m] for m in members):
             state.withheld += 1
-            fresh.append((members, None, None))
+            fresh.append(_Group(members, stated, False, None))
         else:
             central = centrality(members, similarity)
             shown = sorted(members, key=lambda m: (-central[m], m))[:MAX_DISTILL_FACTS]
             try:
                 same, statement = distiller.distill([texts[m] for m in shown])
-            except Exception as exc:  # noqa: BLE001 - counted; the cluster stays, unconfirmed
+            except Exception as exc:  # noqa: BLE001 - counted; the group stays, stated by its representative
                 state.failed += 1
                 if len(state.errors) < 5:
                     state.errors.append(str(exc))
-                fresh.append((members, None, None))
+                fresh.append(_Group(members, stated, False, None))
             else:
-                if same:
-                    fresh.append((members, statement, distiller.model_id))
-                else:
+                if not same:
                     state.dissolved += 1
+                elif statement:
+                    fresh.append(_Group(members, statement, True, distiller.model_id))
+                else:
+                    fresh.append(_Group(members, stated, False, distiller.model_id))
         state.distilled += 1
         report("distill")
 
-    # Replace every cluster of the scope that this run did not keep. Clusters of
-    # other models go too: a fact belongs to one cluster at a time.
+    # 5. Replace the distilled layer: drop every group not kept, and every
+    # single-fact row whose fact is now in a group, then link the new groups.
+    grouped = sorted({m for g in fresh for m in g.members})
     session.execute(
         text(
-            f"""
-            DELETE FROM fact_clusters fc
-            WHERE fc.id <> ALL(CAST(:keep AS bigint[]))
-              AND (fc.model_slug <> :slug OR EXISTS (
-                    SELECT 1 FROM fact_cluster_members m
-                    JOIN facts f ON f.id = m.fact_id
-                    JOIN documents d ON d.id = f.document_id
-                    JOIN sources s ON s.id = d.source_id
-                    WHERE m.cluster_id = fc.id AND {where})
-                OR NOT EXISTS (SELECT 1 FROM fact_cluster_members m WHERE m.cluster_id = fc.id))
+            """
+            DELETE FROM distilled_facts df
+            WHERE NOT (
+                df.id = ANY(CAST(:keep AS bigint[]))
+                OR (df.model_slug IS NULL AND df.representative_fact_id IS NOT NULL
+                    AND df.representative_fact_id <> ALL(CAST(:grouped AS bigint[])))
+            )
             """
         ),
-        {**params, "keep": sorted(keep), "slug": model.slug},
+        {"keep": keep, "grouped": grouped},
     )
-    # Facts still in a cluster: the kept ones, and those outside the scope.
-    kept_members = {int(fid) for (fid,) in session.execute(text("SELECT fact_id FROM fact_cluster_members")).all()}
-    insert_cluster = text(
+    insert_group = text(
         """
-        INSERT INTO fact_clusters
-            (model_slug, threshold, fact_class, statement, representative_fact_id, members_sha256, distill_model)
-        SELECT :slug, :threshold, f.fact_class, :statement, f.id, :sha, :distill_model FROM facts f WHERE f.id = :rep
+        INSERT INTO distilled_facts (fact_class, statement, statement_generated, representative_fact_id,
+                                     members_sha256, model_slug, threshold, distill_model)
+        SELECT f.fact_class, :statement, :generated, f.id, :sha, :slug, :threshold, :distill_model
+        FROM facts f WHERE f.id = :rep
         RETURNING id
         """
     )
-    insert_member = text(
-        "INSERT INTO fact_cluster_members (fact_id, cluster_id, similarity)"
-        " VALUES (:fact_id, :cluster_id, :similarity) ON CONFLICT (fact_id) DO NOTHING"
-    )
-    for members, statement, distill_model in fresh:
-        # A fact already in a cluster this run keeps (or one out of its scope) stays there.
-        members = [m for m in members if m not in kept_members]
-        if len(members) < 2:
-            continue
-        cluster_id = session.execute(
-            insert_cluster,
+    link = text("UPDATE facts SET distilled_fact_id = :did, distilled_similarity = :similarity WHERE id = :fact_id")
+    for group in fresh:
+        did = session.execute(
+            insert_group,
             {
+                "statement": group.statement,
+                "generated": group.generated,
+                "rep": representative(group.members, texts),
+                "sha": members_sha256(group.members),
                 "slug": model.slug,
                 "threshold": threshold,
-                "statement": statement,
-                "rep": representative(members, texts),
-                "sha": members_sha256(members),
-                "distill_model": distill_model,
+                "distill_model": group.distill_model,
             },
         ).scalar_one()
-        central = centrality(members, similarity)
-        session.execute(
-            insert_member,
-            [{"fact_id": m, "cluster_id": cluster_id, "similarity": central[m]} for m in members],
+        central = centrality(group.members, similarity)
+        session.execute(link, [{"did": did, "similarity": central[m], "fact_id": m} for m in group.members])
+
+    # Every potential fact left unlinked stands alone: its own text is the statement.
+    session.execute(
+        text(
+            """
+            INSERT INTO distilled_facts (fact_class, statement, representative_fact_id, members_sha256)
+            SELECT f.fact_class, f.fact, f.id, sha256(convert_to(f.id::text, 'UTF8'))
+            FROM facts f WHERE f.distilled_fact_id IS NULL
+            """
         )
+    )
+    session.execute(
+        text(
+            """
+            UPDATE facts f SET distilled_fact_id = df.id, distilled_similarity = NULL
+            FROM distilled_facts df
+            WHERE f.distilled_fact_id IS NULL AND df.model_slug IS NULL AND df.representative_fact_id = f.id
+            """
+        )
+    )
     session.commit()
 
-    state.clusters, state.clustered_facts = session.execute(
+    state.clusters, state.clustered_facts, state.distilled_facts = session.execute(
         text(
-            f"""
-            SELECT count(DISTINCT m.cluster_id), count(*)
-            FROM fact_cluster_members m JOIN facts f ON f.id = m.fact_id
-            JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id
-            WHERE {where}
             """
-        ),
-        params,
+            SELECT count(*) FILTER (WHERE df.model_slug IS NOT NULL),
+                   coalesce(sum(n) FILTER (WHERE df.model_slug IS NOT NULL), 0),
+                   count(*)
+            FROM distilled_facts df
+            JOIN (SELECT distilled_fact_id, count(*) AS n FROM facts GROUP BY distilled_fact_id) m
+              ON m.distilled_fact_id = df.id
+            """
+        )
     ).one()
     report("done")
     return state
