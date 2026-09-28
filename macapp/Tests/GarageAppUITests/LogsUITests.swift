@@ -13,9 +13,12 @@ final class LogsUITests: GarageUITestCase {
 
     /// "3,000 of 4,000 entries" as (3000, 4000). The badge's `Text` interpolates its counts as
     /// localized numbers, so a thousand or more carries a grouping separator ("4,000", "4 000"),
-    /// and the sources fill past that at launch from the helpers' log files.
+    /// and the sources fill past that at launch from the helpers' log files. The footer may go on
+    /// (", showing the latest 500"), so only the text up to "entr" is read: digits after it would
+    /// otherwise glue onto the total (3,148 of 3,148 became 3,148,500).
     static func parseCounts(_ text: String) -> (visible: Int, total: Int)? {
-        let halves = text.components(separatedBy: " of ")
+        let counts = text.components(separatedBy: " entr").first ?? text
+        let halves = counts.components(separatedBy: " of ")
         guard halves.count == 2 else { return nil }
         let numbers = halves.compactMap { Int(String($0.filter(\.isNumber))) }
         guard numbers.count == 2 else { return nil }
