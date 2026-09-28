@@ -922,3 +922,185 @@ class TestAge:
             assert [tuple(row) for row in rows] == [("Ada", "Notes")]
         finally:
             conn.exec_driver_sql("SELECT drop_graph('garage_test_graph', true)")
+
+
+class TestFactClusters:
+    """cluster-facts over real vectors: neighbours, the guard, average linkage and the overlay."""
+
+    @staticmethod
+    def _direction(angle_degrees: float, axis: int = 0) -> list[float]:
+        """A unit vector in the plane of ``axis`` and ``axis + 1``; the cosine of two is the cosine of their angle."""
+        import math
+
+        vector = [0.0] * 8
+        vector[axis] = math.cos(math.radians(angle_degrees))
+        vector[axis + 1] = math.sin(math.radians(angle_degrees))
+        return vector
+
+    def _setup(self, db: Session) -> tuple[object, int]:
+        model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=8))
+        source = _source(db, "notes")
+        document = _document(db, source, "house", "The house notes.")
+        return model, document
+
+    def _fact(
+        self, db: Session, model, document_id: int, ord: int, fact: str, vector: list[float] | None, **extra
+    ) -> int:
+        fact_id = db.execute(
+            text(
+                "INSERT INTO facts (document_id, ord, fact, fact_class) VALUES (:doc, :ord, :fact, :cls) RETURNING id"
+            ),
+            {"doc": document_id, "ord": ord, "fact": fact, "cls": extra.get("fact_class", "fact")},
+        ).scalar_one()
+        chunk_id = db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, fact_id) "
+                "VALUES (:doc, :ord, :fact, :sha, 'facts:test', :fact_id) RETURNING id"
+            ),
+            {
+                "doc": document_id,
+                "ord": 1000 + ord,
+                "fact": fact,
+                "sha": hashlib.sha256(fact.encode()).digest(),
+                "fact_id": fact_id,
+            },
+        ).scalar_one()
+        if vector is not None:
+            _embed(db, model.table_name, chunk_id, vector)
+        return fact_id
+
+    def _clusters(self, db: Session) -> list[list[str]]:
+        rows = db.execute(
+            text(
+                "SELECT m.cluster_id, f.fact FROM fact_cluster_members m JOIN facts f ON f.id = m.fact_id "
+                "ORDER BY m.cluster_id, f.id"
+            )
+        ).all()
+        grouped: dict[int, list[str]] = {}
+        for cluster_id, fact in rows:
+            grouped.setdefault(cluster_id, []).append(fact)
+        return list(grouped.values())
+
+    def _run(self, db: Session, model, distiller=None, **kwargs):
+        from garage_rag.enrich.clusters import cluster_facts
+
+        return cluster_facts(db, model, threshold=0.9, neighbors=10, distiller=distiller, **kwargs)
+
+    def test_restatements_cluster_and_the_rest_stay_apart(self, db: Session) -> None:
+        model, doc = self._setup(db)
+        self._fact(db, model, doc, 0, "The heat pump was installed in 2024.", self._direction(0))
+        self._fact(db, model, doc, 1, "In 2024 the heat pump was installed.", self._direction(5))
+        self._fact(db, model, doc, 2, "A heat pump went in during 2024.", self._direction(10))
+        # Close in vector space, but the number or the negation differs.
+        self._fact(db, model, doc, 3, "The heat pump was installed in 2023.", self._direction(3))
+        self._fact(db, model, doc, 4, "The heat pump was not installed in 2024.", self._direction(4))
+        # Far away.
+        self._fact(db, model, doc, 5, "The roof is slate.", self._direction(0, axis=4))
+        # No vector yet.
+        self._fact(db, model, doc, 6, "The heat pump was installed in 2024!", None)
+        db.flush()
+
+        state = self._run(db, model)
+
+        assert self._clusters(db) == [
+            [
+                "The heat pump was installed in 2024.",
+                "In 2024 the heat pump was installed.",
+                "A heat pump went in during 2024.",
+            ]
+        ]
+        assert (state.facts, state.unembedded, state.clusters, state.clustered_facts) == (7, 1, 1, 3)
+        representative, statement = db.execute(
+            text("SELECT f.fact, c.statement FROM fact_clusters c JOIN facts f ON f.id = c.representative_fact_id")
+        ).one()
+        assert (representative, statement) == ("The heat pump was installed in 2024.", None)
+
+    def test_average_linkage_does_not_chain(self, db: Session) -> None:
+        model, doc = self._setup(db)
+        # cos(20°) ≈ 0.94 between neighbours, cos(40°) ≈ 0.77 end to end.
+        self._fact(db, model, doc, 0, "Alpha one.", self._direction(0))
+        self._fact(db, model, doc, 1, "Alpha two.", self._direction(20))
+        self._fact(db, model, doc, 2, "Alpha three.", self._direction(40))
+        db.flush()
+
+        self._run(db, model)
+
+        clusters = self._clusters(db)
+        assert len(clusters) == 1 and len(clusters[0]) == 2
+
+    def test_the_model_states_or_rejects_each_cluster_and_a_rerun_keeps_its_statement(self, db: Session) -> None:
+        model, doc = self._setup(db)
+        self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        self._fact(db, model, doc, 2, "Bob owns the car.", self._direction(0, axis=4))
+        self._fact(db, model, doc, 3, "Bob drives the car.", self._direction(5, axis=4))
+        db.flush()
+
+        distiller = MagicMock()
+        distiller.model_id = "llama_xpc/test"
+        distiller.may_send.return_value = True
+        distiller.distill.side_effect = lambda facts: (
+            (True, "Ada wrote the notes.") if "Ada" in facts[0] else (False, None)
+        )
+        state = self._run(db, model, distiller)
+        assert (state.clusters, state.dissolved) == (1, 1)
+        assert db.execute(text("SELECT statement, distill_model FROM fact_clusters")).one() == (
+            "Ada wrote the notes.",
+            "llama_xpc/test",
+        )
+
+        distiller.distill.reset_mock()
+        distiller.distill.side_effect = lambda facts: (False, None) if "Bob" in facts[0] else (True, "changed")
+        state = self._run(db, model, distiller)
+        # The Ada cluster is unchanged, so it is kept without asking; only Bob's is asked again.
+        assert distiller.distill.call_count == 1
+        assert (state.kept, state.clusters) == (1, 1)
+        assert db.execute(text("SELECT statement FROM fact_clusters")).scalar_one() == "Ada wrote the notes."
+
+    def test_a_communication_is_not_sent_to_a_model_that_may_not_have_it(self, db: Session) -> None:
+        model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=8))
+        mail = _document(db, _source(db, "mail"), "email", "Dinner.", corpus_class="communication")
+        self._fact(db, model, mail, 0, "Dinner is at eight.", self._direction(0))
+        self._fact(db, model, mail, 1, "Dinner starts at eight.", self._direction(5))
+        db.flush()
+
+        distiller = MagicMock()
+        distiller.may_send.return_value = False
+        state = self._run(db, model, distiller)
+        assert distiller.distill.call_count == 0
+        assert (state.withheld, state.clusters) == (1, 1)
+        assert list(distiller.may_send.call_args.args[0]) == ["communication", "communication"]
+
+    def test_list_facts_collapses_and_reports_clusters(self, db: Session) -> None:
+        model, doc = self._setup(db)
+        self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        self._fact(db, model, doc, 2, "The roof is slate.", self._direction(0, axis=4))
+        db.flush()
+        self._run(db, model)
+
+        page = list_facts(db)
+        assert page.total == 3
+        clustered = [f for f in page.facts if f.cluster_id is not None]
+        assert [f.cluster_size for f in clustered] == [2, 2]
+
+        collapsed = list_facts(db, collapse_clusters=True)
+        assert collapsed.total == 2
+        assert {f.fact for f in collapsed.facts} == {"The notes were written by Ada.", "The roof is slate."}
+
+        one = list_facts(db, cluster_id=clustered[0].cluster_id)
+        assert one.total == 2
+        stats = fact_stats(db)
+        assert (stats.clusters, stats.clustered_facts) == (1, 2)
+
+    def test_deleting_a_fact_takes_its_membership_and_a_rerun_drops_the_pair(self, db: Session) -> None:
+        model, doc = self._setup(db)
+        first = self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        db.flush()
+        self._run(db, model)
+        db.execute(text("DELETE FROM facts WHERE id = :id"), {"id": first})
+        assert db.execute(text("SELECT count(*) FROM fact_cluster_members")).scalar_one() == 1
+
+        self._run(db, model)
+        assert db.execute(text("SELECT count(*) FROM fact_clusters")).scalar_one() == 0

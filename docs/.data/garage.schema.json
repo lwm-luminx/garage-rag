@@ -287,6 +287,16 @@
           },
           "description": "Fact-extraction prompts for 'garage enrich-facts', each a name, a description (the instructions), few-shot examples and an optional scope. Merged by name with the built-in 'default' prompt: an entry named 'default' overrides it (fields left out keep the built-in's; enabled false turns it off), and any other entry is added. Every enabled prompt that applies to a document runs; 'garage facts prompts list' shows the result.",
           "default": []
+        },
+        "cluster_threshold": {
+          "type": "number",
+          "description": "Cosine similarity two facts' vectors must reach, under the default embedding model, for 'garage cluster-facts' to consider them the same claim. Paraphrases of a short sentence sit around 0.9 and up on the bge/nomic family; raise it if unrelated facts are grouped, lower it if restatements are missed.",
+          "default": 0.9
+        },
+        "cluster_neighbors": {
+          "type": "integer",
+          "description": "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for restatements of it. More finds larger groups at the cost of a slower run.",
+          "default": 10
         }
       }
     },

@@ -4,6 +4,7 @@ py_library(
     name = "enrich",
     srcs = [
         "__init__.py",
+        "clusters.py",
         "facts.py",
         "generation.py",
         "local_provider.py",

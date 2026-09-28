@@ -477,6 +477,27 @@ class Settings(BaseModel):
         ),
     )
 
+    fact_cluster_threshold: float = Field(
+        default=0.9,
+        ge=0.5,
+        le=1.0,
+        description=(
+            "Cosine similarity two facts' vectors must reach, under the default embedding model, "
+            "for 'garage cluster-facts' to consider them the same claim. Paraphrases of a short "
+            "sentence sit around 0.9 and up on the bge/nomic family; raise it if unrelated facts "
+            "are grouped, lower it if restatements are missed."
+        ),
+    )
+    fact_cluster_neighbors: int = Field(
+        default=10,
+        ge=2,
+        le=100,
+        description=(
+            "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for "
+            "restatements of it. More finds larger groups at the cost of a slower run."
+        ),
+    )
+
     @field_validator("fact_prompts")
     @classmethod
     def _validate_fact_prompts(cls, v: list[FactPrompt]) -> list[FactPrompt]:
@@ -573,6 +594,8 @@ SECTIONS: dict[str, dict[str, str]] = {
         "model": "fact_model",
         "provider": "fact_provider",
         "prompts": "fact_prompts",
+        "cluster_threshold": "fact_cluster_threshold",
+        "cluster_neighbors": "fact_cluster_neighbors",
     },
     "inference": {
         "model": "inference_model",

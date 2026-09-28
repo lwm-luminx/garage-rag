@@ -474,6 +474,7 @@ py_test(
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/embed",
+        "//garage_python/src/garage_rag/enrich",
         "//garage_python/src/garage_rag/enrich/langextract",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/ops",
@@ -700,5 +701,16 @@ py_test(
         "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
+    ],
+)
+
+py_test(
+    name = "test_fact_clusters",
+    srcs = ["test_fact_clusters.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
+        "@pypi//pytest",
     ],
 )
