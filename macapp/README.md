@@ -505,8 +505,10 @@ equalized prices. When the store returns no products (not yet made, or not yet a
 splash shows no tip buttons.
 
 `Sources/GarageApp/GarageTips.storekit` mirrors the products for local testing. In Xcode, choose it
-under the Garage scheme's Run > Options > StoreKit Configuration; `TipJarTests` loads it through
-`SKTestSession`. Change both when a product changes.
+under the Garage scheme's Run > Options > StoreKit Configuration and run the App Store configuration
+to buy a tip against it; `TipJarTests` checks it lists the same products. A purchase is not unit
+tested: an `SKTestSession` needs a host app, and the unhosted unit tests get `SKInternalErrorDomain`
+3. Change both when a product changes.
 
 ## First-run setup assistant
 

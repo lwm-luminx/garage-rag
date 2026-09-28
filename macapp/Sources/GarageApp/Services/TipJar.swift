@@ -8,7 +8,7 @@ import SwiftUI
 ///
 /// The products are made in App Store Connect under these identifiers, as Consumable in-app
 /// purchases; `GarageTips.storekit` beside this module mirrors them for local testing (select it
-/// in the scheme's Run options, or load it with `SKTestSession`).
+/// in the scheme's Run options).
 enum TipProducts {
     static let small = "me.rickmark.garage_rag.tip.small"
     static let medium = "me.rickmark.garage_rag.tip.medium"
