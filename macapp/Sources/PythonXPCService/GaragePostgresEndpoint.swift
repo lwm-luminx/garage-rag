@@ -332,6 +332,11 @@ public enum GarageAppLaunch {
     /// store size and cannot count on dragging the window's corner.
     public static let windowSizeArgument = "--window-size"
 
+    /// `--client-home <path>`: look for the assistants' MCP configs under this folder instead of the
+    /// home folder, and show their paths relative to it. Only with `--data-directory`; for the App
+    /// Store screenshot tests, which show made-up assistants rather than the ones on the Mac.
+    public static let clientHomeArgument = "--client-home"
+
     /// Posted by `garage quit` as a distributed notification: every running Garage quits as its Quit
     /// menu item would. A notification rather than an Apple event, which the sandboxed App Store
     /// launcher may not send and which would ask for Automation consent.

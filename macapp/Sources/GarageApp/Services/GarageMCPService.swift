@@ -238,10 +238,13 @@ final class GarageMCPService: ObservableObject {
     }
 
     /// The client configs Garage knows, as `mcp_server/install.py`'s table lists them. The home folder
-    /// is the account's: in the sandbox `homeDirectoryForCurrentUser` is the app's container.
+    /// is the account's: in the sandbox `homeDirectoryForCurrentUser` is the app's container. A
+    /// `--client-home` launch looks in that folder instead, for the project configs too.
     func detectClientConfigs() -> [MCPClientConfig] {
-        let home = URL(fileURLWithPath: GarageAppGroup.realHomeDirectory, isDirectory: true)
-        let project = Paths.garageWorkingDirectory
+        let home = URL(fileURLWithPath: GarageAppGroup.clientHomeDirectory, isDirectory: true)
+        let project = GarageAppGroup.clientHomeDirectory == GarageAppGroup.realHomeDirectory
+            ? Paths.garageWorkingDirectory
+            : home
         let appSupport = home.appendingPathComponent("Library/Application Support")
 
         let standardTargets: [(id: String, label: String, path: URL, projectScoped: Bool, note: String)] = [
