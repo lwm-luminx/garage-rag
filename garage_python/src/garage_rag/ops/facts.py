@@ -440,6 +440,8 @@ class ClusterSummary:
     failed: int
     withheld: int
     errors: list[str] = field(default_factory=list)
+    # The AGE graph, re-projected after the run; empty where the server has no AGE.
+    graph: str = ""
 
     @property
     def message(self) -> str:
@@ -464,16 +466,18 @@ def cluster_facts(
     threshold: float | None = None,
     neighbors: int | None = None,
     distill: bool = True,
+    graph: bool = True,
     on_progress: Callable[[ClusterProgress], None] | None = None,
 ) -> ClusterSummary:
     """Link every potential fact to a distilled fact, grouping those that state the same claim, and have
-    the local model state each group once.
+        the local model state each group once.
 
-    ``model`` is the embedding model whose vectors are compared (default: the
-    default model); ``threshold``/``neighbors`` default to
-    facts.cluster_threshold/facts.cluster_neighbors. Without ``distill`` no chat
-    model is asked and the clusters keep no statement. Raises LookupError for an
-    unknown model, ValueError for a threshold outside 0..1.
+        ``model`` is the embedding model whose vectors are compared (default: the
+        default model); ``threshold``/``neighbors`` default to
+        facts.cluster_threshold/facts.cluster_neighbors. Without ``distill`` no chat
+        model is asked and each group is stated by its representative. With ``graph``
+    the AGE projection is rebuilt afterwards, where the server has AGE. Raises LookupError for an
+        unknown model, ValueError for a threshold outside 0..1.
     """
     from garage_rag.config import get_settings
     from garage_rag.db.emb_tables import get_model
@@ -512,4 +516,12 @@ def cluster_facts(
             failed=state.failed,
             withheld=state.withheld,
             errors=list(state.errors),
+            graph=_rebuilt_graph(session) if graph else "",
         )
+
+
+def _rebuilt_graph(session: Session) -> str:
+    from garage_rag.db.graph import rebuild_graph
+
+    summary = rebuild_graph(session)
+    return summary.message if summary.available else ""

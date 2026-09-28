@@ -895,6 +895,9 @@ def cluster_facts(
             help="Ask the local chat model to confirm each group and state its claim once.",
         ),
     ] = True,
+    graph: Annotated[
+        bool, typer.Option("--graph/--no-graph", help="Rebuild the AGE graph afterwards, where the server has AGE.")
+    ] = True,
 ) -> None:
     """Distill the potential facts into distinct claims: group those that state the same claim, using their
     embeddings, and have the local model state each group once.
@@ -917,7 +920,12 @@ def cluster_facts(
 
     try:
         summary = run_clusters(
-            model=model, threshold=threshold, neighbors=neighbors, distill=distill, on_progress=on_progress
+            model=model,
+            threshold=threshold,
+            neighbors=neighbors,
+            distill=distill,
+            graph=graph,
+            on_progress=on_progress,
         )
     except (LookupError, ValueError) as exc:
         console.print(f"[red]{exc}[/red]")
@@ -929,6 +937,24 @@ def cluster_facts(
     console.print(f"[cyan]{summary.model}[/cyan] at {summary.threshold:g}{via}: {summary.message}")
     for error in summary.errors:
         console.print(f"  [red]{error}[/red]")
+    if summary.graph:
+        console.print(summary.graph)
+
+
+graph_app = typer.Typer(help="The corpus as an Apache AGE graph (where the server has AGE).", no_args_is_help=True)
+app.add_typer(graph_app, name="graph")
+
+
+@graph_app.command("rebuild")
+def graph_rebuild() -> None:
+    """Re-project documents, chunks, authors, potential facts and distilled facts into the 'garage' graph."""
+    from garage_rag.ops.graph import rebuild_graph
+
+    summary = rebuild_graph()
+    if not summary.available:
+        console.print(f"[yellow]{summary.message}[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(summary.message)
 
 
 # ---------------------------------------------------------------------------

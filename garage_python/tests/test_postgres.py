@@ -1159,3 +1159,43 @@ class TestDistilledFacts:
         assert db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()
         drop_model(db, "m")
         assert not db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()
+
+    def test_the_graph_projects_documents_chunks_authors_and_both_kinds_of_fact(self, db: Session) -> None:
+        from garage_rag.db.graph import age_available, rebuild_graph, use_age
+
+        if not age_available(db):
+            pytest.skip("this server has no Apache AGE")
+        model, doc = self._setup(db)
+        db.execute(
+            text("INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) VALUES (:d, 0, 'x', :s, 't')"),
+            {"d": doc, "s": b"x"},
+        )
+        author = db.execute(text("INSERT INTO authors (display_name) VALUES ('Ada') RETURNING id")).scalar_one()
+        db.execute(
+            text("INSERT INTO document_authors (document_id, author_id, role) VALUES (:d, :a, 'author')"),
+            {"d": doc, "a": author},
+        )
+        self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        db.flush()
+        self._run(db, model)
+
+        summary = rebuild_graph(db)
+        assert summary.vertices == {"Document": 1, "Chunk": 1, "Author": 1, "PotentialFact": 2, "Fact": 1}
+        assert summary.edges == {"HAS_CHUNK": 1, "WROTE": 1, "RECEIVED": 0, "STATES": 2, "SUPPORTS": 2}
+        # Re-projecting replaces the graph rather than adding to it.
+        assert rebuild_graph(db).vertices == summary.vertices
+
+        use_age(db)
+        rows = (
+            db.connection()
+            .exec_driver_sql(
+                "SELECT name::text, statement::text FROM ag_catalog.cypher('garage', $$ "
+                "MATCH (a:Author)-[:WROTE]->(:Document)-[:STATES]->(:PotentialFact)-[:SUPPORTS]->(f:Fact) "
+                "RETURN DISTINCT a.display_name, f.statement $$) "
+                "AS (name ag_catalog.agtype, statement ag_catalog.agtype)"
+            )
+            .all()
+        )
+        # agtype strings cast to text with their JSON quotes in some AGE releases and without in others.
+        assert [tuple(v.strip('"') for v in r) for r in rows] == [("Ada", "The notes were written by Ada.")]
