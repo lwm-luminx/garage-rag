@@ -348,6 +348,10 @@ def render_tool_result(tool: str, result: Any, *, limit: int = TOOL_RESULT_CHARS
                 hit["text"] = _trim(hit["text"], HIT_TEXT_CHARS)
             for key in ("chunk_id", "matched_by", "score"):
                 hit.pop(key, None)
+            # Direction and sender only mean something on a message hit.
+            for key in ("direction", "sender"):
+                if hit.get(key) is None:
+                    hit.pop(key, None)
     text = json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
     if len(text) > limit:
         text = text[: limit - 1] + "…"
