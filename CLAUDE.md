@@ -166,13 +166,14 @@ open macapp/Garage.xcodeproj
 See `macapp/README.md` for why Postgres can't just use the Homebrew build (it bakes absolute
 `/opt/homebrew` paths).
 
-The bundled Postgres has two externals: `//ext/postgres` (18, the default) and `//ext/postgres19`
-(19 beta). Pick one with `--//ext:postgres_version=19` (or `--config=pg19`). Everything downstream
-depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/`libpq_dylib` aliases, never on a
-version package directly. Each package carries its own sandbox patch: `ext/postgres/appstore.patch`
-(18; adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written
-to be proposed upstream) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
-ported); a change to one usually needs porting to the other.
+The bundled Postgres is one package, `//ext/postgres`, built from 18 (the default) or the 19 beta:
+`--//ext:postgres_version=19` (or `--config=pg19`) switches its source between the `@postgres` and
+`@postgres19` repositories (`postgres.MODULE.bazel`, `postgres19.MODULE.bazel`), as `//ext/age` switches
+AGE's release line. Everything downstream depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/
+`libpq_dylib` aliases. Each major's patches live in `ext/postgres/pg<major>/`: `pg18/appstore.patch`
+(adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written to be
+proposed upstream) with `pg18/username.patch`, and `pg19/sysv_shmem.patch` (the older fork of the SysV
+code, not yet ported); a change to one usually needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
 line matching the selected major (`ext/age/pg18`, `ext/age/pg19`). `001_extensions.sql` creates it

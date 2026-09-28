@@ -29,7 +29,6 @@ copy_to_directory(
         "ext/age/age": "",
         "ext/pgvector/pgvector": "",
         "ext/postgres/postgres_rpath": "",
-        "ext/postgres19/postgres_rpath": "",
         "macapp/externals": "",
     },
 )

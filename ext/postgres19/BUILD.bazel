@@ -1,9 +1,0 @@
-load("//ext/postgres:postgres.bzl", "postgres_targets")
-
-# PostgreSQL 19 (beta). Built only when selected with --//ext:postgres_version=19
-# (`--config=pg19`); tagged manual so `//...` doesn't build a second Postgres by default.
-postgres_targets(
-    name = "postgres",
-    lib_source = "@postgres19//:postgres_source",
-    tags = ["manual"],
-)
