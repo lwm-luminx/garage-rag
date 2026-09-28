@@ -41,9 +41,18 @@ def _read(path: Path) -> dict:
 
 
 class TestCliInstall:
-    def test_cli_defaults_to_http_url(self, tmp_path: Path) -> None:
+    def test_cli_defaults_to_stdio(self, tmp_path: Path) -> None:
+        """Like the app's McpInstall: the HTTP server is off until the user starts it."""
         target_path = tmp_path / "mcp.json"
         result = CliRunner().invoke(app, ["mcp-install", "--path", str(target_path), "--yes"])
+        assert result.exit_code == 0, result.output
+        entry = _read(target_path)["mcpServers"]["garage-rag"]
+        assert "command" in entry
+        assert "url" not in entry
+
+    def test_cli_http_flag_registers_a_url(self, tmp_path: Path) -> None:
+        target_path = tmp_path / "mcp.json"
+        result = CliRunner().invoke(app, ["mcp-install", "--path", str(target_path), "--http", "--yes"])
         assert result.exit_code == 0, result.output
         entry = _read(target_path)["mcpServers"]["garage-rag"]
         assert entry["type"] == "http"
@@ -496,7 +505,7 @@ class TestPlanTargets:
             },
         )
 
-        result = CliRunner().invoke(app, ["mcp-install", "--all", "--yes"])
+        result = CliRunner().invoke(app, ["mcp-install", "--all", "--http", "--yes"])
         assert result.exit_code == 0
         assert "garage-rag" in _read(mcp1)["mcpServers"]
         assert _read(mcp1)["mcpServers"]["garage-rag"]["url"] == "http://127.0.0.1:8787/mcp"

@@ -1007,14 +1007,14 @@ def mcp_install(
         bool | None,
         typer.Option(
             "--http",
-            help="Register a URL for an HTTP server (preferred/default).",
+            help="Register the URL of a running HTTP server instead of the stdio command.",
         ),
     ] = None,
     stdio: Annotated[
         bool,
         typer.Option(
             "--stdio",
-            help="Register a spawned command using STDIO instead of an HTTP URL.",
+            help="Register the `garage-mcp` command, which the client starts itself (the default).",
         ),
     ] = False,
     host: Annotated[str | None, typer.Option(help="HTTP host, with --http.")] = None,
@@ -1033,7 +1033,9 @@ def mcp_install(
 
     if http is True and stdio is True:
         raise typer.BadParameter("choose either --http or --stdio")
-    use_stdio = bool(stdio or http is False)
+    # stdio unless --http: the app no longer serves HTTP until the user turns it on, so a
+    # URL registered by default would point at nothing.
+    use_stdio = http is not True
 
     def announce(outcome: McpTargetOutcome) -> None:
         console.print(f"\n[bold]{outcome.label}[/bold] -> {outcome.path}")
