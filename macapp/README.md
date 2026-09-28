@@ -558,7 +558,7 @@ with the Status page listing the missing sources and model under Health.
   - **Models** — three tabs. **Overall** has one card each for search (embedding) and distillation,
     with a headline, its one action (Embed All, Glean Facts) and Manage…. **Embedding** lists one row
     per model (state, actions, details with SHA-256 Verify), unregistered presets from the model
-    catalog (`docs/.data/models.json`, refreshed at launch from
+    catalog (`data/models/models.json`, refreshed at launch from
     `https://garagerag.app/.data/models.json`) with Add, a Custom model… form, and Test an Embedding.
     **Distillation** holds the facts-model presets and the fact prompts editor. The Providers box lists
     each model Llama XPC holds, with Unload, and keeps the LM Studio API token in the login Keychain,

@@ -125,11 +125,11 @@ enum Paths {
         if FileManager.default.fileExists(atPath: bundled.path) {
             return bundled
         }
-        let bundledDataModels = root.appendingPathComponent("docs/.data/models.json")
+        let bundledDataModels = root.appendingPathComponent("data/models/models.json")
         if FileManager.default.fileExists(atPath: bundledDataModels.path) {
             return bundledDataModels
         }
-        let devPath = devRepoRoot.appendingPathComponent("docs/.data/models.json")
+        let devPath = devRepoRoot.appendingPathComponent("data/models/models.json")
         if FileManager.default.fileExists(atPath: devPath.path) {
             return devPath
         }

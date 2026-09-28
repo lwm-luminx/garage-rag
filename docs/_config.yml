@@ -30,7 +30,7 @@ plugins:
   - jekyll-redirect-from
 
 # Jekyll skips dot-directories; .data holds files the app and editors fetch from the site
-# (models.json, garage.schema.json).
+# (models.json, which the build copies in from data/models, and garage.schema.json).
 include:
   - .data
 

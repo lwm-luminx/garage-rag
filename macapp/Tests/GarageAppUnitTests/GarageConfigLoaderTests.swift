@@ -539,7 +539,7 @@ final class GarageConfigLoaderTests: XCTestCase {
     }
 
     func testTheCommittedCatalogCarriesThePresetsTheAppOnceHardCoded() throws {
-        // The models the Swift fallback used to list by hand are in docs/.data/models.json, so
+        // The models the Swift fallback used to list by hand are in data/models/models.json, so
         // dropping the list lost none of them.
         let presets = GarageConfigLoader.loadModelPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(presets.contains { $0.slug == "bge-m3" })
@@ -563,16 +563,16 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(presets.contains { $0.slug == "mistral-7b-instruct-v0.3" })
     }
 
-    /// docs/.data/models.json, from the test bundle's resources or Bazel's runfiles.
+    /// data/models/models.json, from the test bundle's resources or Bazel's runfiles.
     private func committedCatalogURL() throws -> URL {
         let candidates = [
             Bundle(for: Self.self).url(forResource: "models", withExtension: "json"),
             ProcessInfo.processInfo.environment["TEST_SRCDIR"].map {
-                URL(fileURLWithPath: $0).appendingPathComponent("_main/docs/.data/models.json")
+                URL(fileURLWithPath: $0).appendingPathComponent("_main/data/models/models.json")
             },
         ].compactMap { $0 }
         guard let url = candidates.first(where: { FileManager.default.fileExists(atPath: $0.path) }) else {
-            throw XCTSkip("docs/.data/models.json is not in this test's runfiles")
+            throw XCTSkip("data/models/models.json is not in this test's runfiles")
         }
         return url
     }

@@ -6,7 +6,7 @@ swift_library(
     testonly = True,
     srcs = glob(["**/*.swift"]),
     data = [
-        "//docs:model_manifest",
+        "//data/models",
     ],
     module_name = "GarageAppUnitTests",
     visibility = ["//visibility:public"],

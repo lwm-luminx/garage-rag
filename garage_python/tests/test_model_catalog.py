@@ -19,7 +19,7 @@ from garage_rag.db.catalog import MANIFEST_ENV, known_models, manifest_path
 from garage_rag.db.emb_tables import resolve_spec
 from garage_rag.db.registry import DISTANCES, check_distance, distance_operator, index_ddl, plan_storage
 
-MODELS_JSON = repo_root() / "docs" / ".data" / "models.json"
+MODELS_JSON = repo_root() / "data" / "models" / "models.json"
 
 
 @pytest.fixture

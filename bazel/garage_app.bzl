@@ -43,7 +43,7 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
             "//macapp/externals:postgres_output": "Resources/postgres",
             "//macapp/externals:schema_output": "Resources/schema",
             "//macapp/externals:postgresql.conf": "Resources",
-            "//docs:model_manifest": "Resources",
+            "//data/models": "Resources",
             "//docs:config_schema": "Resources",
             "//data/notices:third_party_notices": "Resources",
             "//garage_python:LICENSE": "Resources",
