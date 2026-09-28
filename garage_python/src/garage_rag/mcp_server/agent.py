@@ -14,6 +14,14 @@ object, ``{"tool": "rag_search", "arguments": {...}}``, and gets the tool's resu
 back as the next user turn; a reply that is not a tool call is the answer. The
 same loop therefore works against Ollama and LM Studio unchanged.
 
+Small models (gemma2-2b among them) tend to read a question about the user's own life
+("when did I last talk to BMW?") as one about their training and answer that they
+have no access to personal information, without calling a tool. So by default the
+loop searches before the model says anything: the question goes to ``rag_search``
+and the model's first turn opens on those hits, shown as a call it already made.
+That call doubles as a worked example of the format, and the model can still
+search again or open a document before it answers.
+
 The content rule holds here as everywhere: when the model host is not loopback,
 ``rag_search`` is restricted to documents and code and ``rag_get_document`` refuses
 a communication, so no message or mail reaches an off-box model.
@@ -45,26 +53,54 @@ HIT_TEXT_CHARS = 700
 # Citations carry a shorter snippet, as rag_ask's do.
 SNIPPET_CHARS = 240
 DEFAULT_MAX_STEPS = 6
+# Hits the opening search asks for, before the model has said anything.
+FIRST_SEARCH_LIMIT = 6
 
 # What rag_search may return when the model host is off this machine.
 _LOCAL_ONLY_CLASSES = ("document", "code")
 
 AGENT_SYSTEM_PROMPT = """\
-You answer questions about the user's personal corpus (their documents, code and messages), \
-which you reach through the tools below. Nothing else is known to you about the corpus.
-
+You are Garage, a private assistant running on the user's own computer. The user has \
+indexed their own files, code, notes, mail and messages into a personal corpus, and you \
+have full access to it through the tools below. When the user says "I", "me" or "my", \
+they mean themselves, and the answer is in their corpus: a question about who they \
+talked to, what they wrote, when something happened or what they decided is a question \
+for the tools. Never say you have no access to personal information or past \
+conversations; you do, through the tools. Nothing about the corpus is known to you \
+except what the tools return.
+{owner}
 Work in steps. To use a tool, reply with exactly one JSON object and nothing else:
 {{"tool": "<name>", "arguments": {{...}}}}
 You will get the tool's result as the next message. Search first; open a document with \
-rag_get_document only when a search excerpt is not enough. Use at most a few tool calls.
+rag_get_document only when a search excerpt is not enough. If a search finds nothing \
+useful, try once more with different keywords (a name, a company, a subject). Use at \
+most a few tool calls.
 
 When you have what you need, reply with the answer in plain prose (no JSON). Name the \
 documents you relied on by their title or location. If the corpus does not contain the \
-answer, say so plainly instead of guessing.
+answer, say that you found nothing about it in their files instead of guessing.
 
-Tools:
+Tools (arguments in parentheses; ? marks an optional one):
 {tools}
+
+Which tool to use:
+- Anything about the user's life, work, people, mail or files: rag_search.
+- Talking, writing or meeting with someone ("when did I last talk to BMW?"): rag_search \
+with corpus_class "communication", for example
+  {{"tool": "rag_search", "arguments": {{"query": "BMW", "corpus_class": "communication"}}}}
+- What the user wrote, thought or decided: rag_search with trust "authored".
+- Documents by one person: rag_search with author set to their name; rag_list_authors lists the names.
+- The whole document behind a hit: rag_get_document with the hit's document_id.
+- What is indexed, and how much: rag_list_sources or rag_stats.
+
+Each rag_search hit has document_id, title, location (the file path), corpus_class, \
+trust_tier, authors and text (an excerpt). Hits carry no date: a date is known only \
+when it appears in the text, the title or the location.
 """
+
+# Arguments the model is not shown: it gains nothing from choosing them. They are still
+# accepted, and validated, when a model passes one anyway.
+_HIDDEN_ARGUMENTS = {"rag_search": frozenset({"mode"}), "rag_get_document": frozenset({"max_chars"})}
 
 NO_ANSWER_TEXT = "The model kept asking for tools instead of answering. Try a more specific question."
 
@@ -186,19 +222,60 @@ def _simplify_property(spec: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def describe_tools(tools: list[AgentTool]) -> str:
-    """The tool section of the system prompt: one block per tool with its JSON schema."""
-    blocks = []
-    for tool in tools:
-        blocks.append(
-            f"- {tool.name}: {tool.description}\n  arguments: {json.dumps(tool.parameters, separators=(',', ':'))}"
-        )
-    return "\n".join(blocks)
+    """The tool section of the system prompt: one line per tool, its arguments and what it does.
+
+    Small models follow a short signature far better than a JSON schema, so each argument
+    is its name, its allowed values when it has an enum and ``?`` when it is optional,
+    and the description is the tool's first sentence.
+    """
+    return "\n".join(f"- {tool.name}({_signature(tool)}): {_first_sentence(tool.description)}" for tool in tools)
 
 
-def build_agent_messages(question: str, tools: list[AgentTool]) -> list[dict[str, str]]:
-    """The opening messages: the system prompt with the tools, then the question."""
+def _signature(tool: AgentTool) -> str:
+    hidden = _HIDDEN_ARGUMENTS.get(tool.name, frozenset())
+    required = set(tool.parameters.get("required") or ())
+    parts = []
+    for name, spec in (tool.parameters.get("properties") or {}).items():
+        if name in hidden:
+            continue
+        values = _enum_values(spec)
+        part = f"{name}{'' if name in required else '?'}"
+        if values:
+            part += ": " + " | ".join(f'"{v}"' for v in values)
+        parts.append(part)
+    return ", ".join(parts)
+
+
+def _enum_values(spec: Mapping[str, Any]) -> list[Any]:
+    """The allowed values of an argument, through the list-or-scalar ``anyOf`` the filters use."""
+    if "enum" in spec:
+        return list(spec["enum"])
+    for option in spec.get("anyOf") or []:
+        values = _enum_values(option.get("items") or option)
+        if values:
+            return values
+    return []
+
+
+def _first_sentence(text: str) -> str:
+    match = re.match(r"(.+?[.!?])(\s|$)", text)
+    return match.group(1) if match else text
+
+
+def build_agent_messages(question: str, tools: list[AgentTool], *, owner: str = "") -> list[dict[str, str]]:
+    """The opening messages: the system prompt with the tools, then the question.
+
+    ``owner`` is the corpus owner's name (``identity.self_name``), so the model can tie
+    "I" to an author and to the ``authored`` tier.
+    """
+    owner_line = (
+        f'The user is {owner}; "authored" documents and the author {owner} are theirs.\n' if owner.strip() else ""
+    )
     return [
-        {"role": "system", "content": AGENT_SYSTEM_PROMPT.format(tools=describe_tools(tools))},
+        {
+            "role": "system",
+            "content": AGENT_SYSTEM_PROMPT.format(tools=describe_tools(tools), owner=owner_line),
+        },
         {"role": "user", "content": f"Question: {question}"},
     ]
 
@@ -364,6 +441,8 @@ def run_agent(
     max_steps: int = DEFAULT_MAX_STEPS,
     max_tokens: int | None = None,
     temperature: float | None = None,
+    search_first: bool = True,
+    owner: str = "",
 ) -> AgentResult:
     """Ask ``model`` the question with ``tools`` to call, and return its answer.
 
@@ -371,10 +450,14 @@ def run_agent(
     arguments go back to the model as an error it can correct); after ``max_steps`` tool
     calls the model is told to answer with what it has. Token counts are summed over
     every reply.
+
+    With ``search_first`` (the default) the question goes to ``rag_search`` before the
+    model's first reply, so a model that would otherwise answer from its training
+    starts from the user's own documents. It is recorded as the first step.
     """
     communications_allowed = egress.allows_communications(model.host)
     by_name = {tool.name: tool for tool in tools}
-    messages = build_agent_messages(question, tools)
+    messages = build_agent_messages(question, tools, owner=owner)
     steps: list[AgentStep] = []
     citations: list[AgentCitation] = []
     seen_documents: set[int] = set()
@@ -391,14 +474,8 @@ def run_agent(
             completion_tokens += reply.completion_tokens or 0
         return reply
 
-    answer: str | None = None
-    for _ in range(max_steps):
-        reply = ask()
-        call = parse_tool_call(reply.text)
-        if call is None:
-            answer = reply.text
-            break
-        name, arguments = call
+    def call_tool(name: str, arguments: dict[str, Any]) -> None:
+        """Run one tool call and append it, and its result or error, to the conversation."""
         messages.append({"role": "assistant", "content": json.dumps({"tool": name, "arguments": arguments})})
         tool = by_name.get(name)
         if tool is None:
@@ -411,8 +488,11 @@ def run_agent(
                     "content": f"Error: there is no tool named {name!r}. The tools are: {', '.join(by_name)}.",
                 }
             )
-            continue
+            return
         to_run = restrict_for_host(name, arguments, communications_allowed=communications_allowed)
+        if name == "rag_get_document":
+            # Ask for no more text than fits in the result, so its ``truncated`` flag tells the truth.
+            to_run = {"max_chars": TOOL_RESULT_CHARS, **to_run}
         try:
             result = tool.run(to_run)
         except Exception as exc:  # the model's mistake to read and correct, or a corpus error to report
@@ -421,7 +501,7 @@ def run_agent(
                 AgentStep(n=len(steps) + 1, tool=name, arguments=arguments, summary=f"{name} failed: {exc}", ok=False)
             )
             messages.append({"role": "user", "content": f"Error from {name}: {_trim(str(exc), 600)}"})
-            continue
+            return
         if not result_allowed_for_host(name, result, communications_allowed=communications_allowed):
             steps.append(
                 AgentStep(
@@ -441,12 +521,25 @@ def run_agent(
                     ),
                 }
             )
-            continue
+            return
         steps.append(
             AgentStep(n=len(steps) + 1, tool=name, arguments=arguments, summary=summarize_step(name, arguments, result))
         )
         _collect_citations(name, result, citations, seen_documents)
         messages.append({"role": "user", "content": f"Result of {name}:\n{render_tool_result(name, result)}"})
+
+    # The opening search is the harness's, not the model's, so it does not count against max_steps.
+    if search_first and "rag_search" in by_name:
+        call_tool("rag_search", {"query": question, "limit": FIRST_SEARCH_LIMIT})
+
+    answer: str | None = None
+    for _ in range(max_steps):
+        reply = ask()
+        call = parse_tool_call(reply.text)
+        if call is None:
+            answer = reply.text
+            break
+        call_tool(*call)
 
     if answer is None:
         messages.append({"role": "user", "content": FINAL_ANSWER_PROMPT})

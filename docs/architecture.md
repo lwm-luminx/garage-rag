@@ -261,8 +261,10 @@ class through the guard, which refuses a communication for a host that is not
 loopback (see `docs/privacy.md`).
 
 `rag_agent` (`mcp_server/agent.py`) lets the model drive instead: it gets the
-five read-only tools above, described with their input schemas in the system
-prompt, and calls them by replying with one JSON object
+five read-only tools above, each as a one-line signature in the system prompt
+(arguments, their allowed values, the description's first sentence; small models
+follow that better than a JSON schema), with a short guide from kinds of question to
+tools and filters and the owner's name from `identity.self_name`, and calls them by replying with one JSON object
 (`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
 user turn, and a reply that is not a tool call is the answer. Calls travel in the
 conversation rather than as the OpenAI `tools` field because the app's llama engine
@@ -271,6 +273,11 @@ works on Ollama and LM Studio too. Arguments are validated against the tool's ow
 schema, as `tools/call` validates them, and an error goes back to the model to
 correct. The result carries the answer, the steps (`AgentStep`) and one
 `AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+By default (`search_first`) the question goes to `rag_search` before the model's
+first reply, and the model starts from those hits, shown as a call it already made:
+small models such as gemma2-2b otherwise read "when did I last talk to BMW?" as a
+question about their training and answer that they have no access to personal
+information. The system prompt also tells the model the corpus is the user's own.
 Its content rule: when the model host is not loopback, `rag_search` is restricted
 to documents and code and `rag_get_document` refuses a communication. `garage ask` is the
 CLI front door to both tools, with `--json` for the app.
