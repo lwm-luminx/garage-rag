@@ -185,4 +185,34 @@ final class LogsUITests: GarageUITestCase {
             "no line under Ingest names the source \(slug) (\(String(describing: counts())))"
         )
     }
+
+    /// The status bar under the table: the count, then Copy All, Details and Clear beside it. The
+    /// stream picker is gone. Copy All is not clicked: reading the pasteboard back can raise the
+    /// system's paste prompt.
+    func testStatusBarCountsAndHoldsTheActions() throws {
+        try launchApp()
+        waitForBackend()
+        open(section: "logs")
+        selectSource("Unified Log")
+        fetchRecentOSLog()
+
+        XCTAssertTrue(waitUntil(timeout: 30) { (self.counts()?.total ?? 0) > 0 }, "the Unified Log has no rows (badge: \(String(describing: counts())))")
+        let count = shownText(of: element(identifier: "logs.count"))
+        XCTAssertTrue(count.hasSuffix("entries") || count.contains("entries, showing the latest"), "the count reads \"\(count)\"")
+
+        let copy = button(label: "Copy All")
+        XCTAssertTrue(copy.exists, "the status bar has no Copy All")
+        XCTAssertTrue(copy.isEnabled, "Copy All is disabled with rows")
+        XCTAssertTrue(element(identifier: "logs.clear").exists, "the status bar has no Clear")
+        XCTAssertTrue(
+            app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "Details")).firstMatch.exists,
+            "the status bar has no Details toggle"
+        )
+        // The status bar sits under the table.
+        XCTAssertGreaterThan(copy.frame.minY, logTable.frame.minY, "Copy All is above the table")
+
+        for gone in ["All Streams", "stdout", "stderr"] {
+            XCTAssertFalse(app.popUpButtons.matching(NSPredicate(format: "value == %@", gone)).firstMatch.exists, "Logs still has a stream picker (\(gone))")
+        }
+    }
 }
