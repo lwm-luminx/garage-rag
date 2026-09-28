@@ -203,6 +203,10 @@ class Chunk(Base):
     # Set when this chunk is a fact's text rather than a slice of
     # documents.content, so the fact can be embedded like any other chunk.
     fact_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("facts.id", ondelete="CASCADE"), nullable=True)
+    # Message chunks only (014_chunk_direction.sql): 'sent' | 'received', and the
+    # handle that wrote the message, or 'me'. NULL on every other chunk.
+    direction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    sender: Mapped[str | None] = mapped_column(Text, nullable=True)
     # `tsv` is a generated column; it is read-only from the ORM's perspective and
     # is intentionally not mapped.
 
@@ -211,6 +215,7 @@ class Chunk(Base):
 
     __table_args__ = (
         UniqueConstraint("document_id", "ord", name="chunks_ord_unique"),
+        CheckConstraint("direction IN ('sent', 'received')", name="chunks_direction_check"),
         Index("chunks_doc", "document_id"),
     )
 

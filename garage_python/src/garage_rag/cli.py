@@ -42,7 +42,7 @@ from garage_rag.db.engine import session_scope
 from garage_rag.db.migrate import apply_migrations, redact_url, schema_summary
 from garage_rag.db.models import Document, Source
 from garage_rag.mcp_server.install import MULTI_TARGETS, target_keys
-from garage_rag.search import SearchMode
+from garage_rag.search import Direction, SearchMode
 
 app = typer.Typer(
     add_completion=False,
@@ -1414,6 +1414,10 @@ def search(
     ] = None,
     source: Annotated[list[str] | None, typer.Option("--source", "-s")] = None,
     author: Annotated[str | None, typer.Option("--author")] = None,
+    direction: Annotated[
+        Direction | None,
+        typer.Option(help="Only message chunks the owner sent, or only those they received."),
+    ] = None,
     full: Annotated[bool, typer.Option("--full", help="Print whole snippets.")] = False,
 ) -> None:
     """Search the corpus with hybrid vector and keyword retrieval."""
@@ -1431,6 +1435,7 @@ def search(
             trust_tiers=trust or None,
             sources=source or None,
             author=author,
+            direction=direction,
         )
 
     if not hits:
@@ -1449,6 +1454,8 @@ def search(
             console.print(f"   [dim]section: {hit.heading_path}[/dim]")
         if hit.authors:
             console.print(f"   [dim]authors: {', '.join(hit.authors[:4])}[/dim]")
+        if hit.direction:
+            console.print(f"   [dim]{hit.direction}{f' by {hit.sender}' if hit.sender else ''}[/dim]")
         body = hit.text if full else snippet(hit.text)
         console.print(f"   {body}")
 

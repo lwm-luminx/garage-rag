@@ -126,7 +126,10 @@ The MCP server hands search results and document excerpts, communications
 included, to whichever client is connected to it, and that client may send them
 to its own model provider; see [What connected agents receive](#what-connected-agents-receive).
 `rag_search` results carry each hit's `corpus_class` so a client can tell
-communications apart.
+communications apart, and a message's `direction` and `sender` (a phone number
+or address, or `me`). Those two are communication metadata: they live on the
+chunk in the local database, and like the message itself reach only an MCP
+client that retrieves it.
 
 ### Outside the guard — the app's own downloads
 

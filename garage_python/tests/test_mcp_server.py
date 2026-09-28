@@ -125,6 +125,8 @@ class MockSearchHit:
     matched_by: str = "hybrid"
     score: float = 0.87654321
     text: str = "Sample content"
+    direction: str | None = None
+    sender: str | None = None
 
     def __post_init__(self):
         if self.authors is None:
@@ -165,6 +167,7 @@ class TestMcpTools:
                     trust=["authored"],
                     source="notes",
                     author="Rick",
+                    direction="sent",
                 )
 
                 mock_run_search.assert_called_once_with(
@@ -176,6 +179,7 @@ class TestMcpTools:
                     trust_tiers=["authored"],
                     sources=["notes"],
                     author="Rick",
+                    direction="sent",
                 )
                 assert isinstance(result, SearchResult)
                 assert result.query == "test query"
@@ -192,6 +196,18 @@ class TestMcpTools:
                 assert hit.score == 0.876543
                 assert hit.section == "Introduction > Getting Started"
                 assert hit.authors == ["Rick Mark"]
+                assert hit.direction is None
+                assert hit.sender is None
+
+    def test_rag_search_reports_a_message_hits_direction_and_sender(self) -> None:
+        mock_hit = MockSearchHit(corpus_class="communication", direction="received", sender="+15551234567")
+        with (
+            patch("garage_rag.mcp_server.server.session_scope"),
+            patch("garage_rag.mcp_server.server.run_search", return_value=[mock_hit]),
+            patch("garage_rag.mcp_server.server.list_models", return_value=[]),
+        ):
+            hit = rag_search(query="dinner", direction="received").hits[0]
+        assert (hit.direction, hit.sender) == ("received", "+15551234567")
 
     def test_rag_search_fts_mode_and_no_default_model(self) -> None:
         mock_hit = MockSearchHit()
@@ -450,6 +466,7 @@ class TestAsk:
             trust_tiers=["authored"],
             sources=None,
             author=None,
+            direction=None,
         )
         messages = chat_model.complete.call_args.args[0]
         assert chat_model.complete.call_args.kwargs == {"max_tokens": 100, "temperature": 0.2}

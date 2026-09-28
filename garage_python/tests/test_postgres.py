@@ -290,6 +290,21 @@ class TestMigrations:
         with pytest.raises(Exception, match="embedding_models_distance_check"):
             db.execute(text("UPDATE embedding_models SET distance = 'manhattan'"))
 
+    def test_014_adds_direction_and_sender_to_chunks(self, db: Session) -> None:
+        """Re-applied, 014 leaves one column each and one check; only messages carry a value."""
+        chunk = _chunk(db, _source(db, "sms"), "thread", "[2026-09-24 12:00 UTC] Me: on my way")
+        migration = (sql_dir() / "014_chunk_direction.sql").read_text(encoding="utf-8")
+        db.connection().exec_driver_sql(migration)
+        db.connection().exec_driver_sql(migration)  # and again: idempotent
+
+        assert db.execute(text("SELECT direction, sender FROM chunks WHERE id = :id"), {"id": chunk}).one() == (
+            None,
+            None,
+        )
+        db.execute(text("UPDATE chunks SET direction = 'sent', sender = 'me' WHERE id = :id"), {"id": chunk})
+        with pytest.raises(Exception, match="chunks_direction_check"):
+            db.execute(text("UPDATE chunks SET direction = 'sideways' WHERE id = :id"), {"id": chunk})
+
 
 class TestIngestOutcomes:
     """The no-text and failed outcomes the pipeline remembers, through the SQL gateway."""
@@ -365,9 +380,16 @@ class TestReplaceDocument:
     """Replacing a document keeps the chunks that did not change, and so their vectors."""
 
     @staticmethod
-    def _chunks(*texts: str) -> list[ChunkPayload]:
+    def _chunks(*texts: str, direction: str | None = None, sender: str | None = None) -> list[ChunkPayload]:
         return [
-            ChunkPayload(ord=i, text=t, chunk_sha256=hashlib.sha256(t.encode()).hexdigest(), chunker="test")
+            ChunkPayload(
+                ord=i,
+                text=t,
+                chunk_sha256=hashlib.sha256(t.encode()).hexdigest(),
+                chunker="test",
+                direction=direction,
+                sender=sender,
+            )
             for i, t in enumerate(texts)
         ]
 
@@ -435,6 +457,20 @@ class TestReplaceDocument:
 
         assert self._rows(db) == {0: (first, "first")}
 
+    def test_a_kept_chunk_takes_its_new_direction_and_sender(self, db: Session) -> None:
+        """A message indexed before 014 has no direction; the rebuild fills it in on the same row."""
+        _source(db, "replace")
+        db.commit()
+        gateway = SqlAlchemyIngestStorageGateway(session_factory=session_scope)
+
+        self._replace(gateway, self._chunks("see you at 7"))
+        before = self._rows(db)[0][0]
+        self._replace(gateway, self._chunks("see you at 7", direction="received", sender="+15551234567"))
+
+        db.expire_all()
+        row = db.execute(text("SELECT id, direction, sender FROM chunks")).one()
+        assert tuple(row) == (before, "received", "+15551234567")
+
 
 class TestModelTables:
     @pytest.mark.parametrize(
@@ -498,6 +534,34 @@ class TestSearch:
         _chunk(db, source, "sourdough", "A sourdough starter needs wild yeast and flour.")
         hits = search(db, "wild yeast", mode="fts")
         assert [hit.title for hit in hits] == ["sourdough"]
+
+    def test_direction_keeps_to_messages_that_went_that_way(self, db: Session) -> None:
+        source = _source(db, "notes")
+        _chunk(db, source, "sourdough", "A sourdough starter needs wild yeast and flour.")
+        sent = _chunk(db, source, "thread", "Me: bring the sourdough", corpus_class="communication")
+        document_id = db.execute(text("SELECT document_id FROM chunks WHERE id = :id"), {"id": sent}).scalar_one()
+        db.execute(text("UPDATE chunks SET direction = 'sent', sender = 'me' WHERE id = :id"), {"id": sent})
+        db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, direction, sender) "
+                "VALUES (:doc, 1, 'friend: sourdough again?', :sha, 'test', 'received', 'friend@example.com')"
+            ),
+            {"doc": document_id, "sha": hashlib.sha256(b"received").digest()},
+        )
+
+        everything = search(db, "sourdough", mode="fts")
+        assert len(everything) == 3
+        assert {(h.direction, h.sender) for h in everything} == {
+            (None, None),
+            ("sent", "me"),
+            ("received", "friend@example.com"),
+        }
+        assert [(h.text, h.sender) for h in search(db, "sourdough", mode="fts", direction="sent")] == [
+            ("Me: bring the sourdough", "me")
+        ]
+        assert [h.sender for h in search(db, "sourdough", mode="fts", direction="received")] == ["friend@example.com"]
+        with pytest.raises(ValueError, match="direction must be one of sent, received"):
+            search(db, "sourdough", mode="fts", direction="sideways")
 
 
 class TestEgress:

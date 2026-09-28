@@ -7,5 +7,7 @@ imports every embedding backend and is loaded on demand.
 from typing import Literal
 
 SearchMode = Literal["hybrid", "vector", "fts"]
+# chunks.direction of a message chunk (014_chunk_direction.sql).
+Direction = Literal["sent", "received"]
 
-__all__ = ["SearchMode"]
+__all__ = ["Direction", "SearchMode"]

@@ -65,6 +65,10 @@ class ChunkPayload:
     heading_path: str | None = None
     chunk_sha256: str = ""
     chunker: str | None = None
+    # Message chunks only: 'sent' | 'received', and the handle that wrote the
+    # message, or 'me'. None for every other chunk (chunks.direction/sender).
+    direction: str | None = None
+    sender: str | None = None
 
 
 class IngestStorageGateway(ABC):
@@ -648,10 +652,14 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                 )
                 row = kept.get(c.ord)
                 if row is not None:
+                    # Vectors depend on the text alone, so a kept row takes the new
+                    # offsets, heading, direction and sender in place, with no re-embedding.
                     row.token_count = c.token_count or None
                     row.char_start = c.char_start
                     row.char_end = c.char_end
                     row.heading_path = c.heading_path or None
+                    row.direction = c.direction or None
+                    row.sender = c.sender or None
                     continue
                 session.add(
                     Chunk(
@@ -664,6 +672,8 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                         heading_path=c.heading_path or None,
                         chunk_sha256=chunk_hash,
                         chunker=c.chunker or doc.chunker or "default",
+                        direction=c.direction or None,
+                        sender=c.sender or None,
                     )
                 )
 
@@ -932,6 +942,8 @@ class GrpcIngestStorageGateway(IngestStorageGateway):
                     else str(c.chunk_sha256 or "")
                 ),
                 chunker=c.chunker or "",
+                direction=c.direction or "",
+                sender=c.sender or "",
             )
             for c in chunks
         ]

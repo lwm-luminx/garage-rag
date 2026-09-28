@@ -373,6 +373,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 trust_tiers=list(request.trust_tiers) or None,
                 sources=list(request.sources) or None,
                 author=request.author or None,
+                direction=request.direction or None,
             )
 
         proto_hits: list[SearchHit] = []
@@ -390,6 +391,8 @@ class GarageRpcServicer(GarageServiceServicer):
                     authors=hit.authors or [],
                     text=hit.text or "",
                     snippet=hit.text if request.full else snippet(hit.text),
+                    direction=hit.direction or "",
+                    sender=hit.sender or "",
                 )
             )
 
@@ -1330,6 +1333,8 @@ class GarageRpcServicer(GarageServiceServicer):
                             heading_path=c.heading_path or None,
                             chunk_sha256=c.chunk_sha256,
                             chunker=c.chunker or None,
+                            direction=c.direction or None,
+                            sender=c.sender or None,
                         )
                         for c in request.chunks
                     ],

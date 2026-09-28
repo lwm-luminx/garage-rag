@@ -24,6 +24,12 @@ several chunks, never merged with its neighbours. The header is part of the
 content hash, so a renamed group or a new member rebuilds the document. Times
 are UTC so the text does not change with the machine's time zone.
 
+Trust is per document, so it cannot say which of a thread's messages the owner
+wrote. Each message chunk says so itself: ``chunks.direction`` is ``sent`` (the
+owner wrote it) or ``received``, and ``chunks.sender`` is the handle that wrote
+it, or ``me`` (``data/sql/014_chunk_direction.sql``). Search filters on it, so the
+owner's side of a conversation can be found on its own.
+
 Conversations are always ``communication``, which keeps them on this machine
 (see ``docs/privacy.md``). The per-document chunk cap does not apply: it guards
 against a runaway file, and cutting a thread short would silently drop its
@@ -47,6 +53,7 @@ from garage_rag.extract.messages import (
     EXTRACTOR_VERSION,
     ChatMessage,
     Conversation,
+    OrphanStats,
     find_databases,
     messages_database_status,
     read_conversations,
@@ -61,8 +68,12 @@ SELF_LABEL = "Me"
 
 
 def signature(size: int) -> str:
-    """The document's chunker signature; a new chunk size rebuilds every thread."""
-    return f"{ContentKind.CONVERSATION}:{CHUNKER}:{size}"
+    """The document's chunker signature; a new chunk size or extractor version rebuilds every thread.
+
+    A rebuild keeps each chunk whose text is unchanged, and its vectors, so a new
+    extractor version costs no re-embedding for messages that render the same.
+    """
+    return f"{ContentKind.CONVERSATION}:{CHUNKER}:{size}:v{EXTRACTOR_VERSION}"
 
 
 def conversation_uri(db_path: Path, conversation: Conversation) -> str:
@@ -94,10 +105,17 @@ def render(conversation: Conversation, *, size: int | None = None) -> tuple[str,
     several chunks, so no chunk can exceed what the embedders accept; a chunk
     never spans two messages. The header naming the thread is not a chunk.
     """
+    text, chunks, _messages = _render(conversation, size=size)
+    return text, chunks
+
+
+def _render(conversation: Conversation, *, size: int | None) -> tuple[str, list[TextChunk], list[ChatMessage]]:
+    """:func:`render`, plus the message each chunk came from."""
     size = size or get_settings().chunk_size
     parts = [_header(conversation)]
     offset = len(parts[0])
     chunks: list[TextChunk] = []
+    owners: list[ChatMessage] = []
     for message in conversation.messages:
         stamp = message.sent_at.strftime("%Y-%m-%d %H:%M UTC")
         paragraph = f"[{stamp}] {_sender_label(message)}: {message.text}"
@@ -121,9 +139,10 @@ def render(conversation: Conversation, *, size: int | None = None) -> tuple[str,
                     char_end=offset + start + len(piece),
                 )
             )
+            owners.append(message)
         parts.append(paragraph)
         offset += len(paragraph)
-    return "\n\n".join(parts), chunks
+    return "\n\n".join(parts), chunks, owners
 
 
 def _identity_kind(handle: str) -> str:
@@ -175,7 +194,7 @@ def ingest_conversation(
     """Store one conversation. Returns the chunks written, or None when it was unchanged."""
     uri = conversation_uri(db_path, conversation)
     size = get_settings().chunk_size
-    text, chunks = render(conversation, size=size)
+    text, chunks, owners = _render(conversation, size=size)
     content_hash = sha256_text(text).hex()
 
     existing = gateway.check_stat(source_ctx.slug, uri)
@@ -229,8 +248,10 @@ def ingest_conversation(
                 heading_path=chunk.heading_path,
                 chunk_sha256=chunk.sha256.hex(),
                 chunker=chunk.chunker,
+                direction=message.direction,
+                sender=message.sender_id,
             )
-            for chunk in chunks
+            for chunk, message in zip(chunks, owners, strict=True)
         ],
     )
 
@@ -273,8 +294,9 @@ def ingest_messages_source(
             continue
         found += 1
         log.info("Reading conversations from %s", db_path)
+        stats = OrphanStats()
         try:
-            for conversation in read_conversations(db_path):
+            for conversation in read_conversations(db_path, stats):
                 if is_cancelled is not None and is_cancelled():
                     log.info("Ingest cancelled by user for source %s", source_ctx.slug)
                     return False
@@ -305,6 +327,17 @@ def ingest_messages_source(
             counters.note_error(f"{db_path.name}: {exc}")
             log.warning("Could not read %s: %s", db_path, exc)
             complete = False
+        else:
+            if stats.attached or stats.skipped:
+                log.info(
+                    "%s: %d message(s) in no thread joined their one-to-one chat; %d skipped "
+                    "(%d without a handle, %d whose address has no one-to-one chat)",
+                    db_path.name,
+                    stats.attached,
+                    stats.skipped,
+                    stats.no_handle,
+                    stats.no_chat,
+                )
     if not found and complete:
         # An unlistable folder looks empty; an empty run would retire every thread.
         counters.note_error(f"{root}: no readable Messages database found")

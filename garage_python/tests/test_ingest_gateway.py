@@ -1079,13 +1079,16 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
             trust_tier="authored",
             authors=[],
             chunks=[
-                ChunkPayload(ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01"),
+                ChunkPayload(
+                    ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01", direction="sent", sender="me"
+                ),
                 ChunkPayload(ord=1, text="reflowed", chunk_sha256="02"),
             ],
         )
     sent = mock_doc.call_args.args[0].chunks
     assert sent[0].HasField("char_start") and sent[0].char_start == 0
     assert not sent[1].HasField("char_start")
+    assert [(c.direction, c.sender) for c in sent] == [("sent", "me"), ("", "")]
 
     server_side = MagicMock()
     server_side.replace_document.return_value = 2
@@ -1095,7 +1098,9 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
         uri="a.md",
         action="replace",
         chunks=[
-            DocumentChunkPayload(ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01"),
+            DocumentChunkPayload(
+                ord=0, text="first", char_start=0, char_end=5, chunk_sha256="01", direction="received", sender="a@b.c"
+            ),
             DocumentChunkPayload(ord=1, text="reflowed", chunk_sha256="02"),
         ],
     )
@@ -1104,6 +1109,8 @@ def test_chunk_offset_zero_survives_the_grpc_facade():
     received = server_side.replace_document.call_args.kwargs["chunks"]
     assert (received[0].char_start, received[0].char_end) == (0, 5)
     assert (received[1].char_start, received[1].char_end) == (None, None)
+    # Empty proto strings arrive as None, so a chunk that is not a message has no direction.
+    assert [(c.direction, c.sender) for c in received] == [("received", "a@b.c"), (None, None)]
 
 
 def test_session_kind_crosses_the_grpc_facade():
@@ -1207,9 +1214,18 @@ def test_replace_document_keeps_unchanged_chunks_and_replaces_the_rest():
         authors=[],
         chunks=[
             ChunkPayload(
-                ord=0, text="Intro paragraph.", chunk_sha256="01", char_start=5, char_end=21, heading_path="H"
+                ord=0,
+                text="Intro paragraph.",
+                chunk_sha256="01",
+                char_start=5,
+                char_end=21,
+                heading_path="H",
+                direction="sent",
+                sender="me",
             ),
-            ChunkPayload(ord=1, text="New second paragraph.", chunk_sha256="12"),
+            ChunkPayload(
+                ord=1, text="New second paragraph.", chunk_sha256="12", direction="received", sender="+15551234567"
+            ),
             ChunkPayload(ord=2, text="Same text, new chunker.", chunk_sha256="03", chunker="heading"),
         ],
     )
@@ -1220,13 +1236,16 @@ def test_replace_document_keeps_unchanged_chunks_and_replaces_the_rest():
     expunged = [c.args[0] for c in session.expunge.call_args_list]
     assert expunged == [edited, rechunked, fact, dropped]
     # The kept row is updated in place with the new offsets and heading, not re-added.
+    # A message chunk's direction and sender are rewritten in place too: they cost no re-embedding.
     assert (unchanged.char_start, unchanged.char_end, unchanged.heading_path) == (5, 21, "H")
+    assert (unchanged.direction, unchanged.sender) == ("sent", "me")
     added = [c.args[0] for c in session.add.call_args_list]
     assert all(isinstance(row, Chunk) for row in added)
     assert [(row.ord, row.text, row.chunker, bytes(row.chunk_sha256)) for row in added] == [
         (1, "New second paragraph.", "markdown", b"\x12"),
         (2, "Same text, new chunker.", "heading", b"\x03"),
     ]
+    assert [(row.direction, row.sender) for row in added] == [("received", "+15551234567"), (None, None)]
     session.commit.assert_called_once()
 
 

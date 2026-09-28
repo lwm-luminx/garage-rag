@@ -533,6 +533,8 @@ class TestSearch:
             vector_rank=1,
             fts_rank=2,
             authors=["Rick"],
+            direction="sent",
+            sender="me",
         )
         with (
             patch("garage_rag.cli.session_scope", _scope(MagicMock())),
@@ -554,6 +556,8 @@ class TestSearch:
                 "notes",
                 "--author",
                 "Rick",
+                "--direction",
+                "sent",
                 "--full",
             )
         assert out.exit_code == 0, out.output
@@ -566,11 +570,13 @@ class TestSearch:
             "trust_tiers": ["authored"],
             "sources": ["notes"],
             "author": "Rick",
+            "direction": "sent",
         }
         assert "1. Architecture" in out.output
         assert "document/authored, both, score 0.0325" in out.output
         assert "section: Design > Storage" in out.output
         assert "authors: Rick" in out.output
+        assert "sent by me" in out.output
         assert "Embeddings live one table per model." in out.output
 
     def test_no_results(self, cfg: Path) -> None:
@@ -582,6 +588,7 @@ class TestSearch:
         assert out.exit_code == 0
         assert op.call_args.kwargs["mode"] == "hybrid"
         assert op.call_args.kwargs["corpus_classes"] is None
+        assert op.call_args.kwargs["direction"] is None
         assert "no results" in out.output
 
 
