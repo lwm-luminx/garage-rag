@@ -24,7 +24,7 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-# The pins, read by garage_python/tests/test_llama_known_answers.py to check the known answers
+# The pins, read by tools/llama/known_answers.py to check the known answers
 # name this model and llama.cpp.
 exports_files(
     [

@@ -199,7 +199,7 @@ Install the Garage MCP tool directly into your Claude Desktop configuration:
 garage mcp-install --target claude-desktop
 ```
 
-This adds a `garage-rag` entry to `~/Library/Application Support/Claude/claude_desktop_config.json` pointing at Garage's HTTP server (`http://127.0.0.1:8787/mcp`), keeping every other entry. With `--stdio` it registers the bundled `garage-mcp` command instead, which Claude Desktop starts itself; either way the config carries no database password. Restart Claude Desktop to start searching your notes and code directly from Claude!
+This adds a `garage-rag` entry to `~/Library/Application Support/Claude/claude_desktop_config.json` naming the bundled `garage-mcp` command, which Claude Desktop starts itself, and keeps every other entry. With `--http` it registers the URL of Garage's HTTP server (`http://127.0.0.1:8787/mcp`) instead, once you have turned that server on from the MCP Server page; either way the config carries no database password. Run this from the Developer ID build or from the app's MCP Server page: the App Store build's `garage` is sandboxed and cannot write `~/.claude.json` or Claude Desktop's config from a terminal. Restart Claude Desktop to start searching your notes and code directly from Claude!
 
 ### Claude Code Integration
 

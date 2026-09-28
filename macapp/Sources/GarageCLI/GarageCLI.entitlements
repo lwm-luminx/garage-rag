@@ -8,8 +8,7 @@
   the helper is started from Terminal (through the Contents/MacOS/garage forwarder), never by
   GarageApp; with it the process traps at launch. So it carries its own sandbox, with what it
   needs to reach the app's data: loopback Postgres (network.client), garage.json and the model
-  catalog in the shared data folder (the App Group), the same library validation exemption as
-  the Python XPC services for the interpreter and extension modules, and the application
+  catalog in the shared data folder (the App Group), and the application
   identifier its provisioning profile backs, which is what makes the Postgres password readable
   from the data-protection keychain (keychain-access-groups: the App Group) without a prompt.
   The Postgres binaries the app starts keep GarageServer.entitlements.
