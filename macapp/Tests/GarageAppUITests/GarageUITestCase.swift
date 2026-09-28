@@ -146,6 +146,23 @@ class GarageUITestCase: XCTestCase {
         }
     }
 
+    /// Clicks Garage's menu bar item and waits for its popover.
+    func openPopover(file: StaticString = #filePath, line: UInt = #line) {
+        let item = app.statusItems.firstMatch
+        XCTAssertTrue(item.waitForExistence(timeout: 15), "Garage has no menu bar item", file: file, line: line)
+        item.click()
+        XCTAssertTrue(element(identifier: "menubar.services").waitForExistence(timeout: 10), "the menu bar item did not open its popover", file: file, line: line)
+    }
+
+    /// Types `text` into the popover's search field once it takes input.
+    func typeInPopoverField(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        let field = element(identifier: "menubar.search.field")
+        XCTAssertTrue(waitForEnabled(field), "the popover's search field stayed disabled", file: file, line: line)
+        // The popover puts the cursor in the field as it opens; click it anyway in case it did not.
+        field.click()
+        field.typeText(text)
+    }
+
     /// Clicks the sidebar row for `section` (the `AppSection` case name, e.g. `"mcp"`).
     func open(section: String, file: StaticString = #filePath, line: UInt = #line) {
         let row = element(identifier: "sidebar.\(section)")

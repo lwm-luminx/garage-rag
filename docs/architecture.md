@@ -83,7 +83,12 @@ pay for `pdfplumber` and `openpyxl` in every worker.
 A Messages `chat.db` (a `sqlite` source) is not walked file by file:
 `ingest/conversations.py` reads every chat and stores each thread as one
 `communication` document, keyed on `<chat.db path>#<chat GUID>`, with one chunk
-per message, so a thread that gains a message re-embeds one chunk.
+per message, so a thread that gains a message re-embeds one chunk. Each message
+chunk records its `direction` (`sent` by the owner or `received`) and `sender`,
+which search can filter on. Messages that no `chat_message_join` row names
+(older macOS and iCloud sync leave many) join the one-to-one chat for their
+sender's address; one with no handle, or whose address has only group chats,
+is skipped and counted in the log (`extract/messages.py`).
 
 ### 4. Quality gate (`extract/quality.py`)
 

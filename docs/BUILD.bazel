@@ -10,6 +10,8 @@ filegroup(
             "Gemfile",
             "Gemfile.lock",
             "_config.yml",
+            # Copied in from //data/models (site_files); `bazel run //:site` leaves a copy here.
+            ".data/models.json",
         ],
     ),
 )
@@ -19,16 +21,13 @@ jekyll_site(
     srcs = [":sources"],
     config = "_config.yml",
     jekyll = "@bundle//bin:jekyll",
+    # The model catalog lives in //data/models; the site serves a copy (https://garagerag.app/.data/models.json).
+    # .github/workflows/jekyll-gh-pages.yml makes the same copy for the published site.
+    site_files = {"//data/models": ".data/models.json"},
     visibility = ["//visibility:public"],
 )
 
 # Served from the site under /.data/ (https://garagerag.app/.data/...), and bundled into the app.
-filegroup(
-    name = "model_manifest",
-    srcs = [".data/models.json"],
-    visibility = ["//visibility:public"],
-)
-
 filegroup(
     name = "config_schema",
     srcs = [".data/garage.schema.json"],

@@ -48,7 +48,13 @@ class FakeDocument:
     content: str = "Widgets ship on Tuesdays."
 
 
-def _hit(document_id: int = 10, corpus_class: str = "document", text: str = "Widgets ship on Tuesdays.") -> Hit:
+def _hit(
+    document_id: int = 10,
+    corpus_class: str = "document",
+    text: str = "Widgets ship on Tuesdays.",
+    direction: str | None = None,
+    sender: str | None = None,
+) -> Hit:
     return Hit(
         chunk_id=document_id * 100,
         document_id=document_id,
@@ -61,6 +67,8 @@ def _hit(document_id: int = 10, corpus_class: str = "document", text: str = "Wid
         matched_by="hybrid",
         score=0.5,
         text=text,
+        direction=direction,
+        sender=sender,
     )
 
 
@@ -232,6 +240,11 @@ class TestToolResults:
         }
         assert len(hit["text"]) <= agent.HIT_TEXT_CHARS
         assert hit["text"].endswith("…")
+
+    def test_search_result_keeps_direction_and_sender_of_a_message(self) -> None:
+        text = render_tool_result("rag_search", _search_result(_hit(direction="sent", sender="me")))
+        hit = json.loads(text)["hits"][0]
+        assert (hit["direction"], hit["sender"]) == ("sent", "me")
 
     def test_long_results_are_cut(self) -> None:
         text = render_tool_result("rag_get_document", FakeDocument(content="x" * 10_000), limit=100)
@@ -424,7 +437,7 @@ class TestRunAgent:
         assert "limit" in result.steps[0].summary
         # A string "5" is coerced the way tools/call coerces it, and defaults are filled in.
         retrieve.assert_called_once_with(
-            "a", limit=5, mode="hybrid", corpus_class=None, trust=None, source=None, author=None
+            "a", limit=5, mode="hybrid", corpus_class=None, trust=None, source=None, author=None, direction=None
         )
         assert result.steps[1].ok is True
 

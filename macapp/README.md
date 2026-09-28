@@ -340,15 +340,16 @@ postgres's fork-safety check runs.
 
 ## Building against Postgres 19 (beta)
 
-The Bazel build carries two Postgres externals: `//ext/postgres` (18, the
-default) and `//ext/postgres19` (19beta4, pinned by commit). Both share one
-build definition (`ext/postgres/postgres.bzl`); each has its own sandbox patch.
-18 carries `appstore.patch`, which adds a `--enable-appstore` configure/meson
-option (no System V IPC: a `flock()` on `postmaster.pid` as the interlock against
-orphaned backends, and process-shared pthread semaphores in the mmap'd segment)
-and is the version being prepared for upstream. 19 still carries the older
-`sysv_shmem.patch`, since 19 replaced the semaphore/shmem sizing API and the
-port is pending; it ignores `--enable-appstore` with an autoconf warning. Select 19 for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
+`//ext/postgres` builds either 18 (the default) or 19beta4 (pinned by
+commit): `--//ext:postgres_version` selects the source repository, and each
+version's sandbox patches live in `ext/postgres/pg<major>/`, the same two for
+each: `appstore.patch` adds a `--enable-appstore` configure/meson option (no
+System V IPC: a `flock()` on the data directory as the interlock against
+orphaned backends, and process-shared pthread semaphores in the mmap'd
+segment); the 19 copy is ported to 19's `PGSemaphoreShmemRequest`/
+`ShmemRequestStruct` API, which is also what the upstream series against
+master uses. `username.patch` is the local getpwuid() workaround. Select 19
+for the whole tree (pgvector, Apache AGE's PG19 release line, the bundled
 server, libpq) with:
 
 ```bash
@@ -559,7 +560,7 @@ with the Status page listing the missing sources and model under Health.
   - **Models** — three tabs. **Overall** has one card each for search (embedding) and distillation,
     with a headline, its one action (Embed All, Glean Facts) and Manage…. **Embedding** lists one row
     per model (state, actions, details with SHA-256 Verify), unregistered presets from the model
-    catalog (`docs/.data/models.json`, refreshed at launch from
+    catalog (`data/models/models.json`, refreshed at launch from
     `https://garagerag.app/.data/models.json`) with Add, a Custom model… form, and Test an Embedding.
     **Distillation** holds the facts-model presets and the fact prompts editor. The Providers box lists
     each model Llama XPC holds, with Unload, and keeps the LM Studio API token in the login Keychain,

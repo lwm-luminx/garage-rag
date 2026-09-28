@@ -20,6 +20,7 @@ def test_dedicated_protobuf_messages():
         sources=["docs"],
         author="rick",
         full=True,
+        direction="received",
     )
     serialized = search_req.SerializeToString()
     deserialized = SearchRequest()
@@ -33,6 +34,7 @@ def test_dedicated_protobuf_messages():
     assert list(deserialized.sources) == ["docs"]
     assert deserialized.author == "rick"
     assert deserialized.full is True
+    assert deserialized.direction == "received"
 
 
 def test_client_in_process_version():

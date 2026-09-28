@@ -14,7 +14,7 @@ Migrations are idempotent — `IF NOT EXISTS` plus `duplicate_object` guards for
 enum types — so applying them repeatedly *is* the migration story. Sufficient for
 a single-user local corpus, and it avoids a migration framework.
 
-The files run in order, `001_extensions.sql` through `013_fact_prompts.sql`.
+The files run in order, `001_extensions.sql` through `014_chunk_direction.sql`.
 `001` creates `vector` and `pg_trgm`, and Apache AGE (`age`, graph queries in
 openCypher) only where the server has it installed: the app's bundled Postgres
 always does, Homebrew's and the CI image usually do not, and nothing in the
@@ -124,8 +124,8 @@ in the content, and on chunks built before offsets were recorded; those gain
 them the next time the document is re-chunked.
 
 Re-chunking a document keeps every row whose `ord`, `chunk_sha256`, text and
-`chunker` are unchanged, updating only its offsets and heading, and replaces the
-rest. A kept row keeps its `id`, so its vectors in the `emb_*` tables survive and
+`chunker` are unchanged, updating only its offsets, heading, direction and
+sender, and replaces the rest. A kept row keeps its `id`, so its vectors in the `emb_*` tables survive and
 backfill embeds only the chunks that actually changed. Fact chunks are always
 replaced.
 
@@ -138,6 +138,15 @@ row is special — the backfill's anti-join finds it like any other chunk, which
 is what gets facts embedded under every model without a fact-specific path.
 Deleting a fact cascades into its chunk and, through `chunk_id`, into every
 `emb_*` table.
+
+`chunks.direction` and `chunks.sender` (`014_chunk_direction.sql`) say which way a
+message went. A Messages thread is one document holding both sides, and trust is
+per document, so each message chunk carries `direction` (`sent` when the owner
+wrote it, `received` otherwise; a CHECK allows only those) and `sender` (the handle
+that wrote it, or `me`). Both are NULL on every chunk that is not a message, so
+search's `direction` filter (`rag_search`, `garage search --direction`) keeps to
+messages. They are plain columns, not `jsonb`, because both search engines filter
+on `direction` in their `WHERE` clauses.
 
 ### `facts`
 
@@ -194,7 +203,8 @@ history to work from.
 
 These tables are not written yet. Messages ingest (`ingest/conversations.py`)
 reads `chat.db` directly on every run and stores each thread as one `documents`
-row with one chunk per message, keyed on `<chat.db path>#<chat GUID>`.
+row with one chunk per message, keyed on `<chat.db path>#<chat GUID>`; who wrote
+each message is on its chunk (`chunks.direction` / `chunks.sender`).
 
 ### `embedding_models` and the `emb_*` tables
 
@@ -242,7 +252,7 @@ query differs.
 
 `embedding_models.distance` (`009_model_distance.sql`) is the similarity the
 model was trained for: `cosine`, `l2` or `inner_product`. It is declared per
-model in `docs/.data/models.json` (or `register-model --distance` for a model
+model in `data/models/models.json` (or `register-model --distance` for a model
 the catalog does not list) and fixes two things that must agree: the HNSW
 operator class (`vector_cosine_ops`, `halfvec_l2_ops`, `vector_ip_ops`, …) and
 the operator search orders by (`<=>`, `<->`, `<#>`). An index built for one
@@ -254,7 +264,8 @@ cosine, which is its default.
 downloads, and `garage_rag.db.catalog` reads the same file for widths,
 `supports_mrl`, `distance` and per-provider names (`provider_refs`, e.g. an
 Ollama tag), found through `GARAGE_MODEL_MANIFEST` or in the repository
-(`docs/.data/models.json`). The site serves that file as
+(`data/models/models.json`). The site serves a copy of that file, which its build
+puts in place (`site_files` in `docs/BUILD.bazel`, and the Pages workflow), as
 `https://garagerag.app/.data/models.json`; the app fetches it at launch, keeps the
 copy in its data folder when it decodes as a catalog with presets, and points
 `GARAGE_MODEL_MANIFEST` at that copy, else at the one in its bundle. A catalog

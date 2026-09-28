@@ -1,4 +1,4 @@
-"""The embedding-model catalog: ``docs/.data/models.json``.
+"""The embedding-model catalog: ``data/models/models.json``.
 
 One file describes every model the app offers and the pipeline knows by name:
 its width, the metric it was trained for (``distance``), whether it is
@@ -9,7 +9,7 @@ distance is chosen once, where the model is described.
 
 The file is found through ``GARAGE_MODEL_MANIFEST`` (the app points it at the
 copy it last fetched from the website, else the one in its bundle) or at
-``docs/.data/models.json`` in the repository, which the site serves as
+``data/models/models.json`` in the repository, which the site serves as
 https://garagerag.app/.data/models.json.
 Entries without ``native_dims`` (the generative models listed there) are not
 embedding models and are skipped.
@@ -43,7 +43,7 @@ def manifest_path() -> Path | None:
     override = os.environ.get(MANIFEST_ENV)
     if override:
         return Path(override).expanduser()
-    candidate = repo_root() / "docs" / ".data" / "models.json"
+    candidate = repo_root() / "data" / "models" / "models.json"
     return candidate if candidate.is_file() else None
 
 

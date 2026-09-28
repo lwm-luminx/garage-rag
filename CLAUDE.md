@@ -144,7 +144,11 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
   `tools/llama`) rebuilds `llama-embedding` and regenerates the nomic-embed Q2_K reference vectors
   (`tools/llama/known_answers.py`). The reference is the Apple silicon CPU job; Metal and a Linux
   x86-64 job are held to `MIN_COSINE` (0.98) against it, because Q2_K is not bit-exact across
-  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99.
+  backends or ISAs: Metal measured 0.988 at worst and x86-64 about 0.99. LlamaXPCService's "Embedding
+  Known Answers" self-test and `//macapp/Tests/LlamaEngineTests` compare `LlamaCppEngine` against the
+  reference (`LlamaKnownAnswers`). The reference, `ext/nomic_embed/known_answers.json`, is not
+  committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
+  `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 
@@ -162,13 +166,16 @@ open macapp/Garage.xcodeproj
 See `macapp/README.md` for why Postgres can't just use the Homebrew build (it bakes absolute
 `/opt/homebrew` paths).
 
-The bundled Postgres has two externals: `//ext/postgres` (18, the default) and `//ext/postgres19`
-(19 beta). Pick one with `--//ext:postgres_version=19` (or `--config=pg19`). Everything downstream
-depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/`libpq_dylib` aliases, never on a
-version package directly. Each package carries its own sandbox patch: `ext/postgres/appstore.patch`
-(18; adds `--enable-appstore`, a flock() interlock on `postmaster.pid` and pthread semaphores, written
-to be proposed upstream) and `ext/postgres19/sysv_shmem.patch` (the older fork of the SysV code, not yet
-ported); a change to one usually needs porting to the other.
+The bundled Postgres is one package, `//ext/postgres`, built from 18 (the default) or the 19 beta:
+`--//ext:postgres_version=19` (or `--config=pg19`) switches its source between the `@postgres` and
+`@postgres19` repositories (`postgres.MODULE.bazel`, `postgres19.MODULE.bazel`), as `//ext/age` switches
+AGE's release line. Everything downstream depends on the `//ext:postgres`/`postgres_rpath`/`libpq`/
+`libpq_dylib` aliases. Each major's patches live in `ext/postgres/pg<major>/`, the same two for both:
+`appstore.patch` (adds `--enable-appstore`, off by default upstream and passed by our build: a flock()
+interlock on the data directory instead of the System V shim segment, and pthread semaphores in the
+mmap'd segment; the 19 copy is ported to 19's `PGSemaphoreShmemRequest` API and matches the series
+proposed upstream against master) and `username.patch` (the local getpwuid() workaround, not for
+upstream). A change to one major's patch needs porting to the other.
 
 Apache AGE (`//ext/age`, graph queries in openCypher) is built beside pgvector, from the AGE release
 line matching the selected major (`ext/age/pg18`, `ext/age/pg19`). `001_extensions.sql` creates it
@@ -239,7 +246,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   libpq, so `garage_rag.native` finds the loaded copy; elsewhere the linker's search applies; HEIC/HEIF is
   decoded by macOS ImageIO, `extract/imageio.py`), mail (`.eml`/`.emlx`, `extract/mail.py`, filed as
   `communication`), code verbatim via `text.py`). Messages `chat.db` (`sqlite` sources) is not walked file
-  by file: `ingest/conversations.py` stores each thread as one document with one chunk per message.
+  by file: `ingest/conversations.py` stores each thread as one document with one chunk per message,
+  each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for
+  search's `direction` filter; messages in no `chat_message_join` row join their sender's one-to-one chat.
 - **Quality gate** (`extract/quality.py`) — content-based backstop against non-prose text (repeated
   line shapes, timestamp prefixes, hex/base64 density) that path rules alone miss.
 - **Attribute** (`attribute/`) — precedence-ordered signals, each recording its `evidence`: git
@@ -519,6 +528,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail
   tests, don't silently accumulate them.
+- The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and
+  `garage_rag.db.catalog` reads it. The site serves a copy at `https://garagerag.app/.data/models.json`,
+  which the build puts in place (`site_files` on `//docs:site`, a copy step in
+  `.github/workflows/jekyll-gh-pages.yml`); `docs/.data/models.json` is git-ignored, never edited.
 - PyMuPDF is deliberately avoided (AGPL); PDF extraction uses `pypdf`/`pdfplumber` instead.
 - `data/notices/THIRD_PARTY_NOTICES.txt` (shipped in the app's `Resources`) carries the license text
   of every redistributed component. It's generated by `python3 tools/third_party_notices.py` from

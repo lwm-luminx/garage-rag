@@ -406,8 +406,8 @@ public enum GarageConfigLoader {
 
     /// Loads text-embedding model presets from `models.json`: `fileURL` when given, else the copy
     /// the app last fetched from the website, else the copy in the bundle, else a configuration
-    /// file with a `models` array. There is no built-in list: `docs/.data/models.json` is the one
-    /// catalog, and the bundle carries it (`//docs:model_manifest`), so an empty result means no
+    /// file with a `models` array. There is no built-in list: `data/models/models.json` is the one
+    /// catalog, and the bundle carries it (`//data/models`), so an empty result means no
     /// file described any model.
     public static func loadModelPresets(fileURL: URL? = nil) -> [ModelPresetEntry] {
         loadModelManifest(fileURL: fileURL).textEmbedding ?? []

@@ -14,12 +14,19 @@ engine's runaway top hit swamping the other's consensus.
 Filters apply to both halves, so restricting to ``corpus_class = 'document'`` or
 ``trust_tier = 'reference'`` narrows the candidate pool before fusion rather than
 discarding results afterwards.
+
+``direction`` is the one per-chunk filter: ``sent`` or ``received`` keeps to
+message chunks that went that way (``chunks.direction``), so the owner's side of
+a thread is searchable on its own even though the thread, holding both sides, is
+one document. Chunks that are not messages have no direction and are excluded
+whenever the filter is set.
 """
 
 from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from typing import get_args
 
 from pgvector import HalfVector
 from pgvector.sqlalchemy import HALFVEC, VECTOR
@@ -30,11 +37,11 @@ from garage_rag.db.emb_tables import assert_safe_table, get_model
 from garage_rag.db.engine import apply_search_tuning
 from garage_rag.db.registry import StoragePlan, distance_operator, truncate_vector
 from garage_rag.embed.factory import get_embedder
-from garage_rag.search import SearchMode
+from garage_rag.search import Direction, SearchMode
 
 log = logging.getLogger(__name__)
 
-__all__ = ["SearchHit", "SearchMode", "corpus_overview", "search", "tsquery_expr"]
+__all__ = ["DIRECTIONS", "SearchHit", "SearchMode", "corpus_overview", "search", "tsquery_expr"]
 
 # RRF constant from Cormack et al. Damps the influence of any single top rank.
 RRF_K = 60
@@ -49,6 +56,9 @@ BQ_OVERFETCH = 4
 
 
 SNIPPET_CHARS = 300
+
+# chunks.direction values (014_chunk_direction.sql).
+DIRECTIONS: tuple[str, ...] = get_args(Direction)
 
 
 def snippet(text: str, chars: int = SNIPPET_CHARS) -> str:
@@ -70,6 +80,9 @@ class SearchHit:
     vector_rank: int | None = None
     fts_rank: int | None = None
     authors: list[str] = field(default_factory=list)
+    # Message chunks only: 'sent' | 'received', and who wrote it (a handle, or 'me').
+    direction: str | None = None
+    sender: str | None = None
 
     @property
     def matched_by(self) -> str:
@@ -110,6 +123,7 @@ def _filter_clause(
     trust_tiers: list[str] | None,
     sources: list[str] | None,
     author: str | None,
+    direction: str | None = None,
 ) -> str:
     """SQL fragment shared by both engines, so filtering precedes fusion."""
     parts = ["d.state = 'ok'"]
@@ -127,6 +141,8 @@ def _filter_clause(
             "EXISTS (SELECT 1 FROM document_authors da JOIN authors a ON a.id = da.author_id "
             "WHERE da.document_id = d.id AND a.display_name ILIKE :author)"
         )
+    if direction:
+        parts.append("c.direction = :direction")
     return " AND ".join(parts)
 
 
@@ -160,9 +176,16 @@ def search(
     trust_tiers: list[str] | None = None,
     sources: list[str] | None = None,
     author: str | None = None,
+    direction: str | None = None,
     snippet_chars: int = 600,
 ) -> list[SearchHit]:
-    """Search the corpus. Returns hits ordered best-first."""
+    """Search the corpus. Returns hits ordered best-first.
+
+    ``direction`` (``sent`` | ``received``) keeps to message chunks that went
+    that way; raises :class:`ValueError` for any other value.
+    """
+    if direction and direction not in DIRECTIONS:
+        raise ValueError(f"direction must be one of {', '.join(DIRECTIONS)}, not {direction!r}")
     if not query.strip():
         return []
 
@@ -177,6 +200,7 @@ def search(
         trust_tiers=trust_tiers,
         sources=sources,
         author=author,
+        direction=direction,
     )
 
     params: dict = {
@@ -194,6 +218,8 @@ def search(
         params["sources"] = sources
     if author:
         params["author"] = f"%{author}%"
+    if direction:
+        params["direction"] = direction
 
     # Each CTE is included only when its engine is in play, so `--mode fts`
     # never loads an embedding model and `--mode vector` never parses a tsquery.
@@ -293,6 +319,8 @@ def search(
                d.corpus_class::text,
                d.trust_tier::text,
                c.heading_path,
+               c.direction,
+               c.sender,
                left(c.text, :snippet) AS snippet,
                {score}         AS score,
                {vrank}         AS vector_rank,
@@ -333,6 +361,8 @@ def search(
             vector_rank=row["vector_rank"],
             fts_rank=row["fts_rank"],
             authors=list(row["authors"] or []),
+            direction=row["direction"],
+            sender=row["sender"],
         )
         for row in rows
     ]

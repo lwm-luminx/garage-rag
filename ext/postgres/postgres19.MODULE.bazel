@@ -1,15 +1,19 @@
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
 
-# PostgreSQL 19 is still in beta. Pinned to the upstream release tag's commit rather than the
+# PostgreSQL 19 is still in beta. Selected with --//ext:postgres_version=19 (see ext/postgres/BUILD.bazel);
+# kept out of postgres.MODULE.bazel because tools/windows/fetch_ext.py reads the pins there.
+# Pinned to the upstream release tag's commit rather than the
 # ftp.postgresql.org tarball: a git checkout carries no pre-generated bison/flex output, so the
 # build host needs bison >= 2.3 and flex (both ship with the Xcode command line tools).
 #
-# sysv_shmem.patch is the //ext/postgres (18) sandbox patch ported to 19's shared memory
+# pg19/appstore.patch is pg18/appstore.patch (--enable-appstore) ported to 19's shared memory
 # request API (PGSemaphoreShmemRequest/PGSemaphoreInit + ShmemRequestStruct replace
-# PGSemaphoreShmemSize/PGReserveSemaphores + ShmemAllocUnlocked).
+# PGSemaphoreShmemSize/PGReserveSemaphores + ShmemAllocUnlocked); it is the series proposed
+# upstream against master, applied to REL_19_BETA4. pg19/username.patch is the local getpwuid()
+# workaround, as for 18.
 git_repository(
     name = "postgres19",
-    build_file = "@//ext/postgres19:postgres19.BUILD.bazel",
+    build_file = "@//ext/postgres:postgres.BUILD.bazel",
     commit = "b73d13c32c834a2c8e1c60cb92f79530376cedf1",  # "REL_19_BETA4"
     patch_args = ["-p1"],
     patch_cmds = [
@@ -17,7 +21,8 @@ git_repository(
         "rm -f src/backend/utils/misc/postgresql.conf.sample.bak",
     ],
     patches = [
-        "//ext/postgres19:sysv_shmem.patch",
+        "//ext/postgres:pg19/appstore.patch",
+        "//ext/postgres:pg19/username.patch",
     ],
     remote = "https://github.com/postgres/postgres.git",
 )
