@@ -1,4 +1,5 @@
 import AppKit
+import ScreenCaptureKit
 import XCTest
 
 /// Mac App Store screenshots: the main pages at a 1440 × 900 point window (2880 × 1800 pixels on a
@@ -20,13 +21,22 @@ import XCTest
 /// `~/Library/Containers/me.rickmark.garage-rag.GarageAppUITests.xctrunner/Data/tmp/store-screenshots`,
 /// and the log names it. The app opens its window at 1440 × 900 points (`--window-size`), below the
 /// menu bar and behind the Dock if it has to, so the display needs 900 points below the menu bar.
-/// Only the window is captured.
+///
+/// Only the window is captured, through ScreenCaptureKit rather than `XCUIElement.screenshot()`: that
+/// one crops the screen, so the Dock, a notification or the wallpaper at the rounded corners would
+/// show. The window is rendered on its own at 2880 × 1800 pixels without its shadow, and its corners
+/// are filled with a neutral grey, since App Store Connect takes no transparency. This needs Screen
+/// Recording permission for the test runner: the first run asks for it and fails, and after it is
+/// granted (System Settings → Privacy & Security → Screen & System Audio Recording) the next run
+/// captures.
 final class StoreScreenshotsUITests: GarageUITestCase {
     static let outputVariable = "GARAGE_STORE_SCREENSHOTS"
     static let windowSize = CGSize(width: 1440, height: 900)
     /// The small preset embedding model: a quick download, and enough to show hybrid search.
     static let embeddingModel = "mxbai-embed-xsmall"
     static let query = "who kept the lighthouse during the storm"
+    /// The captured size in pixels: `windowSize` at 2×, a Mac App Store size on any display.
+    static let pixelSize = CGSize(width: 2880, height: 1800)
 
     private var appearance = "light"
     private var outputFolder: URL!
@@ -42,6 +52,12 @@ final class StoreScreenshotsUITests: GarageUITestCase {
         let path = ProcessInfo.processInfo.environment[Self.outputVariable] ?? ""
         try XCTSkipIf(path.isEmpty, "Set \(Self.outputVariable) to 1 or a folder to take the App Store screenshots.")
         outputFolder = Self.writableFolder(for: path)
+        // Ask before the run rather than after minutes of ingest and embedding: the grant is needed
+        // for every capture, and the runner has to be relaunched once it is given.
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            throw CaptureError.noScreenRecordingPermission
+        }
         XCTContext.runActivity(named: "Screenshots go to \(outputFolder.path)") { _ in }
         NSLog("StoreScreenshotsUITests: writing to %@", outputFolder.path)
         try super.setUpWithError()
@@ -222,22 +238,140 @@ final class StoreScreenshotsUITests: GarageUITestCase {
     private func capture(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
         let window = app.windows.firstMatch
         XCTAssertEqual(window.frame.size, Self.windowSize, "the window changed size before \(name)", file: file, line: line)
-        let screenshot = window.screenshot()
         let fileName = "\(name)-\(appearance)"
 
-        let attachment = XCTAttachment(screenshot: screenshot)
+        let image: CGImage
+        do {
+            image = try captureWindow()
+        } catch {
+            let attachment = XCTAttachment(screenshot: window.screenshot())
+            attachment.name = "\(fileName)-screen"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("could not capture the window for \(name): \(error)", file: file, line: line)
+            return
+        }
+        XCTAssertEqual(
+            CGSize(width: image.width, height: image.height),
+            Self.pixelSize,
+            "\(fileName) is \(image.width) × \(image.height) pixels",
+            file: file,
+            line: line
+        )
+        guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
+            XCTFail("could not encode \(fileName) as PNG", file: file, line: line)
+            return
+        }
+
+        let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
         attachment.name = fileName
         attachment.lifetime = .keepAlways
         add(attachment)
 
         let url = outputFolder.appendingPathComponent(fileName).appendingPathExtension("png")
         do {
-            try screenshot.pngRepresentation.write(to: url)
+            try png.write(to: url)
         } catch {
             XCTFail("could not write \(url.path): \(error)", file: file, line: line)
         }
-        if let rep = NSBitmapImageRep(data: screenshot.pngRepresentation) {
-            XCTContext.runActivity(named: "\(fileName): \(rep.pixelsWide) × \(rep.pixelsHigh) pixels") { _ in }
+        XCTContext.runActivity(named: "\(fileName): \(image.width) × \(image.height) pixels") { _ in }
+    }
+
+    enum CaptureError: Error, CustomStringConvertible {
+        case noScreenRecordingPermission
+        case noWindow([String])
+        case timedOut
+        case noContext
+
+        var description: String {
+            switch self {
+            case .noScreenRecordingPermission:
+                "The test runner needs Screen Recording permission to capture the window. Grant it and run again."
+            case let .noWindow(windows):
+                "no Garage window of the screenshot size among \(windows)"
+            case .timedOut:
+                "ScreenCaptureKit did not answer"
+            case .noContext:
+                "could not make a bitmap to flatten the capture"
+            }
         }
     }
+
+    /// Renders Garage's main window by itself, without its shadow, at `pixelSize`, flattened onto
+    /// the appearance's neutral grey.
+    private func captureWindow() throws -> CGImage {
+        let bundleIdentifier = Self.bundleIdentifier
+        let windowSize = Self.windowSize
+        let pixelSize = Self.pixelSize
+        let captured = try waitForAsync { () async throws -> CGImage in
+            let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+            let windows = content.windows.filter {
+                $0.owningApplication?.bundleIdentifier == bundleIdentifier && $0.windowLayer == 0
+            }
+            guard let target = windows.first(where: { $0.frame.size == windowSize }) else {
+                throw CaptureError.noWindow(windows.map { "\($0.title ?? "untitled") \($0.frame)" })
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: target)
+            let configuration = SCStreamConfiguration()
+            configuration.width = Int(pixelSize.width)
+            configuration.height = Int(pixelSize.height)
+            configuration.ignoreShadowsSingleWindow = true
+            configuration.showsCursor = false
+            configuration.scalesToFit = true
+            return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
+        }
+        return try flattened(captured)
+    }
+
+    /// Draws `image` over an opaque neutral grey (light or dark to suit the page), so the rounded
+    /// corners carry no transparency.
+    private func flattened(_ image: CGImage) throws -> CGImage {
+        let width = Int(Self.pixelSize.width)
+        let height = Int(Self.pixelSize.height)
+        guard
+            let space = CGColorSpace(name: CGColorSpace.sRGB),
+            let context = CGContext(
+                data: nil,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: space,
+                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue
+            )
+        else { throw CaptureError.noContext }
+        let grey: CGFloat = appearance == "dark" ? 0.16 : 0.92
+        context.setFillColor(CGColor(gray: grey, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        guard let result = context.makeImage() else { throw CaptureError.noContext }
+        return result
+    }
+
+    /// Runs `body` and waits for its result on the test's thread.
+    private func waitForAsync<T: Sendable>(
+        timeout: TimeInterval = 30,
+        _ body: @escaping @Sendable () async throws -> T
+    ) throws -> T {
+        let done = expectation(description: "async capture")
+        let box = ResultBox<T>()
+        Task.detached {
+            do {
+                box.result = .success(try await body())
+            } catch {
+                box.result = .failure(error)
+            }
+            done.fulfill()
+        }
+        guard XCTWaiter().wait(for: [done], timeout: timeout) == .completed, let result = box.result else {
+            throw CaptureError.timedOut
+        }
+        return try result.get()
+    }
+}
+
+/// Carries a detached task's result back to the waiting test; the expectation orders the write
+/// before the read.
+private final class ResultBox<T>: @unchecked Sendable {
+    var result: Result<T, Error>?
 }
