@@ -292,6 +292,7 @@ def test_ingest_source_indexes_each_conversation_once(messages_dir: Path) -> Non
         ("+15551234567", "sender"),
         ("friend@example.com", "sender"),
         ("+15559876543", "recipient"),  # a member who never wrote
+        ("Rick", "recipient"),  # the owner is in every thread, here without writing
     }
     assert {a.name: a.identities for a in doc["authors"]}["friend@example.com"] == {"email": "friend@example.com"}
 

@@ -134,11 +134,12 @@ message file tracked in a repository is attributed from its commits.
 **Messages** threads (`ingest/conversations.py`) record every handle in the
 thread: those who wrote in it as `sender`, those who only read it as
 `recipient` (evidence `imessage-handle`), and you as `sender` when you wrote and
-`identity.name` is set (`imessage-is-from-me`). The thread's trust is the
-source's default (`received` for the app's Messages preset). Since a thread holds
-both sides, each message's chunk says who wrote it: `chunks.direction` is `sent`
-for your own messages and `received` for everyone else's, and `chunks.sender` is
-the handle, or `me`.
+`identity.name` is set (`imessage-is-from-me`), or as `recipient` in a thread
+you only read (`imessage-owner`): a thread is always you plus one or more
+others. The thread's trust is the source's default (`received` for the app's
+Messages preset). Since a thread holds both sides, each message's chunk says who
+wrote it: `chunks.direction` is `sent` for your own messages and `received` for
+everyone else's, and `chunks.sender` is the handle, or `me`.
 
 A handle's author is named after the handle (`+15551234567`) until the ingest is
 given a contact name for it (`extract/contact_names.py`). When the name arrives,

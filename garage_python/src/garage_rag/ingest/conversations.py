@@ -171,7 +171,8 @@ def _identity_kind(handle: str) -> str:
 def conversation_authors(conversation: Conversation, self_identity: SelfIdentity) -> list[AuthorPayload]:
     """Senders are the handles that wrote in the thread; members who only read it are recipients.
 
-    The owner is added as a sender when they wrote and their name is configured.
+    A thread is the owner plus one or more others. The owner is added when their
+    name is configured: as a sender when they wrote, else as a recipient.
     """
     senders = {message.sender for message in conversation.messages if message.sender}
     handles = list(dict.fromkeys([*conversation.participants, *sorted(senders)]))
@@ -188,13 +189,15 @@ def conversation_authors(conversation: Conversation, self_identity: SelfIdentity
                 identities={_identity_kind(handle): handle},
             )
         )
-    if self_identity.name and any(message.is_from_me for message in conversation.messages):
+    if self_identity.name:
+        # Every thread has the owner in it; a member is a recipient until they write.
+        wrote = any(message.is_from_me for message in conversation.messages)
         authors.append(
             AuthorPayload(
                 name=self_identity.name,
-                role="sender",
+                role="sender" if wrote else "recipient",
                 confidence=1.0,
-                evidence="imessage-is-from-me",
+                evidence="imessage-is-from-me" if wrote else "imessage-owner",
                 is_self=True,
             )
         )
