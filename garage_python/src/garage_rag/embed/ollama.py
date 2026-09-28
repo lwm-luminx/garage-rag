@@ -249,11 +249,12 @@ def backfill_distilled(
             WHERE NOT df.statement_generated
               AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = df.id)
             ON CONFLICT (distilled_fact_id) DO NOTHING
+            RETURNING distilled_fact_id
             """
         )
-    ).rowcount
+    ).all()
     session.commit()
-    state.distilled += max(copied or 0, 0)
+    state.distilled += len(copied)
 
     withheld = (
         ""

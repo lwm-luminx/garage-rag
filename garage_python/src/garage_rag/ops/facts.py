@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session
 from garage_rag.config.fact_prompts import EffectivePrompt, select_prompts
 from garage_rag.db.engine import session_scope
 from garage_rag.db.models import CorpusClass, Document, FactRun, Source
+
+if TYPE_CHECKING:
+    from garage_rag.enrich.clusters import ClusterProgress
 
 
 @dataclass
@@ -461,7 +464,7 @@ def cluster_facts(
     threshold: float | None = None,
     neighbors: int | None = None,
     distill: bool = True,
-    on_progress: Callable[[object], None] | None = None,
+    on_progress: Callable[[ClusterProgress], None] | None = None,
 ) -> ClusterSummary:
     """Link every potential fact to a distilled fact, grouping those that state the same claim, and have
     the local model state each group once.
