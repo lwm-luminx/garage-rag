@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Attribution & Identity
-description: Git-aware author detection, trust tiers, and evidence logging in Garage.
+description: How Garage works out who wrote each document it indexes, from git history, document metadata, path conventions and mail senders, and how trust tiers shape search.
 ---
 
 # Attribution

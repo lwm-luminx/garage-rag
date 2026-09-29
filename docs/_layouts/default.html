@@ -17,10 +17,13 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   {% assign in_support = false %}{% if page.url contains '/support/' %}{% assign in_support = true %}{% endif %}
-  <title>{% if page.url == '/' or page.url == '/index.html' %}Garage — Local-first personal RAG for macOS{% elsif in_support %}{{ page.title }} | Garage Support{% else %}{{ page.title }} | Garage{% endif %}</title>
-  <meta name="description" content="{% if page.description %}{{ page.description }}{% else %}Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first: your files and the index stay on your Mac.{% endif %}">
+  <title>{% if page.url == '/' or page.url == '/index.html' %}{{ page.title }}{% elsif in_support %}{{ page.title }} | Garage Support{% else %}{{ page.title }} | Garage{% endif %}</title>
+  {% comment %}Description (page.description, else site.description), canonical URL, Open Graph, X/Twitter card and JSON-LD; the title above is our own.{% endcomment %}
+  {% seo title=false %}
   {% if page.testflight_page and site.testflight_url == "" %}<meta name="robots" content="noindex">{% endif %}
+  {% if page.structured_data %}<script type="application/ld+json">{{ page.structured_data | jsonify }}</script>{% endif %}
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
+  <link rel="apple-touch-icon" href="{{ '/assets/logo.png' | relative_url }}">
   <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
 </head>
 <body>

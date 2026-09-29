@@ -1,7 +1,21 @@
 title: Garage
-description: Garage is a local-first personal RAG and knowledge indexing app for macOS. It indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Download, user guide, troubleshooting, FAQ and privacy documentation.
+tagline: Private local RAG and MCP server for your Mac
+description: "Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first: your files and the index stay on your Mac."
 url: "https://garagerag.app"
 baseurl: ""
+lang: en_US
+
+# jekyll-seo-tag ({% seo %} in _layouts/default.html): canonical URLs, Open Graph and X/Twitter
+# cards, and JSON-LD. The social card is drawn by tools/screenshots/social_card.py.
+logo: /assets/logo.png
+author:
+  name: Rick Mark-Penwell
+  url: https://garagerag.app/about.html
+defaults:
+  - scope:
+      path: ""
+    values:
+      image: /assets/social-card.png
 
 # The public TestFlight invitation for the App Store build (https://testflight.apple.com/join/...).
 # While it is empty, /testflight.html says testing hasn't opened, asks search engines not to index

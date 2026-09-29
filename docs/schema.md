@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Database Schema Reference
-description: PostgreSQL schema layout, cascade rules, and HNSW vector indexing.
+description: Garage's PostgreSQL and pgvector schema, with documents, chunks, per-model embedding tables, HNSW indexes, halfvec and binary quantization, and cascade rules.
 ---
 
 # Schema reference
