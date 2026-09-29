@@ -1,0 +1,552 @@
+From c31ad9eb64ab5328facbbda2cb61e8e4dd151219 Mon Sep 17 00:00:00 2001
+From: Rick Mark-Penwell <rickmark@outlook.com>
+Date: Sun, 27 Sep 2026 20:32:16 +0000
+Subject: [PATCH v1 1/3] Add a pthread-based PGSemaphore implementation and
+ --enable-appstore
+
+The macOS App Sandbox denies the whole System V IPC family to a
+sandboxed process: shmget(), shmat(), semget() and semop() all fail
+with EPERM.  src/template/darwin and meson.build select System V
+semaphores on macOS, because sem_init() is unimplemented there and
+named POSIX semaphores cost a file descriptor per backend per
+semaphore, so a server built for the sandbox has no semaphore
+implementation it can use.
+
+Add src/backend/port/pthread_sema.c: a counting semaphore made of a
+PTHREAD_PROCESS_SHARED mutex, a condition variable and a counter,
+living in the main shared memory segment like the unnamed POSIX
+variant does.  It needs no kernel object name and no descriptors.
+Waits are not interruptible, which matches the existing
+implementations.
+
+Add a configure option, --enable-appstore (-Dappstore=true with
+Meson), off by default, which defines APPSTORE and selects the pthread
+semaphores.  It changes nothing in a build that does not ask for it.
+A following commit makes the shared memory code honour APPSTORE too,
+so that such a build creates no System V object at all.
+
+Discussion: https://postgr.es/m/a90b5411-705f-4286-bd81-a26c520a6cfb%40technowledgy.de
+---
+ configure                        |  33 +++-
+ configure.ac                     |  13 +-
+ doc/src/sgml/installation.sgml   |  35 ++++
+ meson.build                      |   8 +
+ meson_options.txt                |   3 +
+ src/backend/port/meson.build     |   4 +
+ src/backend/port/pthread_sema.c  | 269 +++++++++++++++++++++++++++++++
+ src/include/pg_config.h.in       |   6 +
+ src/tools/pgindent/typedefs.list |   1 +
+ 9 files changed, 370 insertions(+), 2 deletions(-)
+ create mode 100644 src/backend/port/pthread_sema.c
+
+diff --git a/configure b/configure
+index 6b05d4c..9062296 100755
+--- a/configure
++++ b/configure
+@@ -860,6 +860,7 @@ with_wal_blocksize
+ with_llvm
+ enable_depend
+ enable_cassert
++enable_appstore
+ with_icu
+ with_tcl
+ with_tclconfig
+@@ -1557,6 +1558,7 @@ Optional Features:
+                           enable injection points (for testing)
+   --enable-depend         turn on automatic dependency tracking
+   --enable-cassert        enable assertion checks (for debugging)
++  --enable-appstore       build without System V IPC, for the macOS App Sandbox
+   --disable-largefile     omit support for large files
+ 
+ Optional Packages:
+@@ -8073,6 +8075,29 @@ else
+ fi
+ 
+ 
++# Check whether --enable-appstore was given.
++if test "${enable_appstore+set}" = set; then :
++  enableval=$enable_appstore;
++  case $enableval in
++    yes)
++
++$as_echo "#define APPSTORE 1" >>confdefs.h
++
++      ;;
++    no)
++      :
++      ;;
++    *)
++      as_fn_error $? "no argument expected for --enable-appstore option" "$LINENO" 5
++      ;;
++  esac
++
++else
++  enable_appstore=no
++
++fi
++
++
+ 
+ 
+ #
+@@ -18665,7 +18690,13 @@ fi
+   fi
+   { $as_echo "$as_me:${as_lineno-$LINENO}: checking which semaphore API to use" >&5
+ $as_echo_n "checking which semaphore API to use... " >&6; }
+-  if test x"$USE_NAMED_POSIX_SEMAPHORES" = x"1" ; then
++  if test "$enable_appstore" = yes ; then
++
++$as_echo "#define USE_PTHREAD_SEMAPHORES 1" >>confdefs.h
++
++    SEMA_IMPLEMENTATION="src/backend/port/pthread_sema.c"
++    sematype="pthread"
++  elif test x"$USE_NAMED_POSIX_SEMAPHORES" = x"1" ; then
+ 
+ $as_echo "#define USE_NAMED_POSIX_SEMAPHORES 1" >>confdefs.h
+ 
+diff --git a/configure.ac b/configure.ac
+index 6864268..6ac8840 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -844,6 +844,13 @@ PGAC_ARG_BOOL(enable, cassert, no, [enable assertion checks (for debugging)],
+               [AC_DEFINE([USE_ASSERT_CHECKING], 1,
+                          [Define to 1 to build with assertion checks. (--enable-cassert)])])
+ 
++#
++# App Sandbox support: no System V IPC at all (--enable-appstore)
++#
++PGAC_ARG_BOOL(enable, appstore, no, [build without System V IPC, for the macOS App Sandbox],
++              [AC_DEFINE([APPSTORE], 1,
++                         [Define to 1 to build without System V IPC. (--enable-appstore)])])
++
+ 
+ #
+ # Include directories
+@@ -2363,7 +2370,11 @@ if test "$PORTNAME" != "win32"; then
+     AC_SEARCH_LIBS(sem_init, [rt pthread], [USE_UNNAMED_POSIX_SEMAPHORES=1])
+   fi
+   AC_MSG_CHECKING([which semaphore API to use])
+-  if test x"$USE_NAMED_POSIX_SEMAPHORES" = x"1" ; then
++  if test "$enable_appstore" = yes ; then
++    AC_DEFINE(USE_PTHREAD_SEMAPHORES, 1, [Define to select pthread-based semaphores.])
++    SEMA_IMPLEMENTATION="src/backend/port/pthread_sema.c"
++    sematype="pthread"
++  elif test x"$USE_NAMED_POSIX_SEMAPHORES" = x"1" ; then
+     AC_DEFINE(USE_NAMED_POSIX_SEMAPHORES, 1, [Define to select named POSIX semaphores.])
+     SEMA_IMPLEMENTATION="src/backend/port/posix_sema.c"
+     sematype="named POSIX"
+diff --git a/doc/src/sgml/installation.sgml b/doc/src/sgml/installation.sgml
+index e415952..eaa2d49 100644
+--- a/doc/src/sgml/installation.sgml
++++ b/doc/src/sgml/installation.sgml
+@@ -1596,6 +1596,24 @@ build-postgresql:
+        </listitem>
+       </varlistentry>
+ 
++      <varlistentry id="configure-option-enable-appstore">
++       <term><option>--enable-appstore</option></term>
++       <listitem>
++        <para>
++         Builds a server that uses no System V <acronym>IPC</acronym> at all,
++         for environments that forbid it, such as the macOS App Sandbox.
++         Shared memory is always anonymous <function>mmap</function>
++         memory, the data directory interlock against orphaned server
++         processes is a file lock on the data directory instead of a
++         System V shared memory segment, and semaphores are built from
++         process-shared POSIX threads primitives in shared memory.
++         <varname>shared_memory_type</varname> must be
++         <literal>mmap</literal> in such a build.  See
++         <xref linkend="kernel-resources"/>.
++        </para>
++       </listitem>
++      </varlistentry>
++
+       <varlistentry id="configure-option-enable-tap-tests">
+        <term><option>--enable-tap-tests</option></term>
+        <listitem>
+@@ -3166,6 +3184,23 @@ ninja install
+       </listitem>
+      </varlistentry>
+ 
++     <varlistentry id="configure-appstore-meson">
++      <term><option>-Dappstore={ true | false }</option></term>
++      <listitem>
++       <para>
++        Builds a server that uses no System V <acronym>IPC</acronym> at all,
++        for environments that forbid it, such as the macOS App Sandbox.
++        Shared memory is always anonymous <function>mmap</function> memory,
++        the data directory interlock against orphaned server processes is a
++        file lock on the data directory instead of a System V shared memory
++        segment, and semaphores are built from process-shared POSIX threads
++        primitives in shared memory.  <varname>shared_memory_type</varname>
++        must be <literal>mmap</literal> in such a build.  See
++        <xref linkend="kernel-resources"/>.
++       </para>
++      </listitem>
++     </varlistentry>
++
+      <varlistentry id="configure-tap-tests-meson">
+       <term><option>-Dtap_tests={ auto | enabled | disabled }</option></term>
+       <listitem>
+diff --git a/meson.build b/meson.build
+index d05634f..120372d 100644
+--- a/meson.build
++++ b/meson.build
+@@ -3293,6 +3293,14 @@ if sema_kind == 'unnamed_posix' and \
+   sema_kind = 'sysv'
+ endif
+ 
++# An App Sandbox build cannot use System V IPC at all: process-shared
++# pthread semaphores in the mmap'd segment, and a file lock as the
++# data directory interlock (see sysv_shmem.c).
++if get_option('appstore')
++  sema_kind = 'pthread'
++  cdata.set('APPSTORE', 1)
++endif
++
+ cdata.set('USE_@0@_SHARED_MEMORY'.format(shmem_kind.to_upper()), 1)
+ cdata.set('USE_@0@_SEMAPHORES'.format(sema_kind.to_upper()), 1)
+ 
+diff --git a/meson_options.txt b/meson_options.txt
+index 6a793f3..bc8f8b5 100644
+--- a/meson_options.txt
++++ b/meson_options.txt
+@@ -40,6 +40,9 @@ option('pgport', type: 'integer', value: 5432,
+ option('cassert', type: 'boolean', value: false,
+   description: 'Enable assertion checks (for debugging)')
+ 
++option('appstore', type: 'boolean', value: false,
++  description: 'Build without System V IPC, for the macOS App Sandbox')
++
+ option('tap_tests', type: 'feature', value: 'auto',
+   description: 'Enable TAP tests')
+ 
+diff --git a/src/backend/port/meson.build b/src/backend/port/meson.build
+index 29e88ef..f241114 100644
+--- a/src/backend/port/meson.build
++++ b/src/backend/port/meson.build
+@@ -13,6 +13,10 @@ if cdata.has('USE_SYSV_SEMAPHORES')
+   backend_sources += files('sysv_sema.c')
+ endif
+ 
++if cdata.has('USE_PTHREAD_SEMAPHORES')
++  backend_sources += files('pthread_sema.c')
++endif
++
+ if cdata.has('USE_WIN32_SEMAPHORES')
+   backend_sources += files('win32_sema.c')
+ endif
+diff --git a/src/backend/port/pthread_sema.c b/src/backend/port/pthread_sema.c
+new file mode 100644
+index 0000000..1dc97f4
+--- /dev/null
++++ b/src/backend/port/pthread_sema.c
+@@ -0,0 +1,269 @@
++/*-------------------------------------------------------------------------
++ *
++ * pthread_sema.c
++ *	  Implement PGSemaphores using process-shared pthread primitives
++ *
++ * This is a counting semaphore built from a PTHREAD_PROCESS_SHARED mutex,
++ * a condition variable and a counter, all living in an array in the main
++ * shared memory segment.  It exists for platforms that provide neither
++ * System V semaphores (or forbid them, as the macOS App Sandbox does) nor
++ * unnamed POSIX semaphores (sem_init is unimplemented on Darwin), and where
++ * named POSIX semaphores are unattractive because they cost a file
++ * descriptor per backend per semaphore.
++ *
++ * Because the semaphores live in shared memory, this implementation works
++ * with fork()ed and exec()ed backends alike.  Nothing here needs a kernel
++ * object name, so it works under sandboxes that restrict the IPC namespace.
++ *
++ * Semaphore waits are not interruptible by signals, which matches the other
++ * implementations: they retry on EINTR and never service interrupts from
++ * inside a semaphore wait (see the comments in sysv_sema.c).
++ *
++ * Portions Copyright (c) 1996-2026, PostgreSQL Global Development Group
++ * Portions Copyright (c) 1994, Regents of the University of California
++ *
++ * IDENTIFICATION
++ *	  src/backend/port/pthread_sema.c
++ *
++ *-------------------------------------------------------------------------
++ */
++#include "postgres.h"
++
++#include <pthread.h>
++
++#include "miscadmin.h"
++#include "storage/ipc.h"
++#include "storage/pg_sema.h"
++#include "storage/shmem.h"
++
++
++typedef struct PGSemaphoreData
++{
++	pthread_mutex_t mutex;
++	pthread_cond_t cond;
++	int			count;
++} PGSemaphoreData;
++
++/* Pad each semaphore to a cache line, as posix_sema.c does for sem_t */
++typedef union PGSemaphorePadded
++{
++	PGSemaphoreData sema;
++	char		pad[PG_CACHE_LINE_SIZE];
++} PGSemaphorePadded;
++
++static PGSemaphorePadded *sharedSemas;	/* array in shared memory */
++static int	numSems;			/* number of semas created so far */
++static int	maxSems;			/* allocated size of the array */
++
++static void ReleaseSemaphores(int status, Datum arg);
++
++
++/*
++ * Request shared memory needed for semaphores
++ */
++void
++PGSemaphoreShmemRequest(int maxSemas)
++{
++	ShmemRequestStruct(.name = "Semaphores",
++					   .size = mul_size(maxSemas, sizeof(PGSemaphorePadded)),
++					   .ptr = (void **) &sharedSemas,
++		);
++}
++
++/*
++ * PGSemaphoreInit --- initialize semaphore support
++ *
++ * This is called during postmaster start or shared memory reinitialization.
++ * The semaphores themselves are created on demand by PGSemaphoreCreate; the
++ * maxSemas parameter only sizes the array, which PGSemaphoreShmemRequest
++ * already placed in shared memory.
++ */
++void
++PGSemaphoreInit(int maxSemas)
++{
++	numSems = 0;
++	maxSems = maxSemas;
++
++	on_shmem_exit(ReleaseSemaphores, 0);
++}
++
++/*
++ * Release semaphores at shutdown or shmem reinitialization
++ *
++ * (called as an on_shmem_exit callback, hence funny argument list)
++ *
++ * The primitives own no kernel resources; destroying them is a formality
++ * that keeps the memory consistent for a shared memory reinitialization
++ * after a backend crash.  A mutex a crashed backend still held is simply
++ * discarded with the mapping.
++ */
++static void
++ReleaseSemaphores(int status, Datum arg)
++{
++	int			i;
++
++	for (i = 0; i < numSems; i++)
++	{
++		(void) pthread_mutex_destroy(&sharedSemas[i].sema.mutex);
++		(void) pthread_cond_destroy(&sharedSemas[i].sema.cond);
++	}
++	numSems = 0;
++}
++
++/*
++ * PGSemaphoreCreate
++ *
++ * Allocate a PGSemaphore structure with initial count 1
++ */
++PGSemaphore
++PGSemaphoreCreate(void)
++{
++	PGSemaphore sema;
++	pthread_mutexattr_t mattr;
++	pthread_condattr_t cattr;
++	int			rc;
++
++	/* Can't do this in a backend, because static state is postmaster's */
++	Assert(!IsUnderPostmaster);
++
++	if (numSems >= maxSems)
++		elog(PANIC, "too many semaphores created");
++
++	sema = &sharedSemas[numSems].sema;
++
++	if ((rc = pthread_mutexattr_init(&mattr)) != 0 ||
++		(rc = pthread_mutexattr_setpshared(&mattr, PTHREAD_PROCESS_SHARED)) != 0 ||
++		(rc = pthread_mutex_init(&sema->mutex, &mattr)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "could not initialize process-shared mutex: %m");
++	}
++	(void) pthread_mutexattr_destroy(&mattr);
++
++	if ((rc = pthread_condattr_init(&cattr)) != 0 ||
++		(rc = pthread_condattr_setpshared(&cattr, PTHREAD_PROCESS_SHARED)) != 0 ||
++		(rc = pthread_cond_init(&sema->cond, &cattr)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "could not initialize process-shared condition variable: %m");
++	}
++	(void) pthread_condattr_destroy(&cattr);
++
++	sema->count = 1;
++
++	numSems++;
++
++	return sema;
++}
++
++/*
++ * PGSemaphoreReset
++ *
++ * Reset a previously-initialized PGSemaphore to have count 0
++ */
++void
++PGSemaphoreReset(PGSemaphore sema)
++{
++	int			rc;
++
++	if ((rc = pthread_mutex_lock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_lock failed: %m");
++	}
++	sema->count = 0;
++	if ((rc = pthread_mutex_unlock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_unlock failed: %m");
++	}
++}
++
++/*
++ * PGSemaphoreLock
++ *
++ * Lock a semaphore (decrement count), blocking if count would be < 0
++ */
++void
++PGSemaphoreLock(PGSemaphore sema)
++{
++	int			rc;
++
++	if ((rc = pthread_mutex_lock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_lock failed: %m");
++	}
++	while (sema->count <= 0)
++	{
++		if ((rc = pthread_cond_wait(&sema->cond, &sema->mutex)) != 0)
++		{
++			errno = rc;
++			elog(FATAL, "pthread_cond_wait failed: %m");
++		}
++	}
++	sema->count--;
++	if ((rc = pthread_mutex_unlock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_unlock failed: %m");
++	}
++}
++
++/*
++ * PGSemaphoreUnlock
++ *
++ * Unlock a semaphore (increment count)
++ */
++void
++PGSemaphoreUnlock(PGSemaphore sema)
++{
++	int			rc;
++
++	if ((rc = pthread_mutex_lock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_lock failed: %m");
++	}
++	sema->count++;
++	if ((rc = pthread_cond_signal(&sema->cond)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_cond_signal failed: %m");
++	}
++	if ((rc = pthread_mutex_unlock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_unlock failed: %m");
++	}
++}
++
++/*
++ * PGSemaphoreTryLock
++ *
++ * Lock a semaphore only if able to do so without blocking
++ */
++bool
++PGSemaphoreTryLock(PGSemaphore sema)
++{
++	bool		result = false;
++	int			rc;
++
++	if ((rc = pthread_mutex_lock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_lock failed: %m");
++	}
++	if (sema->count > 0)
++	{
++		sema->count--;
++		result = true;
++	}
++	if ((rc = pthread_mutex_unlock(&sema->mutex)) != 0)
++	{
++		errno = rc;
++		elog(FATAL, "pthread_mutex_unlock failed: %m");
++	}
++
++	return result;
++}
+diff --git a/src/include/pg_config.h.in b/src/include/pg_config.h.in
+index 661c4a9..c6e5e0c 100644
+--- a/src/include/pg_config.h.in
++++ b/src/include/pg_config.h.in
+@@ -674,6 +674,9 @@
+ /* Define to 1 to build with assertion checks. (--enable-cassert) */
+ #undef USE_ASSERT_CHECKING
+ 
++/* Define to 1 to build without System V IPC. (--enable-appstore) */
++#undef APPSTORE
++
+ /* Define to 1 to use AVX2 instructions with a runtime check. */
+ #undef USE_AVX2_WITH_RUNTIME_CHECK
+ 
+@@ -726,6 +729,9 @@
+ /* Define to select named POSIX semaphores. */
+ #undef USE_NAMED_POSIX_SEMAPHORES
+ 
++/* Define to select pthread-based semaphores. */
++#undef USE_PTHREAD_SEMAPHORES
++
+ /* Define to 1 to build with OpenSSL support. (--with-ssl=openssl) */
+ #undef USE_OPENSSL
+ 
+diff --git a/src/tools/pgindent/typedefs.list b/src/tools/pgindent/typedefs.list
+index 656f1f6..13f33d0 100644
+--- a/src/tools/pgindent/typedefs.list
++++ b/src/tools/pgindent/typedefs.list
+@@ -1951,6 +1951,7 @@ PGQueryClass
+ PGRUsage
+ PGSemaphore
+ PGSemaphoreData
++PGSemaphorePadded
+ PGShmemHeader
+ PGTargetServerType
+ PGTernaryBool
+-- 
+2.43.0
+
