@@ -58,10 +58,17 @@ class GarageUITestCase: XCTestCase {
 
     var configFile: URL { dataDirectory.appendingPathComponent("garage.json", isDirectory: false) }
 
-    /// The folder this test's data folder is made in. A subclass whose app cannot reach the
-    /// temporary folder (the sandboxed App Store build) overrides it.
+    /// The folder this test's data folder is made in: `~/Library/Caches/GarageUITests`, which the
+    /// sandboxed runner reaches through a temporary exception (`Runner.entitlements`). Not the
+    /// runner's temporary folder: that is inside its container, which macOS 27 refuses to the app
+    /// under test with no prompt. A subclass whose app cannot reach this folder either (the sandboxed
+    /// App Store build) overrides it.
     func makeDataDirectoryParent() throws -> URL {
-        FileManager.default.temporaryDirectory
+        guard let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir else {
+            return FileManager.default.temporaryDirectory
+        }
+        return URL(fileURLWithPath: String(cString: home), isDirectory: true)
+            .appendingPathComponent("Library/Caches/GarageUITests", isDirectory: true)
     }
 
     /// The app under test: the test target's host app unless a subclass launches another bundle.
