@@ -20,6 +20,7 @@ exports_files(
 # Garage.app output.
 exports_files(
     [
+        "ExportCompliance.plist",
         "Garage.entitlements",
         "GarageDeveloperID.entitlements",
         "Info.plist",
