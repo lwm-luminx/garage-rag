@@ -702,3 +702,12 @@ py_test(
         "//garage_python/src/garage_rag/ingest",
     ],
 )
+
+py_test(
+    name = "test_nicknames",
+    srcs = ["test_nicknames.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/extract",
+    ],
+)

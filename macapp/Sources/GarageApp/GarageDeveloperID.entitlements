@@ -18,6 +18,10 @@
 	<array>
 		<string>DWVXMLB45Y.group.me.rickmark.garage-rag</string>
 	</array>
+	<!-- Contacts names the phone numbers and addresses Messages and Mail know people by
+	     (ContactNamesService); read by the app only, and only once the user allows it. -->
+	<key>com.apple.security.personal-information.addressbook</key>
+	<true/>
 	<key>keychain-access-groups</key>
 	<array>
 		<string>DWVXMLB45Y.group.me.rickmark.garage-rag</string>

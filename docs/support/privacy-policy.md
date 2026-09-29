@@ -47,6 +47,8 @@ All data indexed by Garage is processed and stored locally on your device in you
 
 Garage never sends your communications off your device, and sends other content only to a model server you have configured yourself (see section 4). Content you retrieve through a connected MCP client is subject to that client.
 
+If you allow Garage to access your Contacts, it uses the names there to show people by name instead of by phone number or email address in the Messages and Mail it indexes. Those names are stored with your indexed communications in the same local database and are treated the same way: they never leave your device except as part of search results you send to an MCP client yourself. Declining Contacts access changes nothing else.
+
 ---
 
 ## 4. No Third-Party Services
@@ -86,7 +88,7 @@ This applies to the website only. GarageApp and the `garage` tools contain no an
 
 - **Keychain Security**: Database superuser passwords and optional API tokens (e.g., LM Studio API keys) are stored securely in the native **macOS Keychain**.
 - **Loopback by default**: By default the embedded HTTP MCP server binds only to `127.0.0.1` and refuses remote clients, and it checks the Host and Origin headers so web pages cannot reach your corpus. Serving other computers takes an explicit opt-in for power users, `--allow-remote`; with it, and with no `--allow-host`, the Host check is off.
-- **macOS Sandboxing & TCC**: Access to protected directories (Documents, Downloads, Desktop, Messages, Mail) requires explicit macOS user authorization under System Settings.
+- **macOS Sandboxing & TCC**: Access to protected directories (Documents, Downloads, Desktop, Messages, Mail) requires explicit macOS user authorization under System Settings. So does Contacts, which macOS asks about once.
 
 ---
 
