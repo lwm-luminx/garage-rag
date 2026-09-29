@@ -14,6 +14,10 @@
 # garage_python/hatch_build.py is the PyPI build's hook, run by hatchling outside Bazel.
 # gazelle:exclude garage_python/hatch_build.py
 
+# tools/screenshots turns the store screenshot test's website captures into docs/ images, run by
+# hand with the garage_python venv's Pillow, outside Bazel.
+# gazelle:exclude tools/screenshots
+
 exports_files(
     [
         "README.md",

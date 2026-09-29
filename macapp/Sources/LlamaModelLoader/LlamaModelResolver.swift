@@ -126,7 +126,7 @@ public struct LlamaModelResolver: Sendable {
         }
         return LlamaModelResolver(
             catalogURLs: urls,
-            modelsDirectory: GarageAppGroup.dataDirectory.appendingPathComponent("models", isDirectory: true)
+            modelsDirectory: GarageAppGroup.modelsDirectory
         )
     }
 

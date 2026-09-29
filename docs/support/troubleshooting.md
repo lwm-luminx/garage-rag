@@ -96,7 +96,7 @@ sqlite3: unable to open database ~/Library/Messages/chat.db: authorization denie
 2. Click the lock/add icon and ensure both **Garage** and your terminal emulator (e.g. **Terminal**, **iTerm2**, or **Ghostty**) are added with toggle enabled.
 3. If permissions were changed while the app was running, quit and re-launch Garage.
 
-**App Store version**: it runs in the macOS sandbox and can read only the folders you choose. It asks with the standard Open dialog when you add a source, or when it needs the disk (**Select Disk…** at the top of the Sources page). For Messages and Mail, choose the folder and also grant Full Disk Access as above.
+**App Store version**: it runs in the macOS sandbox and can read only the folders you choose. It asks with the standard Open dialog when you add a source, or when it needs your home folder (**Select Home Folder…** at the top of the Sources page; **Select Startup Disk…** beside it covers other disks). For Messages and Mail, choose the folder and also grant Full Disk Access as above.
 
 ---
 

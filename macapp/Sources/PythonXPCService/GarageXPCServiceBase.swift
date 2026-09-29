@@ -279,6 +279,10 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
             _configuration[key] = value
         }
         stateLock.unlock()
+        // Read from Swift (`GarageAppGroup.modelsDirectory`), also before Python is ready.
+        if let models = options[GarageXPCConfigurationKey.modelsDirectory] {
+            setenv(GarageXPCConfigurationKey.modelsDirectory, models, 1)
+        }
         guard usesPython, runtime.isReady, !options.isEmpty else { return }
         runtime.perform {
             let os = Python.import("os")

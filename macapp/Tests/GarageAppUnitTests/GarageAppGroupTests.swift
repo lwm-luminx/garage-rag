@@ -156,3 +156,66 @@ final class GarageAppGroupTests: XCTestCase {
         XCTAssertFalse(home.contains("/Library/Containers/"))
     }
 }
+
+/// The App Store build's "Reset Database" relaunch gets no arguments from `NSWorkspace` (the sandbox
+/// drops them), so the new instance learns it follows a reset only from the handoff.
+final class GarageRelaunchHandoffTests: XCTestCase {
+    private var suiteName = ""
+    private var defaults: UserDefaults!
+
+    override func setUp() {
+        super.setUp()
+        suiteName = "GarageRelaunchHandoffTests.\(UUID().uuidString)"
+        defaults = UserDefaults(suiteName: suiteName)!
+    }
+
+    override func tearDown() {
+        defaults.removePersistentDomain(forName: suiteName)
+        super.tearDown()
+    }
+
+    func testARecentRecordIsTakenOnce() {
+        let now = Date()
+        let arguments = [GarageAppLaunch.databaseResetArgument, "4242"]
+        GarageRelaunchHandoff.record(arguments, in: defaults, now: now)
+        XCTAssertEqual(GarageRelaunchHandoff.take(from: defaults, now: now.addingTimeInterval(5)), arguments)
+        XCTAssertEqual(GarageRelaunchHandoff.take(from: defaults, now: now.addingTimeInterval(6)), [])
+    }
+
+    func testAStaleRecordIsDroppedAndForgotten() {
+        let now = Date()
+        GarageRelaunchHandoff.record([GarageAppLaunch.databaseResetArgument, "4242"], in: defaults, now: now)
+        let later = now.addingTimeInterval(GarageRelaunchHandoff.maximumAge + 1)
+        XCTAssertEqual(GarageRelaunchHandoff.take(from: defaults, now: later), [])
+        XCTAssertNil(defaults.object(forKey: GarageRelaunchHandoff.argumentsKey))
+        XCTAssertNil(defaults.object(forKey: GarageRelaunchHandoff.dateKey))
+    }
+
+    func testADiscardedRecordIsNotTaken() {
+        GarageRelaunchHandoff.record([GarageAppLaunch.databaseResetArgument, "4242"], in: defaults)
+        GarageRelaunchHandoff.discard(in: defaults)
+        XCTAssertEqual(GarageRelaunchHandoff.take(from: defaults), [])
+    }
+
+    @MainActor
+    func testTheHandoffJoinsACommandLineWithoutTheResetFlag() {
+        let handoff = [GarageAppLaunch.databaseResetArgument, "4242", GarageAppLaunch.dataDirectoryArgument, "/tmp/t"]
+        let merged = GarageRelaunchHandoff.merged(commandLine: ["GarageApp"], handoff: handoff)
+        XCTAssertEqual(merged, ["GarageApp"] + handoff)
+        XCTAssertEqual(AppState.databaseResetParent(in: merged), 4242)
+        // The relaunched instance opens on the setup assistant, whatever the completed flag says.
+        defaults.set(true, forKey: FirstRunPreferences.completedKey)
+        let coordinator = FirstRunCoordinator(defaults: defaults, arguments: merged)
+        XCTAssertTrue(coordinator.isActive)
+        XCTAssertTrue(coordinator.isAfterDatabaseReset)
+    }
+
+    func testACommandLineThatNamesAResetParentWins() {
+        let commandLine = ["GarageApp", GarageAppLaunch.databaseResetArgument, "7"]
+        let merged = GarageRelaunchHandoff.merged(
+            commandLine: commandLine,
+            handoff: [GarageAppLaunch.databaseResetArgument, "4242"]
+        )
+        XCTAssertEqual(merged, commandLine)
+    }
+}

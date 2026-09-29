@@ -71,6 +71,20 @@ final class IngestClientTests: XCTestCase {
         XCTAssertEqual(decoded.grpcPort, 50051)
         XCTAssertEqual(decoded.databaseUrl, "postgresql://localhost:5432/testdb")
         XCTAssertEqual(decoded.lmStudioApiToken, "test-token-123")
+        XCTAssertNil(decoded.contactNames)
+    }
+
+    func testIngestOptionsCarryContactNamesAsPairs() throws {
+        let options = IngestOptions(contactNames: [["(555) 123-4567", "Alex Doe"], ["sam@example.com", "Sam Lee"]])
+        let engine = IngestEngine.shared
+        guard let json = engine.serialize(options) else {
+            XCTFail("Failed to serialize IngestOptions")
+            return
+        }
+        // The Python side reads the key `contact_names` as a list of [handle, name] lists.
+        XCTAssertTrue(json.contains("\"contact_names\""))
+        let decoded = try engine.deserialize(IngestOptions.self, from: json)
+        XCTAssertEqual(decoded.contactNames, [["(555) 123-4567", "Alex Doe"], ["sam@example.com", "Sam Lee"]])
     }
 
     func testIngestExecutionModeEnumCases() {

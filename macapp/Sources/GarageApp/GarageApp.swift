@@ -32,6 +32,9 @@ struct GarageApp: App {
                 Button("Troubleshooting Guide") {
                     NSWorkspace.shared.open(BugReportLinks.troubleshooting)
                 }
+                Button("Privacy Policy") {
+                    NSWorkspace.shared.open(SplashLinks.privacyPolicy)
+                }
                 Divider()
                 Button("Report a Bug…") {
                     showDialog(.garageShowBugReport)

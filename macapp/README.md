@@ -501,6 +501,33 @@ re-signs the nested `Updater.app`, the launcher helper bundles in `Contents/Help
 (with the entitlements each carries) and `XPCServices/*.xpc` on the way to
 notarization.
 
+## Tip jar (App Store only)
+
+The App Store build offers tips as in-app purchases on the splash (`Services/TipJar.swift`,
+`Views/TipJarView.swift`), where the Developer ID build shows the Patreon link instead: a link to an
+outside payment breaks App Review guideline 3.1.1. A tip unlocks nothing. The Developer ID build
+never loads StoreKit products.
+
+The products are Consumable in-app purchases in App Store Connect:
+
+| Product ID | Reference name | Price (USD) |
+|---|---|---|
+| `me.rickmark.garage_rag.tip.small` | Small Tip | 4.99 |
+| `me.rickmark.garage_rag.tip.medium` | Medium Tip | 9.99 |
+| `me.rickmark.garage_rag.tip.large` | Large Tip | 19.99 |
+| `me.rickmark.garage_rag.tip.max` | Max Tip | 49.99 |
+| `me.rickmark.garage_rag.tip.ultra` | Ultra Tip | 99.99 |
+
+Buttons show the App Store's localized price, so other storefronts follow App Store Connect's
+equalized prices. When the store returns no products (not yet made, or not yet approved), the
+splash shows no tip buttons.
+
+`Sources/GarageApp/GarageTips.storekit` mirrors the products for local testing. In Xcode, choose it
+under the Garage scheme's Run > Options > StoreKit Configuration and run the App Store configuration
+to buy a tip against it; `TipJarTests` checks it lists the same products. A purchase is not unit
+tested: an `SKTestSession` needs a host app, and the unhosted unit tests get `SKInternalErrorDomain`
+3. Change both when a product changes.
+
 ## First-run setup assistant
 
 On a fresh install (no `garage.firstRun.completed` default) the main window opens straight into a
