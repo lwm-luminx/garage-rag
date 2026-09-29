@@ -14,11 +14,16 @@ import XCTest
 ///       xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests \
 ///       -only-testing:GarageAppUITests/StoreMailMessagesUITests
 ///
-/// Unzip the bundle first if Bazel produced `GarageStore.app.zip`. Each test's data folder lives in
-/// the App Group container's `UITests` folder, as every UI test's does (`GarageUITestCase`), the one
-/// place the sandboxed app and the sandboxed runner both reach.
+/// Unzip the bundle first if Bazel produced `GarageStore.app.zip`. The sandbox keeps the app out of
+/// the other tests' Caches folder, so each test's data folder lives in the App Group container's
+/// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one place the sandboxed app and the
+/// sandboxed runner both reach, through the App Group the runner's entitlements give it.
 class StoreUITestCase: GarageUITestCase {
     static let storeAppVariable = "GARAGE_UITEST_STORE_APP"
+
+    override func makeDataDirectoryParent() throws -> URL {
+        Self.groupDataDirectoryRoot
+    }
 
     private static func storeAppURL() throws -> URL {
         let path = ProcessInfo.processInfo.environment[storeAppVariable] ?? ""

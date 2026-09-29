@@ -5,14 +5,13 @@ import XCTest
 /// Base for the XCUITests: every test launches the real app on its own throwaway `--data-directory`,
 /// so it gets a new cluster, config and models folder and never touches the real corpus.
 ///
-/// The data folders live in the App Group container's `UITests` folder (`GarageAppGroup.uiTestDataRoot`
-/// in the app, the one test root it accepts), not in the runner's temporary folder. Xcode signs the
-/// runner from its sandboxed XCTRunner template, so its temporary folder is inside its container, and
-/// macOS 27 refuses the app under test, its XPC services and Postgres entry into another app's container
-/// without offering a prompt (the sandboxed store build never could reach it). The runner writes to the
-/// group folder through the App Group the test target's entitlements give it; without that, setup
-/// fails with Cocoa error 513. On macOS 15 the first run may ask whether the runner may access data
-/// from other apps.
+/// The data folders live in `~/Library/Caches/GarageUITests` (`makeDataDirectoryParent`), not in the
+/// runner's temporary folder: Xcode signs the runner from its sandboxed XCTRunner template, so that
+/// folder is inside its container, and macOS 27 refuses the app under test, its XPC services and
+/// Postgres entry into another app's container without offering a prompt. The runner reaches the Caches
+/// folder through a temporary exception in `Runner.entitlements`. The store tests, whose app is
+/// sandboxed and cannot reach it either, use the App Group container's `UITests` folder
+/// (`groupDataDirectoryRoot`) instead.
 ///
 /// Launch arguments set the launch-time preferences in the argument domain, which overrides
 /// UserDefaults for that run without writing them. A test that clicks a control that saves a
@@ -42,8 +41,8 @@ class GarageUITestCase: XCTestCase {
         return NSHomeDirectory()
     }
 
-    /// Where every test's data folder is made: the App Group container's `UITests` folder.
-    static var dataDirectoryRoot: URL {
+    /// The App Group container's `UITests` folder, where the store tests' data folders are made.
+    static var groupDataDirectoryRoot: URL {
         URL(fileURLWithPath: realHome, isDirectory: true)
             .appendingPathComponent("Library/Group Containers/\(appGroup)/UITests", isDirectory: true)
     }
@@ -83,9 +82,17 @@ class GarageUITestCase: XCTestCase {
 
     var configFile: URL { dataDirectory.appendingPathComponent("garage.json", isDirectory: false) }
 
-    /// The folder this test's data folder is made in (`dataDirectoryRoot`); a subclass may override it.
+    /// The folder this test's data folder is made in: `~/Library/Caches/GarageUITests`, which the
+    /// sandboxed runner reaches through a temporary exception (`Runner.entitlements`). Not the
+    /// runner's temporary folder: that is inside its container, which macOS 27 refuses to the app
+    /// under test with no prompt. A subclass whose app cannot reach this folder either (the sandboxed
+    /// App Store build) overrides it.
     func makeDataDirectoryParent() throws -> URL {
-        Self.dataDirectoryRoot
+        guard let entry = getpwuid(getuid()), let home = entry.pointee.pw_dir else {
+            return FileManager.default.temporaryDirectory
+        }
+        return URL(fileURLWithPath: String(cString: home), isDirectory: true)
+            .appendingPathComponent("Library/Caches/GarageUITests", isDirectory: true)
     }
 
     /// The app under test: the test target's host app unless a subclass launches another bundle.
