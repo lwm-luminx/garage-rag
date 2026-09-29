@@ -1553,6 +1553,91 @@ class TestDistilledFacts:
         run = db.execute(text("SELECT facts, extractor_model FROM fact_runs WHERE prompt_name = 'metadata'")).one()
         assert tuple(run) == (4, "metadata")
 
+    def test_the_configured_graph_projects_classes_and_relations(self, db: Session) -> None:
+        """The projection's selects over real rows (AGE itself is not needed to run them)."""
+        from garage_rag.config.fact_prompts import FactPrompt, effective_prompts, graph_schema
+        from garage_rag.db.graph import EDGES, VERTICES, projection
+
+        model = self._setup(db)
+        doc = self._doc(db)
+
+        def fact(text_: str, fact_class: str, attributes: dict) -> int:
+            fact_id = self._fact(db, model, doc, text_, None)
+            db.execute(
+                text("UPDATE facts SET fact_class = :c, attributes = CAST(:a AS jsonb) WHERE id = :id"),
+                {"c": fact_class, "a": json.dumps(attributes), "id": fact_id},
+            )
+            return fact_id
+
+        jane = fact("Jane", "person", {"name": "Jane Doe"})
+        acme = fact("Acme Corp", "organization", {})
+        works = fact(
+            "Jane works at Acme Corp.",
+            "relation",
+            {"subject": "Jane Doe", "object": "acme corp", "predicate": "works at"},
+        )
+        likes = fact(
+            "Jane likes Acme Corp.", "relation", {"subject": "Jane", "object": "Acme Corp", "predicate": "likes"}
+        )
+        fact("Jane met Bob.", "relation", {"subject": "Jane", "object": "Bob", "predicate": "works at"})
+        db.flush()
+        self._run(db, model)
+        distilled = dict(db.execute(text("SELECT id, distilled_fact_id FROM facts")).all())
+
+        prompt = FactPrompt.model_validate(
+            {
+                "name": "entities",
+                "description": "Extract.",
+                "examples": [{"text": "x", "extractions": [{"text": "x"}]}],
+                "graph": {
+                    "vertices": [
+                        {"class": "person", "label": "Person", "title": "name"},
+                        {"class": "organization", "label": "Organization"},
+                    ],
+                    "edges": [
+                        {
+                            "class": "relation",
+                            "source": "subject",
+                            "source_class": "person",
+                            "target": "object",
+                            "target_class": "organization",
+                            "label_attribute": "predicate",
+                            "labels": ["WORKS_AT"],
+                        }
+                    ],
+                },
+            }
+        )
+        vertices, edges = projection(graph_schema(effective_prompts([prompt])))
+
+        def rows(select: str, params: dict) -> list[tuple]:
+            return [tuple(r) for r in db.execute(text(select), params).all()]
+
+        by_label = {v.label: rows(v.select, v.params) for v in vertices if v.label not in ("Document", "Chunk")}
+        person = by_label["Person"]
+        assert [(rid, p["title"], p["statement"]) for rid, p in person] == [(distilled[jane], "Jane Doe", "Jane")]
+        assert [rid for rid, _ in by_label["Organization"]] == [distilled[acme]]
+        # Neither is a Fact vertex any more; the relations still are.
+        fact_ids = {rid for rid, _ in by_label["Fact"]}
+        assert distilled[jane] not in fact_ids and distilled[acme] not in fact_ids and distilled[works] in fact_ids
+
+        relation_edges = {e.label: rows(e.select, e.params) for e in edges if e.label not in EDGES}
+        # Resolved in the fact's document by the person's title and the organization's text, case-folded;
+        # an unknown predicate takes the fallback; an end that names nothing is left out.
+        assert [(s_, t, p["fact_id"], p["predicate"]) for s_, t, p in relation_edges["WORKS_AT"] if t is not None] == [
+            (distilled[jane], distilled[acme], works, "works at")
+        ]
+        assert [(s_, t, p["fact_id"]) for s_, t, p in relation_edges["RELATED_TO"]] == [
+            (distilled[jane], distilled[acme], likes)
+        ]
+        supports = [(e.target, rows(e.select, e.params)) for e in edges if e.label == "SUPPORTS"]
+        assert {t: sorted(r[0] for r in found) for t, found in supports if t != "Fact"} == {
+            "Person": [jane],
+            "Organization": [acme],
+        }
+        assert not {jane, acme} & {r[0] for t, found in supports if t == "Fact" for r in found}
+        assert set(VERTICES) <= {v.label for v in vertices}
+
     def test_dropping_a_model_drops_its_distilled_fact_table(self, db: Session) -> None:
         from garage_rag.db.emb_tables import drop_model
 

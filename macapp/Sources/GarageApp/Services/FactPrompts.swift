@@ -192,7 +192,7 @@ enum FactPromptConfig {
         let examples = try parseExamples(prompt.examplesJSON)
         var entries = parse(configuredJSON)
         let target = originalName ?? prompt.name
-        let entry: [String: Any] = [
+        var entry: [String: Any] = [
             "name": prompt.name,
             "description": prompt.description,
             "examples": examples,
@@ -201,6 +201,10 @@ enum FactPromptConfig {
             "enabled": prompt.enabled,
         ]
         if let index = entries.firstIndex(where: { ($0["name"] as? String) == target }) {
+            // Keys this editor does not show (the prompt's graph block) stay as they were.
+            for (key, value) in entries[index] where entry[key] == nil {
+                entry[key] = value
+            }
             entries[index] = entry
         } else {
             entries.append(entry)

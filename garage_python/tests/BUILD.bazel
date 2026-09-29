@@ -609,6 +609,18 @@ py_test(
 )
 
 py_test(
+    name = "test_graph_schema",
+    srcs = ["test_graph_schema.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_messages",
     srcs = ["test_messages.py"],
     deps = [
