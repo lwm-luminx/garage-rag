@@ -279,8 +279,22 @@ CREATE TABLE emb_<slug> (
 detail: deleting a chunk removes its vectors from *every* model table at once,
 so stale vectors cannot outlive the text they came from.
 
-Each model also has a `fact_emb_<slug>` table of the same shape, keyed on
-`distilled_fact_id` instead (see [`distilled_facts`](#distilled_facts)).
+Each model has two more tables of the same shape, each with its own vector
+index built the same way:
+
+- `potential_fact_emb_<slug>`, keyed on `fact_id` (`REFERENCES facts ON DELETE
+  CASCADE`), holds the potential facts' vectors. A fact's text is embedded
+  through its chunk (`chunks.fact_id`) like any other, but the backfill stores
+  the vector here rather than in `emb_<slug>`, so fact-to-fact neighbour queries
+  (`cluster-facts`) walk an index of facts only and passage search an index of
+  passages only. Vector search takes its nearest neighbours from both tables
+  and ranks them together. `017_fact_vectors.sql` created these for models
+  registered earlier, copying the chunk table's index, and moved their fact
+  vectors across.
+- `fact_emb_<slug>`, keyed on `distilled_fact_id`, holds the distilled facts'
+  vectors (see [`distilled_facts`](#distilled_facts)).
+
+Names longer than Postgres's 63-byte identifier limit are cut to it.
 
 #### Storage selection
 

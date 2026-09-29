@@ -33,7 +33,7 @@ from pgvector.sqlalchemy import HALFVEC, VECTOR
 from sqlalchemy import bindparam, func, text
 from sqlalchemy.orm import Session
 
-from garage_rag.db.emb_tables import assert_safe_table, get_model
+from garage_rag.db.emb_tables import assert_safe_table, get_model, potential_fact_table_name
 from garage_rag.db.engine import apply_search_tuning
 from garage_rag.db.registry import StoragePlan, distance_operator, truncate_vector
 from garage_rag.embed.factory import get_embedder
@@ -196,6 +196,10 @@ def search(
     # that has none registered yet.
     model = get_model(session, model_slug) if need_vector else None
     table = assert_safe_table(model.table_name) if model is not None else None
+    # Potential facts are chunks too, but their vectors have a table and index of
+    # their own (017_fact_vectors.sql): the vector side takes the nearest from each
+    # and ranks them together by distance, as one table used to.
+    fact_table = potential_fact_table_name(table) if table is not None else None
     where = _filter_clause(
         corpus_classes=corpus_classes,
         trust_tiers=trust_tiers,
@@ -238,8 +242,8 @@ def search(
         column_type = f"{model.storage_kind}({bits})"
         params["bq_depth"] = CANDIDATE_DEPTH * BQ_OVERFETCH
         vector_cte = f"""
-        vec_bq AS (
-            SELECT e.chunk_id, e.embedding
+        vec_bq_chunks AS (
+            SELECT c.id AS chunk_id, e.embedding
             FROM {table} e
             JOIN chunks c    ON c.id = e.chunk_id
             JOIN documents d ON d.id = c.document_id
@@ -249,25 +253,51 @@ def search(
                      <~> binary_quantize(CAST(:qv AS {column_type}))::bit({bits})
             LIMIT :bq_depth
         ),
+        vec_bq_facts AS (
+            SELECT c.id AS chunk_id, e.embedding
+            FROM {fact_table} e
+            JOIN chunks c    ON c.fact_id = e.fact_id
+            JOIN documents d ON d.id = c.document_id
+            JOIN sources s   ON s.id = d.source_id
+            WHERE {where}
+            ORDER BY binary_quantize(e.embedding)::bit({bits})
+                     <~> binary_quantize(CAST(:qv AS {column_type}))::bit({bits})
+            LIMIT :bq_depth
+        ),
         vec AS (
             SELECT b.chunk_id,
-                   row_number() OVER (ORDER BY b.embedding {op} :qv) AS rnk
-            FROM vec_bq b
-            ORDER BY b.embedding {op} :qv
+                   row_number() OVER (ORDER BY b.embedding {op} :qv, b.chunk_id) AS rnk
+            FROM (SELECT * FROM vec_bq_chunks UNION ALL SELECT * FROM vec_bq_facts) b
+            ORDER BY b.embedding {op} :qv, b.chunk_id
             LIMIT :depth
         )
     """
     else:
         vector_cte = f"""
-        vec AS (
-            SELECT c.id AS chunk_id,
-                   row_number() OVER (ORDER BY e.embedding {op} :qv) AS rnk
+        vec_chunks AS (
+            SELECT c.id AS chunk_id, e.embedding {op} :qv AS dist
             FROM {table} e
             JOIN chunks c    ON c.id = e.chunk_id
             JOIN documents d ON d.id = c.document_id
             JOIN sources s   ON s.id = d.source_id
             WHERE {where}
             ORDER BY e.embedding {op} :qv
+            LIMIT :depth
+        ),
+        vec_facts AS (
+            SELECT c.id AS chunk_id, e.embedding {op} :qv AS dist
+            FROM {fact_table} e
+            JOIN chunks c    ON c.fact_id = e.fact_id
+            JOIN documents d ON d.id = c.document_id
+            JOIN sources s   ON s.id = d.source_id
+            WHERE {where}
+            ORDER BY e.embedding {op} :qv
+            LIMIT :depth
+        ),
+        vec AS (
+            SELECT v.chunk_id, row_number() OVER (ORDER BY v.dist, v.chunk_id) AS rnk
+            FROM (SELECT * FROM vec_chunks UNION ALL SELECT * FROM vec_facts) v
+            ORDER BY v.dist, v.chunk_id
             LIMIT :depth
         )
     """

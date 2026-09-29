@@ -223,8 +223,10 @@ Every fact also gets a `chunks` row of its own (`chunks.fact_id`,
 `chunker = 'facts:langextract:<model>'`). That is the entire embedding story: a
 chunk is a chunk regardless of where its text came from, so the ordinary
 backfill anti-join picks fact chunks up and every registered model ends up with
-a vector for them, with no fact-specific embedding path. Deleting a fact
-cascades into its chunk and, from there, into every `emb_*` table.
+a vector for them, with no fact-specific embedding path. The vector itself goes
+in the model's `potential_fact_emb_<slug>` table, keyed on the fact, so facts
+and passages each have an index of their own (`017_fact_vectors.sql`). Deleting
+a fact cascades into its chunk and its vectors.
 
 #### Distilled facts and the graph (`enrich/clusters.py`, `db/graph.py`)
 
@@ -282,7 +284,10 @@ spans and vectors stay in the tables.
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200
 candidates per engine. RRF needs only each side's *ranking*, which matters
-because cosine distance and `ts_rank_cd` are not comparably scaled.
+because cosine distance and `ts_rank_cd` are not comparably scaled. The vector
+side takes the nearest content chunks from `emb_<slug>` and the nearest
+potential facts from `potential_fact_emb_<slug>`, each on its own index, and
+ranks the union by distance.
 
 The keyword half ORs its terms rather than ANDing them. `websearch_to_tsquery`
 would require every word of "secure enclave firmware validation" in one chunk and

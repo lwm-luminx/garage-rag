@@ -8,7 +8,7 @@ creates the extension where it is installed). Elsewhere :func:`age_available`
 is false and nothing is projected.
 
 Vertices carry the relational id and a few display properties; text, spans and
-vectors stay in the tables (and vectors in the ``emb_``/``fact_emb_`` tables):
+vectors stay in the tables (and vectors in the ``emb_``/``potential_fact_emb_``/``fact_emb_`` tables):
 
 =================  ===============================================================
 ``Document``       ``document_id``, ``title``, ``uri``, ``corpus_class``, ``trust_tier``

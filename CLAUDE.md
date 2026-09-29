@@ -340,7 +340,9 @@ Embeddings live one table per model (`emb_<slug>`, e.g. `emb_bge_m3`) rather tha
 because different models have different vector widths and pgvector can't share a column across
 them. `chunk_id` is both primary key and `ON DELETE CASCADE` FK back to `chunks`, so deleting a
 chunk removes its vectors from every model table atomically — re-indexing onto a new model is a
-backfill, not a re-ingest. Storage type is selected by dimension against pgvector 0.8 HNSW ceilings
+backfill, not a re-ingest. Potential facts' vectors sit beside it in `potential_fact_emb_<slug>`
+(keyed on `fact_id`, `017_fact_vectors.sql`; the backfill routes a fact chunk's vector there), so
+facts and passages each have their own index; search's vector side unions the two. Storage type is selected by dimension against pgvector 0.8 HNSW ceilings
 (`vector` ≤2000 dims, `halfvec` ≤4000, binary-quantized beyond that for non-MRL models). Full
 reference: `docs/schema.md`.
 
