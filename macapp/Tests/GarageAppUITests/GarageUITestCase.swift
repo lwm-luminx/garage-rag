@@ -42,8 +42,20 @@ class GarageUITestCase: XCTestCase {
         return NSHomeDirectory()
     }
 
-    /// Where every test's data folder is made: the App Group container's `UITests` folder.
+    /// Where the unsandboxed builds' test data folders are made: `~/Library/Caches/GarageUITests`,
+    /// which the sandboxed runner reaches through a temporary exception (`Runner.entitlements`).
+    /// Not the runner's temporary folder, which is inside its container: macOS 27 refuses the app
+    /// under test entry there with no prompt. Not the App Group container either: a build signed
+    /// without a provisioning profile (local_signed, the Xcode project's) is not in the group, and
+    /// its XPC services cannot save the models folder there.
     static var dataDirectoryRoot: URL {
+        URL(fileURLWithPath: realHome, isDirectory: true)
+            .appendingPathComponent("Library/Caches/GarageUITests", isDirectory: true)
+    }
+
+    /// Where the sandboxed App Store build's test data folders are made: the App Group container's
+    /// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one test root that build can reach.
+    static var storeDataDirectoryRoot: URL {
         URL(fileURLWithPath: realHome, isDirectory: true)
             .appendingPathComponent("Library/Group Containers/\(appGroup)/UITests", isDirectory: true)
     }
