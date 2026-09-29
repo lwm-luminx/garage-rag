@@ -1312,3 +1312,48 @@ class TestDistilledFacts:
         )
         # agtype strings cast to text with their JSON quotes in some AGE releases and without in others.
         assert [tuple(v.strip('"') for v in r) for r in rows] == [("Ada", "The notes were written by Ada.")]
+
+    def test_the_graph_is_read_back_by_label_search_and_neighbourhood(self, db: Session) -> None:
+        """What the app's Graph page calls: labels with counts, a title search, and a walk with filters."""
+        from garage_rag.db.graph import age_available, find_vertices, graph_labels, neighborhood, rebuild_graph
+
+        if not age_available(db):
+            pytest.skip("this server has no Apache AGE")
+        model, doc = self._setup(db)
+        author = db.execute(text("INSERT INTO authors (display_name) VALUES ('Ada') RETURNING id")).scalar_one()
+        db.execute(
+            text("INSERT INTO document_authors (document_id, author_id, role) VALUES (:d, :a, 'author')"),
+            {"d": doc, "a": author},
+        )
+        first = self._fact(db, model, doc, 0, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, 1, "The notes were written by Ada.", self._direction(5))
+        db.flush()
+        self._run(db, model)
+        rebuild_graph(db)
+
+        labels = graph_labels(db)
+        assert labels.available
+        assert labels.vertices == {"Author": 1, "Chunk": 0, "Document": 1, "Fact": 1, "PotentialFact": 2}
+        assert labels.edges["STATES"] == 2 and labels.edges["SUPPORTS"] == 2
+
+        found = find_vertices(db, "ada")
+        assert {(v.label, v.key, v.title) for v in found} == {
+            ("Author", author, "Ada"),
+            ("PotentialFact", first, "Ada wrote the notes."),
+            ("PotentialFact", first + 1, "The notes were written by Ada."),
+        }
+        assert [v.key for v in find_vertices(db, str(doc), label="Document")] == [doc]
+
+        # From the potential fact: its document and its distilled fact, one hop each way.
+        walk = neighborhood(db, label="PotentialFact", key=first)
+        assert walk.center is not None and walk.center.key == first
+        assert sorted(v.label for v in walk.vertices) == ["Document", "Fact", "PotentialFact"]
+        assert sorted(e.label for e in walk.edges) == ["STATES", "SUPPORTS"]
+        assert "similarity" in next(e for e in walk.edges if e.label == "SUPPORTS").properties
+        # Two hops reach the author and the sibling statement; without STATES edges only the fact side is walked.
+        two = neighborhood(db, label="PotentialFact", key=first, depth=2)
+        assert sorted(v.label for v in two.vertices) == ["Author", "Document", "Fact", "PotentialFact", "PotentialFact"]
+        facts_only = neighborhood(db, label="PotentialFact", key=first, depth=2, edge_labels=["SUPPORTS"])
+        assert sorted(v.label for v in facts_only.vertices) == ["Fact", "PotentialFact", "PotentialFact"]
+        with pytest.raises(LookupError):
+            neighborhood(db, label="Document", key=doc + 1000)

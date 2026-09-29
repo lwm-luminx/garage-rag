@@ -235,12 +235,35 @@ py_test(
 )
 
 py_test(
+    name = "test_graph",
+    srcs = ["test_graph.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/db",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_grpc_documents",
     srcs = ["test_grpc_documents.py"],
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/ops",
+        "//garage_python/src/garage_rag/proto",
+        "//garage_python/src/garage_rag/service",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_grpc_graph",
+    srcs = ["test_grpc_graph.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/proto",
         "//garage_python/src/garage_rag/service",
         "@pypi//grpcio",

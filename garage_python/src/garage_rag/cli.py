@@ -963,6 +963,80 @@ def graph_rebuild() -> None:
     console.print(summary.message)
 
 
+@graph_app.command("labels")
+def graph_labels_command() -> None:
+    """Count the graph's vertices and edges by label."""
+    from garage_rag.ops.graph import graph_labels
+
+    labels = graph_labels()
+    if not labels.available:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    for name, count in labels.vertices.items():
+        console.print(f"({name}) {count:,}")
+    for name, count in labels.edges.items():
+        console.print(f"-[{name}]- {count:,}")
+
+
+@graph_app.command("find")
+def graph_find(
+    query: Annotated[str, typer.Argument(help="Text of a title, name, fact or statement, or a relational id.")],
+    label: Annotated[str, typer.Option("--label", "-l", help="One vertex label (Document, Author, Fact, ...).")] = "",
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+) -> None:
+    """Find vertices to start a walk from."""
+    from garage_rag.ops.graph import find_vertices
+
+    for vertex in find_vertices(query, label=label, limit=limit):
+        console.print(f"[cyan]{vertex.id}[/cyan] ({vertex.label} {vertex.key}) {vertex.title}")
+
+
+@graph_app.command("neighbors")
+def graph_neighbors(
+    vertex: Annotated[
+        str, typer.Argument(help="A graph id from `garage graph find`, or LABEL:ID with a relational id (Document:12).")
+    ],
+    depth: Annotated[int, typer.Option("--depth", "-d", help="Hops out from the vertex, at most 6.")] = 1,
+    vertex_labels: Annotated[
+        list[str] | None, typer.Option("--vertex", "-v", help="Keep only these vertex labels (repeatable).")
+    ] = None,
+    edge_labels: Annotated[
+        list[str] | None, typer.Option("--edge", "-e", help="Keep only these edge labels (repeatable).")
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Stop at this many vertices.")] = 200,
+) -> None:
+    """Walk out from one vertex and list what it is connected to."""
+    from garage_rag.ops.graph import neighborhood
+
+    label, _, key = vertex.partition(":")
+    try:
+        if key:
+            result = neighborhood(
+                label=label,
+                key=int(key),
+                depth=depth,
+                vertex_labels=vertex_labels,
+                edge_labels=edge_labels,
+                limit=limit,
+            )
+        else:
+            result = neighborhood(
+                vertex_id=int(vertex), depth=depth, vertex_labels=vertex_labels, edge_labels=edge_labels, limit=limit
+            )
+    except (LookupError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    if not result.available or result.center is None:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    titles = {v.id: f"({v.label} {v.key}) {v.title}" for v in result.vertices}
+    console.print(f"[bold]{titles[result.center.id]}[/bold]")
+    for edge in result.edges:
+        console.print(f"  {titles[edge.source_id]} -[{edge.label}]-> {titles[edge.target_id]}")
+    note = f"{len(result.vertices):,} vertices, {len(result.edges):,} edges"
+    console.print(f"[dim]{note}{', cut at the limit' if result.truncated else ''}[/dim]")
+
+
 # ---------------------------------------------------------------------------
 # fact prompts
 # ---------------------------------------------------------------------------

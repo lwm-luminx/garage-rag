@@ -163,6 +163,21 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.ListFactPromptsRequest.SerializeToString,
                 response_deserializer=garage__pb2.ListFactPromptsResponse.FromString,
                 _registered_method=True)
+        self.GetGraphLabels = channel.unary_unary(
+                '/garage.GarageService/GetGraphLabels',
+                request_serializer=garage__pb2.GraphLabelsRequest.SerializeToString,
+                response_deserializer=garage__pb2.GraphLabelsResponse.FromString,
+                _registered_method=True)
+        self.FindGraphVertices = channel.unary_unary(
+                '/garage.GarageService/FindGraphVertices',
+                request_serializer=garage__pb2.FindGraphVerticesRequest.SerializeToString,
+                response_deserializer=garage__pb2.FindGraphVerticesResponse.FromString,
+                _registered_method=True)
+        self.GetGraphNeighborhood = channel.unary_unary(
+                '/garage.GarageService/GetGraphNeighborhood',
+                request_serializer=garage__pb2.GraphNeighborhoodRequest.SerializeToString,
+                response_deserializer=garage__pb2.GraphNeighborhoodResponse.FromString,
+                _registered_method=True)
         self.GetStats = channel.unary_unary(
                 '/garage.GarageService/GetStats',
                 request_serializer=garage__pb2.StatsRequest.SerializeToString,
@@ -399,6 +414,28 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetGraphLabels(self, request, context):
+        """--- Graph (Apache AGE; every reply says `available` where the server has none) ---
+        The graph's vertex and edge labels, with counts: the Graph page's filters.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def FindGraphVertices(self, request, context):
+        """Vertices by title text or relational id, to pick where a walk starts.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetGraphNeighborhood(self, request, context):
+        """Everything within a few hops of one vertex, under label filters.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetStats(self, request, context):
         """--- Schema, Stats & Settings ---
         """
@@ -608,6 +645,21 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.ListFactPrompts,
                     request_deserializer=garage__pb2.ListFactPromptsRequest.FromString,
                     response_serializer=garage__pb2.ListFactPromptsResponse.SerializeToString,
+            ),
+            'GetGraphLabels': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetGraphLabels,
+                    request_deserializer=garage__pb2.GraphLabelsRequest.FromString,
+                    response_serializer=garage__pb2.GraphLabelsResponse.SerializeToString,
+            ),
+            'FindGraphVertices': grpc.unary_unary_rpc_method_handler(
+                    servicer.FindGraphVertices,
+                    request_deserializer=garage__pb2.FindGraphVerticesRequest.FromString,
+                    response_serializer=garage__pb2.FindGraphVerticesResponse.SerializeToString,
+            ),
+            'GetGraphNeighborhood': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetGraphNeighborhood,
+                    request_deserializer=garage__pb2.GraphNeighborhoodRequest.FromString,
+                    response_serializer=garage__pb2.GraphNeighborhoodResponse.SerializeToString,
             ),
             'GetStats': grpc.unary_unary_rpc_method_handler(
                     servicer.GetStats,
@@ -1334,6 +1386,87 @@ class GarageService:
             '/garage.GarageService/ListFactPrompts',
             garage__pb2.ListFactPromptsRequest.SerializeToString,
             garage__pb2.ListFactPromptsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetGraphLabels(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/GetGraphLabels',
+            garage__pb2.GraphLabelsRequest.SerializeToString,
+            garage__pb2.GraphLabelsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def FindGraphVertices(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/FindGraphVertices',
+            garage__pb2.FindGraphVerticesRequest.SerializeToString,
+            garage__pb2.FindGraphVerticesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetGraphNeighborhood(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/GetGraphNeighborhood',
+            garage__pb2.GraphNeighborhoodRequest.SerializeToString,
+            garage__pb2.GraphNeighborhoodResponse.FromString,
             options,
             channel_credentials,
             insecure,
