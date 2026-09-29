@@ -419,7 +419,9 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   folder on a fresh install, so the familiar path reaches the data; a folder or other link already
   there is left alone.
 - "Reset Database" (`DatabaseResetSheet` → `AppState.resetDatabaseAndRelaunch`) stops every
-  service, deletes `pgdata` and relaunches the app with `--after-database-reset <old pid>`. The old
+  service, deletes `pgdata` and relaunches the app with `--after-database-reset <old pid>`, also left in
+  the app's defaults (`GarageRelaunchHandoff`, read through `GarageAppLaunch.arguments`) because the sandbox
+  drops a relaunch's arguments. The old
   instance then quits at once (`hasHandedOffToRelaunch`: `.terminateNow`, and no quit-time shutdown,
   which would stop the new instance's Postgres by pid file and XPC services by executable name). It
   calls `terminate:` from the run loop, not from a main-actor task, where AppKit's wait for a

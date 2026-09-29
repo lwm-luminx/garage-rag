@@ -259,7 +259,7 @@ final class AppState: ObservableObject {
     func launch() {
         guard !hasLaunched else { return }
         hasLaunched = true
-        let arguments = CommandLine.arguments
+        let arguments = GarageAppLaunch.arguments
         guard arguments.contains(GarageAppLaunch.databaseResetArgument) else {
             maintenanceAtLaunchPending = true
             launchServices(startsPostgres: autoStartPostgres)
@@ -609,7 +609,11 @@ final class AppState: ObservableObject {
     private func relaunchAfterDatabaseReset() {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        configuration.arguments = Self.relaunchArguments(parentPID: getpid(), currentArguments: CommandLine.arguments)
+        let arguments = Self.relaunchArguments(parentPID: getpid(), currentArguments: GarageAppLaunch.arguments)
+        // Ignored when this process is sandboxed (the App Store build); the new instance then
+        // takes them from the handoff instead.
+        configuration.arguments = arguments
+        GarageRelaunchHandoff.record(arguments)
         // Before the new instance can start anything: a quit from here on must leave its services alone.
         markHandedOffToRelaunch()
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
@@ -621,6 +625,7 @@ final class AppState: ObservableObject {
                 }
                 // No second instance: create the new database in this one instead.
                 logger.error("Relaunch after reset failed: \(failure, privacy: .public)")
+                GarageRelaunchHandoff.discard()
                 self.hasHandedOffToRelaunch = false
                 self.isResettingDatabase = false
                 self.firstRun.begin(afterDatabaseReset: true)
