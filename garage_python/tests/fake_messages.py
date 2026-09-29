@@ -6,8 +6,8 @@ messages. Everything is invented, and a seed gives the same folder (for one Fake
 * **People** have names from Faker, phone numbers in the North American range reserved for fiction
   (555-0100 to 555-0199) and email addresses on the reserved ``example.com/.net/.org`` domains.
   Most of what they say is Faker's too. Faker is a dev dependency, so the Bazel test skips.
-* **Schema** is ``fixtures/messages/chat_db_schema.sql`` (tables and indexes; the real database's
-  triggers call functions only Messages registers, so they are left out).
+* **Schema** is ``fixtures/messages/chat_db_schema.sql``, the DDL of a real ``chat.db``: its tables and
+  indexes (the triggers are left out; several call functions only Messages registers).
 * **Shapes** the reader has to handle: one-to-one chats over iMessage (phone and email), SMS and RCS;
   named and unnamed groups; text only in ``message.text`` (before Ventura), in both columns, or only
   in ``attributedBody`` (since Ventura), some long enough to need a multi-byte length; replies, edits
@@ -164,15 +164,19 @@ class FakeMessages:
 
 
 def _schema(path: Path) -> str:
-    """The schema's tables and indexes, without triggers."""
-    lines = [line for line in path.read_text().splitlines() if not line.lstrip().startswith("--")]
-    statements = [s.strip() for s in "\n".join(lines).split(";")]
-    keep = [
-        s
-        for s in statements
-        if s and not s.lstrip("-\n ").upper().startswith("CREATE TRIGGER") and "CREATE" in s.upper()
-    ]
-    return ";\n".join(keep) + ";"
+    """The schema's tables and indexes: no triggers, no ``ANALYZE``."""
+    keep: list[str] = []
+    statement = ""
+    for line in path.read_text().splitlines():
+        if not statement and line.lstrip().startswith("--"):
+            continue
+        statement += line + "\n"
+        if sqlite3.complete_statement(statement):
+            head = statement.lstrip().upper()
+            if head.startswith(("CREATE TABLE", "CREATE INDEX", "CREATE UNIQUE INDEX", "CREATE VIEW")):
+                keep.append(statement.strip())
+            statement = ""
+    return "\n".join(keep)
 
 
 class _Writer:
@@ -208,8 +212,10 @@ class _Writer:
             (prefix, GROUP_STYLE if group else DIRECT_STYLE, identifier, service, display_name),
         )
         chat_id = int(cur.lastrowid or 0)
-        self.conn.executemany("INSERT INTO chat_handle_join VALUES (?, ?)", [(chat_id, h) for h in handles])
-        self.conn.execute("INSERT INTO chat_service VALUES (?, ?)", (service, chat_id))
+        self.conn.executemany(
+            "INSERT INTO chat_handle_join (chat_id, handle_id) VALUES (?, ?)", [(chat_id, h) for h in handles]
+        )
+        self.conn.execute("INSERT INTO chat_service (service, chat) VALUES (?, ?)", (service, chat_id))
         return chat_id
 
     def message(
@@ -255,7 +261,10 @@ class _Writer:
             assignments = ", ".join(f"{name} = ?" for name in columns)
             self.conn.execute(f"UPDATE message SET {assignments} WHERE ROWID = ?", (*columns.values(), rowid))
         if chat_id is not None:
-            self.conn.execute("INSERT INTO chat_message_join VALUES (?, ?, ?)", (chat_id, rowid, date))
+            self.conn.execute(
+                "INSERT INTO chat_message_join (chat_id, message_id, message_date) VALUES (?, ?, ?)",
+                (chat_id, rowid, date),
+            )
         return rowid, guid
 
     def attachment(self, message_id: int) -> None:
@@ -265,7 +274,9 @@ class _Writer:
             "VALUES (?, ?, 'public.jpeg', 'image/jpeg', 'IMG_0001.jpeg', 184320, ?)",
             (guid, f"~/Library/Messages/Attachments/00/00/{guid}/IMG_0001.jpeg", guid),
         )
-        self.conn.execute("INSERT INTO message_attachment_join VALUES (?, ?)", (message_id, cur.lastrowid))
+        self.conn.execute(
+            "INSERT INTO message_attachment_join (message_id, attachment_id) VALUES (?, ?)", (message_id, cur.lastrowid)
+        )
         self.conn.execute("UPDATE message SET cache_has_attachments = 1 WHERE ROWID = ?", (message_id,))
 
 
@@ -314,7 +325,7 @@ def build_messages_folder(
         chat_db.unlink()
     conn = sqlite3.connect(chat_db)
     conn.executescript(_schema(CHAT_DB_SCHEMA))
-    conn.execute("INSERT INTO _SqliteDatabaseProperties VALUES ('_ClientVersion', '18000')")
+    conn.execute("INSERT INTO _SqliteDatabaseProperties (key, value) VALUES ('_ClientVersion', '18000')")
     writer = _Writer(conn, rng, start)
     cast = _people(rng, fake, people)
     result = FakeMessages(folder=folder, chat_db=chat_db, people=cast, contacts=[], shared_names={})
