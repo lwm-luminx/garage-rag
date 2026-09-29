@@ -286,11 +286,14 @@ final class IngestService: ObservableObject {
     }
 
     /// Performs ingestion for the given source slug with options, streaming progress back to the UI.
+    /// `namesContacts` is true for a communication source (Mail, Messages): only those are read with
+    /// the names from Contacts, so the Contacts prompt never appears for a folder of documents.
     @discardableResult
     nonisolated func ingest(
         slug: String,
         options: IngestOptions = .default,
-        mode: IngestExecutionMode? = nil
+        mode: IngestExecutionMode? = nil,
+        namesContacts: Bool = false
     ) async -> IngestResult {
         let commandLabel = "Ingest (XPC)"
 
@@ -399,7 +402,7 @@ final class IngestService: ObservableObject {
             }
         }
 
-        let contactNames = await ContactNamesService.namesForIngest()
+        let contactNames = namesContacts ? await ContactNamesService.namesForIngest() : []
         let effectiveOptions = IngestOptions(
             includeCode: options.includeCode,
             limit: options.limit,

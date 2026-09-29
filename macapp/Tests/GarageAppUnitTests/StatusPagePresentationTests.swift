@@ -366,7 +366,7 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(StatusHealth.Fix.applyMigrations.label, "Apply Updates")
         XCTAssertEqual(StatusHealth.Fix.startMCP.label, "Start")
         XCTAssertEqual(StatusHealth.Fix.testMCP.label, "Test Again")
-        XCTAssertEqual(StatusHealth.Fix.chooseDisk.label, "Choose Disk…")
+        XCTAssertEqual(StatusHealth.Fix.chooseDisk.label, "Select Folder…")
         XCTAssertEqual(StatusHealth.Fix.grantFolder(slug: "mail", path: "/Users/rick/Library/Mail").label, "Grant Access…")
         XCTAssertEqual(StatusHealth.Fix.openPrivacySettings.label, "Open Privacy Settings…")
         XCTAssertEqual(StatusHealth.Fix.checkSourceAccess.label, "Check Again")

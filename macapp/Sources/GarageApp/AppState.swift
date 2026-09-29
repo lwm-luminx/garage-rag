@@ -1062,12 +1062,24 @@ final class AppState: ObservableObject {
         if slug == "*" {
             return await ingestAllSources(options: options, mode: mode)
         }
-        let result = await ingestService.ingest(slug: slug, options: options, mode: mode)
+        let result = await ingestService.ingest(
+            slug: slug, options: options, mode: mode, namesContacts: Self.sourceNamesContacts(slug: slug, in: registeredSources)
+        )
         await fetchRegisteredSources()
         await fetchCorpusStats()
         lastCommandSucceeded = result.succeeded
         lastCommandOutput = result.message ?? (result.succeeded ? "Ingestion completed" : "Ingestion failed")
         return result.succeeded
+    }
+
+    /// Whether a source's people are named from Contacts: only communications (Mail, Messages) carry
+    /// handles to name, so only their ingest asks for Contacts access (App Review guideline 5.1.1).
+    static func sourceNamesContacts(_ source: RegisteredSource) -> Bool {
+        source.corpusClass.lowercased() == "communication"
+    }
+
+    static func sourceNamesContacts(slug: String, in sources: [RegisteredSource]) -> Bool {
+        sources.first(where: { $0.slug == slug }).map(sourceNamesContacts) ?? false
     }
 
     /// Ingests all registered sources sequentially, looping over each source and streaming individual progress.
@@ -1122,7 +1134,9 @@ final class AppState: ObservableObject {
                 grpcHost: options.grpcHost,
                 grpcPort: options.grpcPort
             )
-            let result = await ingestService.ingest(slug: source.slug, options: sourceOptions, mode: mode)
+            let result = await ingestService.ingest(
+                slug: source.slug, options: sourceOptions, mode: mode, namesContacts: Self.sourceNamesContacts(source)
+            )
             await fetchRegisteredSources()
             await fetchCorpusStats()
             if !result.succeeded {
