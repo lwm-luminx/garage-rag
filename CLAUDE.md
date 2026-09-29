@@ -545,6 +545,11 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
 - Python 3.14 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
   `>=3.13,<3.15`). Ruff for lint/format (`E,F,I,UP,B,SIM`, 120-col lines); `ty` for type checking.
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
+- After editing `proto/garage.proto`, regenerate the checked-in Python stubs from the venv:
+  `python -m grpc_tools.protoc -I ../proto --python_out=src/garage_rag/proto --grpc_python_out=src/garage_rag/proto ../proto/garage.proto`
+  (in `garage_python/`). Then restore the `try: from . import garage_pb2` relative import in
+  `garage_pb2_grpc.py` and keep its `GRPC_GENERATED_VERSION` at the `grpcio` version in `uv.lock`
+  (the generated check refuses an older runtime). The Swift stubs are built by Bazel from the proto.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail
   tests, don't silently accumulate them.
 - The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and
