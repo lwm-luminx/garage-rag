@@ -153,7 +153,7 @@ final class StatusUITests: GarageUITestCase {
     }
 
     /// The Index Manager row says how it listens: without remote access on its socket, or on its
-    /// port when the socket path is too long for `sun_path` (as it is under a test's data folder in the group container).
+    /// port when the socket path is too long for `sun_path` (as it can be under a test's data folder).
     func testIndexManagerSaysHowItListens() throws {
         try launchApp()
         waitForBackend()
