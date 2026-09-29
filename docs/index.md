@@ -26,6 +26,11 @@ description: Garage indexes your documents, code and messages on your Mac and se
   </div>
 </div>
 
+<figure class="screenshot-figure screenshot-hero">
+  {% include screenshot.html name="mcp-server" alt="Garage for Mac's MCP Server page: Claude Desktop, Claude Code and LM Studio connected, and a question about a sample library answered with its sources" class="screenshot-window" loading="eager" %}
+  <figcaption>Garage for Mac, answering a question about a sample library through its MCP server.</figcaption>
+</figure>
+
 <div class="hero-strip hero-hire">
   <div class="hero-strip-text">
     <strong>👋 Made by Rick Mark-Penwell, and he's available to hire</strong>
@@ -75,6 +80,34 @@ description: Garage indexes your documents, code and messages on your Mac and se
     <h3>Private by construction</h3>
     <p>No cloud AI client in the app. One tested egress choke point with a destination allowlist, and Garage itself never sends your messages off your Mac. <a href="{{ '/support/privacy-policy.html' | relative_url }}">Read the privacy policy →</a></p>
   </div>
+</div>
+
+## A look inside
+
+<div class="screenshot-tour">
+  <figure class="screenshot-figure">
+    <h3>Search that finds the meaning and the exact line</h3>
+    <p>Every result shows how it matched, whether it is yours or someone else's, and the full text beside it.</p>
+    {% include screenshot.html name="search" alt="Search results for 'who kept the lighthouse during the storm', ranked by hybrid search, with the top document's text beside them" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Answers grounded in your own files</h3>
+    <p>Try a question in the app before your assistant does: a local model answers from what search returns, and cites it.</p>
+    {% include screenshot.html name="try-it" alt="Try It on the MCP Server page: the question 'Who kept the Marrowgate lighthouse, and for how long?' answered by a local model, with its source" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Connects to the assistants you already use</h3>
+    <p>Garage finds the MCP clients on your Mac and connects each one with a click.</p>
+    {% include screenshot.html name="assistants" alt="Connected Assistants: Claude Desktop, Claude Code and LM Studio connected, Cursor installed and ready to connect" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Always knows where your library stands</h3>
+    <p>Documents, chunks, embeddings and distilled facts, counted on the Status page.</p>
+    {% include screenshot.html name="library" alt="The Status page's library card: up to date, five documents in one source, indexed with one model, facts gleaned" class="screenshot-detail" %}
+  </figure>
 </div>
 
 ## Where your data goes
