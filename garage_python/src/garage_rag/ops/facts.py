@@ -473,7 +473,7 @@ class ClusterSummary:
         if self.failed:
             text += f", {self.failed} not distilled (model error)"
         if self.withheld:
-            text += f", {self.withheld} not sent (communications stay on this machine)"
+            text += f", {self.withheld} left ungrouped (communications stay on this machine)"
         if self.unembedded:
             text += f"; {self.unembedded:,} facts have no vector yet (run the backfill)"
         return text
@@ -524,6 +524,7 @@ def cluster_facts(
         attach_candidates=settings.fact_cluster_attach_candidates,
         distill_facts=settings.fact_cluster_distill_facts,
         max_pairwise=settings.fact_cluster_max_pairwise,
+        restate_threshold=settings.fact_cluster_restate_threshold,
     )
     distiller = Distiller() if distill else None
     with session_scope() as session:

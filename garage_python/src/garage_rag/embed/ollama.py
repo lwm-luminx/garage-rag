@@ -221,11 +221,12 @@ def backfill_model(
 def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillProgress) -> None:
     """Give every distilled fact a vector in the model's ``fact_emb_`` table.
 
-    Its vector is the centroid of its representatives' vectors under this model
-    (``garage cluster-facts`` writes the clustering model's own, with the
-    group's seed). Nothing is embedded, so nothing leaves the machine; a
-    distilled fact none of whose representatives has a vector here yet waits.
-    Pure insert, like the chunk backfill.
+    Its vector is the normalized centroid of its representatives' vectors under
+    this model (``garage cluster-facts`` writes the clustering model's own, with
+    the group's seed). Nothing is embedded, so nothing leaves the machine; a
+    distilled fact waits until every one of its representatives has a vector
+    here, so its centroid is not skewed toward the ones embedded first. Pure
+    insert, like the chunk backfill.
     """
     table = assert_safe_table(model.table_name)
     fact_table = ensure_fact_table(session, model)
@@ -233,13 +234,14 @@ def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillP
         text(
             f"""
             INSERT INTO {fact_table} (distilled_fact_id, embedding)
-            SELECT f.distilled_fact_id, avg(e.embedding)
+            SELECT f.distilled_fact_id, l2_normalize(avg(e.embedding))
             FROM facts f
             JOIN chunks c ON c.fact_id = f.id
-            JOIN {table} e ON e.chunk_id = c.id
+            LEFT JOIN {table} e ON e.chunk_id = c.id
             WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
               AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = f.distilled_fact_id)
             GROUP BY f.distilled_fact_id
+            HAVING count(e.chunk_id) = count(*)
             ON CONFLICT (distilled_fact_id) DO NOTHING
             RETURNING distilled_fact_id
             """

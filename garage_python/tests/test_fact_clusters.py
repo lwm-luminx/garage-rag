@@ -33,6 +33,7 @@ from garage_rag.enrich.clusters import (
     parse_distill_reply,
     parse_vector,
     representative,
+    tight_radius,
     variability,
     vector_literal,
 )
@@ -167,6 +168,11 @@ class TestDocumentRestatements:
         sims = {pair(1, 2): 0.93, pair(2, 5): 0.2, pair(1, 5): 0.2}
         assert document_restatements([1, 2, 5], self.TEXTS, sims, 0.9) == {2: (1, 0.93)}
 
+    def test_a_same_text_twin_without_a_vector_joins_its_twins_group(self) -> None:
+        # 3 has no vector; it stands where 1 does, so {1, 3} and 2 still average above the threshold.
+        sims = {pair(1, 2): 0.93}
+        assert document_restatements([1, 2, 3], self.TEXTS, sims, 0.9) == {2: (1, 0.93), 3: (1, 1.0)}
+
     def test_the_guard_keeps_a_negation_apart(self) -> None:
         sims = {pair(2, 4): 0.97}
         assert document_restatements([2, 4], self.TEXTS, sims, 0.9) == {}
@@ -216,8 +222,19 @@ class TestAttach:
         # the seed: one more step the same way goes too far.
         seed = _unit(1, 0)
         centroid = _unit(1, 0.35)
-        assert attach_ok(_unit(1, 0.7), centroid, seed, 1, threshold=0.9, max_drift=0.1) is None
-        assert attach_ok(_unit(1, 0.7), centroid, seed, 1, threshold=0.9, max_drift=0.5) is not None
+        assert attach_ok(_unit(1, 0.7), centroid, seed, 1, threshold=0.8, max_drift=0.1) is None
+        assert attach_ok(_unit(1, 0.7), centroid, seed, 1, threshold=0.8, max_drift=0.5) is not None
+
+    def test_it_must_be_close_to_the_seed_too(self) -> None:
+        # 0.96 similar to a drifted centroid, but only 0.82 to the seed.
+        seed = _unit(1, 0)
+        assert attach_ok(_unit(1, 0.7), _unit(1, 0.35), seed, 1, threshold=0.9, max_drift=0.5) is None
+
+    def test_a_batch_is_judged_against_its_anchor(self) -> None:
+        seed = _unit(1, 0)
+        moved = _unit(1, 0.3)
+        assert attach_ok(_unit(1, 0.35), moved, seed, 1, threshold=0.99, max_drift=0.5, anchor=seed) is None
+        assert attach_ok(_unit(1, 0.05), moved, seed, 1, threshold=0.99, max_drift=0.5, anchor=seed) is not None
 
 
 class TestGrowGroup:
@@ -231,7 +248,7 @@ class TestGrowGroup:
         return {i: [math.cos(a), math.sin(a)] for i, a in self.ANGLES.items()}
 
     def knn(self, vectors: dict[int, list[float]]):
-        def nearest(centroid: list[float]) -> list[int]:
+        def nearest(centroid: list[float], members: int) -> list[int]:
             return sorted(vectors, key=lambda i: -cosine(vectors[i], centroid))
 
         return nearest
@@ -255,6 +272,20 @@ class TestGrowGroup:
         )
         assert sorted(grown.members) == [1, 4]
 
+    def test_a_large_group_asks_past_its_own_members(self) -> None:
+        import math
+
+        vectors = {i: [math.cos(i * 1e-3), math.sin(i * 1e-3)] for i in range(1, 121)}
+        asked: list[int] = []
+
+        def nearest(centroid: list[float], members: int) -> list[int]:
+            asked.append(members)
+            return sorted(vectors, key=lambda i: -cosine(vectors[i], centroid))[: members + 50]
+
+        grown = grow_group([1], vectors, lambda _: "same", nearest, set(), threshold=0.99, max_drift=0.01, rounds=4)
+        assert len(grown.members) == 120
+        assert asked[0] == 1 and asked[1] > 50
+
     def test_a_tight_drift_cap_keeps_the_group_small(self) -> None:
         vectors = self.vectors()
         grown = grow_group([1], vectors, lambda _: "same", self.knn(vectors), set(), threshold=0.95, max_drift=5e-4)
@@ -262,10 +293,27 @@ class TestGrowGroup:
 
 
 class TestTiers:
+    def test_the_tight_radius_follows_group_size(self) -> None:
+        assert tight_radius(2, 0.97) == pytest.approx(1 - (0.985**0.5))
+        assert tight_radius(2, 0.97) < tight_radius(10, 0.97) < 1 - 0.97**0.5
+
     def test_needs_model(self) -> None:
-        assert not needs_model(0.02, 0.97)
-        assert needs_model(0.05, 0.97)
-        assert needs_model(0.001, 1.0)
+        # A pair at the 0.9 threshold sits 0.025 from its centroid: loose, so the model is asked.
+        pair_at = lambda s: 1 - ((1 + s) / 2) ** 0.5  # noqa: E731
+        assert needs_model(pair_at(0.90), 2, 0.97)
+        assert not needs_model(pair_at(0.98), 2, 0.97)
+        assert needs_model(0.02, 10, 0.97)
+        assert needs_model(0.0, 2, 1.0)
+
+
+class TestRefusals:
+    def test_a_binary_quantized_model_does_not_cluster(self) -> None:
+        from garage_rag.enrich.clusters import cluster_facts
+
+        model = MagicMock(index_kind="hnsw_bq", slug="huge")
+        params = ClusterParams(threshold=0.9, neighbors=10, seed_threshold=0.95, max_drift=0.05, tight_similarity=0.97)
+        with pytest.raises(ValueError, match="binary-quantized"):
+            cluster_facts(MagicMock(), model, params)
 
 
 class TestParams:
@@ -289,6 +337,16 @@ class TestParams:
             ).corpus_key()
         )
         assert base.document_key("bge-m3") == "bge-m3;t=0.9"
+        restating = ClusterParams(
+            threshold=0.9,
+            neighbors=10,
+            seed_threshold=0.95,
+            max_drift=0.05,
+            tight_similarity=0.97,
+            restate_threshold=0.92,
+        )
+        assert restating.document_key("bge-m3") == "bge-m3;t=0.92"
+        assert restating.corpus_key() == base.corpus_key()
 
     def test_progress_messages(self) -> None:
         assert ClusterProgress(phase="grow", candidates=3).message == "growing groups: 3"

@@ -9,11 +9,12 @@ unless named) and dedups in two levels
 
 **Level 1, per document.** A document's facts of one class are compared pair by
 pair (tens to hundreds of them: exact, no index). Facts with the same normalized
-text, or whose cosine similarity clears the threshold, are grouped by average
-linkage behind the guard below, and every member but the representative (the
-longest) points at it (``facts.restates_fact_id``). A restatement is kept
+text, or whose cosine similarity clears ``restate_threshold``, are grouped by
+average linkage behind the guard below, and every member but the representative
+(the longest) points at it (``facts.restates_fact_id``). A restatement is kept
 verbatim and backs whatever its representative backs. A document is looked at
-again only when one of its facts gains a vector.
+again only when one of its facts gains a vector, and then only the facts whose
+standing changed are placed afresh.
 
 **Level 2, per corpus.** The representatives (the *nodes*) are grouped into
 distilled facts:
@@ -22,14 +23,18 @@ distilled facts:
   each node's nearest neighbours, then takes nodes densest first as seeds. A
   seed's *core* is itself and its neighbours at ``seed_threshold`` or closer;
   their mean is the group's ``seed``. The group grows by nearest neighbours of
-  its centroid, nearest first: a candidate joins while its similarity to the
-  centroid clears ``threshold`` and the centroid it makes stays within
-  ``max_drift`` of the seed, and growth stops at the first that does not
+  its centroid, nearest first: a candidate joins while it is ``threshold``
+  similar to the centroid and to the seed and the centroid it makes stays
+  within ``max_drift`` of the seed, and growth stops at the first that does not
   (:func:`grow_group`). Growth repeats from the new centroid until it settles.
+  A group found again with the same nodes keeps its row (and id, statement and
+  vectors); so does a fact that stays alone.
 * An incremental run (the default) refreshes the groups that lost nodes, then
-  attaches each new node to the nearest distilled fact whose centroid passes
-  the same two tests, or makes it a distilled fact of its own that later nodes
-  can join (:func:`attach_ok`).
+  attaches each new node to the nearest distilled fact that passes the same
+  tests, or makes it a distilled fact of its own that later nodes can join
+  (:func:`attach_ok`). It never merges two existing groups, and its groups
+  can differ from the ones a full run would grow; after the corpus has grown
+  by a large share, ``--full`` regroups it.
 
 Two things keep a group honest where embeddings are not:
 
@@ -38,18 +43,22 @@ Two things keep a group honest where embeddings are not:
   differ in numbers, dates or negation are never grouped (:func:`claim_signature`).
 * **The local model.** Each group records how varied it is: ``spread`` (mean
   cosine distance of its nodes to the centroid), ``radius`` (the largest) and
-  ``drift`` (centroid from seed). A group tighter than ``tight_similarity`` is
+  ``drift`` (centroid from seed). A group whose farthest node is as close as
+  nodes all ``tight_similarity`` alike would be (:func:`tight_radius`) is
   accepted as it is; any other is shown to the local chat model
   (:class:`~garage_rag.enrich.generation.LocalChatModel`), which answers
   whether the facts state one claim and, if so, states it once
   (``statement_generated``). A group with a communication among its members
-  is only sent to a loopback model; like a group no model was asked about, it
-  is stated by its representative's text.
+  is only sent to a loopback model; when the model is elsewhere such a group
+  is not kept, and its facts stay apart. Run without a model, every group is
+  kept and stated by its representative's text.
 
 Potential facts are never changed: they are only linked. A distilled fact's
 vector in the clustering model's ``fact_emb_`` table is its centroid (with its
-``seed``); ``garage backfill`` gives it one under every other model, the mean
-of its nodes' vectors there.
+``seed``), normalized; ``garage backfill`` gives it one under every other model,
+the normalized mean of its nodes' vectors there once every node has one. A
+binary-quantized model cannot be the clustering model: its index does not
+serve the neighbour queries.
 """
 
 from __future__ import annotations
@@ -290,9 +299,21 @@ def document_restatements(
     for fact_id in ids:
         by_text.setdefault(normalize_fact(texts[fact_id]), []).append(fact_id)
     for same in by_text.values():
+        if len(same) < 2:
+            continue
+        # Facts with the same text are one point: each takes the others' similarities,
+        # so one with no vector yet does not pull its group's average down.
+        members = set(same)
+        best: dict[int, float] = {}
+        for (a, b), sim in similarity.items():
+            for inside, outside in ((a, b), (b, a)):
+                if inside in members and outside not in members:
+                    best[outside] = max(best.get(outside, 0.0), sim)
         for i, a in enumerate(same):
             for b in same[i + 1 :]:
                 sims[pair(a, b)] = 1.0
+            for outside, sim in best.items():
+                sims[pair(a, outside)] = max(sims.get(pair(a, outside), 0.0), sim)
     edges = [p for p, s in sims.items() if s >= threshold]
     restates: dict[int, tuple[int, float]] = {}
     for group in connected_groups(ids, edges):
@@ -330,6 +351,12 @@ def cosine(a: Sequence[float], b: Sequence[float]) -> float:
     return dot / norm if norm else 0.0
 
 
+def normalized(vector: Sequence[float]) -> Vector:
+    """``vector`` scaled to unit length (a zero vector stays as it is)."""
+    norm = math.sqrt(sum(x * x for x in vector))
+    return [x / norm for x in vector] if norm else list(vector)
+
+
 def added(centroid: Sequence[float], count: int, vector: Sequence[float]) -> Vector:
     """The centroid of ``count`` vectors averaging ``centroid``, with ``vector`` added."""
     return [(c * count + v) / (count + 1) for c, v in zip(centroid, vector, strict=True)]
@@ -361,14 +388,18 @@ def attach_ok(
     *,
     threshold: float,
     max_drift: float,
+    anchor: Sequence[float] | None = None,
 ) -> tuple[float, Vector] | None:
     """``(similarity, new centroid)`` if ``vector`` may join a group of ``count`` at ``centroid``, else None.
 
-    It may when it is at least ``threshold`` similar to the centroid and the
-    centroid it makes stays within ``max_drift`` of the group's ``seed``.
+    It may when it is at least ``threshold`` similar to the centroid (or to
+    ``anchor``, the centroid a batch of candidates was fetched around, so a
+    batch is judged against one point) and to the group's ``seed``, and the
+    centroid it makes stays within ``max_drift`` of the seed. The seed test
+    keeps a fact from joining at the far side of a drifted centroid.
     """
-    similarity = cosine(vector, centroid)
-    if similarity < threshold:
+    similarity = cosine(vector, centroid if anchor is None else anchor)
+    if similarity < threshold or cosine(vector, seed) < threshold:
         return None
     moved = added(centroid, count, vector)
     if 1.0 - cosine(moved, seed) > max_drift:
@@ -387,7 +418,7 @@ def grow_group(
     core: Sequence[int],
     vectors: dict[int, Vector],
     signature: Callable[[int], ClaimSignature],
-    knn: Callable[[Vector], Sequence[int]],
+    knn: Callable[[Vector, int], Sequence[int]],
     taken: set[int],
     *,
     threshold: float,
@@ -396,12 +427,15 @@ def grow_group(
 ) -> Grown:
     """Grow a group from ``core`` (its seed first) until its centroid settles.
 
-    ``knn(centroid)`` returns candidate nodes nearest first, with their vectors
-    in ``vectors``. Candidates in ``taken`` (other groups) or with another
-    claim signature are passed over; the walk stops at the first candidate
-    :func:`attach_ok` refuses, since every later one is further away. Members
-    that the settled centroid has left below ``threshold`` are let go (never the
-    seed fact itself).
+    ``knn(centroid, members)`` returns candidate nodes nearest first, with their
+    vectors in ``vectors``; ``members`` is how many of them will be the group's
+    own, which the caller fetches beyond so a large group still sees new
+    candidates. Candidates in ``taken`` (other groups) or with another claim
+    signature are passed over. Each round judges its candidates against the
+    centroid they were fetched around, so the walk can stop at the first one
+    :func:`attach_ok` refuses: every later one is further away. Members that the
+    settled centroid has left below ``threshold`` are let go (never the seed
+    fact itself).
     """
     members = list(core)
     seed = mean_vector([vectors[m] for m in members])
@@ -409,11 +443,18 @@ def grow_group(
     wanted = signature(members[0])
     for _ in range(rounds):
         changed = False
-        for candidate in knn(centroid):
+        anchor = centroid
+        for candidate in knn(anchor, len(members)):
             if candidate in taken or candidate in members or signature(candidate) != wanted:
                 continue
             accepted = attach_ok(
-                vectors[candidate], centroid, seed, len(members), threshold=threshold, max_drift=max_drift
+                vectors[candidate],
+                centroid,
+                seed,
+                len(members),
+                threshold=threshold,
+                max_drift=max_drift,
+                anchor=anchor,
             )
             if accepted is None:
                 break
@@ -430,9 +471,25 @@ def grow_group(
     return Grown(members=members, seed=seed, centroid=centroid)
 
 
-def needs_model(spread: float, tight_similarity: float) -> bool:
-    """Whether a group is loose enough that the local model should confirm it."""
-    return spread > 1.0 - tight_similarity
+def tight_radius(nodes: int, tight_similarity: float) -> float:
+    """The largest distance to the centroid a group of ``nodes`` may have and still count as tight.
+
+    ``tight_similarity`` is a pairwise similarity. ``nodes`` unit vectors that
+    are all ``t`` similar in pairs sit ``sqrt((1 + (nodes - 1) t) / nodes)``
+    similar to their centroid, so the cap depends on the group's size: a pair at
+    0.97 is 0.0075 from its centroid, a large group at 0.97 nearly 0.015.
+    """
+    t = max(-1.0, min(1.0, tight_similarity))
+    return 1.0 - math.sqrt(max(0.0, (1.0 + (nodes - 1) * t) / nodes))
+
+
+def needs_model(radius: float, nodes: int, tight_similarity: float) -> bool:
+    """Whether a group is loose enough that the local model should confirm it.
+
+    Judged by ``radius``, its farthest node from the centroid, against
+    :func:`tight_radius`: a group is tight only if its worst member is.
+    """
+    return tight_similarity >= 1.0 or radius > tight_radius(nodes, tight_similarity)
 
 
 # ---------------------------------------------------------------------------
@@ -522,9 +579,15 @@ class ClusterParams:
     attach_candidates: int = ATTACH_CANDIDATES
     distill_facts: int = MAX_DISTILL_FACTS
     max_pairwise: int = MAX_PAIRWISE
+    # Level 1's own threshold (no model confirms a restatement); None: ``threshold``.
+    restate_threshold: float | None = None
+
+    @property
+    def restate(self) -> float:
+        return self.threshold if self.restate_threshold is None else self.restate_threshold
 
     def document_key(self, slug: str) -> str:
-        return f"{slug};t={self.threshold:g}"
+        return f"{slug};t={self.restate:g}"
 
     def corpus_key(self) -> str:
         # What shapes the groups; a change regroups the corpus. The rest only
@@ -718,15 +781,6 @@ class _Pass:
                     {"key": key},
                 ).all()
             ]
-            if docs:
-                # Their facts are placed afresh at level 2.
-                self.session.execute(
-                    text(
-                        "UPDATE facts SET distilled_fact_id = NULL, distilled_similarity = NULL"
-                        " WHERE document_id = ANY(CAST(:docs AS bigint[]))"
-                    ),
-                    {"docs": docs},
-                )
         by_doc: dict[int, list[int]] = {}
         for fid, doc in self.document.items():
             by_doc.setdefault(doc, []).append(fid)
@@ -751,14 +805,25 @@ class _Pass:
             """
         )
         link = text("UPDATE facts SET restates_fact_id = :rep, restates_similarity = :similarity WHERE id = :id")
+        restating = text(
+            "SELECT id FROM facts WHERE document_id = ANY(CAST(:docs AS bigint[])) AND restates_similarity IS NOT NULL"
+        )
+        # A restatement that stands on its own again is placed afresh at level 2;
+        # every other fact keeps its distilled fact (a representative that became
+        # a restatement leaves its group, which the refresh re-centres).
+        detach = text(
+            "UPDATE facts SET distilled_fact_id = NULL, distilled_similarity = NULL"
+            " WHERE id = ANY(CAST(:ids AS bigint[]))"
+        )
         for start in range(0, len(docs), DOCUMENT_BATCH):
             batch = docs[start : start + DOCUMENT_BATCH]
             # Above-threshold pairs, by document and class.
             found: dict[tuple[int, str], dict[tuple[int, int], float]] = {}
-            for a, b, sim in self.session.execute(above, {"docs": batch, "threshold": self.params.threshold}).all():
+            for a, b, sim in self.session.execute(above, {"docs": batch, "threshold": self.params.restate}).all():
                 a, b = int(a), int(b)
                 found.setdefault((self.document[a], self.fact_class[a]), {})[pair(a, b)] = float(sim)
             links: list[dict[str, object]] = []
+            linked: set[int] = set()
             for doc in batch:
                 by_class: dict[str, list[int]] = {}
                 for fid in by_doc.get(doc, []):
@@ -771,11 +836,16 @@ class _Pass:
                         if 2 < len(group) <= self.params.max_pairwise:
                             for a, b, sim in self.session.execute(pairwise, {"ids": group}).all():
                                 sims[pair(int(a), int(b))] = float(sim)
-                    for fid, (rep, sim) in document_restatements(ids, self.texts, sims, self.params.threshold).items():
+                    for fid, (rep, sim) in document_restatements(ids, self.texts, sims, self.params.restate).items():
                         links.append({"id": fid, "rep": rep, "similarity": sim})
+                        linked.add(fid)
+            was = {int(i) for (i,) in self.session.execute(restating, {"docs": batch}).all()}
             self.session.execute(reset, {"docs": batch, "key": key})
             if links:
                 self.session.execute(link, links)
+            freed = sorted(was - linked)
+            if freed and not full:
+                self.session.execute(detach, {"ids": freed})
             self.state.documents += len(batch)
             self.report("documents")
         self.state.restatements = int(
@@ -784,10 +854,11 @@ class _Pass:
 
     # -- level 2: deciding and writing groups ----------------------------------
 
-    def confirm(self, members: Sequence[int], centroid: Vector, spread: float) -> _Statement | None:
-        """How a group is stated, or None when the model says its members state different claims."""
+    def confirm(self, members: Sequence[int], centroid: Vector, var: Variability) -> _Statement | None:
+        """How a group is stated, or None when it is not kept: the model says its members
+        state different claims, or it needs the model and its facts may not go to it."""
         stated = _Statement(self.texts[representative(members, self.texts)], False, None)
-        if not needs_model(spread, self.params.tight_similarity):
+        if not needs_model(var.radius, len(members), self.params.tight_similarity):
             self.state.accepted += 1
             return stated
         if self.distiller is None:
@@ -795,8 +866,10 @@ class _Pass:
         shown = sorted(members, key=lambda m: (-cosine(self.vectors[m], centroid), m))[: self.params.distill_facts]
         self.state.distilled += 1
         if not self.distiller.may_send(self.corpus_class[m] for m in shown):
+            # A communication may not go to this model, and a loose group is not
+            # kept unconfirmed: its facts stay apart.
             self.state.withheld += 1
-            return stated
+            return None
         try:
             same, statement = self.distiller.distill([self.texts[m] for m in shown])
         except Exception as exc:  # noqa: BLE001 - counted; the group stays, stated by its representative
@@ -846,7 +919,7 @@ class _Pass:
                 f"INSERT INTO {self.fact_table} (distilled_fact_id, embedding, seed)"
                 f" VALUES (:id, {self.cast('centroid')}, {self.cast('seed')})"
             ),
-            {"id": did, "centroid": vector_literal(centroid), "seed": vector_literal(seed)},
+            {"id": did, "centroid": vector_literal(normalized(centroid)), "seed": vector_literal(normalized(seed))},
         )
         self.link(did, members, centroid)
         return int(did)
@@ -922,16 +995,20 @@ class _Pass:
     # -- level 2: a full run ----------------------------------------------------
 
     def regroup(self) -> None:
+        # A group found again with the same nodes keeps its row: its id, its
+        # statement and every model's vector. Single facts keep theirs in finish().
         previous = {
-            bytes(sha): _Statement(statement, bool(generated), distill_model)
-            for sha, statement, generated, distill_model in self.session.execute(
-                text(
-                    "SELECT members_sha256, statement, statement_generated, distill_model"
-                    " FROM distilled_facts WHERE model_slug IS NOT NULL"
-                )
+            bytes(sha): int(did)
+            for did, sha in self.session.execute(
+                text("SELECT id, members_sha256 FROM distilled_facts WHERE model_slug IS NOT NULL")
             ).all()
         }
-        self.session.execute(text("DELETE FROM distilled_facts"))
+        self.session.execute(
+            text(
+                "UPDATE facts SET distilled_fact_id = NULL, distilled_similarity = NULL"
+                " WHERE distilled_fact_id IS NOT NULL"
+            )
+        )
 
         nodes = self.nodes()
         self.state.nodes = len(nodes)
@@ -972,8 +1049,8 @@ class _Pass:
                 core,
                 self.vectors,
                 self.signature,
-                lambda centroid, fact_class=fact_class: self.knn_nodes(
-                    centroid, fact_class, self.params.growth_neighbors
+                lambda centroid, members, fact_class=fact_class: self.knn_nodes(
+                    centroid, fact_class, members + self.params.growth_neighbors
                 ),
                 taken,
                 threshold=self.params.threshold,
@@ -989,19 +1066,41 @@ class _Pass:
         self.state.to_distill = len(grown)
         for group in grown:
             members = sorted(group.members)
-            spread = variability([self.vectors[m] for m in members], group.centroid, group.seed).spread
-            statement = previous.get(members_sha256(members))
-            if statement is not None:
+            var = variability([self.vectors[m] for m in members], group.centroid, group.seed)
+            did = previous.get(members_sha256(members))
+            if did is not None:
                 self.state.kept += 1
-            else:
-                statement = self.confirm(members, group.centroid, spread)
+                self.update_group(did, members, group.centroid, group.seed, var)
+                continue
+            statement = self.confirm(members, group.centroid, var)
             if statement is not None:
                 self.write_group(members, group.centroid, group.seed, statement)
+        # Nodes left alone become single distilled facts in finish(), in SQL.
+        self.vectors.clear()
 
-        for fact_id in nodes:
-            if fact_id not in taken:
-                self.load_vectors([fact_id])
-                self.write_single(fact_id)
+    def update_group(self, did: int, members: Sequence[int], centroid: Vector, seed: Vector, var: Variability) -> None:
+        """Re-record a group found again with the same nodes; its statement stands."""
+        self.session.execute(
+            text(
+                """
+                UPDATE distilled_facts SET representative_fact_id = :rep, model_slug = :slug, threshold = :threshold,
+                                           nodes = :nodes, spread = :spread, drift = :drift, radius = :radius
+                WHERE id = :id
+                """
+            ),
+            {
+                "id": did,
+                "rep": representative(members, self.texts),
+                "slug": self.model.slug,
+                "threshold": self.params.threshold,
+                "nodes": len(members),
+                "spread": var.spread,
+                "drift": var.drift,
+                "radius": var.radius,
+            },
+        )
+        self.upsert_vector(did, centroid, seed)
+        self.link(did, members, centroid)
 
     # -- level 2: an incremental run ---------------------------------------------
 
@@ -1084,7 +1183,7 @@ class _Pass:
                     SET embedding = EXCLUDED.embedding, seed = EXCLUDED.seed, embedded_at = now()
                 """
             ),
-            {"id": did, "centroid": vector_literal(centroid), "seed": vector_literal(seed)},
+            {"id": did, "centroid": vector_literal(normalized(centroid)), "seed": vector_literal(normalized(seed))},
         )
 
     def place(self) -> None:
@@ -1115,7 +1214,7 @@ class _Pass:
         self.load_vectors(new)
         candidates = text(
             f"""
-            SELECT fe.distilled_fact_id, fe.embedding::text, fe.seed::text, df.representative_fact_id
+            SELECT fe.distilled_fact_id, fe.seed::text, df.representative_fact_id
             FROM {self.fact_table} fe JOIN distilled_facts df ON df.id = fe.distilled_fact_id
             WHERE df.fact_class = :fact_class AND fe.seed IS NOT NULL
             ORDER BY fe.embedding {self.op} {self.cast("v")}
@@ -1126,7 +1225,7 @@ class _Pass:
         for fact_id in new:
             vector = self.vectors[fact_id]
             placed = False
-            for did, centroid, seed, rep in self.session.execute(
+            for did, seed, rep in self.session.execute(
                 candidates,
                 {
                     "fact_class": self.fact_class[fact_id],
@@ -1136,10 +1235,15 @@ class _Pass:
             ).all():
                 if rep is None or self.signature(int(rep)) != self.signature(fact_id):
                     continue
+                # The stored centroid is normalized; the group's own mean is what a node moves.
                 members = [int(m) for (m,) in self.session.execute(group_nodes, {"id": did}).all()]
+                self.load_vectors(members)
+                members = [m for m in members if m in self.vectors]
+                if not members:
+                    continue
                 accepted = attach_ok(
                     vector,
-                    parse_vector(centroid),
+                    mean_vector([self.vectors[m] for m in members]),
                     parse_vector(seed),
                     len(members),
                     threshold=self.params.threshold,
@@ -1147,11 +1251,10 @@ class _Pass:
                 )
                 if accepted is None:
                     continue
-                self.load_vectors(members)
                 members = sorted([*members, fact_id])
                 moved, seed_vector = accepted[1], parse_vector(seed)
                 var = variability([self.vectors[m] for m in members], moved, seed_vector)
-                statement = self.confirm(members, moved, var.spread)
+                statement = self.confirm(members, moved, var)
                 if statement is None:
                     continue
                 self.join(int(did), members, moved, seed_vector, var, statement)
@@ -1208,23 +1311,42 @@ class _Pass:
     # -- both ------------------------------------------------------------------------
 
     def finish(self) -> None:
-        # Representatives with no vector here stand alone until they have one.
+        # Every representative in no group stands alone: in the single distilled
+        # fact it already had (a full run keeps its id), else in a new one.
+        relink = text(
+            """
+            UPDATE facts f SET distilled_fact_id = df.id, distilled_similarity = NULL
+            FROM distilled_facts df
+            WHERE f.distilled_fact_id IS NULL AND f.restates_fact_id IS NULL
+              AND df.model_slug IS NULL AND df.representative_fact_id = f.id
+            """
+        )
+        self.session.execute(relink)
         self.session.execute(
             text(
                 """
-                INSERT INTO distilled_facts (fact_class, statement, representative_fact_id, members_sha256, nodes)
-                SELECT f.fact_class, f.fact, f.id, sha256(convert_to(f.id::text, 'UTF8')), 1
+                INSERT INTO distilled_facts (fact_class, statement, representative_fact_id, members_sha256,
+                                             nodes, spread, drift, radius)
+                SELECT f.fact_class, f.fact, f.id, sha256(convert_to(f.id::text, 'UTF8')), 1, 0, 0, 0
                 FROM facts f WHERE f.distilled_fact_id IS NULL AND f.restates_fact_id IS NULL
                 """
             )
         )
+        self.session.execute(relink)
+        # A single fact with a vector here is a centroid later facts can join.
         self.session.execute(
             text(
-                """
-                UPDATE facts f SET distilled_fact_id = df.id, distilled_similarity = NULL
+                f"""
+                INSERT INTO {self.fact_table} AS fe (distilled_fact_id, embedding, seed)
+                SELECT df.id, e.embedding, e.embedding
                 FROM distilled_facts df
-                WHERE f.distilled_fact_id IS NULL AND f.restates_fact_id IS NULL
-                  AND df.model_slug IS NULL AND df.representative_fact_id = f.id
+                JOIN chunks c ON c.fact_id = df.representative_fact_id
+                JOIN {self.table} e ON e.chunk_id = c.id
+                WHERE df.model_slug IS NULL
+                  AND NOT EXISTS (SELECT 1 FROM {self.fact_table} x WHERE x.distilled_fact_id = df.id
+                                                                      AND x.seed IS NOT NULL)
+                ON CONFLICT (distilled_fact_id) DO UPDATE SET embedding = EXCLUDED.embedding, seed = EXCLUDED.seed
+                WHERE fe.seed IS NULL
                 """
             )
         )
@@ -1323,6 +1445,9 @@ def cluster_facts(
     representative's text. Commits once, at the end; potential facts are only
     re-linked, never changed.
     """
+    if model.index_kind == "hnsw_bq":
+        # Its index holds a quantization, so every neighbour query would be an exact scan of the corpus.
+        raise ValueError(f"{model.slug} is binary-quantized; cluster facts under a model with an HNSW index")
     run = _Pass(session, model, params, distiller, progress)
     run.state.full = full or run.needs_full_run()
     run.load_facts()

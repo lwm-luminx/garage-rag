@@ -293,6 +293,11 @@
           "description": "Cosine similarity two facts' vectors must reach, under the default embedding model, for 'garage cluster-facts' to consider them the same claim. Paraphrases of a short sentence sit around 0.9 and up on the bge/nomic family; raise it if unrelated facts are grouped, lower it if restatements are missed.",
           "default": 0.9
         },
+        "cluster_restate_threshold": {
+          "type": "number",
+          "description": "Cosine similarity two facts of one document must reach for 'garage cluster-facts' to treat one as a restatement of the other. No model confirms these, so it is a little stricter than cluster_threshold; facts with the same text always count.",
+          "default": 0.92
+        },
         "cluster_neighbors": {
           "type": "integer",
           "description": "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for restatements of it. More finds larger groups at the cost of a slower run.",
@@ -310,7 +315,7 @@
         },
         "cluster_tight_similarity": {
           "type": "number",
-          "description": "A group whose facts are this similar to its centroid on average is kept by 'garage cluster-facts' without asking the local chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks the model about every group.",
+          "description": "Cosine similarity every pair of a group's facts must reach, as judged by its farthest fact from the centroid, for 'garage cluster-facts' to keep the group without asking the local chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks the model about every group.",
           "default": 0.97
         },
         "cluster_growth_neighbors": {

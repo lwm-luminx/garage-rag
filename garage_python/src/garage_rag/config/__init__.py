@@ -488,6 +488,16 @@ class Settings(BaseModel):
             "are grouped, lower it if restatements are missed."
         ),
     )
+    fact_cluster_restate_threshold: float = Field(
+        default=0.92,
+        ge=0.5,
+        le=1.0,
+        description=(
+            "Cosine similarity two facts of one document must reach for 'garage cluster-facts' to treat "
+            "one as a restatement of the other. No model confirms these, so it is a little stricter "
+            "than cluster_threshold; facts with the same text always count."
+        ),
+    )
     fact_cluster_neighbors: int = Field(
         default=10,
         ge=2,
@@ -522,9 +532,10 @@ class Settings(BaseModel):
         ge=0.5,
         le=1.0,
         description=(
-            "A group whose facts are this similar to its centroid on average is kept by "
-            "'garage cluster-facts' without asking the local chat model; a looser one is shown to the "
-            "model, which confirms it states one claim. 1 asks the model about every group."
+            "Cosine similarity every pair of a group's facts must reach, as judged by its farthest fact "
+            "from the centroid, for 'garage cluster-facts' to keep the group without asking the local "
+            "chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks "
+            "the model about every group."
         ),
     )
     fact_cluster_growth_neighbors: int = Field(
@@ -670,6 +681,7 @@ SECTIONS: dict[str, dict[str, str]] = {
         "provider": "fact_provider",
         "prompts": "fact_prompts",
         "cluster_threshold": "fact_cluster_threshold",
+        "cluster_restate_threshold": "fact_cluster_restate_threshold",
         "cluster_neighbors": "fact_cluster_neighbors",
         "cluster_seed_threshold": "fact_cluster_seed_threshold",
         "cluster_max_drift": "fact_cluster_max_drift",
