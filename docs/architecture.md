@@ -278,6 +278,15 @@ graph `garage` (`garage graph rebuild` does only that). The vertices are
 representative to its Fact). Vertices carry the relational ids; text,
 spans and vectors stay in the tables.
 
+The app's Graph page reads it back: the labels with counts (its filters), a
+search of titles, names, facts and statements to pick a starting vertex, and
+that vertex's neighbourhood a few hops out, drawn with one ring per hop
+(`GetGraphLabels`, `FindGraphVertices`, `GetGraphNeighborhood`; the same
+functions behind `garage graph labels|find|neighbors`). The reads go over AGE's
+label tables with bound parameters rather than through `cypher()`, and take
+their labels from the catalog, so a label added later (a `RESTATES` edge) shows
+up in the page without a change to it.
+
 ### 8. Search (`search/hybrid.py`)
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200

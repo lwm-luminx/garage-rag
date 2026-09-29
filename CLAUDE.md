@@ -280,7 +280,13 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
     clustering model's centroid and `seed`, and under other models the mean the backfill writes.
   - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
-    PotentialFact and Fact vertices into the graph `garage`.
+    PotentialFact and Fact vertices into the graph `garage`. The same module reads it back over
+    AGE's label tables with bound parameters, never Cypher built from input: labels with counts, a
+    title search and a breadth-first neighbourhood walk with label filters (`GetGraphLabels`,
+    `FindGraphVertices`, `GetGraphNeighborhood`; `garage graph labels|find|neighbors`). Labels come
+    from the catalog, so a new edge label needs no change there. The app's Graph page
+    (`Views/GraphView.swift`, radial layout in `GraphLayout.swift`) draws one vertex's
+    neighbourhood; the Facts and Documents pages link into it with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model
@@ -507,7 +513,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   goes through the same `AppState.addSource` / `registerModel` / `setFactsModel` operations and
   `GarageMCPService` registration as the Sources, Models and MCP pages.
 - The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
-  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Search) and Advanced
+  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Graph, Search) and Advanced
   (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.

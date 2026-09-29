@@ -1,0 +1,114 @@
+import SwiftUI
+
+// The Graph page's wording and colours as plain values, so they can be tested without a window:
+// how each label is named and coloured, and what the page says when there is nothing to draw.
+
+/// How a vertex or edge label reads and looks.
+struct GraphLabelStyle: Equatable {
+    /// The label as a heading: "Potential fact", "Supports".
+    let name: String
+    let tint: Color
+    /// The SF Symbol for the label's vertices; edges have none.
+    let symbol: String?
+
+    /// The style for a vertex label; one the app does not know gets a neutral style and its own name.
+    static func vertex(_ label: String) -> GraphLabelStyle {
+        switch label {
+        case "Document": GraphLabelStyle(name: "Document", tint: .blue, symbol: "doc.text")
+        case "Chunk": GraphLabelStyle(name: "Chunk", tint: .teal, symbol: "text.alignleft")
+        case "Author": GraphLabelStyle(name: "Author", tint: .green, symbol: "person")
+        case "PotentialFact": GraphLabelStyle(name: "Potential fact", tint: .orange, symbol: "lightbulb")
+        case "Fact": GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill")
+        default: GraphLabelStyle(name: humanize(label), tint: .gray, symbol: "circle")
+        }
+    }
+
+    /// The style for an edge label.
+    static func edge(_ label: String) -> GraphLabelStyle {
+        switch label {
+        case "HAS_CHUNK": GraphLabelStyle(name: "Has chunk", tint: .teal, symbol: nil)
+        case "WROTE": GraphLabelStyle(name: "Wrote", tint: .green, symbol: nil)
+        case "RECEIVED": GraphLabelStyle(name: "Received", tint: .mint, symbol: nil)
+        case "STATES": GraphLabelStyle(name: "States", tint: .orange, symbol: nil)
+        case "SUPPORTS": GraphLabelStyle(name: "Supports", tint: .purple, symbol: nil)
+        case "RESTATES": GraphLabelStyle(name: "Restates", tint: .pink, symbol: nil)
+        default: GraphLabelStyle(name: humanize(label), tint: .gray, symbol: nil)
+        }
+    }
+
+    /// `HAS_CHUNK` -> "Has chunk", `PotentialFact` -> "Potential fact".
+    static func humanize(_ label: String) -> String {
+        var words: [String] = []
+        for part in label.split(separator: "_") {
+            var word = ""
+            for (index, scalar) in part.unicodeScalars.enumerated() {
+                if index > 0, CharacterSet.uppercaseLetters.contains(scalar),
+                   let last = word.unicodeScalars.last, CharacterSet.lowercaseLetters.contains(last) {
+                    words.append(word)
+                    word = ""
+                }
+                word.unicodeScalars.append(scalar)
+            }
+            words.append(word)
+        }
+        let lowered = words.filter { !$0.isEmpty }.map { $0.lowercased() }
+        guard let first = lowered.first else { return label }
+        return ([first.prefix(1).uppercased() + String(first.dropFirst())] + Array(lowered.dropFirst())).joined(separator: " ")
+    }
+}
+
+/// What the Graph page says when it cannot draw.
+enum GraphPagePresentation {
+    static let title = "Graph"
+    static let searchPlaceholder = "Find a document, author, fact or statement…"
+
+    /// The page's empty state, from what it knows.
+    struct Empty: Equatable {
+        let symbol: String
+        let title: String
+        let message: String
+    }
+
+    static func empty(databaseRunning: Bool, available: Bool, hasSelection: Bool, searched: Bool) -> Empty {
+        if !databaseRunning {
+            return Empty(
+                symbol: "point.3.connected.trianglepath.dotted",
+                title: "Database Offline",
+                message: "Start the database to browse the graph."
+            )
+        }
+        if !available {
+            return Empty(
+                symbol: "point.3.connected.trianglepath.dotted",
+                title: "No Graph Yet",
+                message: "The graph is built when facts are distilled: choose Distill Facts on the Facts page. It needs the Apache AGE extension, which Garage's own database has."
+            )
+        }
+        if searched {
+            return Empty(
+                symbol: "magnifyingglass",
+                title: "Nothing Found",
+                message: "No document, author, fact or statement matched. Titles and statements are searched; a number finds a record by id."
+            )
+        }
+        if !hasSelection {
+            return Empty(
+                symbol: "point.3.connected.trianglepath.dotted",
+                title: "Pick a Starting Point",
+                message: "Search for a document, author, fact or statement, then choose one to see what it is connected to."
+            )
+        }
+        return Empty(
+            symbol: "point.3.filled.connected.trianglepath.dotted",
+            title: "Nothing Connected",
+            message: "Nothing within reach passes the current filters. Turn more vertex or edge types on, or look further out."
+        )
+    }
+
+    /// The footer under the picture: what is drawn, and whether the limit cut it.
+    static func summary(vertices: Int, edges: Int, depth: Int, truncated: Bool) -> String {
+        let hops = depth == 1 ? "1 hop" : "\(depth) hops"
+        let counts = "\(vertices) \(vertices == 1 ? "vertex" : "vertices"), \(edges) \(edges == 1 ? "edge" : "edges") within \(hops)"
+        return truncated ? counts + " (cut at the limit; filter or look nearer)" : counts
+    }
+}
