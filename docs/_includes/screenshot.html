@@ -1,0 +1,18 @@
+{%- comment -%}
+  A screenshot of Garage for Mac in the visitor's appearance: dark WebP under
+  prefers-color-scheme: dark, light WebP otherwise, a light PNG for browsers without WebP.
+  The files come from tools/screenshots/web_images.py (assets/screenshots/<name>-<light|dark>-<1x|2x>.*)
+  and _data/screenshots.yml gives the 1x size.
+
+  name:    the capture's name, e.g. mcp-server
+  alt:     the image's alternative text
+  class:   screenshot-window (a whole window: CSS adds the macOS shadow) or screenshot-detail (a close-up)
+  loading: lazy by default; eager for an image in the first screen
+{%- endcomment -%}
+{%- assign shot = site.data.screenshots[include.name] -%}
+{%- capture base -%}/assets/screenshots/{{ include.name }}{%- endcapture -%}
+<picture>
+  <source media="(prefers-color-scheme: dark)" type="image/webp" srcset="{{ base | append: '-dark-1x.webp' | relative_url }} 1x, {{ base | append: '-dark-2x.webp' | relative_url }} 2x">
+  <source type="image/webp" srcset="{{ base | append: '-light-1x.webp' | relative_url }} 1x, {{ base | append: '-light-2x.webp' | relative_url }} 2x">
+  <img src="{{ base | append: '-light-1x.png' | relative_url }}" alt="{{ include.alt }}" width="{{ shot.width }}" height="{{ shot.height }}" loading="{{ include.loading | default: 'lazy' }}" decoding="async" class="screenshot {{ include.class }}">
+</picture>
