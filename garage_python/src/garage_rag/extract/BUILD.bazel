@@ -11,6 +11,7 @@ py_library(
         "imageio.py",
         "mail.py",
         "messages.py",
+        "nicknames.py",
         "office.py",
         "pdf.py",
         "placeholder.py",

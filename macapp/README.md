@@ -499,6 +499,8 @@ The products are Consumable in-app purchases in App Store Connect:
 | `me.rickmark.garage_rag.tip.small` | Small Tip | 4.99 |
 | `me.rickmark.garage_rag.tip.medium` | Medium Tip | 9.99 |
 | `me.rickmark.garage_rag.tip.large` | Large Tip | 19.99 |
+| `me.rickmark.garage_rag.tip.max` | Max Tip | 49.99 |
+| `me.rickmark.garage_rag.tip.ultra` | Ultra Tip | 99.99 |
 
 Buttons show the App Store's localized price, so other storefronts follow App Store Connect's
 equalized prices. When the store returns no products (not yet made, or not yet approved), the

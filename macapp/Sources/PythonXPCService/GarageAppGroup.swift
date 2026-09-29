@@ -87,7 +87,7 @@ public enum GarageAppGroup {
     public static let dataDirectoryOverride: URL? = {
         do {
             return try dataDirectoryOverride(
-                in: CommandLine.arguments,
+                in: GarageAppLaunch.arguments,
                 realDirectories: realDataDirectories,
                 testRoots: [uiTestDataRoot]
             )
@@ -170,7 +170,7 @@ public enum GarageAppGroup {
     /// Where the MCP page looks for assistants' configs: the `--client-home` folder on a
     /// `--data-directory` launch that names one, otherwise `realHomeDirectory`.
     public static let clientHomeDirectory: String = clientHomeDirectory(
-        in: CommandLine.arguments,
+        in: GarageAppLaunch.arguments,
         isTestLaunch: dataDirectoryOverride != nil
     )
 

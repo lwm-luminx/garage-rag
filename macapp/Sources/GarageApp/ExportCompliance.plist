@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	The App Store export compliance answer, merged into the app's Info.plist for
+	App Store builds only (see the `infoplists` select in //bazel:garage_app.bzl).
+	App Store Connect reads these keys on upload instead of asking about
+	encryption for each build; Developer ID builds never reach it.
+
+	Garage bundles standard cryptography (OpenSSL in Postgres and CPython), so it
+	uses non-exempt encryption. ITSEncryptionExportComplianceCode is the key Apple
+	issued once it approved the app's encryption documentation (the French ANSSI
+	declaration), under App Information > App Encryption Documentation.
+-->
+<plist version="1.0">
+<dict>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<true/>
+	<key>ITSEncryptionExportComplianceCode</key>
+	<string>4ac305a4-155a-41cf-a245-a61d1f6a443a</string>
+</dict>
+</plist>

@@ -28,5 +28,7 @@
 	<string>Garage needs access to your Downloads folder to index files.</string>
 	<key>NSDesktopFolderUsageDescription</key>
 	<string>Garage needs access to your Desktop folder to index files.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Garage uses your contacts to show names instead of phone numbers and email addresses in the messages and mail it indexes. Names stay on this Mac.</string>
 </dict>
 </plist>

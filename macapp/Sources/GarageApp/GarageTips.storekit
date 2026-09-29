@@ -48,6 +48,36 @@
       "productID" : "me.rickmark.garage_rag.tip.large",
       "referenceName" : "Large Tip",
       "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "49.99",
+      "familyShareable" : false,
+      "internalID" : "6A1F2E04",
+      "localizations" : [
+        {
+          "description" : "A big thank-you for Garage. Unlocks nothing.",
+          "displayName" : "Max Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "me.rickmark.garage_rag.tip.max",
+      "referenceName" : "Max Tip",
+      "type" : "Consumable"
+    },
+    {
+      "displayPrice" : "99.99",
+      "familyShareable" : false,
+      "internalID" : "6A1F2E05",
+      "localizations" : [
+        {
+          "description" : "A huge thank-you for Garage. Unlocks nothing.",
+          "displayName" : "Ultra Tip",
+          "locale" : "en_US"
+        }
+      ],
+      "productID" : "me.rickmark.garage_rag.tip.ultra",
+      "referenceName" : "Ultra Tip",
+      "type" : "Consumable"
     }
   ],
   "settings" : {

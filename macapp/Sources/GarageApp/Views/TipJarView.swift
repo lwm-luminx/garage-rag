@@ -32,22 +32,11 @@ struct TipJarView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .foregroundStyle(.secondary)
 
-            HStack(spacing: 8) {
-                ForEach(tipJar.products, id: \.id) { product in
-                    Button {
-                        Task { await tipJar.purchase(product, with: purchase) }
-                    } label: {
-                        Label("Tip \(product.displayPrice)", systemImage: "heart")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.pink)
-                    .disabled(isPurchasing)
-                    .accessibilityIdentifier("splash.tip.\(product.id)")
-                }
-                if isPurchasing {
-                    ProgressView()
-                        .controlSize(.small)
-                }
+            // Five "Tip $99.99" buttons can be wider than the splash card, and prices in some
+            // currencies are longer still; the prices alone then take their place.
+            ViewThatFits(in: .horizontal) {
+                tipButtons(prefixed: true)
+                tipButtons(prefixed: false)
             }
 
             switch tipJar.phase {
@@ -59,6 +48,27 @@ struct TipJarView: View {
                     .foregroundStyle(.red)
             default:
                 EmptyView()
+            }
+        }
+    }
+
+    private func tipButtons(prefixed: Bool) -> some View {
+        HStack(spacing: 8) {
+            ForEach(tipJar.products, id: \.id) { product in
+                Button {
+                    Task { await tipJar.purchase(product, with: purchase) }
+                } label: {
+                    Label(prefixed ? "Tip \(product.displayPrice)" : product.displayPrice, systemImage: "heart")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.pink)
+                .disabled(isPurchasing)
+                .accessibilityLabel("Tip \(product.displayPrice)")
+                .accessibilityIdentifier("splash.tip.\(product.id)")
+            }
+            if isPurchasing {
+                ProgressView()
+                    .controlSize(.small)
             }
         }
     }

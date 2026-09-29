@@ -43,6 +43,9 @@ class ContactNames:
     """A handle-to-name lookup built from ``(handle, name)`` pairs."""
 
     def __init__(self, entries: Iterable[tuple[str, str]] = ()) -> None:
+        self._entries: list[tuple[str, str]] = []
+        # Consulted only for a handle these names do not resolve (see with_fallback).
+        self._fallback: ContactNames | None = None
         self._exact: dict[str, str] = {}
         self._national: dict[str, set[str]] = {}
         for handle, name in entries:
@@ -58,18 +61,35 @@ class ContactNames:
         key = handle_key(handle)
         if not key or not name:
             return
+        self._entries.append((handle, name))
         self._exact.setdefault(key, name)
         if "@" not in key and len(key) >= _NATIONAL_DIGITS:
             self._national.setdefault(key[-_NATIONAL_DIGITS:], set()).add(name)
 
+    def with_fallback(self, entries: Iterable[tuple[str, str]]) -> ContactNames:
+        """A copy that also knows ``entries``, consulted only for handles these names do not resolve.
+
+        The tiers stay apart, so a fallback name never outranks one of these, even when it spells the
+        number more like the handle does (``+15551234567`` against a contact's ``(555) 123-4567``).
+        """
+        combined = ContactNames(self._entries)
+        combined._fallback = self._fallback.with_fallback(entries) if self._fallback else ContactNames(entries)
+        return combined
+
     def __len__(self) -> int:
-        return len(self._exact)
+        return len(self._exact) + (len(self._fallback) if self._fallback else 0)
 
     def __bool__(self) -> bool:
-        return bool(self._exact)
+        return bool(self._exact) or bool(self._fallback)
 
     def name_for(self, handle: str) -> str | None:
         """The name for ``handle``, or None when no contact, or more than one, claims it."""
+        name = self._own_name_for(handle)
+        if name is None and self._fallback is not None:
+            return self._fallback.name_for(handle)
+        return name
+
+    def _own_name_for(self, handle: str) -> str | None:
         key = handle_key(handle)
         if not key:
             return None

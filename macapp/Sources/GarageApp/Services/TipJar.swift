@@ -13,9 +13,11 @@ enum TipProducts {
     static let small = "me.rickmark.garage_rag.tip.small"
     static let medium = "me.rickmark.garage_rag.tip.medium"
     static let large = "me.rickmark.garage_rag.tip.large"
+    static let max = "me.rickmark.garage_rag.tip.max"
+    static let ultra = "me.rickmark.garage_rag.tip.ultra"
 
     /// Smallest first, the order the splash shows them in.
-    static let all = [small, medium, large]
+    static let all = [small, medium, large, max, ultra]
 
     static func contains(_ productID: String) -> Bool {
         all.contains(productID)

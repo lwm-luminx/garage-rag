@@ -11,6 +11,10 @@
 # compiler (.github/workflows/known-answers.yaml), outside Bazel.
 # gazelle:exclude tools/llama
 
+# tools/screenshots turns the store screenshot test's website captures into docs/ images, run by
+# hand with the garage_python venv's Pillow, outside Bazel.
+# gazelle:exclude tools/screenshots
+
 exports_files(
     [
         "README.md",
