@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Architecture Guide
-description: Ingestion pipeline, extractors, quality filtering, and concurrency model.
+description: How Garage's local RAG pipeline works, from walking folders and extracting PDF, Office, mail and Messages text to chunking, embedding with pgvector and hybrid search.
 ---
 
 # Architecture

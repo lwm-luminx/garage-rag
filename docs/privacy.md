@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Privacy and macOS Permissions
-description: One egress choke point, a destination allowlist, communications kept local, and the macOS TCC security model.
+description: How Garage keeps your data on your Mac, with one egress choke point, a destination allowlist, messages that never leave the machine, and the macOS permissions it asks for.
 ---
 
 # Privacy and macOS permissions

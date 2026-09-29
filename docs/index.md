@@ -1,7 +1,28 @@
 ---
 layout: default
-title: Garage
-description: Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first, private by construction. Download for macOS.
+title: Garage — Private local RAG and MCP server for your Mac
+description: Garage is a free, open-source local RAG app for macOS. It indexes your documents, code and messages on your Mac and serves them to Claude and other AI assistants over MCP.
+structured_data:
+  "@context": https://schema.org
+  "@type": SoftwareApplication
+  name: Garage
+  description: A local-first personal RAG app for macOS. It indexes your documents, code, notes and messages on your Mac and serves them to your AI assistant over the Model Context Protocol (MCP).
+  applicationCategory: ProductivityApplication
+  operatingSystem: macOS 14 or later (Apple silicon)
+  url: https://garagerag.app/
+  downloadUrl: https://github.com/rickmark/garage-rag/releases/latest
+  image: https://garagerag.app/assets/social-card.png
+  screenshot: https://garagerag.app/assets/screenshots/mcp-server-light-1x.png
+  license: https://github.com/rickmark/garage-rag
+  isAccessibleForFree: true
+  offers:
+    "@type": Offer
+    price: "0"
+    priceCurrency: USD
+  author:
+    "@type": Person
+    name: Rick Mark-Penwell
+    url: https://garagerag.app/about.html
 ---
 
 <div class="hero hero-landing">

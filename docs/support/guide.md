@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Support & User Guide
-description: Complete user and support guide for Garage macOS App, CLI, ingestion pipelines, and MCP integration.
+description: The Garage user guide, with setup, adding sources, choosing embedding models, connecting Claude and other MCP clients, and the garage command line.
 redirect_from:
   - /support.html
 ---
