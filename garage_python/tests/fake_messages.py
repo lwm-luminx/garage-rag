@@ -8,9 +8,11 @@ messages. Everything is invented and deterministic for a given seed:
 * **Schema** is ``fixtures/messages/chat_db_schema.sql`` (tables and indexes; the real database's
   triggers call functions only Messages registers, so they are left out).
 * **Shapes** the reader has to handle: one-to-one chats over iMessage (phone and email), SMS and RCS;
-  named and unnamed groups; text in ``message.text`` and text only in ``attributedBody`` (as since
-  macOS Ventura); tapbacks; attachment-only messages; group renames; messages no
-  ``chat_message_join`` row names (orphans); one person on two handles (``person_centric_id``).
+  named and unnamed groups; text only in ``message.text`` (before Ventura), in both columns, or only
+  in ``attributedBody`` (since Ventura), some long enough to need a multi-byte length; replies, edits
+  and links; tapbacks, unsent messages, attachment-only messages, renames and membership changes,
+  none of which is kept; messages no ``chat_message_join`` row names (orphans), some the reader can
+  file and some it cannot; one person on two handles (``person_centric_id``).
 * **Names**: :attr:`FakeMessages.contacts` is what Contacts would hand the ingest for some people, and
   ``NickNameCache/`` holds names others shared over iMessage, a few of them disagreeing with Contacts.
 
@@ -39,9 +41,10 @@ _APPLE_EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
 IMESSAGE, SMS, RCS = "iMessage", "SMS", "RCS"
 # chat.style: 43 for a group, 45 for one-to-one.
 GROUP_STYLE, DIRECT_STYLE = 43, 45
-# associated_message_type for "loved" .. "questioned"; item_type 2 is a group rename.
+# associated_message_type for "loved" .. "questioned"; item_type 1 is a member added or removed,
+# 2 a group rename.
 TAPBACKS = range(2000, 2006)
-ITEM_GROUP_RENAME = 2
+ITEM_MEMBERSHIP, ITEM_GROUP_RENAME = 1, 2
 OBJECT_REPLACEMENT = "￼"
 
 FIRST_NAMES = [
@@ -83,7 +86,13 @@ LINES = [
     "Tickets are booked for the 14th.",
     "Reminder: the plumber comes between 9 and 11.",
     "Does anyone have a spare tent?",
+    "here's the trail map https://example.com/trails/north-loop",
 ]
+# Appended to a line now and then, so some attributedBody strings need a multi-byte length.
+LONG_TAIL = (
+    " Also, before I forget: the landlord says the hallway gets painted next week, so leave the bikes "
+    "on the balcony, and the spare key is back under the blue planter by the door."
+)
 
 
 def apple_ns(when: datetime) -> int:
@@ -155,7 +164,9 @@ class FakeMessages:
     text_messages: dict[str, int] = field(default_factory=dict)
     # chat guids with no message the reader keeps (it yields no conversation for them).
     silent_chats: list[str] = field(default_factory=list)
+    # Orphans the reader files under a one-to-one chat, and those it cannot place.
     orphans: int = 0
+    unplaced_orphans: int = 0
 
 
 def _schema(path: Path) -> str:
@@ -219,7 +230,9 @@ class _Writer:
         associated: tuple[str, int] | None = None,
         item_type: int = 0,
         group_title: str | None = None,
+        columns: dict[str, object] | None = None,
     ) -> tuple[int, str]:
+        """Insert one message; ``columns`` sets any other ``message`` columns (replies, edits, unsends)."""
         date = self.tick()
         guid = self.guid()
         cur = self.conn.execute(
@@ -244,6 +257,9 @@ class _Writer:
             ),
         )
         rowid = int(cur.lastrowid or 0)
+        if columns:
+            assignments = ", ".join(f"{name} = ?" for name in columns)
+            self.conn.execute(f"UPDATE message SET {assignments} WHERE ROWID = ?", (*columns.values(), rowid))
         if chat_id is not None:
             self.conn.execute("INSERT INTO chat_message_join VALUES (?, ?, ?)", (chat_id, rowid, date))
         return rowid, guid
@@ -307,27 +323,50 @@ def build_messages_folder(
     def say(chat_id: int | None, chat_guid: str, service: str, members: list[tuple[Person, int]]) -> None:
         count = rng.randint(*messages_per_thread)
         last_guid: str | None = None
+        said: list[str] = []
         for _ in range(count):
             from_me = rng.random() < 0.4
             _speaker, handle_id = rng.choice(members)
             line = rng.choice(LINES)
+            if rng.random() < 0.04:
+                line += LONG_TAIL
+            columns: dict[str, object] = {}
+            if said and rng.random() < 0.1 and service == IMESSAGE:  # an inline reply
+                columns["thread_originator_guid"] = columns["reply_to_guid"] = said[-1]
+                columns["thread_originator_part"] = "0:0:10"
+            if "https://" in line:
+                columns["balloon_bundle_id"] = "com.apple.messages.URLBalloonProvider"
+            if service == IMESSAGE and rng.random() < 0.05:  # edited a minute later
+                columns["date_edited"] = apple_ns(writer.clock) + 60 * 10**9
             roll = rng.random()
-            if roll < 0.55:  # text only in attributedBody, as since Ventura
+            if roll < 0.04 and service == IMESSAGE:  # unsent: the text is gone from both columns
+                when = apple_ns(writer.clock) + 60 * 10**9
+                writer.message(
+                    chat_id, service=service, handle_id=handle_id, from_me=True, text=None,
+                    columns={"date_retracted": when, "date_edited": when},
+                )  # fmt: skip
+                continue
+            if roll < 0.5:  # text only in attributedBody, as since Ventura
                 rowid, last_guid = writer.message(
                     chat_id, service=service, handle_id=handle_id, from_me=from_me, text=None,
-                    body=attributed_body(line),
+                    body=attributed_body(line), columns=columns,
                 )  # fmt: skip
-            elif roll < 0.85:
+            elif roll < 0.7:
                 rowid, last_guid = writer.message(
                     chat_id, service=service, handle_id=handle_id, from_me=from_me, text=line,
-                    body=attributed_body(line),
+                    body=attributed_body(line), columns=columns,
                 )  # fmt: skip
+            elif roll < 0.85:  # text only in message.text, as before Ventura
+                rowid, last_guid = writer.message(
+                    chat_id, service=service, handle_id=handle_id, from_me=from_me, text=line, columns=columns
+                )
             else:  # a photo with no caption: no text of its own
                 rowid, _ = writer.message(
                     chat_id, service=service, handle_id=handle_id, from_me=from_me, text=OBJECT_REPLACEMENT
                 )
                 writer.attachment(rowid)
                 continue
+            said.append(last_guid)
             result.text_messages[chat_guid] = result.text_messages.get(chat_guid, 0) + 1
             if last_guid and rng.random() < 0.15:  # a tapback on it
                 writer.message(
@@ -351,6 +390,11 @@ def build_messages_folder(
             )  # fmt: skip
             guid = f"{service};+;{identifier}"
             say(chat_id, guid, service, pairs)
+            if size > 2 and rng.random() < 0.5:  # someone added a member: an event, not a message
+                writer.message(
+                    chat_id, service=service, handle_id=pairs[0][1], from_me=False, text=None,
+                    item_type=ITEM_MEMBERSHIP, columns={"group_action_type": 0, "other_handle": pairs[-1][1]},
+                )  # fmt: skip
             if named and rng.random() < 0.5:  # renamed once: an event, not a message
                 writer.message(
                     chat_id, service=service, handle_id=pairs[0][1], from_me=False, text=None,
@@ -372,6 +416,14 @@ def build_messages_folder(
                     result.orphans += 1
                     # The reader files them under this, the one one-to-one chat with their handle.
                     result.text_messages[guid] = result.text_messages.get(guid, 0) + 1
+
+    # Orphans the reader cannot place, and skips: one from an address with no one-to-one chat, one with
+    # no handle at all.
+    stranger = Person(name="Stranger", phone=None, email="stranger@example.org", person_id="person-stranger")
+    writer.message(None, service=IMESSAGE, handle_id=writer.handle(stranger.email or "", IMESSAGE, stranger),
+                   from_me=False, text=rng.choice(LINES))  # fmt: skip
+    writer.message(None, service=SMS, handle_id=0, from_me=False, text=rng.choice(LINES))
+    result.unplaced_orphans = 2
 
     # A chat whose only message is a photo: the reader yields nothing for it.
     lonely = cast[-1]

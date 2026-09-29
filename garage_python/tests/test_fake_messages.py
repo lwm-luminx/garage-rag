@@ -122,7 +122,7 @@ def test_the_reader_finds_every_thread_with_text(fake: FakeMessages) -> None:
     assert not set(fake.silent_chats) & set(conversations)
     assert fake.orphans > 0
     assert stats.attached == fake.orphans
-    assert stats.skipped == 0
+    assert stats.skipped == fake.unplaced_orphans == 2
     # Tapbacks and renames are not messages; every kept message has text.
     for conversation in conversations.values():
         for message in conversation.messages:
@@ -167,3 +167,26 @@ def test_ingest_names_threads_from_contacts_then_shared_names(fake: FakeMessages
     # Somebody's shared name disagrees with Contacts, and Contacts won.
     assert any(name.endswith("🌟") for name in fake.shared_names.values())
     assert not any("🌟" in doc["title"] for doc in gateway.docs.values())
+
+
+def test_it_holds_every_shape_the_reader_has_to_handle(fake: FakeMessages) -> None:
+    conn = sqlite3.connect(fake.chat_db)
+
+    def count(where: str) -> int:
+        return conn.execute(f"SELECT COUNT(*) FROM message WHERE {where}").fetchone()[0]
+
+    shapes = {
+        "text only": count("text IS NOT NULL AND attributedBody IS NULL AND item_type = 0"),
+        "attributedBody only": count("text IS NULL AND attributedBody IS NOT NULL"),
+        "long attributedBody": count("length(attributedBody) > 200"),
+        "reply": count("thread_originator_guid IS NOT NULL"),
+        "edited": count("date_edited IS NOT NULL AND date_retracted IS NULL"),
+        "unsent": count("date_retracted IS NOT NULL"),
+        "link": count("balloon_bundle_id IS NOT NULL"),
+        "tapback": count("associated_message_type BETWEEN 2000 AND 2005"),
+        "attachment only": count("cache_has_attachments = 1"),
+        "rename": count("item_type = 2"),
+        "membership": count("item_type = 1"),
+    }
+    conn.close()
+    assert all(shapes.values()), shapes
