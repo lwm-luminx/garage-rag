@@ -999,3 +999,14 @@ def reset_settings() -> None:
 def repo_root() -> Path:
     """Path to the repository root (holds the published ``data/`` artifacts)."""
     return Path(__file__).resolve().parents[4]
+
+
+def data_dir() -> Path:
+    """The published ``data/`` artifacts: the SQL migrations and the model catalog.
+
+    A wheel carries a copy as ``garage_rag/_data`` (``garage_python/hatch_build.py``), since an
+    install from PyPI has no repository around it. A checkout, an editable install and Bazel's
+    runfiles have no such copy and read ``data/`` at the repository root.
+    """
+    packaged = Path(__file__).resolve().parents[1] / "_data"
+    return packaged if packaged.is_dir() else repo_root() / "data"
