@@ -24,11 +24,15 @@ import XCTest
 /// writes (`--client-home`), not the ones on the Mac.
 ///
 /// One launch ingests the corpus, downloads the embedding and distillation models into the test's
-/// data folder, embeds, and gleans facts; the app is then relaunched on that folder once per
+/// data folder (or takes them from `GARAGE_STORE_SCREENSHOTS_MODELS`, a folder of the catalog's GGUF
+/// files laid out as the models folder is), embeds, and gleans facts; the app is then relaunched on that folder once per
 /// appearance, so both sets show the same state.
 ///
 /// Each page is written as `<nn>-<page>-<appearance>.png` and also kept as an attachment in the
-/// result bundle. The test runner is sandboxed, so it cannot write to the Desktop or most of the home
+/// result bundle. The same run writes the website's images, `web-<name>-<appearance>.png`: the MCP
+/// page's window with transparent corners (`web-mcp-server`) and close-ups of the search results,
+/// the library card, the connected assistants and Try It. `tools/screenshots/web_images.py` turns
+/// them into the site's WebP and PNG files. The test runner is sandboxed, so it cannot write to the Desktop or most of the home
 /// folder: with `1`, or a folder it cannot write, the files go to `store-screenshots` in the runner's
 /// own temporary folder,
 /// `~/Library/Containers/me.rickmark.garage-rag.GarageAppUITests.xctrunner/Data/tmp/store-screenshots`,
@@ -45,6 +49,9 @@ import XCTest
 final class StoreScreenshotsUITests: GarageUITestCase {
     static let outputVariable = "GARAGE_STORE_SCREENSHOTS"
     static let corpusVariable = "GARAGE_STORE_SCREENSHOTS_CORPUS"
+    /// A folder of already-downloaded model files (laid out as the models folder is), copied into
+    /// the test's models folder so the run need not download them again.
+    static let modelsVariable = "GARAGE_STORE_SCREENSHOTS_MODELS"
     /// The source the corpus is added as; its name shows on the Sources and Documents pages.
     static let sourceSlug = "notes"
     static let windowSize = CGSize(width: 1440, height: 900)
@@ -89,6 +96,7 @@ final class StoreScreenshotsUITests: GarageUITestCase {
 
     func testScreenshots() throws {
         try writeClientConfigs()
+        try seedModels()
         try prepareCorpus()
         for appearance in ["light", "dark"] {
             self.appearance = appearance
@@ -144,6 +152,12 @@ final class StoreScreenshotsUITests: GarageUITestCase {
         open(section: "search")
         runSearch()
         capture("01-search")
+        captureWebRegion(
+            "search",
+            around: [element(identifier: "search.query"), element(identifier: "search.detail.text")]
+                + (1...8).map { element(identifier: "search.result.\($0).title") },
+            endAbove: (element(identifier: "search.result.9.title"), 10)
+        )
 
         open(section: "documents")
         XCTAssertTrue(
@@ -156,12 +170,28 @@ final class StoreScreenshotsUITests: GarageUITestCase {
         open(section: "status")
         settle()
         capture("03-status")
+        captureWebRegion(
+            "library",
+            around: ["status.library.title", "status.library.detail"].map { element(identifier: $0) }
+                + ["sources", "documents", "chunks", "indexed", "facts"].map { element(identifier: "status.figure.\($0)") }
+        )
         attachBuiltInEngineDetails()
 
         open(section: "mcp")
         _ = waitUntil(timeout: 60) { self.element(identifier: "mcp.stop").exists }
         askTryIt()
         capture("04-mcp-server")
+        captureWebWindow("mcp-server")
+        captureWebRegion(
+            "assistants",
+            around: [element(identifier: "mcp.connectAll")]
+                + ["claude-desktop", "claude-code-user", "lmstudio", "cursor"].map { element(identifier: "mcp.client.\($0)") }
+        )
+        captureWebRegion(
+            "try-it",
+            around: ["mcp.try.mode", "mcp.try.prompt", "mcp.try.run", "mcp.try.answer"].map { element(identifier: $0) },
+            padding: 20
+        )
 
         open(section: "sources")
         settle()
@@ -199,6 +229,26 @@ final class StoreScreenshotsUITests: GarageUITestCase {
             segments.element(boundBy: index).click()
         } else {
             XCTFail("the Models page has no segment \(index)")
+        }
+    }
+
+    /// Copies the model files under `GARAGE_STORE_SCREENSHOTS_MODELS` into the test's models folder,
+    /// keeping their paths, so the Models page finds them downloaded. They must be the catalog's
+    /// files (its `download_file` names and SHA-256), as a download would have left them.
+    private func seedModels() throws {
+        guard let seed = ProcessInfo.processInfo.environment[Self.modelsVariable], !seed.isEmpty else { return }
+        let source = URL(fileURLWithPath: seed, isDirectory: true)
+        let models = dataDirectory.appendingPathComponent("models", isDirectory: true)
+        let files = FileManager.default.enumerator(at: source, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }
+            .filter { $0.pathExtension == "gguf" } ?? []
+        XCTAssertFalse(files.isEmpty, "no .gguf files under \(seed)")
+        for file in files {
+            let relative = String(file.standardizedFileURL.path.dropFirst(source.standardizedFileURL.path.count + 1))
+            let target = models.appendingPathComponent(relative)
+            try FileManager.default.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: file, to: target)
+            NSLog("StoreScreenshotsUITests: seeded %@", relative)
         }
     }
 
@@ -389,28 +439,93 @@ final class StoreScreenshotsUITests: GarageUITestCase {
     /// Captures the main window as `<name>-<appearance>.png` in the output folder and as a kept
     /// attachment.
     private func capture(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        let window = app.windows.firstMatch
-        XCTAssertEqual(window.frame.size, Self.windowSize, "the window changed size before \(name)", file: file, line: line)
-        let fileName = "\(name)-\(appearance)"
-
-        let image: CGImage
-        do {
-            image = try captureWindow()
-        } catch {
-            let attachment = XCTAttachment(screenshot: window.screenshot())
-            attachment.name = "\(fileName)-screen"
-            attachment.lifetime = .keepAlways
-            add(attachment)
-            XCTFail("could not capture the window for \(name): \(error)", file: file, line: line)
-            return
-        }
+        guard let image = windowImage(for: name, flatten: true, file: file, line: line) else { return }
         XCTAssertEqual(
             CGSize(width: image.width, height: image.height),
             Self.pixelSize,
-            "\(fileName) is \(image.width) × \(image.height) pixels",
+            "\(name)-\(appearance) is \(image.width) × \(image.height) pixels",
             file: file,
             line: line
         )
+        write(image, as: "\(name)-\(appearance)", file: file, line: line)
+    }
+
+    // MARK: - Website images
+
+    /// The website's version of a full-window shot, `web-<name>-<appearance>.png`: the real window
+    /// with its rounded corners left transparent and no shadow, which the site adds in CSS.
+    private func captureWebWindow(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
+        guard let image = windowImage(for: "web-\(name)", flatten: false, file: file, line: line) else { return }
+        write(image, as: "web-\(name)-\(appearance)", file: file, line: line)
+    }
+
+    /// The page area right of the sidebar, in points from the window's left edge: close-ups span it
+    /// whole, since an element's frame is often only its text.
+    static let pageContent: ClosedRange<CGFloat> = 198...1434
+
+    /// A close-up for the website, `web-<name>-<appearance>.png`: the page's full width, over the
+    /// rows that hold `elements` (those that exist) with `padding` points above and below, at 2×.
+    /// With `endAbove`, it stops `endAbove.gap` points above that element's top instead, so it ends
+    /// between rows rather than through one.
+    private func captureWebRegion(
+        _ name: String,
+        around elements: [XCUIElement],
+        padding: CGFloat = 20,
+        endAbove: (element: XCUIElement, gap: CGFloat)? = nil,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let window = app.windows.firstMatch.frame
+        let frames = elements.filter(\.exists).map(\.frame).filter { !$0.isEmpty }
+        guard let first = frames.first else {
+            XCTFail("no element to frame the \(name) close-up", file: file, line: line)
+            return
+        }
+        var rows = frames.dropFirst().reduce(first) { $0.union($1) }.insetBy(dx: 0, dy: -padding)
+        if let endAbove, endAbove.element.exists {
+            rows.size.height = endAbove.element.frame.minY - endAbove.gap - rows.minY
+        }
+        let region = CGRect(
+            x: window.minX + Self.pageContent.lowerBound,
+            y: rows.minY,
+            width: Self.pageContent.upperBound - Self.pageContent.lowerBound,
+            height: rows.height
+        ).intersection(window)
+        guard let image = windowImage(for: "web-\(name)", flatten: true, file: file, line: line) else { return }
+        let scale = CGFloat(image.width) / window.width
+        let pixels = CGRect(
+            x: ((region.minX - window.minX) * scale).rounded(),
+            y: ((region.minY - window.minY) * scale).rounded(),
+            width: (region.width * scale).rounded(),
+            height: (region.height * scale).rounded()
+        )
+        guard let cropped = image.cropping(to: pixels) else {
+            XCTFail("could not crop the \(name) close-up to \(pixels)", file: file, line: line)
+            return
+        }
+        write(cropped, as: "web-\(name)-\(appearance)", file: file, line: line)
+    }
+
+    // MARK: - Capture and output
+
+    /// The main window rendered by itself, or nil after recording the failure and a screen crop.
+    private func windowImage(for name: String, flatten: Bool, file: StaticString, line: UInt) -> CGImage? {
+        let window = app.windows.firstMatch
+        XCTAssertEqual(window.frame.size, Self.windowSize, "the window changed size before \(name)", file: file, line: line)
+        do {
+            return try captureWindow(flatten: flatten)
+        } catch {
+            let attachment = XCTAttachment(screenshot: window.screenshot())
+            attachment.name = "\(name)-\(appearance)-screen"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            XCTFail("could not capture the window for \(name): \(error)", file: file, line: line)
+            return nil
+        }
+    }
+
+    /// Writes `image` as `<fileName>.png` in the output folder and keeps it as an attachment.
+    private func write(_ image: CGImage, as fileName: String, file: StaticString, line: UInt) {
         guard let png = NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:]) else {
             XCTFail("could not encode \(fileName) as PNG", file: file, line: line)
             return
@@ -451,8 +566,8 @@ final class StoreScreenshotsUITests: GarageUITestCase {
     }
 
     /// Renders Garage's main window by itself, without its shadow, at `pixelSize`, flattened onto
-    /// the appearance's neutral grey.
-    private func captureWindow() throws -> CGImage {
+    /// the appearance's neutral grey unless `flatten` is false (the corners are then transparent).
+    private func captureWindow(flatten: Bool = true) throws -> CGImage {
         let bundleIdentifier = Self.bundleIdentifier
         let windowSize = Self.windowSize
         let pixelSize = Self.pixelSize
@@ -473,7 +588,7 @@ final class StoreScreenshotsUITests: GarageUITestCase {
             configuration.scalesToFit = true
             return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
         }
-        return try flattened(captured)
+        return flatten ? try flattened(captured) : captured
     }
 
     /// Draws `image` over an opaque neutral grey (light or dark to suit the page), so the rounded
