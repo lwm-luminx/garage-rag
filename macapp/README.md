@@ -439,7 +439,9 @@ pre-release suffix for a beta in the feed (`v1.5-beta.1`).
 
    `--channel beta` puts the entry on the beta channel (see above). `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
    in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
-   and refuses one whose build is not the one in `bazel-bin`. Before signing anything the
+   and refuses one whose build is not the one in `bazel-bin`. When the key is on another Mac,
+   copy that zip there and run `//macapp/package:sign_appcast -- v1.5 --from Garage-1.5.zip`,
+   which builds nothing and skips only that `bazel-bin` check. Before signing anything the
    script checks that the archive's version matches the tag, that it is notarized and
    stapled, arm64 only and newer than every entry
    already in `docs/appcast.xml`, and that the EdDSA key in the login Keychain is the one

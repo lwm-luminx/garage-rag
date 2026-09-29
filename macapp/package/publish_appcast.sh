@@ -2,6 +2,7 @@
 # Adds a signed Sparkle entry for one Developer ID release to docs/appcast.xml.
 #
 #   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md] [--channel beta]
+#   aspect run //macapp/package:sign_appcast -- v1.5 --from Garage-1.5.zip [--notes ...]
 #   aspect run //macapp/package:publish_appcast -- --check-live
 #
 # The tag is v plus the archive's version, or that and a pre-release suffix (v1.5-beta.1).
@@ -17,7 +18,12 @@
 # it opted into betas. --channel beta tags it for the installs that turned on "Receive Beta
 # Updates" only.
 #
-# The second form fetches the feed from its SUFeedURL and checks that every enclosure is
+# The second form (sign_appcast) signs an archive notarize_all wrote on another Mac, given
+# with --from, on the Mac that holds the Keychain key; it needs no build here and skips only
+# the check that the archive is the build bazel-bin holds. It copies the archive to
+# dist/Garage-<version>.zip, so the release upload below is the same.
+#
+# The third form fetches the feed from its SUFeedURL and checks that every enclosure is
 # a download that exists, which is the last step before announcing a release.
 #
 # The private key never leaves the login Keychain: generate_appcast and sign_update read it
@@ -32,15 +38,16 @@ die() {
 }
 
 usage() {
-    sed -n '4,5p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '4,6p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
-archive="" generate_appcast="" sign_update="" generate_keys="" sparkle_plist=""
+archive="" from="" generate_appcast="" sign_update="" generate_keys="" sparkle_plist=""
 tag="" notes="" channel="" check_live=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --archive) archive="$2"; shift 2 ;;
+        --from) from="$2"; shift 2 ;;
         --generate-appcast) generate_appcast="$2"; shift 2 ;;
         --sign-update) sign_update="$2"; shift 2 ;;
         --generate-keys) generate_keys="$2"; shift 2 ;;
@@ -55,11 +62,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]] || die "run this with 'aspect run //macapp/package:publish_appcast'"
+[[ -n "$archive" || -n "$from" || "$check_live" == 1 ]] || die "this target has no built archive; pass --from <Garage-<version>.zip>"
 for f in "$archive" "$generate_appcast" "$sign_update" "$generate_keys" "$sparkle_plist"; do
-    [[ -e "$f" ]] || die "missing runfile '$f'"
+    [[ -z "$f" || -e "$f" ]] || die "missing runfile '$f'"
 done
 # Resolve the runfiles before leaving the runfiles directory.
-archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
+[[ -z "$archive" ]] || archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
 generate_appcast="$(cd "$(dirname "$generate_appcast")" && pwd -P)/$(basename "$generate_appcast")"
 sign_update="$(cd "$(dirname "$sign_update")" && pwd -P)/$(basename "$sign_update")"
 generate_keys="$(cd "$(dirname "$generate_keys")" && pwd -P)/$(basename "$generate_keys")"
@@ -105,13 +113,23 @@ work="$(mktemp -d "${TMPDIR:-/tmp}/garage-appcast.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 # 1. What is being released: the stapled archive notarize_all left in dist/, which has to be
-#    the build bazel-bin holds now, not one left over from an earlier release.
-/usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
-    die "$archive does not contain Garage.app"
+#    the build bazel-bin holds now, not one left over from an earlier release. With --from, an
+#    archive notarize_all wrote on another Mac, taken as it is.
+if [[ -n "$from" ]]; then
+    [[ -f "$from" ]] || die "no archive at $from"
+    archive="$(cd "$(dirname "$from")" && pwd -P)/$(basename "$from")"
+    /usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
+        die "$archive does not contain Garage.app"
+else
+    /usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
+        die "$archive does not contain Garage.app"
+fi
 built_short="$(plist_value "$work/built-Info.plist" CFBundleShortVersionString)"
 built_build="$(plist_value "$work/built-Info.plist" CFBundleVersion)"
-archive="$PWD/dist/Garage-$built_short.zip"
-[[ -f "$archive" ]] || die "no $archive; run 'aspect run //macapp/package:notarize_all' first"
+if [[ -z "$from" ]]; then
+    archive="$PWD/dist/Garage-$built_short.zip"
+    [[ -f "$archive" ]] || die "no $archive; run 'aspect run //macapp/package:notarize_all' first"
+fi
 mkdir "$work/unpacked"
 /usr/bin/ditto -x -k "$archive" "$work/unpacked"
 app="$work/unpacked/Garage.app"
