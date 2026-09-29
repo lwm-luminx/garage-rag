@@ -38,6 +38,11 @@ class StoreUITestCase: GarageUITestCase {
         return XCUIApplication(url: url)
     }
 
+    /// The sandboxed store build reaches no test root but the App Group's.
+    override func makeDataDirectoryParent() throws -> URL {
+        Self.storeDataDirectoryRoot
+    }
+
     static func entitlements(of bundle: URL) throws -> [String: Any] {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(bundle as CFURL, [], &code) == errSecSuccess, let code else {
@@ -208,9 +213,9 @@ final class StoreMailMessagesUITests: StoreUITestCase {
         XCTAssertTrue(waitForEnabled(scanIngest), "Scan & Ingest stayed disabled", file: file, line: line)
         click(scanIngest)
 
-        // The scan's count is the source's expected total, shown as "<ingested>/<expected> DOCS".
+        // The scan's count is the source's expected total, shown as "<ingested> of <expected> documents".
         XCTAssertTrue(
-            element(textContaining: "/\(expected) DOCS").waitForExistence(timeout: 120),
+            element(textContaining: "of \(expected) documents").waitForExistence(timeout: 120),
             "the scan did not count \(expected) items in the fixture",
             file: file,
             line: line

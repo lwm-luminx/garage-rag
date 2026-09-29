@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The UI test runners (GarageAppUITests-Runner.app, GarageAppModelUITests-Runner.app), which
+	     Xcode signs from its sandboxed XCTRunner template plus these (generate_xcodeproj.sh).
+	     The App Group reaches the store tests' data folders (<group container>/UITests), which the
+	     sandboxed store app can also reach. The exception reaches every other test's data folder,
+	     ~/Library/Caches/GarageUITests: the unsandboxed builds under test are not in the App Group
+	     unless a provisioning profile backs it, and macOS 27 refuses them another app's container. -->
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>DWVXMLB45Y.group.me.rickmark.garage-rag</string>
+	</array>
+	<key>com.apple.security.temporary-exception.files.home-relative-path.read-write</key>
+	<array>
+		<string>/Library/Caches/GarageUITests/</string>
+	</array>
+	<!-- The file exception does not cover connecting to the app's sockets there (s/grpc), which the
+	     tests probe to see the backend come up. -->
+	<key>com.apple.security.temporary-exception.sbpl</key>
+	<array>
+		<string>(allow network-outbound (remote unix-socket (path-regex #"^/Users/[^/]+/Library/Caches/GarageUITests/")))</string>
+	</array>
+</dict>
+</plist>
