@@ -26,6 +26,7 @@ exports_files(
 
 exports_files(
     [
+        "ExportCompliance.plist",
         "Garage.entitlements",
         "GarageDeveloperID.entitlements",
         "Info.plist",
