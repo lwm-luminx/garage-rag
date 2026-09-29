@@ -168,7 +168,10 @@ leaves every other prompt's alone.
 | `prompt_sha256` | SHA-256 of that prompt's description and examples when it ran; NULL before 013 |
 | `tsv` | generated `to_tsvector('english', fact)`, GIN-indexed — the keyword half of hybrid search over facts |
 | `distilled_fact_id` | the distilled fact this *potential* fact backs (`015_distilled_facts.sql`), `ON DELETE SET NULL`; NULL until `garage cluster-facts` runs |
-| `distilled_similarity` | the fact's average cosine similarity to the rest of its group; NULL when it stands alone |
+| `distilled_similarity` | the fact's cosine similarity to its group's centroid (a restatement: to its representative); NULL when it stands alone |
+| `restates_fact_id` | the fact of the same document this one restates (`016_fact_dedup.sql`), `ON DELETE SET NULL`; NULL for a representative |
+| `restates_similarity` | cosine similarity to that representative, 1 for the same normalized text |
+| `dedup_key` | the model and `facts.cluster_restate_threshold` the document's restatement pass ran with; NULL until the fact has a vector |
 
 These rows are *potential* facts: what one prompt extracted from one document.
 The same claim is often extracted many times, so `garage cluster-facts` links
@@ -176,18 +179,24 @@ each to one distilled fact (below).
 
 ### `distilled_facts`
 
-The distinct claims of the corpus (`015_distilled_facts.sql`), each backed by the
-potential facts that state it (`facts.distilled_fact_id`). `garage cluster-facts`
-builds them (`enrich/clusters.py`):
+The distinct claims of the corpus (`015_distilled_facts.sql`, `016_fact_dedup.sql`),
+each backed by the potential facts that state it (`facts.distilled_fact_id`).
+`garage cluster-facts` builds them in two levels (`enrich/clusters.py`):
 
-- It groups potential facts by their vectors under the default model (nearest
-  neighbours above `facts.cluster_threshold`, average linkage).
-- It splits a group whose members differ in numbers, dates or negation.
-- The local chat model confirms each new group and states its claim once.
+- Within each document, restatements point at the document's representative of
+  the claim (`facts.restates_fact_id`) and back whatever it backs.
+- Across the corpus, representatives (the *nodes*) are grouped by growing each
+  group from a tight seed under the default model, stopping at the first
+  neighbour too far from the centroid (`facts.cluster_threshold`) or pulling
+  the centroid too far from the seed (`facts.cluster_max_drift`).
+- A group whose members differ in numbers, dates or negation is never formed.
+- A loose group is shown to the local chat model, which confirms it and states
+  its claim once; a tight one (`facts.cluster_tight_similarity`) is kept as is.
 
-A potential fact nothing restates gets a distilled fact of its own. Potential
-facts are never changed, and a re-run keeps a distilled fact whose members are
-unchanged, with its statement and vectors.
+A node nothing restates gets a distilled fact of its own. Potential facts are
+never changed. A re-run places only new facts unless it is `--full` or a
+grouping setting changed, and a full run keeps each row whose nodes are
+unchanged, with its id, statement and vectors.
 
 | Column | Purpose |
 |---|---|
@@ -197,13 +206,22 @@ unchanged, with its statement and vectors.
 | `members_sha256` | SHA-256 over the sorted member ids, which is how a re-run recognizes an unchanged group |
 | `model_slug` / `threshold` | the embedding model and cosine threshold that grouped the members; NULL for a fact standing alone |
 | `distill_model` | the chat model asked, when one was |
+| `nodes` | representatives behind it (restatements not counted) |
+| `spread` / `radius` | mean and largest cosine distance of its nodes to its centroid |
+| `drift` | cosine distance of its centroid from its seed (the centroid of the core it grew from) |
 | `tsv` | generated `to_tsvector('english', statement)`, GIN-indexed |
 
 Each embedding model has a `fact_emb_<slug>` table of distilled-fact vectors
 beside its `emb_<slug>` table, keyed on `distilled_fact_id` (`ON DELETE CASCADE`).
 It is created and dropped with the model, not by a migration, because its width
-is the model's. The backfill fills it: a statement that quotes a potential fact
-copies that fact's chunk vector, and only model-written statements are embedded.
+is the model's. Under the clustering model, `cluster-facts` writes each row: the
+normalized centroid of its nodes, and in `seed` the seed it grew from (a single
+fact's own vector for both), which later facts are attached against. Under every
+other model the backfill writes the normalized mean of the nodes' vectors, once
+each node has one; nothing is embedded for distilled facts.
+
+`fact_cluster_state` holds the one row saying which model and grouping settings
+the last corpus pass ran with; a difference makes the next run a full one.
 
 ### `fact_runs`
 

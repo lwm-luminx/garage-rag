@@ -31,6 +31,11 @@ public struct FactListItem: Identifiable, Hashable, Sendable {
     public let distilledStatement: String
     /// Whether the local model wrote `distilledStatement` (it is then not a quotation).
     public let distilledGenerated: Bool
+    /// How varied the facts behind the distilled fact are: their mean cosine distance to its
+    /// centroid (0 for identical facts and for a fact alone).
+    public let distilledSpread: Double
+    /// The fact of the same document this one restates, nil when it stands for itself.
+    public let restatesFactID: Int64?
 
     public init(summary: Garage_FactSummary) {
         self.id = summary.id
@@ -54,10 +59,22 @@ public struct FactListItem: Identifiable, Hashable, Sendable {
         self.distilledSize = Int(summary.distilledSize)
         self.distilledStatement = summary.distilledStatement
         self.distilledGenerated = summary.distilledGenerated
+        self.distilledSpread = summary.distilledSpread
+        self.restatesFactID = summary.restatesFactID == 0 ? nil : summary.restatesFactID
     }
 
     /// Whether other potential facts state the same claim as this one.
     public var hasRestatements: Bool { distilledSize > 1 }
+
+    /// Whether this fact restates another fact of its own document.
+    public var restatesWithinDocument: Bool { restatesFactID != nil }
+
+    /// How closely the facts behind the distilled fact agree, as a whole percentage
+    /// (100 for identical ones); nil for a fact alone.
+    public var agreementPercent: Int? {
+        guard hasRestatements else { return nil }
+        return Int(((1 - distilledSpread) * 100).rounded(.down))
+    }
 
     public var documentDisplayTitle: String {
         if !documentTitle.isEmpty {

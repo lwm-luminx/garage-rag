@@ -178,10 +178,13 @@ extension GarageGRPCService {
 
     /// Links every potential fact to a distilled fact (`garage cluster-facts`), handing each
     /// status to `onStatus`; returns the final `finished` status (nil if the stream ended without one).
+    /// `full` regroups the whole corpus instead of placing only what is new.
     func clusterFacts(
+        full: Bool = false,
         onStatus: @MainActor (Garage_ClusterFactsStatus) -> Void
     ) async throws -> Garage_ClusterFactsStatus? {
-        let request = Garage_ClusterFactsRequest()
+        var request = Garage_ClusterFactsRequest()
+        request.full = full
         return try await call(timeout: nil) { client, options in
             var finished: Garage_ClusterFactsStatus?
             for try await status in client.clusterFacts(request, callOptions: options) {

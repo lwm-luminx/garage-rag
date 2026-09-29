@@ -231,33 +231,51 @@ cascades into its chunk and, from there, into every `emb_*` table.
 The facts above are *potential* facts. A claim restated across documents, or in
 every message of a quoted mail thread, is extracted once per statement.
 `garage cluster-facts` (the `ClusterFacts` RPC) links every potential fact to one
-row of `distilled_facts`:
+row of `distilled_facts`, in two levels, from each fact's chunk vector under the
+default model:
 
-1. **Candidates.** Each fact's nearest neighbours of the same class, from its
-   chunk's vector under the default model, kept above `facts.cluster_threshold`
-   (cosine, default 0.9; `facts.cluster_neighbors` per fact, default 10).
-2. **Guard.** A group is split where its members disagree on numbers, dates or
-   negation. Embeddings place "42 employees" beside "45 employees", and "on
-   Tuesday" beside "not on Tuesday".
-3. **Average linkage.** Groups merge only while their average pairwise
-   similarity clears the threshold, so A≈B and B≈C do not chain A to C.
-4. **Distill.** The local chat model (`inference.*`, else `facts.*`) sees each
-   new group and either confirms it with one sentence stating the claim, or
-   says no, and the group dissolves. A group containing a communication goes
-   only to a loopback model; otherwise it is stated by its longest member.
-5. **Link.** Every other potential fact gets a distilled fact of its own.
+1. **Per document.** A document's facts of one class are compared pair by pair.
+   Those with the same normalized text, or at least
+   `facts.cluster_restate_threshold` similar (default 0.92), point at the
+   longest of them (`facts.restates_fact_id`). A document is compared again
+   when one of its facts gains a vector.
+2. **Guard.** Facts that disagree on numbers, dates or negation are never
+   grouped, at either level. Embeddings place "42 employees" beside "45
+   employees", and "on Tuesday" beside "not on Tuesday".
+3. **Across the corpus, full run** (`--full`, or a changed model or grouping
+   setting). The representatives' nearest neighbours
+   (`facts.cluster_neighbors`) give each a density. Densest first, a seed and
+   its neighbours at `facts.cluster_seed_threshold` or closer form a core,
+   whose mean is the group's seed. The group grows by the nearest neighbours of
+   its centroid while each is `facts.cluster_threshold` similar to it and to
+   the seed and keeps the centroid within `facts.cluster_max_drift` of the
+   seed, stopping at the first that is not. A group found again with the same
+   members keeps its row.
+4. **Across the corpus, incremental run.** Groups that lost members are
+   re-centred, and each new representative joins the nearest distilled fact
+   that passes the same tests (`facts.cluster_attach_candidates` tried), or
+   stands alone for later ones to join. Existing groups are never merged;
+   `--full` regroups after the corpus has grown a lot.
+5. **Distill.** A group whose farthest member is closer to its centroid than
+   members all `facts.cluster_tight_similarity` alike would be is kept as is.
+   The local chat model (`inference.*`, else `facts.*`) sees any other and
+   either confirms it with one sentence stating the claim, or says no, and the
+   group dissolves. A group containing a communication goes only to a loopback
+   model; when the model is elsewhere, such a group is not kept.
 
-Nothing about a potential fact changes but its link. A group whose members are
-unchanged keeps its row, statement and vectors, so a re-run asks the model only
-about new groups. The backfill gives each distilled fact a vector in the model's
-`fact_emb_<slug>` table. It copies the chunk vector where the statement quotes a
-potential fact, and embeds only model-written statements.
+Nothing about a potential fact changes but its links. Each distilled fact
+records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
+seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it
+a vector under every other model, the normalized mean of its nodes' vectors
+there, so nothing is embedded for it. A binary-quantized model cannot be the
+clustering model.
 
 Where the server has Apache AGE, the run then re-projects the tables into the
 graph `garage` (`garage graph rebuild` does only that). The vertices are
 `Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
-`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact) and
-`SUPPORTS` (PotentialFact to Fact). Vertices carry the relational ids; text,
+`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact),
+`RESTATES` (a restatement to its representative) and `SUPPORTS` (a
+representative to its Fact). Vertices carry the relational ids; text,
 spans and vectors stay in the tables.
 
 ### 8. Search (`search/hybrid.py`)
