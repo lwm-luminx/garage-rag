@@ -50,7 +50,7 @@ Welcome to the comprehensive support guide for **Garage**. This guide covers sys
 
 <h3 id="native-macos-application">Native macOS Application (<code>GarageApp</code>)</h3>
 
-Get Garage from the [Mac App Store](https://apps.apple.com/app/id6811306880), or download the signed and notarized installer from the [download page]({{ '/#download' | relative_url }}). Both versions share one library (the same data folder), so switching between them needs no re-indexing. The installer version updates itself through **Check for Updates…** after asking you once; the App Store version gets its updates from the App Store instead.
+Get Garage from the {% if site.app_store_live %}[Mac App Store](https://apps.apple.com/app/id6811306880){% else %}Mac App Store beta on [TestFlight]({{ '/testflight.html' | relative_url }}){% endif %}, or download the signed and notarized installer from the [download page]({{ '/#download' | relative_url }}). Both versions share one library (the same data folder), so switching between them needs no re-indexing. The installer version updates itself through **Check for Updates…** after asking you once; the App Store version gets its updates from the App Store instead.
 
 `GarageApp` provides a menu bar utility and management window that bundles an embedded, relocatable instance of PostgreSQL 18 with `pgvector`:
 
