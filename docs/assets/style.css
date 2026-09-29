@@ -766,3 +766,21 @@ details .faq-content {
   color: var(--text-secondary);
   margin-bottom: 1rem;
 }
+
+/* Diagrams */
+.diagram {
+  margin: 24px 0;
+}
+
+.diagram img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  .diagram img {
+    max-width: 380px;
+    margin: 0 auto;
+  }
+}

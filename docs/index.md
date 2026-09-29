@@ -136,22 +136,14 @@ Garage never uploads your files or its index. What leaves your Mac depends on wh
 
 ## How it works
 
-```
-sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ quality gate
-                                                          │
-                            attribution ◀─────────────────┤
-                                  │                       ▼
-                                  └──────▶ documents ── chunks
-                                                          │
-                                              ┌───────────┴───────────┐
-                                              ▼                       ▼
-                                         emb_<model_1>           emb_<model_2>
-                                              └───────────┬───────────┘
-                                                          ▼
-                                              hybrid search (RRF)
-                                                          │
-                                                    MCP server
-```
+<figure class="diagram">
+  <picture>
+    <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-narrow-dark.svg' | relative_url }}">
+    <source media="(max-width: 640px)" srcset="{{ '/assets/diagrams/how-it-works-narrow-light.svg' | relative_url }}">
+    <source media="(prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-dark.svg' | relative_url }}">
+    <img src="{{ '/assets/diagrams/how-it-works-light.svg' | relative_url }}" width="1040" height="470" loading="lazy" alt="Your folders, git repositories, documents, Messages and Mail, and cloud folders feed Garage on your Mac. Garage reads each file, attributes it, splits it into passages and embeds them with on-device models into a private PostgreSQL and pgvector library. Hybrid search over that library is served over MCP: your AI assistant asks a question and gets back only the excerpts it searched for. Garage uploads nothing.">
+  </picture>
+</figure>
 
 Garage walks the sources you register, extracts text, decides who wrote each document and how much to trust it, and splits it into chunks. Each chunk is embedded under every model you register, one table per model, so adding a model is a backfill rather than a re-ingest. Search fuses the vector and keyword rankings and serves the result to your assistant over MCP. Everything lives in a PostgreSQL 18 + pgvector cluster the app bundles and runs for you.
 
