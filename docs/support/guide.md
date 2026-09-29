@@ -237,7 +237,7 @@ The Sources page lists a source it cannot read at the top, with a button to gran
 
 ### App Store version
 
-The App Store version runs in the macOS sandbox and can read only the folders you choose. It asks with the standard Open dialog when you add a source, or when it needs the disk (**Select Disk…** at the top of the Sources page, **Select Startup Disk…** in the setup assistant). For Messages and Mail, choose the folder and also turn on Full Disk Access as above.
+The App Store version runs in the macOS sandbox and can read only the folders you choose. It asks with the standard Open dialog when you add a source, or when it needs your home folder (**Select Home Folder…** at the top of the Sources page and in the setup assistant; **Select Startup Disk…** beside it covers other disks). For Messages and Mail, choose the folder and also turn on Full Disk Access as above.
 
 ---
 
