@@ -112,6 +112,9 @@ public struct IngestOptions: Codable, Sendable, Equatable {
     public let lmStudioApiToken: String?
     /// The app's per-launch gRPC token (`GARAGE_GRPC_TOKEN`), for an ingest that persists over gRPC.
     public let grpcToken: String?
+    /// `[handle, name]` pairs from the user's Contacts, read by the app (which holds the Contacts
+    /// permission) so the ingest can name authors known only by a phone number or email address.
+    public let contactNames: [[String]]?
 
     public init(
         includeCode: Bool = false,
@@ -121,7 +124,8 @@ public struct IngestOptions: Codable, Sendable, Equatable {
         grpcPort: Int? = nil,
         databaseUrl: String? = nil,
         lmStudioApiToken: String? = nil,
-        grpcToken: String? = nil
+        grpcToken: String? = nil,
+        contactNames: [[String]]? = nil
     ) {
         self.includeCode = includeCode
         self.limit = limit
@@ -131,6 +135,7 @@ public struct IngestOptions: Codable, Sendable, Equatable {
         self.databaseUrl = databaseUrl
         self.lmStudioApiToken = lmStudioApiToken
         self.grpcToken = grpcToken
+        self.contactNames = contactNames
     }
 
     public static let `default` = IngestOptions()
@@ -144,6 +149,7 @@ public struct IngestOptions: Codable, Sendable, Equatable {
         case databaseUrl = "database_url"
         case lmStudioApiToken = "lmstudio_api_token"
         case grpcToken = "grpc_token"
+        case contactNames = "contact_names"
     }
 
     public init(from decoder: Decoder) throws {
@@ -156,6 +162,7 @@ public struct IngestOptions: Codable, Sendable, Equatable {
         self.databaseUrl = try container.decodeIfPresent(String.self, forKey: .databaseUrl)
         self.lmStudioApiToken = try container.decodeIfPresent(String.self, forKey: .lmStudioApiToken)
         self.grpcToken = try container.decodeIfPresent(String.self, forKey: .grpcToken)
+        self.contactNames = try container.decodeIfPresent([[String]].self, forKey: .contactNames)
     }
 }
 

@@ -18,6 +18,12 @@ exports_files(
 # The rest of what garage_macos_application bundles from here, for the model UI tests' host app,
 # which lives in its own package: two apps named Garage in one package would write the same
 # Garage.app output.
+# The tip jar's local StoreKit configuration (TipJar.swift), for the unit tests' SKTestSession.
+exports_files(
+    ["GarageTips.storekit"],
+    visibility = ["//macapp/Tests/GarageAppUnitTests:__pkg__"],
+)
+
 exports_files(
     [
         "ExportCompliance.plist",

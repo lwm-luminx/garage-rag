@@ -85,10 +85,10 @@ public final class LlamaModelLoader: @unchecked Sendable {
 
     /// The loader for this process: LlamaXPCService over NSXPC, models resolved from the catalog
     /// and models folder of the app's data folder. The app passes the default (lookup by service
-    /// name); an XPC service passes `.handedOverEndpoint()`.
+    /// name); an XPC service passes `.handedOverEndpoint()`. The resolver is made per load, since an
+    /// XPC service learns a UI test's models folder (`GARAGE_MODELS_DIR`) only after installing this.
     public static func standard(service: Service = .xpc()) -> LlamaModelLoader {
-        let resolver = LlamaModelResolver.standard()
-        return LlamaModelLoader(service: service, resolve: { try resolver.resolve(alias: $0) })
+        LlamaModelLoader(service: service, resolve: { try LlamaModelResolver.standard().resolve(alias: $0) })
     }
 
     /// Ensures `alias` is resident, loading it when it is not.

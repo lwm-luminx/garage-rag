@@ -36,7 +36,7 @@ struct StatusHealth: Equatable {
             case .applyMigrations: "Apply Updates"
             case .startMCP: "Start"
             case .testMCP: "Test Again"
-            case .chooseDisk: "Choose Disk…"
+            case .chooseDisk: "Select Folder…"
             case .grantFolder: "Grant Access…"
             case .openPrivacySettings: "Open Privacy Settings…"
             case .checkSourceAccess: "Check Again"
@@ -251,7 +251,7 @@ struct StatusHealth: Equatable {
         case .notConfigured:
             list.append(Problem(
                 id: "disk", severity: .warning, title: "Garage has no disk access yet",
-                detail: "Choose the disk your sources are on so the sandbox lets Garage read them.",
+                detail: "Select your home folder once so the sandbox lets Garage read your sources, or your startup disk to index other disks too.",
                 section: .sources, fix: .chooseDisk
             ))
         case .stale(let path):

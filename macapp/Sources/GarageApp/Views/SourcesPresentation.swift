@@ -306,6 +306,7 @@ struct SourceRowPresentation: Equatable {
 /// the one action that fixes it beside it.
 struct SourcesAttention: Equatable, Identifiable {
     enum Action: Equatable {
+        case selectHomeFolder
         case selectDisk
         case grantFolder(slug: String, path: String)
         case tccPrompt(TCCPermissionCategory, slug: String, path: String)
@@ -336,6 +337,12 @@ struct SourcesAttention: Equatable, Identifiable {
     ) -> [SourcesAttention] {
         var items: [SourcesAttention] = []
 
+        // The sandboxed build asks for the home folder first, the smallest grant that covers the usual
+        // sources; the startup disk stays as the second choice for sources on other disks.
+        let grant = sandboxed
+            ? Command(title: "Select Home Folder…", action: .selectHomeFolder)
+            : Command(title: "Select Disk…", action: .selectDisk)
+        let otherDisk = sandboxed ? [Command(title: "Select Startup Disk…", action: .selectDisk)] : []
         switch volumeStatus {
         case .notConfigured:
             items.append(SourcesAttention(
@@ -343,9 +350,9 @@ struct SourcesAttention: Equatable, Identifiable {
                 symbol: "lock",
                 tint: .orange,
                 title: "Garage can't read outside its sandbox yet",
-                detail: "Select your startup disk (Macintosh HD) once, and every source on it can be read.",
-                primary: Command(title: "Select Disk…", action: .selectDisk),
-                secondary: [Command(title: "Open Privacy Settings…", action: .openPrivacySettings(.fullDiskAccess))]
+                detail: "Select your home folder once, and every source in it can be read. Select your startup disk instead to index other disks too.",
+                primary: grant,
+                secondary: otherDisk + [Command(title: "Open Privacy Settings…", action: .openPrivacySettings(.fullDiskAccess))]
             ))
         case .accessDenied(let reason):
             items.append(SourcesAttention(
@@ -354,8 +361,8 @@ struct SourcesAttention: Equatable, Identifiable {
                 tint: .red,
                 title: "Disk access was denied",
                 detail: reason,
-                primary: Command(title: "Select Disk…", action: .selectDisk),
-                secondary: [Command(title: "Open Privacy Settings…", action: .openPrivacySettings(.fullDiskAccess))]
+                primary: grant,
+                secondary: otherDisk + [Command(title: "Open Privacy Settings…", action: .openPrivacySettings(.fullDiskAccess))]
             ))
         case .staleBookmark(let url):
             items.append(SourcesAttention(
@@ -364,8 +371,8 @@ struct SourcesAttention: Equatable, Identifiable {
                 tint: .orange,
                 title: "Disk access needs re-granting",
                 detail: "The saved permission for \(url.path) no longer works.",
-                primary: Command(title: "Re-grant…", action: .selectDisk),
-                secondary: []
+                primary: Command(title: "Re-grant…", action: sandboxed ? .selectHomeFolder : .selectDisk),
+                secondary: otherDisk
             ))
         case .accessGranted:
             break

@@ -63,6 +63,19 @@ public enum GarageAppGroup {
         dataDirectoryOverride ?? sharedDataDirectory ?? legacyDataDirectory
     }
 
+    /// The downloaded models folder, `<data folder>/models`. An XPC service never sees the app's
+    /// `--data-directory`, so for such a launch the app hands the folder over as
+    /// `GARAGE_MODELS_DIR` (`GarageXPCConfigurationKey.modelsDirectory`); without it the service
+    /// would load models from the real data folder.
+    public static var modelsDirectory: URL {
+        if dataDirectoryOverride == nil,
+           let handedOver = getenv(GarageXPCConfigurationKey.modelsDirectory).map({ String(cString: $0) }),
+           !handedOver.isEmpty {
+            return URL(fileURLWithPath: handedOver, isDirectory: true)
+        }
+        return dataDirectory.appendingPathComponent("models", isDirectory: true)
+    }
+
     /// The model catalog the app last fetched from the website (`ModelCatalog` in the app),
     /// preferred to the copy in the bundle when present.
     public static var fetchedModelCatalog: URL {
@@ -74,7 +87,7 @@ public enum GarageAppGroup {
     public static let dataDirectoryOverride: URL? = {
         do {
             return try dataDirectoryOverride(
-                in: CommandLine.arguments,
+                in: GarageAppLaunch.arguments,
                 realDirectories: realDataDirectories,
                 testRoots: [uiTestDataRoot]
             )
@@ -152,6 +165,22 @@ public enum GarageAppGroup {
             return String(cString: dir)
         }
         return NSHomeDirectory()
+    }
+
+    /// Where the MCP page looks for assistants' configs: the `--client-home` folder on a
+    /// `--data-directory` launch that names one, otherwise `realHomeDirectory`.
+    public static let clientHomeDirectory: String = clientHomeDirectory(
+        in: GarageAppLaunch.arguments,
+        isTestLaunch: dataDirectoryOverride != nil
+    )
+
+    static func clientHomeDirectory(in arguments: [String], isTestLaunch: Bool) -> String {
+        guard isTestLaunch,
+              let flag = arguments.firstIndex(of: GarageAppLaunch.clientHomeArgument),
+              flag + 1 < arguments.count,
+              arguments[flag + 1].hasPrefix("/")
+        else { return realHomeDirectory }
+        return URL(fileURLWithPath: arguments[flag + 1], isDirectory: true).standardizedFileURL.path
     }
 
     /// `path` with a leading `~` expanded against the account's home folder. `expandingTildeInPath`
