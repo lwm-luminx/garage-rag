@@ -232,7 +232,13 @@ def ingest_xpc(
     grpc_host: str | None = None,
     grpc_port: int | None = None,
     grpc_socket: str | None = None,
+    contact_names: Any = None,
 ) -> None:
+    """Ingest ``source`` (or every enabled source for ``*``) for the app's ingest XPC service.
+
+    ``contact_names`` is ``[handle, name]`` pairs the app read from Contacts; they name authors
+    known only by a phone number or email address, and Messages threads.
+    """
     _ensure_logging()
     log.info(
         "ingest_xpc called for source=%r (include_code=%s, limit=%s, force=%s, grpc_port=%s, grpc_socket=%s)",
@@ -244,12 +250,16 @@ def ingest_xpc(
         grpc_socket,
     )
 
+    from garage_rag.extract.contact_names import ContactNames
     from garage_rag.ingest.gateway import get_storage_gateway
     from garage_rag.ingest.pipeline import ingest_source
     from garage_rag.ingest.walker import SourceUnavailable
 
     reset_ingest_cancel()
     unavailable: list[str] = []
+    names = ContactNames((str(pair[0]), str(pair[1])) for pair in contact_names or () if len(pair) == 2)
+    # A count only: the names are the user's contacts.
+    log.info("Contact names supplied for %d handle(s)", len(names))
 
     gw = get_storage_gateway(
         session_factory=session_factory,
@@ -370,6 +380,7 @@ def ingest_xpc(
                 force=force,
                 progress=_handle_pipeline_progress,
                 is_cancelled=is_ingest_cancelled,
+                contact_names=names,
             )
             log.info(
                 "Completed pipeline.ingest_source for %r: seen=%d/%d, indexed=%d, skipped=%d, failed=%d, "

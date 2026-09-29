@@ -470,3 +470,37 @@ def test_a_folder_with_no_messages_database_is_not_full_coverage(tmp_path: Path)
     counters, _, _ = ingest_source(gateway=gateway, source_slug="apple-sms")
     assert gateway.finalized["completed"] is False
     assert counters.errors == [f"{tmp_path}: no readable Messages database found"]
+
+
+def test_contacts_and_shared_names_label_threads_and_authors(messages_dir: Path) -> None:
+    import plistlib
+
+    from garage_rag.extract.contact_names import ContactNames
+
+    cache = messages_dir / "NickNameCache"
+    cache.mkdir()
+    conn = sqlite3.connect(cache / "handledNicknamesKeyStore.db")
+    conn.execute("CREATE TABLE kvtable (ROWID INTEGER PRIMARY KEY, key TEXT UNIQUE, value BLOB)")
+    conn.executemany(
+        "INSERT INTO kvtable (key, value) VALUES (?, ?)",
+        [
+            ("+15551234567", plistlib.dumps({"firstName": "Shared", "lastName": "Alex"})),
+            ("friend@example.com", plistlib.dumps({"firstName": "Sam", "lastName": "Lee"})),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    gateway = FakeGateway(messages_dir)
+    ingest_source(
+        gateway=gateway, source_slug="apple-sms", contact_names=ContactNames([("(555) 123-4567", "Alex Doe")])
+    )
+
+    db = messages_dir / "chat.db"
+    direct = gateway.docs[f"{db}#iMessage;-;+15551234567"]
+    assert direct["title"] == "Alex Doe"  # Contacts wins over the shared name
+    assert "[2026-09-24 12:00 UTC] Alex Doe: running late" in direct["content"]
+    assert gateway.docs[f"{db}#iMessage;-;friend@example.com"]["title"] == "Sam Lee"  # only shared
+    group = gateway.docs[f"{db}#iMessage;+;chat42"]
+    assert "Participants: Alex Doe (+15551234567), Sam Lee (friend@example.com), +15559876543" in group["content"]
+    assert {a.name for a in group["authors"] if not a.is_self} == {"Alex Doe", "Sam Lee", "+15559876543"}

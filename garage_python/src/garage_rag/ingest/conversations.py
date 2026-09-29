@@ -64,6 +64,7 @@ from garage_rag.extract.messages import (
     messages_database_status,
     read_conversations,
 )
+from garage_rag.extract.nicknames import read_shared_names
 from garage_rag.ingest.chunking import TextChunk, chunk_prose
 from garage_rag.ingest.gateway import AuthorPayload, ChunkPayload, IngestStorageGateway, SourceContext
 
@@ -293,8 +294,9 @@ def ingest_messages_source(
 ) -> bool:
     """Ingest every conversation in every Messages database under the source's root.
 
-    ``contact_names`` supplies names for the handles; without it threads are
-    labelled by phone number and email address, as ``chat.db`` stores them.
+    ``contact_names`` supplies names for the handles (from Contacts, in the app); a name an iMessage
+    contact shared (``NickNameCache`` beside each ``chat.db``) fills in a handle it does not cover.
+    Without either, threads are labelled by phone number and email address, as ``chat.db`` stores them.
 
     ``counters`` is the pipeline's ``IngestCounters``. Returns True when every
     database was read to the end, which is what lets reconcile retire the
@@ -321,6 +323,8 @@ def ingest_messages_source(
             continue
         found += 1
         log.info("Reading conversations from %s", db_path)
+        # Contacts first; a name an iMessage contact shared fills in a handle Contacts does not know.
+        names = (contact_names or ContactNames()).with_fallback(read_shared_names(db_path.parent))
         stats = OrphanStats()
         try:
             for conversation in read_conversations(db_path, stats):
@@ -328,7 +332,7 @@ def ingest_messages_source(
                     log.info("Ingest cancelled by user for source %s", source_ctx.slug)
                     return False
                 counters.seen += 1
-                attach_names(conversation, contact_names)
+                attach_names(conversation, names)
                 try:
                     written = ingest_conversation(
                         gateway, source_ctx, db_path, conversation, self_identity=self_identity, force=force

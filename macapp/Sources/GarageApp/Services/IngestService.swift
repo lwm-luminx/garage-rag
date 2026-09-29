@@ -399,6 +399,7 @@ final class IngestService: ObservableObject {
             }
         }
 
+        let contactNames = await ContactNamesService.namesForIngest()
         let effectiveOptions = IngestOptions(
             includeCode: options.includeCode,
             limit: options.limit,
@@ -407,7 +408,8 @@ final class IngestService: ObservableObject {
             grpcPort: options.grpcPort,
             databaseUrl: prep.dbURL,
             lmStudioApiToken: prep.lmToken,
-            grpcToken: GarageGRPCAuth.token
+            grpcToken: GarageGRPCAuth.token,
+            contactNames: contactNames.isEmpty ? nil : contactNames
         )
 
         if let dbURL = prep.dbURL {
