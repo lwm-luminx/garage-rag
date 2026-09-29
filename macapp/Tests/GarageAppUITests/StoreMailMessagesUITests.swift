@@ -213,9 +213,10 @@ final class StoreMailMessagesUITests: StoreUITestCase {
         XCTAssertTrue(waitForEnabled(scanIngest), "Scan & Ingest stayed disabled", file: file, line: line)
         click(scanIngest)
 
-        // The scan's count is the source's expected total, shown as "<ingested>/<expected> DOCS".
+        // The scan's count is the source's expected total, shown as "<ingested> of <expected> documents"
+        // (SourceRowPresentation).
         XCTAssertTrue(
-            element(textContaining: "/\(expected) DOCS").waitForExistence(timeout: 120),
+            element(textContaining: "of \(expected) documents").waitForExistence(timeout: 120),
             "the scan did not count \(expected) items in the fixture",
             file: file,
             line: line
