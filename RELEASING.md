@@ -36,6 +36,7 @@ Both are built from the same commit and share one data folder and one Keychain i
    aspect run //macapp/package:publish_appcast -- v<version> --notes notes.md
    ```
    Add `--channel beta` for a beta only testers should get: it reaches only installs with **Receive Beta Updates** on. Without it the entry is on no channel, and every install, testers included, is offered it.
+   When the Keychain key lives on another Mac than the one that built and notarized, copy `dist/Garage-<version>.zip` there and run `aspect run //macapp/package:sign_appcast -- v<version> --from Garage-<version>.zip --notes notes.md` instead: it makes the same checks and writes the same files, without a build.
 6. **Publish, in this order**, so the feed never names a download that isn't up yet:
    1. Create the GitHub release from the signed tag with `dist/Garage-<version>.zip` and `dist/GarageInstaller_arm64.pkg`. Those exact names matter: the appcast signature covers the zip, and the site's download buttons look for the `.pkg` name.
    2. Commit and push `docs/appcast.xml`, signed.
