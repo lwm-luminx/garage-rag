@@ -32,9 +32,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-# gazelle:ignore faker
-from faker import Faker  # a dev dependency, which the Bazel @pypi hub does not expose
+if TYPE_CHECKING:
+    from faker import Faker
 
 FIXTURES = Path(__file__).parent / "fixtures" / "messages"
 CHAT_DB_SCHEMA = FIXTURES / "chat_db_schema.sql"
@@ -312,6 +313,11 @@ def build_messages_folder(
     start: datetime = datetime(2025, 1, 6, 9, tzinfo=UTC),
 ) -> FakeMessages:
     """Write ``folder/chat.db`` and ``folder/NickNameCache/`` and describe what went in."""
+    # A dev dependency, which the Bazel @pypi hub does not expose: imported here so tests can
+    # import this module and skip when it is missing.
+    # gazelle:ignore faker
+    from faker import Faker
+
     rng = random.Random(seed)
     fake = Faker("en_US")
     fake.seed_instance(seed)

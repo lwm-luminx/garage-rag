@@ -8,11 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-# Faker is in the dev extras only, which the Bazel @pypi hub does not expose; the venv runs this.
-pytest.importorskip("faker")
-
-from fake_messages import CHAT_DB_SCHEMA, FakeMessages, build_messages_folder  # noqa: E402
+from fake_messages import CHAT_DB_SCHEMA, FakeMessages, build_messages_folder
 
 from garage_rag.db.models import CorpusClass, TrustTier
 from garage_rag.extract.contact_names import ContactNames
@@ -78,6 +74,12 @@ class RecordingGateway(IngestStorageGateway):
 
     def finalize_session(self, *args, **kwargs) -> None:
         self.finalized = kwargs
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _needs_faker() -> None:
+    # Faker is in the dev extras only, which the Bazel @pypi hub does not expose; the venv runs these.
+    pytest.importorskip("faker")
 
 
 @pytest.fixture(scope="module")
