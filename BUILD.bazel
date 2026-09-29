@@ -11,6 +11,9 @@
 # compiler (.github/workflows/known-answers.yaml), outside Bazel.
 # gazelle:exclude tools/llama
 
+# garage_python/hatch_build.py is the PyPI build's hook, run by hatchling outside Bazel.
+# gazelle:exclude garage_python/hatch_build.py
+
 exports_files(
     [
         "README.md",
