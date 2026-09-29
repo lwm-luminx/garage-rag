@@ -274,8 +274,9 @@ def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillP
     this model (``garage cluster-facts`` writes the clustering model's own, with
     the group's seed). Nothing is embedded, so nothing leaves the machine; a
     distilled fact waits until every one of its representatives has a vector
-    here, so its centroid is not skewed toward the ones embedded first. Pure
-    insert, like the chunk backfill.
+    here, so its centroid is not skewed toward the ones embedded first. An
+    anchored distilled fact (a metadata value) takes its representative's vector
+    instead. Pure insert, like the chunk backfill.
     """
     table = potential_fact_table_name(assert_safe_table(model.table_name))
     fact_table = ensure_fact_table(session, model)
@@ -285,8 +286,10 @@ def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillP
             INSERT INTO {fact_table} (distilled_fact_id, embedding)
             SELECT f.distilled_fact_id, l2_normalize(avg(e.embedding))
             FROM facts f
+            JOIN distilled_facts df ON df.id = f.distilled_fact_id
             LEFT JOIN {table} e ON e.fact_id = f.id
-            WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
+            -- An anchor's centroid is fixed: its representative's vector, not its members' mean.
+            WHERE f.restates_fact_id IS NULL AND (df.anchor_key IS NULL OR f.id = df.representative_fact_id)
               AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = f.distilled_fact_id)
             GROUP BY f.distilled_fact_id
             HAVING count(e.fact_id) = count(*)

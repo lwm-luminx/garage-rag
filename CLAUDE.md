@@ -275,6 +275,10 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     neighbour is too far from the centroid or pulls it too far from the seed; groups record
     `spread`/`radius`/`drift`. Incremental runs attach new facts to stored centroids; `--full` (or
     a changed `facts.cluster_*` grouping setting) regroups, keeping rows whose members are unchanged.
+  - Metadata is ground truth: `enrich-facts` writes a mail's sender/recipients/subject and a thread's
+    participants as facts with no model (`enrich/metadata.py`, `extractor = 'metadata'`). Each distinct
+    value is an anchored distilled fact (`anchor_key`, `018_fact_anchors.sql`) with a fixed centroid;
+    inferred facts of its class join it first, without moving it.
   - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
     loose group and states it once; a tight one is kept as is.
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the

@@ -94,6 +94,7 @@ def enrich_facts(
     the run continues. Raises LookupError when there is nothing to enrich or a
     named prompt does not exist.
     """
+    from garage_rag.enrich import metadata
     from garage_rag.enrich.facts import configured_backend, extract_and_store_facts, is_stale
 
     model_id, provider = configured_backend(model, provider)
@@ -125,13 +126,25 @@ def enrich_facts(
             event = EnrichEvent(index=index, total=len(documents), document_id=document.id, uri=document.uri or "")
             corpus_class = getattr(document.corpus_class, "value", document.corpus_class)
             applicable = [p for p in selected if p.applies_to(corpus_class, slugs.get(document.source_id))]
+            runs = (
+                {run.prompt_name: run for run in session.query(FactRun).filter(FactRun.document_id == document.id)}
+                if stale_only
+                else {}
+            )
             if stale_only and applicable:
-                runs = {
-                    run.prompt_name: run
-                    for run in session.query(FactRun).filter(FactRun.document_id == document.id).all()
-                }
                 applicable = [p for p in applicable if is_stale(runs.get(p.name), document, p, model_id)]
             errors: list[str] = []
+            # A mail's sender, recipients and subject, a thread's participants: no model, nothing sent.
+            if not stale_only or metadata.is_stale(runs.get(metadata.PROMPT_NAME), document):
+                try:
+                    written = metadata.store_metadata_facts(session, document)
+                    session.commit()
+                    if written:
+                        event.facts += len(written)
+                        event.prompts.append(metadata.PROMPT_NAME)
+                except Exception as exc:
+                    session.rollback()
+                    errors.append(f"{metadata.PROMPT_NAME}: {exc}")
             for prompt in applicable:
                 try:
                     facts = extract_and_store_facts(
@@ -147,7 +160,7 @@ def enrich_facts(
             if errors:
                 failed += 1
                 event.error = "; ".join(errors)
-            elif not applicable:
+            elif not applicable and not event.prompts:
                 skipped += 1
                 event.skipped = True
             if on_event is not None:

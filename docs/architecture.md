@@ -265,6 +265,18 @@ default model:
    group dissolves. A group containing a communication goes only to a loopback
    model; when the model is elsewhere, such a group is not kept.
 
+Ground truth anchors groups. `enrich-facts` writes a mail's sender, recipients
+and subject and a Messages thread's participants as potential facts without a
+model (`enrich/metadata.py`: a person is keyed on their `authors` row where an
+identity matches, else the address; a subject on its text without `Re:`/`Fwd:`).
+Each distinct value becomes one anchored distilled fact (`anchor_key`,
+`018_fact_anchors.sql`). Its metadata facts link to it by key, whatever their
+vectors, and its centroid is its first fact's vector and never moves. Before a
+new inferred fact is grouped anywhere else, it joins the nearest anchor of its
+class that it is `facts.cluster_threshold` similar to and that passes the guard;
+no model is asked and nothing drifts. Metadata facts take no part in level 1 or
+in growing groups. Under other models an anchor's vector is its representative's.
+
 Nothing about a potential fact changes but its links. Each distilled fact
 records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
 seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it

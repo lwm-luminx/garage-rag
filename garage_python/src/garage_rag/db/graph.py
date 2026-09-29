@@ -16,7 +16,8 @@ vectors stay in the tables (and vectors in the ``emb_``/``potential_fact_emb_``/
 ``Author``         ``author_id``, ``display_name``, ``is_self``
 ``PotentialFact``  ``fact_id``, ``document_id``, ``fact_class``, ``prompt_name``, ``fact``
 ``Fact``           ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
-                   ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py)
+                   ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py),
+                   ``anchor_key`` (a metadata value's key, for an anchored fact)
 =================  ===============================================================
 
 Edges:
@@ -85,7 +86,7 @@ VERTICES: dict[str, tuple[str, str]] = {
         SELECT df.id, jsonb_strip_nulls(jsonb_build_object(
                    'distilled_fact_id', df.id, 'fact_class', df.fact_class, 'statement', df.statement,
                    'statement_generated', df.statement_generated, 'nodes', df.nodes, 'spread', df.spread,
-                   'drift', df.drift))
+                   'drift', df.drift, 'anchor_key', df.anchor_key))
         FROM distilled_facts df
         """,
     ),

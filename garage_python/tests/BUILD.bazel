@@ -599,6 +599,16 @@ py_test(
 )
 
 py_test(
+    name = "test_metadata_facts",
+    srcs = ["test_metadata_facts.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/enrich",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_messages",
     srcs = ["test_messages.py"],
     deps = [
