@@ -1,3 +1,5 @@
+# gazelle:resolve py fake_messages //garage_python/tests:fake_messages
+
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("//tools/pytest:defs.bzl", "py_test")
 
@@ -592,6 +594,30 @@ py_test(
         ":conftest",
         "//garage_python/src/garage_rag",
         "//garage_python/src/garage_rag/native",
+        "@pypi//pytest",
+    ],
+)
+
+# The fake Messages folder: imported as `fake_messages` by tests, and run by hand to try the app.
+# keep
+py_library(
+    name = "fake_messages",
+    testonly = True,
+    srcs = ["fake_messages.py"],
+    data = glob(["fixtures/messages/*.sql"]),
+    imports = ["."],
+    visibility = ["//:__subpackages__"],
+)
+
+py_test(
+    name = "test_fake_messages",
+    srcs = ["test_fake_messages.py"],
+    deps = [
+        ":conftest",
+        ":fake_messages",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/extract",
+        "//garage_python/src/garage_rag/ingest",
         "@pypi//pytest",
     ],
 )
