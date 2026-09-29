@@ -98,6 +98,9 @@ class GarageUITestCase: XCTestCase {
             "-garage.mcp.httpEnabled", mcpHTTP ? "YES" : "NO",
             // The build's bundled models.json, not the website's copy, which can lag the branch under test.
             "-garage.modelCatalog.refreshAtLaunch", "NO",
+            // No Contacts lookup: the first ingest of a Mail or Messages fixture would otherwise put up
+            // the Contacts permission prompt, which the test cannot answer, and stall the ingest.
+            "-garage.contactNames.disabled", "YES",
             // Start from a clean window each time rather than the last run's restored state.
             "-ApplePersistenceIgnoreState", "YES",
         ] + additionalLaunchArguments
