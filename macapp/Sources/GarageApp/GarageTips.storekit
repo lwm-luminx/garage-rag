@@ -5,7 +5,7 @@
   ],
   "products" : [
     {
-      "displayPrice" : "1.99",
+      "displayPrice" : "4.99",
       "familyShareable" : false,
       "internalID" : "6A1F2E01",
       "localizations" : [
@@ -20,7 +20,7 @@
       "type" : "Consumable"
     },
     {
-      "displayPrice" : "4.99",
+      "displayPrice" : "9.99",
       "familyShareable" : false,
       "internalID" : "6A1F2E02",
       "localizations" : [
@@ -35,7 +35,7 @@
       "type" : "Consumable"
     },
     {
-      "displayPrice" : "9.99",
+      "displayPrice" : "19.99",
       "familyShareable" : false,
       "internalID" : "6A1F2E03",
       "localizations" : [
