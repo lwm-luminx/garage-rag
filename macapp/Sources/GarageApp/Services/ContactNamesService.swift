@@ -8,7 +8,8 @@ import OSLog
 ///
 /// The app reads Contacts, not the ingest service: the app holds the Contacts permission in both builds
 /// (`com.apple.security.personal-information.addressbook`), and the names stay on this Mac, in the
-/// corpus's communications. macOS asks once, before the first ingest; a refusal leaves handles as they are.
+/// corpus's communications. macOS asks once, before the first ingest of a communication source (Mail or
+/// Messages) and never for a folder of documents; a refusal leaves handles as they are.
 enum ContactNamesService {
     private static let logger = Logger(subsystem: "me.rickmark.garage-rag", category: "ContactNames")
 
