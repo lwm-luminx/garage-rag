@@ -10,7 +10,10 @@ final class TipJarTests: XCTestCase {
     }
 
     func testTipsAreOrderedSmallestFirstAndStrangersDropped() {
-        let shuffled = [TipProducts.large, "me.rickmark.garage_rag.other", TipProducts.small, TipProducts.medium]
+        let shuffled = [
+            TipProducts.ultra, TipProducts.large, "me.rickmark.garage_rag.other", TipProducts.small,
+            TipProducts.max, TipProducts.medium,
+        ]
         XCTAssertEqual(TipProducts.ordered(shuffled, id: { $0 }), TipProducts.all)
         XCTAssertEqual(TipProducts.ordered([TipProducts.large], id: { $0 }), [TipProducts.large])
     }
