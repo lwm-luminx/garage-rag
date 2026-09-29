@@ -429,7 +429,7 @@ def _write_nicknames(folder: Path, shared: dict[str, str], rng: random.Random) -
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("folder", type=Path, help="where to write chat.db and NickNameCache/")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--people", type=int, default=24)
