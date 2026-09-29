@@ -34,6 +34,7 @@ structured_data:
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
+  {% unless site.app_store_live %}{% if site.testflight_url and site.testflight_url != "" %}<p class="download-meta">Want the Mac App Store version? It's in beta: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight</a>.</p>{% endif %}{% endunless %}
   <div id="download-alpha" class="hero-strip hero-alpha" hidden>
     <div class="hero-strip-text">
       <strong>🧪 <span id="download-alpha-title">Try the next version</span> <small id="download-alpha-meta"></small></strong>
@@ -177,9 +178,9 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
     <div class="hero-actions download-actions">
       <a id="download-pkg" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download installer</span></a>
       <a id="download-release" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener">All downloads on GitHub ↗</a>
-      <a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>
+      {% if site.app_store_live %}<a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>{% elsif site.testflight_url and site.testflight_url != "" %}<a id="download-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">App Store beta on TestFlight</a>{% endif %}
     </div>
-    <p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>
+    {% if site.app_store_live %}<p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
   </div>
   <div class="download-panel-aside">
     <h4>After installing</h4>
@@ -188,8 +189,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>The first-run assistant picks your folders, an embedding model and the AI clients to connect.</li>
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
-    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>{% if site.testflight_url and site.testflight_url != "" %}
-    <p><small>Want the App Store version? It's in testing: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight beta</a>.</small></p>{% endif %}
+    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
   </div>
 </div>
 

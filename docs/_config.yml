@@ -22,6 +22,11 @@ defaults:
 # it, and nothing else on the site links to it. Set it here and every entry point appears.
 testflight_url: "https://testflight.apple.com/join/fjCMVpjK"
 
+# Whether Garage is on sale in the Mac App Store. Until it is, the home page and the user guide offer
+# the TestFlight beta (above) where they would link the store listing. Set it to true once the
+# store version is approved and released.
+app_store_live: false
+
 # Build settings
 markdown: kramdown
 kramdown:
