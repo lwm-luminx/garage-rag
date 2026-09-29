@@ -898,25 +898,30 @@ def cluster_facts(
     graph: Annotated[
         bool, typer.Option("--graph/--no-graph", help="Rebuild the AGE graph afterwards, where the server has AGE.")
     ] = True,
+    full: Annotated[
+        bool,
+        typer.Option(
+            "--full",
+            help="Regroup the whole corpus instead of placing only new facts (a changed model or setting does too).",
+        ),
+    ] = False,
 ) -> None:
-    """Distill the potential facts into distinct claims: group those that state the same claim, using their
-    embeddings, and have the local model state each group once.
+    """Distill the potential facts into distinct claims, in two levels: restatements within each document,
+    then groups across the corpus, each confirmed and stated once by the local model.
 
     Every potential fact is linked to one distilled fact; the potential facts themselves are never changed.
-    A group whose members are unchanged keeps its statement. Facts need vectors first (garage backfill);
-    'garage backfill' then embeds the distilled facts too.
+    A run places only what is new since the last one unless --full. Facts need vectors first (garage
+    backfill); 'garage backfill' then gives the distilled facts vectors under the other models.
     """
     from garage_rag.enrich.clusters import ClusterProgress
     from garage_rag.ops.facts import cluster_facts as run_clusters
 
-    status = console.status("finding neighbours...")
+    status = console.status("comparing each document's facts...")
     status.start()
 
     def on_progress(state: ClusterProgress) -> None:
-        if state.phase == "neighbors":
-            status.update(f"finding neighbours: {state.scanned:,}/{state.facts - state.unembedded:,} facts")
-        elif state.phase == "distill":
-            status.update(f"distilling: {state.distilled:,}/{state.to_distill:,} groups")
+        if state.message:
+            status.update(state.message)
 
     try:
         summary = run_clusters(
@@ -925,6 +930,7 @@ def cluster_facts(
             neighbors=neighbors,
             distill=distill,
             graph=graph,
+            full=full,
             on_progress=on_progress,
         )
     except (LookupError, ValueError) as exc:

@@ -15,18 +15,20 @@ vectors stay in the tables (and vectors in the ``emb_``/``fact_emb_`` tables):
 ``Chunk``          ``chunk_id``, ``document_id``, ``ord`` (content chunks, not facts')
 ``Author``         ``author_id``, ``display_name``, ``is_self``
 ``PotentialFact``  ``fact_id``, ``document_id``, ``fact_class``, ``prompt_name``, ``fact``
-``Fact``           ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``
+``Fact``           ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
+                   ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py)
 =================  ===============================================================
 
 Edges:
 
-=============  =============================  ===================================
-``HAS_CHUNK``  Document -> Chunk              ``ord``
-``WROTE``      Author -> Document             ``role`` (author, committer, sender), ``confidence``
-``RECEIVED``   Author -> Document             ``role`` (recipient, cc), ``confidence``
-``STATES``     Document -> PotentialFact      ``char_start``, ``char_end``
-``SUPPORTS``   PotentialFact -> Fact          ``similarity`` (NULL for a fact standing alone)
-=============  =============================  ===================================
+=============  ==============================  ==============================================================
+``HAS_CHUNK``  Document -> Chunk               ``ord``
+``WROTE``      Author -> Document              ``role`` (author, committer, sender), ``confidence``
+``RECEIVED``   Author -> Document              ``role`` (recipient, cc), ``confidence``
+``STATES``     Document -> PotentialFact       ``char_start``, ``char_end``
+``RESTATES``   PotentialFact -> PotentialFact  ``similarity``: a restatement to its document's representative
+``SUPPORTS``   PotentialFact -> Fact           ``similarity`` (NULL for a fact alone); representatives only
+=============  ==============================  ==============================================================
 
 The rebuild writes the label tables directly (``INSERT INTO garage."Document"``)
 rather than through ``cypher()``: one statement per label instead of one
@@ -80,8 +82,10 @@ VERTICES: dict[str, tuple[str, str]] = {
     "Fact": (
         "distilled_fact_id",
         """
-        SELECT df.id, jsonb_build_object('distilled_fact_id', df.id, 'fact_class', df.fact_class,
-                                         'statement', df.statement, 'statement_generated', df.statement_generated)
+        SELECT df.id, jsonb_strip_nulls(jsonb_build_object(
+                   'distilled_fact_id', df.id, 'fact_class', df.fact_class, 'statement', df.statement,
+                   'statement_generated', df.statement_generated, 'nodes', df.nodes, 'spread', df.spread,
+                   'drift', df.drift))
         FROM distilled_facts df
         """,
     ),
@@ -119,12 +123,20 @@ EDGES: dict[str, tuple[str, str, str]] = {
         FROM facts f
         """,
     ),
+    "RESTATES": (
+        "PotentialFact",
+        "PotentialFact",
+        """
+        SELECT f.id, f.restates_fact_id, jsonb_strip_nulls(jsonb_build_object('similarity', f.restates_similarity))
+        FROM facts f WHERE f.restates_fact_id IS NOT NULL
+        """,
+    ),
     "SUPPORTS": (
         "PotentialFact",
         "Fact",
         """
         SELECT f.id, f.distilled_fact_id, jsonb_strip_nulls(jsonb_build_object('similarity', f.distilled_similarity))
-        FROM facts f WHERE f.distilled_fact_id IS NOT NULL
+        FROM facts f WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
         """,
     ),
 }

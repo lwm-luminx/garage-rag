@@ -297,6 +297,46 @@
           "type": "integer",
           "description": "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for restatements of it. More finds larger groups at the cost of a slower run.",
           "default": 10
+        },
+        "cluster_seed_threshold": {
+          "type": "number",
+          "description": "Cosine similarity a fact's neighbours must reach to form the core a group grows from in 'garage cluster-facts --full'. The core's centroid is the group's seed, which its centroid may not drift far from. At least cluster_threshold.",
+          "default": 0.95
+        },
+        "cluster_max_drift": {
+          "type": "number",
+          "description": "Cosine distance a group's centroid may move from its seed as 'garage cluster-facts' adds facts to it. Smaller keeps a group to one claim when similar ones sit close by; larger lets loosely worded restatements join.",
+          "default": 0.05
+        },
+        "cluster_tight_similarity": {
+          "type": "number",
+          "description": "A group whose facts are this similar to its centroid on average is kept by 'garage cluster-facts' without asking the local chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks the model about every group.",
+          "default": 0.97
+        },
+        "cluster_growth_neighbors": {
+          "type": "integer",
+          "description": "Nearest facts 'garage cluster-facts --full' fetches around a growing group's centroid in each round. A group cannot gain more than this many facts in one round.",
+          "default": 50
+        },
+        "cluster_growth_rounds": {
+          "type": "integer",
+          "description": "Times 'garage cluster-facts --full' re-centres a growing group and looks again before it stops; growth usually settles in two or three.",
+          "default": 4
+        },
+        "cluster_attach_candidates": {
+          "type": "integer",
+          "description": "Nearest distilled facts 'garage cluster-facts' tries for each new fact before it gives the fact a distilled fact of its own.",
+          "default": 5
+        },
+        "cluster_distill_facts": {
+          "type": "integer",
+          "description": "Facts of one group shown to the local chat model when it is asked to confirm the group (those nearest the group's centroid). More costs a longer prompt.",
+          "default": 20
+        },
+        "cluster_max_pairwise": {
+          "type": "integer",
+          "description": "Largest set of one document's facts 'garage cluster-facts' compares pair by pair. A larger set is grouped from its closest pairs alone, which can only keep facts apart.",
+          "default": 300
         }
       }
     },

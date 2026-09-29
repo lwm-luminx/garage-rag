@@ -497,6 +497,81 @@ class Settings(BaseModel):
             "restatements of it. More finds larger groups at the cost of a slower run."
         ),
     )
+    fact_cluster_seed_threshold: float = Field(
+        default=0.95,
+        ge=0.5,
+        le=1.0,
+        description=(
+            "Cosine similarity a fact's neighbours must reach to form the core a group grows from in "
+            "'garage cluster-facts --full'. The core's centroid is the group's seed, which its centroid "
+            "may not drift far from. At least cluster_threshold."
+        ),
+    )
+    fact_cluster_max_drift: float = Field(
+        default=0.05,
+        ge=0.0,
+        le=0.5,
+        description=(
+            "Cosine distance a group's centroid may move from its seed as 'garage cluster-facts' adds "
+            "facts to it. Smaller keeps a group to one claim when similar ones sit close by; larger lets "
+            "loosely worded restatements join."
+        ),
+    )
+    fact_cluster_tight_similarity: float = Field(
+        default=0.97,
+        ge=0.5,
+        le=1.0,
+        description=(
+            "A group whose facts are this similar to its centroid on average is kept by "
+            "'garage cluster-facts' without asking the local chat model; a looser one is shown to the "
+            "model, which confirms it states one claim. 1 asks the model about every group."
+        ),
+    )
+    fact_cluster_growth_neighbors: int = Field(
+        default=50,
+        ge=2,
+        le=1000,
+        description=(
+            "Nearest facts 'garage cluster-facts --full' fetches around a growing group's centroid in each "
+            "round. A group cannot gain more than this many facts in one round."
+        ),
+    )
+    fact_cluster_growth_rounds: int = Field(
+        default=4,
+        ge=1,
+        le=20,
+        description=(
+            "Times 'garage cluster-facts --full' re-centres a growing group and looks again before it "
+            "stops; growth usually settles in two or three."
+        ),
+    )
+    fact_cluster_attach_candidates: int = Field(
+        default=5,
+        ge=1,
+        le=100,
+        description=(
+            "Nearest distilled facts 'garage cluster-facts' tries for each new fact before it gives the "
+            "fact a distilled fact of its own."
+        ),
+    )
+    fact_cluster_distill_facts: int = Field(
+        default=20,
+        ge=2,
+        le=200,
+        description=(
+            "Facts of one group shown to the local chat model when it is asked to confirm the group "
+            "(those nearest the group's centroid). More costs a longer prompt."
+        ),
+    )
+    fact_cluster_max_pairwise: int = Field(
+        default=300,
+        ge=2,
+        le=5000,
+        description=(
+            "Largest set of one document's facts 'garage cluster-facts' compares pair by pair. A larger "
+            "set is grouped from its closest pairs alone, which can only keep facts apart."
+        ),
+    )
 
     @field_validator("fact_prompts")
     @classmethod
@@ -596,6 +671,14 @@ SECTIONS: dict[str, dict[str, str]] = {
         "prompts": "fact_prompts",
         "cluster_threshold": "fact_cluster_threshold",
         "cluster_neighbors": "fact_cluster_neighbors",
+        "cluster_seed_threshold": "fact_cluster_seed_threshold",
+        "cluster_max_drift": "fact_cluster_max_drift",
+        "cluster_tight_similarity": "fact_cluster_tight_similarity",
+        "cluster_growth_neighbors": "fact_cluster_growth_neighbors",
+        "cluster_growth_rounds": "fact_cluster_growth_rounds",
+        "cluster_attach_candidates": "fact_cluster_attach_candidates",
+        "cluster_distill_facts": "fact_cluster_distill_facts",
+        "cluster_max_pairwise": "fact_cluster_max_pairwise",
     },
     "inference": {
         "model": "inference_model",

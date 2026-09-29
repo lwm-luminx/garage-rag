@@ -200,6 +200,10 @@ class FactRow:
     distilled_size: int = 0
     distilled_statement: str | None = None
     distilled_generated: bool = False
+    # How varied that distilled fact's group is (mean cosine distance to its centroid; 0 alone),
+    # and the fact of the same document this one restates, if any.
+    distilled_spread: float = 0.0
+    restates_fact_id: int | None = None
 
 
 @dataclass
@@ -332,7 +336,9 @@ def list_facts(
                         (SELECT count(*) FROM facts f3 WHERE f3.distilled_fact_id = f.distilled_fact_id)
                    END AS distilled_size,
                    df.statement AS distilled_statement,
-                   COALESCE(df.statement_generated, false) AS distilled_generated
+                   COALESCE(df.statement_generated, false) AS distilled_generated,
+                   COALESCE(df.spread, 0) AS distilled_spread,
+                   f.restates_fact_id
             {joins}
             {_where(filtered)}
             ORDER BY {order}
@@ -442,6 +448,13 @@ class ClusterSummary:
     errors: list[str] = field(default_factory=list)
     # The AGE graph, re-projected after the run; empty where the server has no AGE.
     graph: str = ""
+    # Whether the corpus was regrouped (rather than new facts placed), and what each level did.
+    full: bool = False
+    documents: int = 0
+    restatements: int = 0
+    nodes: int = 0
+    attached: int = 0
+    accepted: int = 0
 
     @property
     def message(self) -> str:
@@ -449,6 +462,12 @@ class ClusterSummary:
             f"{self.facts:,} potential facts distilled into {self.distilled_facts:,}; "
             f"{self.clusters:,} of those group {self.clustered_facts:,} restatements"
         )
+        if self.restatements:
+            text += f" ({self.restatements:,} restate another fact of their own document)"
+        if self.full:
+            text += "; regrouped the corpus"
+        elif self.nodes:
+            text += f"; {self.attached:,} of {self.nodes:,} new facts joined a distilled fact"
         if self.dissolved:
             text += f", {self.dissolved} rejected by the model"
         if self.failed:
@@ -467,6 +486,7 @@ def cluster_facts(
     neighbors: int | None = None,
     distill: bool = True,
     graph: bool = True,
+    full: bool = False,
     on_progress: Callable[[ClusterProgress], None] | None = None,
 ) -> ClusterSummary:
     """Link every potential fact to a distilled fact, grouping those that state the same claim, and have
@@ -474,14 +494,16 @@ def cluster_facts(
 
         ``model`` is the embedding model whose vectors are compared (default: the
         default model); ``threshold``/``neighbors`` default to
-        facts.cluster_threshold/facts.cluster_neighbors. Without ``distill`` no chat
+        facts.cluster_threshold/facts.cluster_neighbors. ``full`` regroups the whole
+        corpus rather than placing only what is new (a change of model or parameter
+        does that anyway). Without ``distill`` no chat
         model is asked and each group is stated by its representative. With ``graph``
     the AGE projection is rebuilt afterwards, where the server has AGE. Raises LookupError for an
         unknown model, ValueError for a threshold outside 0..1.
     """
     from garage_rag.config import get_settings
     from garage_rag.db.emb_tables import get_model
-    from garage_rag.enrich.clusters import Distiller
+    from garage_rag.enrich.clusters import ClusterParams, Distiller
     from garage_rag.enrich.clusters import cluster_facts as run_clusters
 
     settings = get_settings()
@@ -491,17 +513,22 @@ def cluster_facts(
         raise ValueError(f"threshold must be above 0 and at most 1, not {threshold}")
     if neighbors < 1:
         raise ValueError(f"neighbors must be at least 1, not {neighbors}")
+    params = ClusterParams(
+        threshold=threshold,
+        neighbors=neighbors,
+        seed_threshold=max(threshold, settings.fact_cluster_seed_threshold),
+        max_drift=settings.fact_cluster_max_drift,
+        tight_similarity=settings.fact_cluster_tight_similarity,
+        growth_neighbors=settings.fact_cluster_growth_neighbors,
+        growth_rounds=settings.fact_cluster_growth_rounds,
+        attach_candidates=settings.fact_cluster_attach_candidates,
+        distill_facts=settings.fact_cluster_distill_facts,
+        max_pairwise=settings.fact_cluster_max_pairwise,
+    )
     distiller = Distiller() if distill else None
     with session_scope() as session:
         row = get_model(session, model)
-        state = run_clusters(
-            session,
-            row,
-            threshold=threshold,
-            neighbors=neighbors,
-            distiller=distiller,
-            progress=on_progress,
-        )
+        state = run_clusters(session, row, params, full=full, distiller=distiller, progress=on_progress)
         return ClusterSummary(
             model=row.slug,
             threshold=threshold,
@@ -517,6 +544,12 @@ def cluster_facts(
             withheld=state.withheld,
             errors=list(state.errors),
             graph=_rebuilt_graph(session) if graph else "",
+            full=state.full,
+            documents=state.documents,
+            restatements=state.restatements,
+            nodes=state.nodes,
+            attached=state.attached,
+            accepted=state.accepted,
         )
 
 
