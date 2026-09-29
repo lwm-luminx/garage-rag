@@ -1,10 +1,11 @@
 """A fake Apple Messages folder: a ``chat.db`` in Messages' own schema, filled with fictitious people.
 
 Tests use it to run the Messages ingest against something shaped like the real thing, without anyone's
-messages. Everything is invented and deterministic for a given seed:
+messages. Everything is invented, and a seed gives the same folder (for one Faker version):
 
-* **People** are made-up names, with phone numbers in the North American range reserved for fiction
+* **People** have names from Faker, phone numbers in the North American range reserved for fiction
   (555-0100 to 555-0199) and email addresses on the reserved ``example.com/.net/.org`` domains.
+  Most of what they say is Faker's too. Faker is a dev dependency, so the Bazel test skips.
 * **Schema** is ``fixtures/messages/chat_db_schema.sql`` (tables and indexes; the real database's
   triggers call functions only Messages registers, so they are left out).
 * **Shapes** the reader has to handle: one-to-one chats over iMessage (phone and email), SMS and RCS;
@@ -32,6 +33,9 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+# gazelle:ignore faker
+from faker import Faker  # a dev dependency, which the Bazel @pypi hub does not expose
+
 FIXTURES = Path(__file__).parent / "fixtures" / "messages"
 CHAT_DB_SCHEMA = FIXTURES / "chat_db_schema.sql"
 NICKNAME_SCHEMA = FIXTURES / "nickname_store_schema.sql"
@@ -47,20 +51,10 @@ TAPBACKS = range(2000, 2006)
 ITEM_MEMBERSHIP, ITEM_GROUP_RENAME = 1, 2
 OBJECT_REPLACEMENT = "￼"
 
-FIRST_NAMES = [
-    "Avery", "Blair", "Casey", "Devon", "Emery", "Finley", "Gray", "Harper", "Indigo", "Jules",
-    "Kai", "Lennox", "Marlowe", "Noor", "Oakley", "Parker", "Quinn", "Reese", "Sage", "Tatum",
-    "Umber", "Vale", "Wren", "Xen", "Yael", "Zion", "Ari", "Bex", "Cove", "Dell",
-]  # fmt: skip
-LAST_NAMES = [
-    "Ashgrove", "Brightwater", "Copperfield", "Dunmore", "Elmstead", "Fairhollow", "Glenwick",
-    "Hartwell", "Ironside", "Juniper", "Kestrel", "Larkspur", "Merriweather", "Northcote", "Oakhurst",
-    "Pembrook", "Quillon", "Ravensworth", "Stillwater", "Thistledown", "Underhill", "Vantree",
-    "Willowby", "Yarrow", "Zephyrine",
-]  # fmt: skip
 # Area codes that exist, paired with the fictional 555-01xx exchange.
 AREA_CODES = ["206", "312", "415", "503", "617", "702", "808", "919"]
-GROUP_NAMES = ["Climbing crew", "Book club", "Saturday soccer", "Trip planning 🏕️", "Garden plot", "Band practice"]
+GROUP_KINDS = ["crew", "book club", "Saturday soccer", "trip planning 🏕️", "garden plot", "band practice"]
+# Lines Faker would not write: emoji, accents, a link. The rest of the chatter is Faker's.
 LINES = [
     "running late, be there in 10",
     "no worries, see you soon",
@@ -275,19 +269,18 @@ class _Writer:
         self.conn.execute("UPDATE message SET cache_has_attachments = 1 WHERE ROWID = ?", (message_id,))
 
 
-def _people(rng: random.Random, count: int) -> list[Person]:
-    names = [f"{f} {last}" for f in FIRST_NAMES for last in LAST_NAMES]
-    rng.shuffle(names)
+def _people(rng: random.Random, fake: Faker, count: int) -> list[Person]:
     numbers = [f"+1{area}55501{n:02d}" for area in AREA_CODES for n in range(100)]
     rng.shuffle(numbers)
     domains = ["example.com", "example.net", "example.org"]
     people: list[Person] = []
     for i in range(count):
-        name = names[i % len(names)]
-        first, last = name.split(" ", 1)
+        first, last = fake.unique.first_name(), fake.last_name()
+        name = f"{first} {last}"
         kind = rng.random()
         phone = numbers[i] if kind < 0.85 else None
-        email = f"{first}.{last}{i}@{rng.choice(domains)}".lower() if kind > 0.6 else None
+        local = "".join(ch for ch in f"{first}.{last}{i}".lower() if ch.isalnum() or ch == ".")
+        email = f"{local}@{rng.choice(domains)}" if kind > 0.6 else None
         people.append(Person(name=name, phone=phone, email=email, person_id=f"person-{i:04d}"))
     return people
 
@@ -309,6 +302,12 @@ def build_messages_folder(
 ) -> FakeMessages:
     """Write ``folder/chat.db`` and ``folder/NickNameCache/`` and describe what went in."""
     rng = random.Random(seed)
+    fake = Faker("en_US")
+    fake.seed_instance(seed)
+
+    def chatter() -> str:
+        return rng.choice(LINES) if rng.random() < 0.3 else fake.sentence(nb_words=rng.randint(3, 12))
+
     folder.mkdir(parents=True, exist_ok=True)
     chat_db = folder / "chat.db"
     if chat_db.exists():
@@ -317,7 +316,7 @@ def build_messages_folder(
     conn.executescript(_schema(CHAT_DB_SCHEMA))
     conn.execute("INSERT INTO _SqliteDatabaseProperties VALUES ('_ClientVersion', '18000')")
     writer = _Writer(conn, rng, start)
-    cast = _people(rng, people)
+    cast = _people(rng, fake, people)
     result = FakeMessages(folder=folder, chat_db=chat_db, people=cast, contacts=[], shared_names={})
 
     def say(chat_id: int | None, chat_guid: str, service: str, members: list[tuple[Person, int]]) -> None:
@@ -327,7 +326,7 @@ def build_messages_folder(
         for _ in range(count):
             from_me = rng.random() < 0.4
             _speaker, handle_id = rng.choice(members)
-            line = rng.choice(LINES)
+            line = chatter()
             if rng.random() < 0.04:
                 line += LONG_TAIL
             columns: dict[str, object] = {}
@@ -382,7 +381,7 @@ def build_messages_folder(
             service = IMESSAGE
             pairs = [(p, writer.handle(p.handles[0], service, p)) for p in members]
             named = rng.random() < 0.6
-            display = rng.choice(GROUP_NAMES) if named else ""
+            display = f"{fake.city()} {rng.choice(GROUP_KINDS)}" if named else ""
             identifier = f"chat{rng.getrandbits(60)}"
             chat_id = writer.chat(
                 identifier=identifier, service=service, group=True, display_name=display,
@@ -412,7 +411,7 @@ def build_messages_folder(
             say(chat_id, guid, service, [(person, handle_id)])
             if rng.random() < 0.2:  # older rows no chat_message_join names, left by sync
                 for _ in range(rng.randint(1, 3)):
-                    writer.message(None, service=service, handle_id=handle_id, from_me=False, text=rng.choice(LINES))
+                    writer.message(None, service=service, handle_id=handle_id, from_me=False, text=chatter())
                     result.orphans += 1
                     # The reader files them under this, the one one-to-one chat with their handle.
                     result.text_messages[guid] = result.text_messages.get(guid, 0) + 1
@@ -421,8 +420,8 @@ def build_messages_folder(
     # no handle at all.
     stranger = Person(name="Stranger", phone=None, email="stranger@example.org", person_id="person-stranger")
     writer.message(None, service=IMESSAGE, handle_id=writer.handle(stranger.email or "", IMESSAGE, stranger),
-                   from_me=False, text=rng.choice(LINES))  # fmt: skip
-    writer.message(None, service=SMS, handle_id=0, from_me=False, text=rng.choice(LINES))
+                   from_me=False, text=chatter())  # fmt: skip
+    writer.message(None, service=SMS, handle_id=0, from_me=False, text=chatter())
     result.unplaced_orphans = 2
 
     # A chat whose only message is a photo: the reader yields nothing for it.

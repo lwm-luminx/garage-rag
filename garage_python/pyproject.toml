@@ -62,6 +62,8 @@ dev = [
     # tools/swiftcheck: Swift syntax checking where no Swift toolchain exists (Linux, web sessions)
     "tree-sitter>=0.25",
     "tree-sitter-swift>=0.7",
+    # garage_python/tests/fake_messages.py: the invented people and messages in the fake chat.db
+    "faker>=37",
 ]
 # aspect_rules_py builds sdists into wheels with `build` and `setuptools`, resolved from uv.lock
 # and from the hub's dependency group. grpcio ships no free-threaded (cp314t) wheels, so the 3.14t

@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fake_messages import CHAT_DB_SCHEMA, FakeMessages, build_messages_folder
+
+# Faker is in the dev extras only, which the Bazel @pypi hub does not expose; the venv runs this.
+pytest.importorskip("faker")
+
+from fake_messages import CHAT_DB_SCHEMA, FakeMessages, build_messages_folder  # noqa: E402
 
 from garage_rag.db.models import CorpusClass, TrustTier
 from garage_rag.extract.contact_names import ContactNames
