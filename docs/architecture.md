@@ -285,6 +285,14 @@ class that it is `facts.cluster_threshold` similar to and that passes the guard;
 no model is asked and nothing drifts. Metadata facts take no part in level 1 or
 in growing groups. Under other models an anchor's vector is its representative's.
 
+Because those header values are ground truth, no prompt reads them again. A
+prompt sees a mail's body only (`enrich/mail_body.py`): the header block is
+dropped, and so are the headers of mail quoted or forwarded in the body (a run of
+`From:`/`Sent:`/`To:`/`Subject:` lines, the `Original Message` and `Forwarded
+message` separators, a reply's `On ... wrote:` line). The quoted text stays. Its
+facts are mapped back onto the document's offsets, and `fact_runs` records the
+hash of the text the prompt read, so mail extracted with its headers is stale.
+
 Nothing about a potential fact changes but its links. Each distilled fact
 records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
 seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it

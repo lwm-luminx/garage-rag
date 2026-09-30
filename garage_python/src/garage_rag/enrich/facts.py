@@ -42,6 +42,12 @@ their own. Each prompt's facts are stored, and replaced, separately
 (``facts.prompt_name``), and ``fact_runs`` remembers what each prompt last ran
 with, so a changed prompt, document or model is detectable (:func:`is_stale`).
 
+A mail's header lines, its own and those of mail quoted or forwarded in it, are
+never sent: its sender, recipients and subject are ground truth, written as
+metadata facts (:mod:`garage_rag.enrich.metadata`), so a prompt reads the body
+alone (:mod:`garage_rag.enrich.mail_body`) and its facts are grounded back on
+the document's own text.
+
 Each stored fact is also, optionally, given a ``chunks`` row of its own
 (``chunks.fact_id``). That is the entire embedding story: a chunk is a chunk
 regardless of where its text came from, so ``embed.ollama.backfill_model``
@@ -66,6 +72,7 @@ from garage_rag.config.fact_prompts import EffectivePrompt, effective_prompts
 from garage_rag.db.models import Chunk, CorpusClass, Document, Fact, FactRun
 from garage_rag.enrich import langextract as lx
 from garage_rag.enrich.local_provider import LocalLanguageModel
+from garage_rag.enrich.mail_body import fact_source
 from garage_rag.inference import Backend, BackendKind, InferenceClient
 from garage_rag.net import egress
 from garage_rag.xpc.llama_xpc import LlamaXPCClient
@@ -305,13 +312,14 @@ def is_stale(run: FactRun | None, document: Document, prompt: EffectivePrompt, m
     """Whether ``prompt``'s facts for ``document`` need extracting (again).
 
     True when the prompt never ran on the document, or when what it ran with --
-    the prompt's description and examples, the document's text, the model --
-    has changed since.
+    the prompt's description and examples, the text it read
+    (:func:`~garage_rag.enrich.mail_body.fact_source`), the model -- has
+    changed since.
     """
     return (
         run is None
         or bytes(run.prompt_sha256) != prompt.sha256
-        or bytes(run.content_sha256) != bytes(document.content_sha256 or b"")
+        or bytes(run.content_sha256) != fact_source(document).sha256
         or run.extractor_model != model_id
     )
 
@@ -358,10 +366,12 @@ def extract_and_store_facts(
 
     session.query(Fact).filter(Fact.document_id == document.id, Fact.prompt_name == prompt.name).delete()
     facts: list[Fact] = []
-    if document.content:
+    # A mail's header lines are metadata facts already; the model reads its body.
+    source = fact_source(document)
+    if source.text.strip():
         log.info("extracting facts for document %s with prompt %s via %s", document.id, prompt.name, provider)
         extractions = extract_facts(
-            document.content,
+            source.text,
             model_id=model_id,
             model_url=model_url,
             provider=provider,
@@ -369,6 +379,8 @@ def extract_and_store_facts(
             prompt=prompt,
         )
         facts = facts_from_extractions(document.id, extractions, model_id=model_id, prompt=prompt)
+        for fact in facts:
+            fact.char_start, fact.char_end = source.span_to_document(fact.char_start, fact.char_end)
         session.add_all(facts)
 
     session.merge(
@@ -376,7 +388,7 @@ def extract_and_store_facts(
             document_id=document.id,
             prompt_name=prompt.name,
             prompt_sha256=prompt.sha256,
-            content_sha256=document.content_sha256 or b"",
+            content_sha256=source.sha256,
             extractor_model=model_id,
             facts=len(facts),
             extracted_at=func.now(),

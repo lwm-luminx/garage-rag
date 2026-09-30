@@ -743,6 +743,19 @@ py_test(
 )
 
 py_test(
+    name = "test_mail_body",
+    srcs = ["test_mail_body.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/enrich/langextract",
+        "//garage_python/src/garage_rag/extract",
+    ],
+)
+
+py_test(
     name = "test_cli_commands",
     srcs = ["test_cli_commands.py"],
     deps = [

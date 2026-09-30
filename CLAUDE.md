@@ -284,7 +284,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   - Metadata is ground truth: `enrich-facts` writes a mail's sender/recipients/subject and a thread's
     participants as facts with no model (`enrich/metadata.py`, `extractor = 'metadata'`). Each distinct
     value is an anchored distilled fact (`anchor_key`, `018_fact_anchors.sql`) with a fixed centroid;
-    inferred facts of its class join it first, without moving it.
+    inferred facts of its class join it first, without moving it. Prompts never read those
+    header lines: a mail's model input is its body, with quoted and forwarded headers dropped too
+    (`enrich/mail_body.py`).
   - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
     loose group and states it once; a tight one is kept as is.
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
