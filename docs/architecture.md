@@ -144,7 +144,8 @@ An optional pass over stored documents, run as `garage enrich-facts` or the
 Update Everything on the Sources page, which passes `stale_only`), not part of ingest
 itself. [LangExtract](https://github.com/google/langextract) is pointed at the
 local model named by `facts.model` on `facts.provider` (default: the app's
-`gemma2-2b` alias on `llama_xpc`; `ollama` with e.g. `gemma2:2b` and `lmstudio`
+`gemma-4-e4b` alias on `llama_xpc`, Gemma 4 E4B, which also calls tools, so chat
+follows it while `inference.model` is empty; `ollama` with e.g. `gemma2:2b` and `lmstudio`
 with e.g. `google/gemma-3-4b` are the others, and `--model`/`--provider`
 override both). What it asks for comes from the prompts in `facts.prompts`
 (`config/fact_prompts.py`), each a name, a description (the instructions),

@@ -9,6 +9,12 @@ enum DatabasePagePresentation {
         count == 1 ? word : word + "s"
     }
 
+    /// "018_fact_anchors · 19 migrations", or what stands in before any is recorded.
+    static func schemaLevel(_ details: DatabaseServerDetails) -> String {
+        guard let level = details.schemaLevel else { return "no migrations recorded" }
+        return "\(level) · \(count(details.appliedMigrationCount, "migration"))"
+    }
+
     static func count(_ value: Int, _ word: String) -> String {
         "\(value.formatted()) \(plural(word, value))"
     }

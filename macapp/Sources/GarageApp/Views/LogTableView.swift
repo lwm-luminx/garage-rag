@@ -35,12 +35,22 @@ public struct LogTableView: View {
     public let lines: [LogLine]
     public var sourceName: String?
     public var onClear: (() -> Void)?
+    /// The columns a view can leave out where every line would say the same thing (one process,
+    /// one source), so they only take room from the message.
+    public enum HideableColumn: String, Hashable, Sendable {
+        case pid, stream, source
+    }
+
+    /// Columns hidden in this view; every other column is shown.
+    public var hiddenColumns: Set<HideableColumn>
 
     @State private var searchText = ""
     @State private var levelFilter: LogLevelFilter = .all
     @State private var selectedLineIDs = Set<UUID>()
     @State private var sortOrder = [KeyPathComparator(\LogLine.date, order: .forward)]
     @State private var showDetailInspector = false
+    /// Carries the hideable columns' default visibility (see `hiddenColumns`).
+    @State private var columnCustomization = TableColumnCustomization<LogLine>()
     /// `filteredLines`, recomputed only when the lines or a filter change. The table
     /// redraws at the log poll rate; filtering and sorting on every draw showed up.
     @State private var visibleLines: [LogLine] = []
@@ -61,10 +71,12 @@ public struct LogTableView: View {
     public init(
         lines: [LogLine],
         sourceName: String? = nil,
+        hiddenColumns: Set<HideableColumn> = [],
         onClear: (() -> Void)? = nil
     ) {
         self.lines = lines
         self.sourceName = sourceName
+        self.hiddenColumns = hiddenColumns
         self.onClear = onClear
     }
 
@@ -229,8 +241,12 @@ public struct LogTableView: View {
         }
     }
 
+    private func visibility(_ column: HideableColumn) -> Visibility {
+        hiddenColumns.contains(column) ? .hidden : .automatic
+    }
+
     private var tableContent: some View {
-        Table(visibleLines, selection: $selectedLineIDs, sortOrder: $sortOrder) {
+        Table(visibleLines, selection: $selectedLineIDs, sortOrder: $sortOrder, columnCustomization: $columnCustomization) {
             TableColumn("Time", value: \.date) { line in
                 Text(Self.timestampFormatter.string(from: line.date))
                     .font(.system(.caption2, design: .monospaced))
@@ -238,6 +254,7 @@ public struct LogTableView: View {
             }
             .width(min: 85, ideal: 95, max: 115)
 
+            // Hidden rather than left out: a conditional column needs macOS 14.4.
             TableColumn("PID") { line in
                 if let pid = line.pid {
                     Text(verbatim: "\(pid)")
@@ -250,6 +267,8 @@ public struct LogTableView: View {
                 }
             }
             .width(min: 45, ideal: 55, max: 75)
+            .customizationID("pid")
+            .defaultVisibility(visibility(.pid))
 
             TableColumn("Level", value: \.level) { line in
                 LogLevelBadge(level: line.level)
@@ -260,6 +279,8 @@ public struct LogTableView: View {
                 LogStreamBadge(stream: line.stream)
             }
             .width(min: 55, ideal: 65, max: 80)
+            .customizationID("stream")
+            .defaultVisibility(visibility(.stream))
 
             TableColumn("Source", value: \.source) { line in
                 Text(line.source)
@@ -268,6 +289,8 @@ public struct LogTableView: View {
                     .lineLimit(1)
             }
             .width(min: 70, ideal: 90, max: 130)
+            .customizationID("source")
+            .defaultVisibility(visibility(.source))
 
             TableColumn("Message", value: \.text) { line in
                 Text(line.text)

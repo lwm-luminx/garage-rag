@@ -136,6 +136,18 @@ final class DatabasePresentationTests: XCTestCase {
         XCTAssertEqual(details.databaseSizeBytes, 123_456)
         XCTAssertEqual(details.extensions.map(\.name), ["age", "vector"])
         XCTAssertEqual(details.extensions.last?.version, "0.8.1")
+        XCTAssertEqual(details.extensionVersion("vector"), "0.8.1")
+        XCTAssertEqual(details.extensionVersion("age"), "1.6.0")
+        XCTAssertNil(details.extensionVersion("postgis"))
+    }
+
+    func testSchemaLevelNamesTheNewestMigration() {
+        var details = DatabaseServerDetails(rows: [["schema", "018_fact_anchors", "19"]])
+        XCTAssertEqual(details.schemaLevel, "018_fact_anchors")
+        XCTAssertEqual(DatabasePagePresentation.schemaLevel(details), "018_fact_anchors · 19 migrations")
+        details = DatabaseServerDetails(rows: [["schema", "", "0"]])
+        XCTAssertNil(details.schemaLevel)
+        XCTAssertEqual(DatabasePagePresentation.schemaLevel(details), "no migrations recorded")
     }
 
     // MARK: - Last backup

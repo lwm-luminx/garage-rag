@@ -33,6 +33,9 @@ public struct DocumentsView: View {
     @State private var detailErrorMessage: String?
     @State private var hasLoaded = false
     @State private var isGleaningFacts = false
+    /// Keeps the arrow keys on the document list once a document is chosen. Without it the sidebar
+    /// kept keyboard focus, so Down moved to the next page instead of the next document.
+    @FocusState private var isListFocused: Bool
 
     private let corpusClasses = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.corpusClasses)
     private let trustTiers = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.trustTiers)
@@ -224,8 +227,10 @@ public struct DocumentsView: View {
                     .tag(doc.id)
             }
             .listStyle(.inset)
+            .focused($isListFocused)
             .onChange(of: selectedDocumentID) { _, newValue in
                 if let newValue {
+                    isListFocused = true
                     loadDetail(documentID: newValue)
                 }
             }

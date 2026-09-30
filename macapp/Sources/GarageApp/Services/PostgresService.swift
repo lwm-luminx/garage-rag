@@ -164,8 +164,8 @@ public struct CorpusStats: Equatable, Sendable {
 }
 
 /// Dedicated queue for the blocking Postgres client tools. Serial on purpose:
-/// the cluster runs with max_connections=5, so there is nothing to win by
-/// overlapping these, and serializing keeps a backup from racing a stats refresh.
+/// the tools share the cluster's connections with every helper's pool, so there is nothing to win
+/// by overlapping these, and serializing keeps a backup from racing a stats refresh.
 private let postgresCLIQueue = DispatchQueue(
     label: "me.rickmark.garage-rag.postgres-cli",
     qos: .userInitiated
@@ -261,6 +261,15 @@ struct DatabaseServerDetails: Equatable, Sendable {
     var serverVersion: String = ""
     var databaseSizeBytes: Int64?
     var extensions: [Extension] = []
+    /// The newest migration recorded in `schema_migrations` (e.g. "018_fact_anchors"), and how many
+    /// are recorded; nil before the table exists.
+    var schemaLevel: String?
+    var appliedMigrationCount: Int = 0
+
+    /// The installed version of extension `name`, or nil when it is not created in the database.
+    func extensionVersion(_ name: String) -> String? {
+        extensions.first { $0.name == name }?.version
+    }
 
     init(serverVersion: String = "", databaseSizeBytes: Int64? = nil, extensions: [Extension] = []) {
         self.serverVersion = serverVersion
@@ -276,6 +285,9 @@ struct DatabaseServerDetails: Equatable, Sendable {
                 if row.count > 2 { databaseSizeBytes = Int64(row[2]) }
             case "extension" where row.count > 1:
                 extensions.append(Extension(name: row[1], version: row.count > 2 ? row[2] : ""))
+            case "schema" where row.count > 1:
+                schemaLevel = row[1].isEmpty ? nil : row[1]
+                if row.count > 2 { appliedMigrationCount = Int(row[2]) ?? 0 }
             default:
                 continue
             }
@@ -419,8 +431,8 @@ final class PostgresService: ObservableObject {
             "--no-instructions",
             "-c", "shared_memory_type=mmap",
             "-c", "dynamic_shared_memory_type=mmap",
-            "-c", "shared_buffers=128kB",
-            "-c", "max_connections=5"
+            "-c", "shared_buffers=\(Self.sharedBuffers)",
+            "-c", "max_connections=\(Self.maxConnections)"
         ]
         if FileManager.default.fileExists(atPath: Paths.postgresShareDir.path) {
             initdbArguments.append(contentsOf: ["-L", Paths.postgresShareDir.path])
@@ -445,6 +457,11 @@ final class PostgresService: ObservableObject {
             try? FileManager.default.copyItem(at: configFile, to: destinationConf)
         }
     }
+
+    /// Enough for four Python helpers' pools (up to 10 each) plus the CLI tools.
+    static let maxConnections = 64
+    /// Postgres's own default; the segment is mmap'd, so no System V limit applies.
+    static let sharedBuffers = "128MB"
 
     func start() async throws {
         guard status == .stopped || isFailed else { return }
@@ -506,6 +523,12 @@ final class PostgresService: ObservableObject {
             "-c", "log_line_prefix=%m [%p] ",
             "-c", "shared_memory_type=mmap",
             "-c", "dynamic_shared_memory_type=mmap",
+            // Clusters initialized before the segment was mmap'd have max_connections=5 in their
+            // postgresql.conf, a limit the System V shim needed. Every Python helper keeps its own
+            // SQLAlchemy pool (5 + 5 overflow) beside psql's stats queries, so that ran out with
+            // "too many clients"; the command line overrides the file for those clusters.
+            "-c", "max_connections=\(Self.maxConnections)",
+            "-c", "shared_buffers=\(Self.sharedBuffers)",
         ] + listen
         // Apache AGE hooks the parser, so it has to be loaded into every backend, and
         // create_graph resolves its operator classes through search_path. ag_catalog goes
@@ -730,7 +753,17 @@ final class PostgresService: ObservableObject {
             """,
             failureMessage: "could not read the server's details"
         )
-        return DatabaseServerDetails(rows: rows)
+        var details = DatabaseServerDetails(rows: rows)
+        // A separate query, since it fails on a cluster whose schema_migrations table is not made yet.
+        if let schema = try? await commandRunner().query(
+            "SELECT 'schema', coalesce(max(version), ''), count(*)::text FROM schema_migrations",
+            failureMessage: "could not read the schema level"
+        ) {
+            let parsed = DatabaseServerDetails(rows: schema)
+            details.schemaLevel = parsed.schemaLevel
+            details.appliedMigrationCount = parsed.appliedMigrationCount
+        }
+        return details
     }
 
     /// `url` for display: the password, when there is one, replaced by bullets. Copy and the

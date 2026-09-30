@@ -206,4 +206,44 @@ final class ModelsPresentationTests: XCTestCase {
         XCTAssertEqual(ModelsView.ModelProvider.lmStudio.cliValue, "lmstudio")
         XCTAssertEqual(ModelsView.ModelProvider.llamaXPC.cliValue, "llama_xpc")
     }
+
+    func testTheDistillationModelIsTheInferenceDefaultOnlyWhenItCallsTools() {
+        let tools = ModelPresetEntry(name: "Qwen", slug: "qwen", toolCalling: true, tags: ["inference", "distillation"])
+        let noTools = ModelPresetEntry(name: "Gemma", slug: "gemma", toolCalling: false, tags: ["inference", "distillation"])
+        let factsOnly = ModelPresetEntry(name: "Tiny", slug: "tiny", toolCalling: true, tags: ["distillation"])
+        let presets = [tools, noTools, factsOnly]
+
+        XCTAssertEqual(ModelsPresentation.selectedInferenceSlug(inferenceModel: nil, factsModel: "qwen", presets: presets), "qwen")
+        XCTAssertNil(ModelsPresentation.selectedInferenceSlug(inferenceModel: nil, factsModel: "gemma", presets: presets))
+        XCTAssertNil(ModelsPresentation.selectedInferenceSlug(inferenceModel: nil, factsModel: "tiny", presets: presets))
+        XCTAssertNil(ModelsPresentation.selectedInferenceSlug(inferenceModel: nil, factsModel: "unknown", presets: presets))
+        XCTAssertEqual(ModelsPresentation.selectedInferenceSlug(inferenceModel: "gemma", factsModel: "qwen", presets: presets), "gemma")
+    }
+
+    func testCapabilitiesBecomeTagsInCatalogOrder() {
+        let tags = ModelsPresentation.capabilityTags(["text_to_image", "multilingual", "time_travel"])
+        XCTAssertEqual(tags.map(\.label), ["TEXT → IMAGE", "MULTILINGUAL", "TIME TRAVEL"])
+        XCTAssertTrue(ModelsPresentation.capabilityTags(nil).isEmpty)
+    }
+
+    func testADownloadedGemma4BecomesTheChatModelOnlyWhenChatHasNoTools() {
+        let gemma4 = ModelPresetEntry(name: "Gemma 4 E4B", slug: "gemma-4-e4b", toolCalling: true, tags: ["inference", "distillation"], preferred: true)
+        let gemma4Small = ModelPresetEntry(name: "Gemma 4 E2B", slug: "gemma-4-e2b", toolCalling: true, tags: ["inference", "distillation"])
+        let gemma2 = ModelPresetEntry(name: "Gemma 2", slug: "gemma2-2b", toolCalling: false, tags: ["inference", "distillation"])
+        let presets = [gemma4Small, gemma4, gemma2]
+        func adopt(_ inference: String?, facts: String, downloaded: Set<String>) -> String? {
+            ModelsPresentation.gemma4ToAdoptForInference(
+                inferenceModel: inference, factsModel: facts, presets: presets,
+                isDownloaded: { downloaded.contains($0.slug) }
+            )?.slug
+        }
+        // Distilling with Gemma 2 (no tools): a downloaded Gemma 4 takes chat, the preferred one first.
+        XCTAssertEqual(adopt(nil, facts: "gemma2-2b", downloaded: ["gemma-4-e2b", "gemma-4-e4b"]), "gemma-4-e4b")
+        XCTAssertEqual(adopt(nil, facts: "gemma2-2b", downloaded: ["gemma-4-e2b"]), "gemma-4-e2b")
+        XCTAssertNil(adopt(nil, facts: "gemma2-2b", downloaded: []), "nothing on disk yet")
+        // Distilling with Gemma 4 already: chat follows it with nothing written.
+        XCTAssertNil(adopt(nil, facts: "gemma-4-e4b", downloaded: ["gemma-4-e4b"]))
+        // A model the person chose is kept.
+        XCTAssertNil(adopt("llama-3.2-1b-instruct", facts: "gemma2-2b", downloaded: ["gemma-4-e4b"]))
+    }
 }

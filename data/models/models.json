@@ -17,6 +17,7 @@
       "download_model_id": "gpustack/bge-m3-GGUF",
       "download_file": "bge-m3-Q8_0.gguf",
       "sha256": "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167",
+      "download_files": [{"path": "bge-m3-Q8_0.gguf", "sha256": "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167"}],
       "description": "Strong general-purpose multilingual embedding model with a long context window. A solid default for hybrid document search.",
       "use_cases": [
         "Semantic search",
@@ -42,6 +43,7 @@
       "download_model_id": "nomic-ai/nomic-embed-text-v1.5-GGUF",
       "download_file": "nomic-embed-text-v1.5.Q8_0.gguf",
       "sha256": "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7",
+      "download_files": [{"path": "nomic-embed-text-v1.5.Q8_0.gguf", "sha256": "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7"}],
       "description": "Efficient English-focused embedding model with good accuracy per dimension. Fast to run on modest hardware.",
       "use_cases": [
         "Semantic search",
@@ -66,6 +68,7 @@
       "download_model_id": "mixedbread-ai/mxbai-embed-xsmall-v1",
       "download_file": "gguf/mxbai-embed-xsmall-v1-q8_0.gguf",
       "sha256": "21f9f06af9e4e895fcdcbf6c0d57ca1996fe22da54ecb6cc5f7733d785412d44",
+      "download_files": [{"path": "gguf/mxbai-embed-xsmall-v1-q8_0.gguf", "sha256": "21f9f06af9e4e895fcdcbf6c0d57ca1996fe22da54ecb6cc5f7733d785412d44"}],
       "description": "Compact, low-memory embedding model that's quick to download and embed with. Ideal for a lightweight first-time setup.",
       "use_cases": [
         "Quick start / low-resource machines",
@@ -96,7 +99,7 @@
     },
     {
       "name": "Embedding Gemma",
-      "model_id": "google/embeddinggemma-2b",
+      "model_id": "google/embeddinggemma-300m",
       "model_card_url": "https://huggingface.co/google/embeddinggemma-300m",
       "maker": "Google",
       "country_of_origin": "US",
@@ -107,16 +110,18 @@
       "native_dims": 768,
       "default_dims": 768,
       "distance": "cosine",
-      "context_size": 8192,
+      "context_size": 2048,
       "download_model_id": "unsloth/embeddinggemma-300m-GGUF",
       "download_file": "embeddinggemma-300M-Q8_0.gguf",
       "sha256": "a0f7b4e13c397a6e1b32c2de75b1f65a14c92ec524d5f674d94a4290a1c4969b",
-      "description": "Google's Gemma-based embedding model, tuned for retrieval quality on general text.",
+      "download_files": [{"path": "embeddinggemma-300M-Q8_0.gguf", "sha256": "a0f7b4e13c397a6e1b32c2de75b1f65a14c92ec524d5f674d94a4290a1c4969b"}],
+      "description": "Google's EmbeddingGemma 300M, from the Gemma family, tuned for retrieval on general text in over 100 languages. Small and fast, and paired with the Gemma 4 distillation model.",
       "use_cases": [
         "Semantic search",
         "Retrieval-augmented generation"
       ],
-      "featured": false
+      "featured": true,
+      "preferred": true
     },
     {
       "name": "Snowflake Arctic Embed 2",
@@ -135,6 +140,7 @@
       "download_model_id": "ChristianAzinn/snowflake-arctic-embed-m-gguf",
       "download_file": "snowflake-arctic-embed-m-Q8_0.GGUF",
       "sha256": "670a415c5b42b1b317eb7116a154c08e7b7a69550d088f3b46520d8b3d0741a8",
+      "download_files": [{"path": "snowflake-arctic-embed-m-Q8_0.GGUF", "sha256": "670a415c5b42b1b317eb7116a154c08e7b7a69550d088f3b46520d8b3d0741a8"}],
       "description": "Snowflake's Arctic embedding model, tuned for retrieval quality with strong benchmark performance.",
       "use_cases": [
         "Semantic search",
@@ -233,6 +239,7 @@
       "download_model_id": "mradermacher/llama-embed-nemotron-8b-GGUF",
       "download_file": "llama-embed-nemotron-8b.Q8_0.gguf",
       "sha256": "951f506d4d8c93c02abe586520076e61b4b8e5501f63bcda05cde610c102cf42",
+      "download_files": [{"path": "llama-embed-nemotron-8b.Q8_0.gguf", "sha256": "951f506d4d8c93c02abe586520076e61b4b8e5501f63bcda05cde610c102cf42"}],
       "description": "Large NVIDIA embedding model with high retrieval accuracy. Requires more memory and slower embedding throughput.",
       "use_cases": [
         "High-accuracy retrieval"
@@ -259,6 +266,103 @@
   ],
   "inference_models": [
     {
+      "name": "Gemma 4 E4B Instruct",
+      "model_id": "google/gemma-4-E4B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-E4B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma-4-e4b",
+      "model_ref": "gemma-4-e4b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 8192,
+      "tool_calling": true,
+      "download_model_id": "google/gemma-4-E4B-it-qat-q4_0-gguf",
+      "download_file": "gemma-4-E4B_q4_0-it.gguf",
+      "sha256": "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee",
+      "download_files": [
+        {
+          "path": "gemma-4-E4B_q4_0-it.gguf",
+          "sha256": "676c35070db6dbe52f93e9c864ee0fba4eddea94b9c875d9cb10daff453fbaee"
+        }
+      ],
+      "description": "Google's Gemma 4 (Apache 2.0) at an effective 4B parameters, in Google's own quantization-aware Q4_0 build (about 5.2 GB). Calls tools natively, so it both distills facts and answers rag_ask with Garage's MCP tools; it pairs with EmbeddingGemma, from the same family.",
+      "use_cases": [
+        "Fact extraction / distillation",
+        "Chat / Q&A with tools"
+      ],
+      "featured": true,
+      "preferred": true
+    },
+    {
+      "name": "Gemma 4 E2B Instruct",
+      "model_id": "google/gemma-4-E2B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-E2B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma-4-e2b",
+      "model_ref": "gemma-4-e2b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 8192,
+      "tool_calling": true,
+      "download_model_id": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+      "download_file": "gemma-4-E2B_q4_0-it.gguf",
+      "sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634",
+      "download_files": [
+        {
+          "path": "gemma-4-E2B_q4_0-it.gguf",
+          "sha256": "fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634"
+        }
+      ],
+      "description": "The smallest Gemma 4 (Apache 2.0), an effective 2B parameters in Google's quantization-aware Q4_0 build (about 3.3 GB). Calls tools; for Macs with less memory.",
+      "use_cases": [
+        "Fact extraction / distillation",
+        "Chat / Q&A with tools"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Gemma 4 12B Instruct",
+      "model_id": "google/gemma-4-12B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-12B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma-4-12b",
+      "model_ref": "gemma-4-12b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 8192,
+      "tool_calling": true,
+      "download_model_id": "google/gemma-4-12B-it-qat-q4_0-gguf",
+      "download_file": "gemma-4-12b-it-qat-q4_0.gguf",
+      "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b",
+      "download_files": [
+        {
+          "path": "gemma-4-12b-it-qat-q4_0.gguf",
+          "sha256": "93567e57a8fe10b23569b9d9ec38cd005deedf71e29477c421a4b83f418a538b"
+        }
+      ],
+      "description": "Gemma 4 12B (Apache 2.0) in Google's quantization-aware Q4_0 build (about 7 GB). Calls tools; better answers and facts than E4B for Macs with 16 GB or more.",
+      "use_cases": [
+        "Chat / Q&A with tools",
+        "Fact extraction / distillation"
+      ],
+      "featured": false
+    },
+    {
       "name": "Gemma 2 2B Instruct",
       "model_id": "google/gemma-2-2b-it",
       "model_card_url": "https://huggingface.co/google/gemma-2-2b-it",
@@ -277,11 +381,12 @@
       "download_model_id": "bartowski/gemma-2-2b-it-GGUF",
       "download_file": "gemma-2-2b-it-Q4_K_M.gguf",
       "sha256": "e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787",
+      "download_files": [{"path": "gemma-2-2b-it-Q4_K_M.gguf", "sha256": "e0aee85060f168f0f2d8473d7ea41ce2f3230c1bc1374847505ea599288a7787"}],
       "description": "Compact instruction-tuned model used to distill documents into atomic facts for the enrichment pipeline.",
       "use_cases": [
         "Fact extraction / distillation"
       ],
-      "featured": true
+      "featured": false
     },
     {
       "name": "Llama 3.2 1B Instruct",
@@ -302,6 +407,7 @@
       "download_model_id": "bartowski/Llama-3.2-1B-Instruct-GGUF",
       "download_file": "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
       "sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
+      "download_files": [{"path": "Llama-3.2-1B-Instruct-Q4_K_M.gguf", "sha256": "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83"}],
       "description": "Ultra-fast and lightweight instruction-tuned model by Meta, ideal for quick queries and low memory.",
       "use_cases": [
         "Chat / Q&A",
@@ -328,6 +434,7 @@
       "download_model_id": "bartowski/Llama-3.2-3B-Instruct-GGUF",
       "download_file": "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
       "sha256": "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff",
+      "download_files": [{"path": "Llama-3.2-3B-Instruct-Q4_K_M.gguf", "sha256": "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff"}],
       "description": "Balanced compact model by Meta offering strong reasoning and conversational quality.",
       "use_cases": [
         "Chat / Q&A",
@@ -354,6 +461,7 @@
       "download_model_id": "unsloth/Qwen3-4B-Instruct-2507-GGUF",
       "download_file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
       "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597",
+      "download_files": [{"path": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf", "sha256": "3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597"}],
       "description": "Small, fast Qwen3 instruct model (2.5 GB) with reliable tool calling and structured output. Runs comfortably on any Apple silicon Mac.",
       "use_cases": [
         "Chat / Q&A",
@@ -381,6 +489,7 @@
       "download_model_id": "bartowski/microsoft_Phi-4-mini-instruct-GGUF",
       "download_file": "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf",
       "sha256": "01999f17c39cc3074afae5e9c539bc82d45f2dd7faa3917c66cbef76fce8c0c2",
+      "download_files": [{"path": "microsoft_Phi-4-mini-instruct-Q4_K_M.gguf", "sha256": "01999f17c39cc3074afae5e9c539bc82d45f2dd7faa3917c66cbef76fce8c0c2"}],
       "description": "Microsoft's compact 3.8B instruct model (2.5 GB), strong at reasoning and following extraction instructions for its size.",
       "use_cases": [
         "Chat / Q&A",
@@ -407,6 +516,7 @@
       "download_model_id": "bartowski/google_gemma-3-4b-it-GGUF",
       "download_file": "google_gemma-3-4b-it-Q4_K_M.gguf",
       "sha256": "4996030242583a40aa151ff93f49ed787ac8c25e4120c3ae4588b2e2a7d1ae94",
+      "download_files": [{"path": "google_gemma-3-4b-it-Q4_K_M.gguf", "sha256": "4996030242583a40aa151ff93f49ed787ac8c25e4120c3ae4588b2e2a7d1ae94"}],
       "description": "Google's newer small Gemma (2.5 GB), a step up from Gemma 2 2B for distilling facts, with a long context window.",
       "use_cases": [
         "Chat / Q&A",
@@ -433,6 +543,7 @@
       "download_model_id": "ibm-granite/granite-4.1-3b-GGUF",
       "download_file": "granite-4.1-3b-Q4_K_M.gguf",
       "sha256": "662b0626cd58f443baea23559b469df6576a81d349649c59413b36a9fb32eb29",
+      "download_files": [{"path": "granite-4.1-3b-Q4_K_M.gguf", "sha256": "662b0626cd58f443baea23559b469df6576a81d349649c59413b36a9fb32eb29"}],
       "description": "IBM's small Granite (2.1 GB), trained for tool calling and structured output. The lightest option for calling Garage's MCP tools.",
       "use_cases": [
         "Chat / Q&A",
@@ -460,6 +571,7 @@
       "download_model_id": "ibm-granite/granite-4.1-8b-GGUF",
       "download_file": "granite-4.1-8b-Q4_K_M.gguf",
       "sha256": "ed902ac9eb6adce5a90c6a08c8ea201b50e23fdc5976d1cd0362006afac5309e",
+      "download_files": [{"path": "granite-4.1-8b-Q4_K_M.gguf", "sha256": "ed902ac9eb6adce5a90c6a08c8ea201b50e23fdc5976d1cd0362006afac5309e"}],
       "description": "IBM's 8B Granite (5.3 GB), among the strongest small models at tool calling. A good fit for the MCP agent on a 16 GB Mac.",
       "use_cases": [
         "Chat / Q&A",
@@ -487,6 +599,7 @@
       "download_model_id": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF",
       "download_file": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
       "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c",
+      "download_files": [{"path": "Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf", "sha256": "7b064f5842bf9532c91456deda288a1b672397a54fa729aa665952863033557c"}],
       "description": "Meta's widely used 8B instruct model (4.9 GB) with native tool calling. A good all-rounder on a 16 GB Mac.",
       "use_cases": [
         "Chat / Q&A",
@@ -514,6 +627,7 @@
       "download_model_id": "bartowski/google_gemma-3-12b-it-GGUF",
       "download_file": "google_gemma-3-12b-it-Q4_K_M.gguf",
       "sha256": "fc57f67efa46d711c346e587cbef7d049e95f3df8db2eb2271153343ef0acc7b",
+      "download_files": [{"path": "google_gemma-3-12b-it-Q4_K_M.gguf", "sha256": "fc57f67efa46d711c346e587cbef7d049e95f3df8db2eb2271153343ef0acc7b"}],
       "description": "Mid-size Gemma 3 (7.3 GB) with noticeably better answers and fact extraction than the small models. Best on 16 GB or more.",
       "use_cases": [
         "Chat / Q&A",
@@ -539,6 +653,7 @@
       "download_model_id": "ggml-org/gpt-oss-20b-GGUF",
       "download_file": "gpt-oss-20b-MXFP4.gguf",
       "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
+      "download_files": [{"path": "gpt-oss-20b-MXFP4.gguf", "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901"}],
       "description": "OpenAI's open-weight mixture-of-experts reasoning model (12 GB), built for agentic tool use. Fast for its size; needs 24 GB or more.",
       "use_cases": [
         "Chat / Q&A",
@@ -566,6 +681,7 @@
       "download_model_id": "bartowski/mistralai_Mistral-Small-3.2-24B-Instruct-2506-GGUF",
       "download_file": "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf",
       "sha256": "80f5bda68f156f12650ca03a0a2dbfae06a215ac41caa773b8631a479f82415e",
+      "download_files": [{"path": "mistralai_Mistral-Small-3.2-24B-Instruct-2506-Q4_K_M.gguf", "sha256": "80f5bda68f156f12650ca03a0a2dbfae06a215ac41caa773b8631a479f82415e"}],
       "description": "Dense 24B instruct model (14.3 GB) with strong instruction following and function calling. Needs 32 GB or more.",
       "use_cases": [
         "Chat / Q&A",
@@ -593,6 +709,7 @@
       "download_model_id": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF",
       "download_file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
       "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+      "download_files": [{"path": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf", "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0"}],
       "description": "Mixture-of-experts Qwen3 (18.6 GB) that runs about as fast as a 3B model with far better answers and tool calling. Needs 32 GB or more.",
       "use_cases": [
         "Chat / Q&A",
@@ -619,6 +736,7 @@
       "download_model_id": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF",
       "download_file": "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf",
       "sha256": "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
+      "download_files": [{"path": "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf", "sha256": "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6"}],
       "description": "Instruction-tuned chat/coding model, useful for summarizing and answering questions over retrieved passages.",
       "use_cases": [
         "Chat / Q&A",
@@ -645,6 +763,7 @@
       "download_model_id": "bartowski/Mistral-7B-Instruct-v0.3-GGUF",
       "download_file": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf",
       "sha256": "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6",
+      "download_files": [{"path": "Mistral-7B-Instruct-v0.3-Q4_K_M.gguf", "sha256": "1270d22c0fbb3d092fb725d4d96c457b7b687a5f5a715abe1e818da303e562b6"}],
       "description": "General-purpose instruction-tuned chat model for answering questions over retrieved passages.",
       "use_cases": [
         "Chat / Q&A",
@@ -670,6 +789,7 @@
       "download_model_id": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF",
       "download_file": "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
       "sha256": "731ece8d06dc7eda6f6572997feb9ee1258db0784827e642909d9b565641937b",
+      "download_files": [{"path": "DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf", "sha256": "731ece8d06dc7eda6f6572997feb9ee1258db0784827e642909d9b565641937b"}],
       "description": "Reasoning-focused distilled chat model, useful for more involved question answering over retrieved passages.",
       "use_cases": [
         "Chat / Q&A",
@@ -743,7 +863,75 @@
         "Screenshots and diagrams",
         "Text-to-image retrieval"
       ],
-      "featured": true
+      "featured": true,
+      "capabilities": ["text_to_image", "image_to_image", "multilingual", "neural_engine"]
+    },
+    {
+      "name": "SigLIP 2 Base (224 px, CamStack build)",
+      "model_id": "google/siglip2-base-patch16-224",
+      "model_card_url": "https://huggingface.co/google/siglip2-base-patch16-224",
+      "slug": "siglip2-base-224",
+      "model_ref": "siglip2-base-224",
+      "provider": "image_xpc",
+      "modality": "image",
+      "native_dims": 768,
+      "default_dims": 768,
+      "distance": "cosine",
+      "image_size": 224,
+      "text_length": 64,
+      "image_mean": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "image_std": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "text_lowercase": true,
+      "download_model_id": "camstack/camstack-models",
+      "image_model": "clip/siglip2/coreml/camstack-siglip2-b16-224-vision.mlpackage",
+      "text_model": "clip/siglip2/coreml/camstack-siglip2-b16-224-text.mlpackage",
+      "tokenizer": "clip/siglip2/onnx/camstack-siglip2-b16-224-tokenizer.json",
+      "download_files": [
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-vision.mlpackage/Manifest.json",
+          "sha256": null
+        },
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-vision.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "sha256": "cbb2bce87ff46a94ec8828f82a2824d38a5d8a988c682ebb1aaa542f3f043a0b"
+        },
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-vision.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "sha256": "6fdf1936f91d40a4b9b4fcaabe5b2dcadfc6d8c0e76ab1cc9e18c38e95d60787"
+        },
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-text.mlpackage/Manifest.json",
+          "sha256": null
+        },
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-text.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "sha256": "7cd4dcad72ed507894beba4a4476be0e27f370f3aece4466d9c416db8100ae7a"
+        },
+        {
+          "path": "clip/siglip2/coreml/camstack-siglip2-b16-224-text.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "sha256": "5de78e1774aebc080a0877afd3db7c6737c51ad9a4a3c8e581f4c9ff53f4f7c8"
+        },
+        {
+          "path": "clip/siglip2/onnx/camstack-siglip2-b16-224-tokenizer.json",
+          "sha256": "fc1870feba58b2d0cbcc75bfcb5124ee5c1202c5a64fdde45d473d228f1f35ae"
+        }
+      ],
+      "description": "Google's SigLIP 2 at 224 px (Apache 2.0), converted to Core ML fp16 by the CamStack project, about 785 MB in all. Embeds pictures and text queries into one 768-dimension space with the same Gemma tokenizer as the 256 px model, though its vectors are its own. An independent conversion and a second source for SigLIP 2, slightly faster per image and slightly less accurate.",
+      "use_cases": [
+        "Photo search",
+        "Text-to-image retrieval",
+        "Fallback SigLIP 2 source"
+      ],
+      "featured": false,
+      "capabilities": ["text_to_image", "image_to_image", "multilingual", "neural_engine"]
     }
   ]
 }

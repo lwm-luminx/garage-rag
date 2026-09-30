@@ -440,7 +440,7 @@ class Settings(BaseModel):
 
     # ---- facts / local generation ---------------------------------------
     fact_model: str = Field(
-        default="gemma2-2b",
+        default="gemma-4-e4b",
         description=(
             "Slug or alias of the local model used for fact distillation "
             "('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. "

@@ -229,6 +229,15 @@ final class AppState: ObservableObject {
 
         // Forward changes from child ObservableObjects to AppState observers
         downloadService.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        // A Gemma 4 download becomes the chat model when chat would otherwise have no tools.
+        // Checked again once the backend is up, since the setting is written through it.
+        Publishers.CombineLatest(
+            downloadService.$downloadedModels.map { $0.map(\.path) },
+            grpc.$status.map { $0 == .running }
+        )
+            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+            .sink { [weak self] _ in Task { @MainActor in await self?.adoptDownloadedGemma4ForInference() } }
+            .store(in: &cancellables)
         llama.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         postgres.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         mcp.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -411,6 +420,20 @@ final class AppState: ObservableObject {
         }
         fetchFactsSettings()
         return succeeded
+    }
+
+    /// Names a downloaded Gemma 4 as `inference.model` when nothing is chosen for inference and the
+    /// distillation model calls no tools (`ModelsPresentation.gemma4ToAdoptForInference`). Waits
+    /// for the backend, since the setting is written through it.
+    func adoptDownloadedGemma4ForInference() async {
+        guard grpc.status == .running, !commandInProgress else { return }
+        guard let preset = ModelsPresentation.gemma4ToAdoptForInference(
+            inferenceModel: inferenceModel,
+            factsModel: factsModel,
+            presets: inferencePresets,
+            isDownloaded: { preset in preset.effectiveFilename.map { self.modelDownload.isModelDownloaded(filename: $0) } ?? false }
+        ) else { return }
+        await setInferenceModel(preset.slug, provider: FirstRunModelPlan.factsProvider(for: preset))
     }
 
     /// Points `enrich-facts` / `rag_ask` at a model: sets `facts.model`, then `facts.provider`.

@@ -351,11 +351,11 @@ struct ModelsView: View {
                         detail: "models.json lists no inference models. Facts and rag_ask stay off until one is configured."
                     )
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(distillationModelItems) { item in
-                            modelRow(role: .distillation, item: item)
-                        }
-                    }
+                    installedAndDownloadable(
+                        role: .distillation,
+                        items: distillationModelItems,
+                        emptyDetail: "Download one below; Glean Facts loads it when it runs."
+                    )
                 }
             }
             .padding(8)
@@ -372,11 +372,40 @@ struct ModelsView: View {
 
     // MARK: - Inference
 
-    /// The `inference_models` presets tagged for inference, those that call tools first.
+    /// The `inference_models` presets tagged for inference: those the built-in engine holds now
+    /// first, then the one selected, then those that call tools.
     var inferenceModelItems: [UnifiedModelItem] {
-        let presets = appState.inferencePresets.filter(\.isForInference)
-        return (presets.filter(\.toolCalling) + presets.filter { !$0.toolCalling })
-            .map { UnifiedModelItem(preset: $0) }
+        let selected = selectedInferenceSlug
+        func rank(_ preset: ModelPresetEntry) -> Int {
+            if llama.isModelLoaded(alias: preset.slug) { return 0 }
+            if preset.slug == selected { return 1 }
+            return preset.toolCalling ? 2 : 3
+        }
+        return appState.inferencePresets.filter(\.isForInference)
+            .enumerated()
+            .sorted { (rank($0.element), $0.offset) < (rank($1.element), $1.offset) }
+            .map { UnifiedModelItem(preset: $0.element) }
+    }
+
+    /// The model the Inference list shows as chosen: inference.model, or while that is empty the
+    /// distillation model when it is tagged for inference and calls tools. Otherwise nothing is
+    /// chosen and the person picks one (the distillation model still answers until then).
+    var selectedInferenceSlug: String? {
+        ModelsPresentation.selectedInferenceSlug(
+            inferenceModel: appState.inferenceModel,
+            factsModel: appState.factsModel,
+            presets: appState.inferencePresets
+        )
+    }
+
+    /// Chooses `item` for inference, downloading its file first when it is not on disk yet.
+    func selectForInference(_ item: UnifiedModelItem) {
+        let hasDownload = item.effectiveDownloadURL != nil || !item.downloadFileTargets.isEmpty
+        if item.provider.downloadsFiles, !isModelFileDownloaded(item: item), !isModelDownloading(item: item), hasDownload {
+            downloadModelToLlamaXPC(item: item)
+        }
+        guard appState.inferenceModel != item.slug else { return }
+        useForInference(slug: item.slug, provider: item.provider.cliValue)
     }
 
     /// The inference model garage.json names, when it is not one of the presets on the page.
@@ -427,11 +456,11 @@ struct ModelsView: View {
                         detail: "models.json lists no models tagged for inference. rag_ask uses the distillation model."
                     )
                 } else {
-                    VStack(spacing: 8) {
-                        ForEach(inferenceModelItems) { item in
-                            modelRow(role: .inference, item: item)
-                        }
-                    }
+                    installedAndDownloadable(
+                        role: .inference,
+                        items: inferenceModelItems,
+                        emptyDetail: "Download one below, then pick it here. Until then the distillation model answers."
+                    )
                 }
             }
             .padding(8)
@@ -440,11 +469,14 @@ struct ModelsView: View {
 
     /// Says which model answers chat, and whether it is the distillation model.
     var inferenceSummary: String {
-        let lead = "The model that answers rag_ask and rag_generate over MCP. Models marked TOOLS can call Garage's tools."
+        let lead = "The model that answers rag_ask and rag_generate over MCP. Pick one below; models marked TOOLS can call Garage's tools."
         if let chosen = appState.inferenceModel {
             return "\(lead) In use: \(chosen)."
         }
-        return "\(lead) None is chosen, so the distillation model (\(appState.factsModel)) answers."
+        if selectedInferenceSlug != nil {
+            return "\(lead) The distillation model (\(appState.factsModel)) calls tools, so it answers until you pick another."
+        }
+        return "\(lead) None is chosen, so the distillation model (\(appState.factsModel)) answers, without tools."
     }
 
     /// Sets `inference.*` to a model, or with a nil slug clears it to follow the distillation model.
@@ -661,6 +693,7 @@ struct ModelsView: View {
             LogTableView(
                 lines: appState.backfill.logs,
                 sourceName: "Embed",
+                hiddenColumns: [.pid, .stream, .source],
                 onClear: { appState.backfill.clearLogs() }
             )
             .frame(minHeight: 180, maxHeight: 300)
@@ -672,6 +705,7 @@ struct ModelsView: View {
             LogTableView(
                 lines: appState.enrichFacts.logs,
                 sourceName: "Glean Facts",
+                hiddenColumns: [.pid, .stream, .source],
                 onClear: { appState.enrichFacts.clearLogs() }
             )
             .frame(minHeight: 180, maxHeight: 300)

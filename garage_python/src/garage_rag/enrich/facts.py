@@ -75,9 +75,9 @@ log = logging.getLogger(__name__)
 # Function-level fallbacks for direct callers of :func:`extract_facts`. The
 # CLI and the ``EnrichFacts`` RPC do not use these: they take the model and
 # provider from ``facts.model`` / ``facts.provider`` in the config file (see
-# :func:`configured_backend`), whose defaults are the app's ``gemma2-2b``
-# alias on ``llama_xpc``. ``gemma2:2b`` is the same model under its Ollama
-# name, pulled with `ollama pull gemma2:2b`.
+# :func:`configured_backend`), whose defaults are the app's ``gemma-4-e4b``
+# alias on ``llama_xpc``. This fallback is an Ollama name, ``gemma2:2b``,
+# pulled with `ollama pull gemma2:2b`.
 DEFAULT_MODEL_ID = "gemma2:2b"
 
 # Fact-distillation backends, all local inference servers reached through

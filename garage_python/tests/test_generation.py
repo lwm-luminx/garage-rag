@@ -22,7 +22,7 @@ class TestConstruction:
     def test_defaults_come_from_the_facts_section(self) -> None:
         model = _llama_model()
         assert model.provider == "llama_xpc"
-        assert model.model_ref == "gemma2-2b"
+        assert model.model_ref == "gemma-4-e4b"
         assert model.host == "http://127.0.0.1:8790"
 
     def test_ollama_uses_the_ollama_host(self) -> None:
