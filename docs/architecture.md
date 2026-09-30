@@ -273,6 +273,18 @@ default model:
    group dissolves. A group containing a communication goes only to a loopback
    model; when the model is elsewhere, such a group is not kept.
 
+Ground truth anchors groups. `enrich-facts` writes a mail's sender, recipients
+and subject and a Messages thread's participants as potential facts without a
+model (`enrich/metadata.py`: a person is keyed on their `authors` row where an
+identity matches, else the address; a subject on its text without `Re:`/`Fwd:`).
+Each distinct value becomes one anchored distilled fact (`anchor_key`,
+`018_fact_anchors.sql`). Its metadata facts link to it by key, whatever their
+vectors, and its centroid is its first fact's vector and never moves. Before a
+new inferred fact is grouped anywhere else, it joins the nearest anchor of its
+class that it is `facts.cluster_threshold` similar to and that passes the guard;
+no model is asked and nothing drifts. Metadata facts take no part in level 1 or
+in growing groups. Under other models an anchor's vector is its representative's.
+
 Nothing about a potential fact changes but its links. Each distilled fact
 records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
 seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it
@@ -288,6 +300,32 @@ graph `garage` (`garage graph rebuild` does only that). The vertices are
 representative to its Fact). Vertices carry the relational ids; text,
 spans and vectors stay in the tables.
 
+New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
+carry a `graph` block, which the projection reads (`graph_schema` in
+`config/fact_prompts.py`, `projection` in `db/graph.py`). For example:
+
+```json
+"graph": {
+  "vertices": [{"class": "person", "label": "Person", "title": "name"},
+               {"class": "organization", "label": "Organization"}],
+  "edges": [{"class": "relation", "source": "subject", "source_class": "person",
+             "target": "object", "target_class": "organization",
+             "label_attribute": "predicate", "labels": ["WORKS_AT", "MEMBER_OF"]}]
+}
+```
+
+A vertex entry makes the distilled facts of its class (its potential facts,
+deduplicated by the pass above: entity resolution is the same grouping) vertices
+of its label instead of `Fact`, titled by the representative's `title`
+attribute; their `SUPPORTS` edges point there. An edge entry turns each
+potential fact of its class into an edge between the distilled facts its
+`source` and `target` attributes name, resolved in the fact's own document
+first and then by statement; its label is the `label_attribute` value when
+`labels` lists it (upper-cased, spaces as `_`), else `label` (`RELATED_TO`).
+Labels are plain identifiers and may not take a built-in one; a class given two
+labels, or a label two classes, is refused when the config loads. The block is
+not part of the prompt's hash, so changing it only needs `garage graph rebuild`.
+
 The app's Graph page reads it back: the labels with counts (its filters), a
 search of titles, names, facts and statements to pick a starting vertex, and
 that vertex's neighbourhood a few hops out, drawn with one ring per hop
@@ -295,7 +333,8 @@ that vertex's neighbourhood a few hops out, drawn with one ring per hop
 functions behind `garage graph labels|find|neighbors`). The reads go over AGE's
 label tables with bound parameters rather than through `cypher()`, and take
 their labels from the catalog, so a label added later (a `RESTATES` edge) shows
-up in the page without a change to it.
+up in the page without a change to it, and a configured vertex label is
+searched by its `title` property.
 
 ### 8. Search (`search/hybrid.py`)
 

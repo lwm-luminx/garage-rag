@@ -14,6 +14,15 @@ after the built-ins. So adding a second prompt keeps the default running, and
 leave ``description`` or ``examples`` out to keep the built-in's; a prompt that
 is not a built-in must give both.
 
+**Graph schema.** A prompt's optional ``graph`` block says how its classes
+appear in the AGE graph (``garage_rag.db.graph``), so a new kind of vertex or
+edge is configuration, not code. A vertex entry projects the distilled facts of
+one class (the class's potential facts, deduplicated by ``cluster-facts``) as
+vertices of a label of their own instead of ``Fact``; an edge entry turns each
+potential fact of one class into an edge between the distilled facts its
+source and target attributes name. :func:`graph_schema` merges every prompt's
+block and rejects labels that clash.
+
 Nothing here talks to a model. The prompts go only to the local server
 ``facts.provider`` names, through the same guarded client as before.
 """
@@ -22,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import textwrap
 from dataclasses import dataclass
 from typing import Literal
@@ -32,6 +42,14 @@ CorpusClassName = Literal["document", "code", "communication"]
 
 # A prompt's name is a CLI argument, a JSON key and a database value: keep it plain.
 PROMPT_NAME_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+# Graph labels become AGE label tables; attribute names are read with ->> in SQL.
+VERTEX_LABEL_PATTERN = r"^[A-Z][A-Za-z0-9]{0,62}$"
+EDGE_LABEL_PATTERN = r"^[A-Z][A-Z0-9_]{0,62}$"
+ATTRIBUTE_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]{0,62}$"
+CLASS_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$"
+# The projection's own labels (garage_rag.db.graph), which configuration may not take.
+BUILTIN_VERTEX_LABELS = frozenset({"Document", "Chunk", "Author", "PotentialFact", "Fact"})
+BUILTIN_EDGE_LABELS = frozenset({"HAS_CHUNK", "WROTE", "RECEIVED", "STATES", "RESTATES", "SUPPORTS"})
 
 
 class FactExtractionExample(BaseModel):
@@ -61,6 +79,73 @@ class FactExample(BaseModel):
         default_factory=list,
         description="The extractions expected from the text, in the order they appear.",
     )
+
+
+class GraphVertex(BaseModel):
+    """A class whose distilled facts are vertices of their own label."""
+
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    extraction_class: str = Field(
+        alias="class", pattern=CLASS_PATTERN, description="The extraction class (facts.fact_class) projected."
+    )
+    label: str = Field(
+        pattern=VERTEX_LABEL_PATTERN,
+        description="The vertex label, e.g. Person. Not one of the built-in labels.",
+    )
+    title: str | None = Field(
+        default=None,
+        pattern=ATTRIBUTE_PATTERN,
+        description=(
+            "The attribute whose value names the vertex (its representative fact's); "
+            "unset: the distilled fact's statement."
+        ),
+    )
+
+
+class GraphEdge(BaseModel):
+    """A class whose potential facts are edges between two other classes' distilled facts."""
+
+    model_config = {"extra": "forbid", "populate_by_name": True}
+
+    extraction_class: str = Field(
+        alias="class", pattern=CLASS_PATTERN, description="The extraction class (facts.fact_class) projected."
+    )
+    source: str = Field(pattern=ATTRIBUTE_PATTERN, description="The attribute naming the edge's source.")
+    source_class: str = Field(pattern=CLASS_PATTERN, description="The class the source is a distilled fact of.")
+    target: str = Field(pattern=ATTRIBUTE_PATTERN, description="The attribute naming the edge's target.")
+    target_class: str = Field(pattern=CLASS_PATTERN, description="The class the target is a distilled fact of.")
+    label: str = Field(
+        default="RELATED_TO",
+        pattern=EDGE_LABEL_PATTERN,
+        description="The edge label, or the fallback when label_attribute names none of labels.",
+    )
+    label_attribute: str | None = Field(
+        default=None,
+        pattern=ATTRIBUTE_PATTERN,
+        description="An attribute (e.g. predicate) whose value, upper-cased with spaces as _, picks the label.",
+    )
+    labels: list[str] = Field(
+        default_factory=list,
+        description="The labels label_attribute may pick, e.g. WORKS_AT; any other value takes label.",
+    )
+
+    @field_validator("labels")
+    @classmethod
+    def _labels_are_labels(cls, value: list[str]) -> list[str]:
+        for label in value:
+            if not re.fullmatch(EDGE_LABEL_PATTERN, label):
+                raise ValueError(f"{label!r} is not an edge label (upper case, digits and _)")
+        return value
+
+
+class FactGraph(BaseModel):
+    """How a prompt's classes appear in the graph."""
+
+    model_config = {"extra": "forbid"}
+
+    vertices: list[GraphVertex] = Field(default_factory=list, description="Classes projected as vertices.")
+    edges: list[GraphEdge] = Field(default_factory=list, description="Classes projected as edges.")
 
 
 class FactPrompt(BaseModel):
@@ -99,6 +184,13 @@ class FactPrompt(BaseModel):
         description="Source slugs the prompt runs on; empty means every source.",
     )
     enabled: bool = Field(default=True, description="Set false to stop running this prompt.")
+    graph: FactGraph | None = Field(
+        default=None,
+        description=(
+            "How this prompt's classes appear in the graph: vertices of their own label, or edges "
+            "between other classes. Left out: its facts are PotentialFact and Fact vertices only."
+        ),
+    )
 
     @field_validator("examples")
     @classmethod
@@ -156,6 +248,7 @@ class EffectivePrompt:
     builtin: bool
     # A built-in with an entry in facts.prompts.
     customized: bool
+    graph: FactGraph | None = None
 
     @property
     def sha256(self) -> bytes:
@@ -190,6 +283,7 @@ class EffectivePrompt:
             "corpus_classes": list(self.corpus_classes),
             "sources": list(self.sources),
             "enabled": self.enabled,
+            **({"graph": self.graph.model_dump(by_alias=True, exclude_none=True)} if self.graph else {}),
         }
 
 
@@ -209,6 +303,7 @@ def validate_prompt_list(prompts: list[FactPrompt]) -> list[FactPrompt]:
             )
         if not (prompt.description or "").strip():
             raise ValueError(f"facts.prompts: {prompt.name!r} has an empty description")
+    graph_schema(effective_prompts(prompts))
     return prompts
 
 
@@ -226,6 +321,7 @@ def _resolve(prompt: FactPrompt, base: FactPrompt | None) -> EffectivePrompt:
         enabled=prompt.enabled,
         builtin=base is not None,
         customized=base is not None and prompt is not base,
+        graph=prompt.graph if prompt.graph is not None else (base.graph if base else None),
     )
 
 
@@ -250,3 +346,53 @@ def select_prompts(prompts: list[EffectivePrompt], names: list[str] | None = Non
     if unknown:
         raise LookupError(f"unknown fact prompt(s) {', '.join(unknown)}; known: {', '.join(by_name)}")
     return [by_name[name] for name in dict.fromkeys(names)]
+
+
+@dataclass(frozen=True)
+class GraphSchema:
+    """Every prompt's graph block merged: the configured vertex labels by class, and the edges."""
+
+    vertices: dict[str, GraphVertex]
+    edges: tuple[GraphEdge, ...]
+
+    def label_for(self, fact_class: str) -> str:
+        """The vertex label a class's distilled facts take: its configured one, else ``Fact``."""
+        vertex = self.vertices.get(fact_class)
+        return vertex.label if vertex is not None else "Fact"
+
+
+def graph_schema(prompts: list[EffectivePrompt]) -> GraphSchema:
+    """Merge the prompts' graph blocks, enabled or not (their facts may already exist).
+
+    Raises ``ValueError`` when a class is given two labels, a label is used for two
+    classes, or a configured label is one of the projection's own.
+    """
+    vertices: dict[str, GraphVertex] = {}
+    classes_of: dict[str, str] = {}
+    edges: list[GraphEdge] = []
+    for prompt in prompts:
+        if prompt.graph is None:
+            continue
+        for vertex in prompt.graph.vertices:
+            if vertex.label.lower() in {label.lower() for label in BUILTIN_VERTEX_LABELS}:
+                raise ValueError(f"facts.prompts: {prompt.name!r} uses the built-in vertex label {vertex.label!r}")
+            known = vertices.get(vertex.extraction_class)
+            if known is not None and known.label != vertex.label:
+                raise ValueError(
+                    f"facts.prompts: class {vertex.extraction_class!r} is both {known.label!r} and {vertex.label!r}"
+                )
+            other = classes_of.get(vertex.label.lower())
+            if other is not None and other != vertex.extraction_class:
+                raise ValueError(
+                    f"facts.prompts: vertex label {vertex.label!r} is used for {other!r} and "
+                    f"{vertex.extraction_class!r}"
+                )
+            vertices[vertex.extraction_class] = vertex
+            # Case-folded: each label gets a table of relational ids named after it in lower case.
+            classes_of[vertex.label.lower()] = vertex.extraction_class
+        for edge in prompt.graph.edges:
+            for label in (edge.label, *edge.labels):
+                if label in BUILTIN_EDGE_LABELS:
+                    raise ValueError(f"facts.prompts: {prompt.name!r} uses the built-in edge label {label!r}")
+            edges.append(edge)
+    return GraphSchema(vertices=vertices, edges=tuple(edges))

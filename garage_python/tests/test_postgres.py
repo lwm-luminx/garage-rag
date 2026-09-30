@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import uuid
 from collections.abc import Iterator
@@ -1337,6 +1338,305 @@ class TestDistilledFacts:
         # The normalized mean of 0° and 10°: 5° on the same axis.
         mean = [float(x) for x in vectors["The notes were written by Ada."].strip("[]").split(",")]
         assert mean == pytest.approx(self._direction(5, axis=2), abs=1e-6)
+
+    # -- anchors: metadata facts are ground truth ---------------------------------------
+
+    def _metadata(
+        self,
+        db: Session,
+        model,
+        document_id: int,
+        fact: str,
+        key: str,
+        vector: list[float] | None,
+        *,
+        fact_class: str = "sender",
+        table: str | None = None,
+    ) -> int:
+        ord = db.execute(
+            text("SELECT count(*) FROM facts WHERE document_id = :doc AND prompt_name = 'metadata'"),
+            {"doc": document_id},
+        ).scalar_one()
+        fact_id = db.execute(
+            text(
+                "INSERT INTO facts (document_id, ord, fact, fact_class, attributes, extractor, prompt_name) "
+                "VALUES (:doc, :ord, :fact, :cls, CAST(:attrs AS jsonb), 'metadata', 'metadata') RETURNING id"
+            ),
+            {"doc": document_id, "ord": ord, "fact": fact, "cls": fact_class, "attrs": json.dumps({"key": key})},
+        ).scalar_one()
+        db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, fact_id) "
+                "VALUES (:doc, :ord, :fact, :sha, 'facts:metadata:1', :id)"
+            ),
+            {
+                "doc": document_id,
+                "ord": 2000 + ord,
+                "fact": fact,
+                "sha": hashlib.sha256(fact.encode()).digest(),
+                "id": fact_id,
+            },
+        )
+        if vector is not None:
+            _embed_fact(db, table or model.table_name, fact_id, vector)
+        return fact_id
+
+    def _sender_fact(self, db: Session, model, fact: str, vector: list[float]) -> int:
+        """An inferred fact of the ``sender`` class, as an entity prompt might extract."""
+        fact_id = self._fact(db, model, self._doc(db), fact, vector)
+        db.execute(text("UPDATE facts SET fact_class = 'sender' WHERE id = :id"), {"id": fact_id})
+        return fact_id
+
+    def _anchor(self, db: Session, fact_id: int) -> tuple:
+        return db.execute(
+            text(
+                "SELECT df.id, df.anchor_key, df.statement, df.nodes, df.drift, fe.embedding::text, fe.seed::text "
+                "FROM facts f JOIN distilled_facts df ON df.id = f.distilled_fact_id "
+                "LEFT JOIN fact_emb_m fe ON fe.distilled_fact_id = df.id WHERE f.id = :id"
+            ),
+            {"id": fact_id},
+        ).one()
+
+    def test_metadata_facts_link_to_one_anchor_by_their_key(self, db: Session) -> None:
+        model = self._setup(db)
+        first = self._metadata(db, model, self._doc(db), "Ada <ada@example.com>", "author:1", self._direction(0))
+        # Far apart by vector, and one with no vector yet: the key decides, not the embedding.
+        again = self._metadata(db, model, self._doc(db), "ada@example.com", "author:1", self._direction(60))
+        unembedded = self._metadata(db, model, self._doc(db), "Ada", "author:1", None)
+        other = self._metadata(db, model, self._doc(db), "Bob <bob@example.com>", "author:2", self._direction(1))
+        db.flush()
+        state = self._run(db, model)
+
+        anchor = self._anchor(db, first)
+        assert anchor[1:5] == ("author:1", "Ada <ada@example.com>", 3, 0)
+        assert self._anchor(db, again)[0] == self._anchor(db, unembedded)[0] == anchor[0]
+        # Bob is 1 degree from Ada but another value: his own anchor.
+        assert self._anchor(db, other)[1] == "author:2"
+        assert anchor[5] == anchor[6] == "[1,0,0,0,0,0,0,0]"
+        assert state.anchors == 2
+        # Metadata facts take no part in level 1.
+        assert db.execute(text("SELECT count(*) FROM facts WHERE restates_fact_id IS NOT NULL")).scalar_one() == 0
+
+    @pytest.mark.parametrize("full", [False, True])
+    def test_an_inferred_fact_joins_an_anchor_without_moving_it(self, db: Session, full: bool) -> None:
+        model = self._setup(db)
+        ada = self._metadata(db, model, self._doc(db), "Ada Lovelace", "author:1", self._direction(0))
+        db.flush()
+        self._run(db, model)
+        close = self._sender_fact(db, model, "Ada Lovelace (Analytical Engine)", self._direction(10))
+        far = self._sender_fact(db, model, "Charles Babbage", self._direction(40))
+        # Another inferred fact close to the one that joins, but past the anchor's threshold.
+        self._sender_fact(db, model, "Countess Lovelace", self._direction(28))
+        db.flush()
+        state = self._run(db, model, full=full)
+
+        anchor = self._anchor(db, ada)
+        assert self._anchor(db, close)[0] == anchor[0]
+        assert self._anchor(db, far)[0] != anchor[0]
+        # Fixed: the centroid is still Ada's own vector, nothing drifted, no model was asked.
+        assert anchor[5] == anchor[6] == "[1,0,0,0,0,0,0,0]"
+        assert (anchor[3], anchor[4]) == (2, 0)
+        assert state.anchored == 1
+        similarity = db.execute(text("SELECT distilled_similarity FROM facts WHERE id = :id"), {"id": close}).scalar()
+        assert similarity == pytest.approx(math.cos(math.radians(10)), abs=1e-5)
+
+    def test_a_full_run_keeps_each_anchor(self, db: Session) -> None:
+        model = self._setup(db)
+        ada = self._metadata(db, model, self._doc(db), "Ada", "author:1", self._direction(0))
+        db.flush()
+        self._run(db, model)
+        before = self._anchor(db, ada)[0]
+        self._run(db, model, full=True)
+        assert self._anchor(db, ada)[0] == before
+
+    def test_an_anchor_goes_with_the_last_fact_stating_its_value(self, db: Session) -> None:
+        model = self._setup(db)
+        ada = self._metadata(db, model, self._doc(db), "Ada", "author:1", self._direction(0))
+        joined = self._sender_fact(db, model, "Ada L.", self._direction(5))
+        db.flush()
+        self._run(db, model)
+        assert self._anchor(db, joined)[0] == self._anchor(db, ada)[0]
+
+        db.execute(text("DELETE FROM facts WHERE id = :id"), {"id": ada})
+        db.flush()
+        state = self._run(db, model)
+        assert state.anchors == 0
+        # The fact that had joined it stands alone again.
+        assert self._anchor(db, joined)[1:4] == (None, "Ada L.", 1)
+
+    def test_a_new_representative_refixes_the_anchor(self, db: Session) -> None:
+        model = self._setup(db)
+        first = self._metadata(db, model, self._doc(db), "Ada <ada@example.com>", "author:1", self._direction(0))
+        second = self._metadata(db, model, self._doc(db), "ada@example.com", "author:1", self._direction(20))
+        db.flush()
+        self._run(db, model)
+        anchor_id = self._anchor(db, first)[0]
+        db.execute(text("DELETE FROM facts WHERE id = :id"), {"id": first})
+        db.flush()
+        self._run(db, model)
+        anchor = self._anchor(db, second)
+        assert anchor[0] == anchor_id
+        assert anchor[2] == "ada@example.com"
+        assert [float(x) for x in anchor[5].strip("[]").split(",")] == pytest.approx(self._direction(20), abs=1e-6)
+
+    def test_backfill_gives_an_anchor_its_representatives_vector(self, db: Session) -> None:
+        from garage_rag.embed.ollama import BackfillProgress, backfill_distilled
+
+        model = self._setup(db)
+        other = register_model(db, ModelSpec(slug="m2", model_ref="m2", dims=8))
+        first = self._metadata(db, model, self._doc(db), "Ada", "author:1", self._direction(0))
+        second = self._metadata(db, model, self._doc(db), "Ada L", "author:1", self._direction(1))
+        _embed_fact(db, other.table_name, first, self._direction(0, axis=2))
+        _embed_fact(db, other.table_name, second, self._direction(60, axis=2))
+        db.flush()
+        self._run(db, model)
+        backfill_distilled(db, other, BackfillProgress())
+        vector = db.execute(text("SELECT embedding::text FROM fact_emb_m2")).scalar_one()
+        assert vector == "[0,0,1,0,0,0,0,0]"
+
+    def test_enrich_writes_a_mails_metadata_facts(self, db: Session) -> None:
+        from garage_rag.db.models import Document
+        from garage_rag.enrich.metadata import store_metadata_facts
+
+        source = _source(db, "mail")
+        content = (
+            "Subject: Re: Roof quote\nFrom: Ada Lovelace <ada@example.com>\n"
+            "To: bob@example.com, Carol <carol@example.com>\n\nThe quote is attached."
+        )
+        document_id = _document(db, source, "Re: Roof quote", content, corpus_class="communication")
+        meta = {
+            "email_from": "Ada Lovelace <ada@example.com>",
+            "email_to": "bob@example.com, Carol <carol@example.com>",
+        }
+        db.execute(
+            text("UPDATE documents SET meta = CAST(:meta AS jsonb) WHERE id = :id"),
+            {"meta": json.dumps(meta), "id": document_id},
+        )
+        author = db.execute(
+            text("INSERT INTO authors (display_name) VALUES ('Ada Lovelace') RETURNING id")
+        ).scalar_one()
+        db.execute(
+            text("INSERT INTO author_identities (author_id, kind, value) VALUES (:a, 'email', 'Ada@Example.com')"),
+            {"a": author},
+        )
+        db.flush()
+        document = db.get(Document, document_id)
+        store_metadata_facts(db, document)
+        store_metadata_facts(db, document)  # and again: replaced, not added
+        db.flush()
+
+        rows = db.execute(
+            text(
+                "SELECT f.fact_class, f.fact, f.attributes->>'key', substr(d.content, f.char_start + 1, "
+                "f.char_end - f.char_start), c.chunker FROM facts f JOIN documents d ON d.id = f.document_id "
+                "JOIN chunks c ON c.fact_id = f.id ORDER BY f.ord"
+            )
+        ).all()
+        assert [tuple(r) for r in rows] == [
+            (
+                "sender",
+                "Ada Lovelace <ada@example.com>",
+                f"author:{author}",
+                "Ada Lovelace <ada@example.com>",
+                "facts:metadata:1",
+            ),
+            ("recipient", "bob@example.com", "email:bob@example.com", "bob@example.com", "facts:metadata:1"),
+            (
+                "recipient",
+                "Carol <carol@example.com>",
+                "email:carol@example.com",
+                "Carol <carol@example.com>",
+                "facts:metadata:1",
+            ),
+            ("subject", "Re: Roof quote", "subject:roof quote", "Re: Roof quote", "facts:metadata:1"),
+        ]
+        run = db.execute(text("SELECT facts, extractor_model FROM fact_runs WHERE prompt_name = 'metadata'")).one()
+        assert tuple(run) == (4, "metadata")
+
+    def test_the_configured_graph_projects_classes_and_relations(self, db: Session) -> None:
+        """The projection's selects over real rows (AGE itself is not needed to run them)."""
+        from garage_rag.config.fact_prompts import FactPrompt, effective_prompts, graph_schema
+        from garage_rag.db.graph import EDGES, VERTICES, projection
+
+        model = self._setup(db)
+        doc = self._doc(db)
+
+        def fact(text_: str, fact_class: str, attributes: dict) -> int:
+            fact_id = self._fact(db, model, doc, text_, None)
+            db.execute(
+                text("UPDATE facts SET fact_class = :c, attributes = CAST(:a AS jsonb) WHERE id = :id"),
+                {"c": fact_class, "a": json.dumps(attributes), "id": fact_id},
+            )
+            return fact_id
+
+        jane = fact("Jane", "person", {"name": "Jane Doe"})
+        acme = fact("Acme Corp", "organization", {})
+        works = fact(
+            "Jane works at Acme Corp.",
+            "relation",
+            {"subject": "Jane Doe", "object": "acme corp", "predicate": "works at"},
+        )
+        likes = fact(
+            "Jane likes Acme Corp.", "relation", {"subject": "Jane", "object": "Acme Corp", "predicate": "likes"}
+        )
+        fact("Jane met Bob.", "relation", {"subject": "Jane", "object": "Bob", "predicate": "works at"})
+        db.flush()
+        self._run(db, model)
+        distilled = dict(db.execute(text("SELECT id, distilled_fact_id FROM facts")).all())
+
+        prompt = FactPrompt.model_validate(
+            {
+                "name": "entities",
+                "description": "Extract.",
+                "examples": [{"text": "x", "extractions": [{"text": "x"}]}],
+                "graph": {
+                    "vertices": [
+                        {"class": "person", "label": "Person", "title": "name"},
+                        {"class": "organization", "label": "Organization"},
+                    ],
+                    "edges": [
+                        {
+                            "class": "relation",
+                            "source": "subject",
+                            "source_class": "person",
+                            "target": "object",
+                            "target_class": "organization",
+                            "label_attribute": "predicate",
+                            "labels": ["WORKS_AT"],
+                        }
+                    ],
+                },
+            }
+        )
+        vertices, edges = projection(graph_schema(effective_prompts([prompt])))
+
+        def rows(select: str, params: dict) -> list[tuple]:
+            return [tuple(r) for r in db.execute(text(select), params).all()]
+
+        by_label = {v.label: rows(v.select, v.params) for v in vertices if v.label not in ("Document", "Chunk")}
+        person = by_label["Person"]
+        assert [(rid, p["title"], p["statement"]) for rid, p in person] == [(distilled[jane], "Jane Doe", "Jane")]
+        assert [rid for rid, _ in by_label["Organization"]] == [distilled[acme]]
+        # Neither is a Fact vertex any more; the relations still are.
+        fact_ids = {rid for rid, _ in by_label["Fact"]}
+        assert distilled[jane] not in fact_ids and distilled[acme] not in fact_ids and distilled[works] in fact_ids
+
+        relation_edges = {e.label: rows(e.select, e.params) for e in edges if e.label not in EDGES}
+        # Resolved in the fact's document by the person's title and the organization's text, case-folded;
+        # an unknown predicate takes the fallback; an end that names nothing is left out.
+        assert [(s_, t, p["fact_id"], p["predicate"]) for s_, t, p in relation_edges["WORKS_AT"] if t is not None] == [
+            (distilled[jane], distilled[acme], works, "works at")
+        ]
+        assert [(s_, t, p["fact_id"]) for s_, t, p in relation_edges["RELATED_TO"]] == [
+            (distilled[jane], distilled[acme], likes)
+        ]
+        supports = [(e.target, rows(e.select, e.params)) for e in edges if e.label == "SUPPORTS"]
+        assert {t: sorted(r[0] for r in found) for t, found in supports if t != "Fact"} == {
+            "Person": [jane],
+            "Organization": [acme],
+        }
+        assert not {jane, acme} & {r[0] for t, found in supports if t == "Fact" for r in found}
+        assert set(VERTICES) <= {v.label for v in vertices}
 
     def test_dropping_a_model_drops_its_distilled_fact_table(self, db: Session) -> None:
         from garage_rag.db.emb_tables import drop_model

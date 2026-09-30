@@ -17,8 +17,17 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertEqual(GraphLabelStyle.vertex("Fact").tint, .purple)
         XCTAssertEqual(GraphLabelStyle.edge("SUPPORTS"), GraphLabelStyle(name: "Supports", tint: .purple, symbol: nil))
         XCTAssertEqual(GraphLabelStyle.edge("RESTATES").name, "Restates")
-        XCTAssertEqual(GraphLabelStyle.vertex("Entity"), GraphLabelStyle(name: "Entity", tint: .gray, symbol: "circle"))
-        XCTAssertEqual(GraphLabelStyle.edge("MENTIONS"), GraphLabelStyle(name: "Mentions", tint: .gray, symbol: nil))
+        XCTAssertEqual(GraphLabelStyle.vertex("Entity"), GraphLabelStyle(name: "Entity", tint: GraphLabelStyle.configuredTint("Entity"), symbol: "circle"))
+        XCTAssertEqual(GraphLabelStyle.edge("MENTIONS"), GraphLabelStyle(name: "Mentions", tint: GraphLabelStyle.configuredTint("MENTIONS"), symbol: nil))
+    }
+
+    func testConfiguredLabelsKeepAColourOfTheirOwn() {
+        XCTAssertEqual(GraphLabelStyle.configuredTint("Person"), GraphLabelStyle.configuredTint("Person"))
+        XCTAssertTrue(GraphLabelStyle.configuredPalette.contains(GraphLabelStyle.configuredTint("WORKS_AT")))
+        // Different labels spread over the palette rather than all landing on one colour.
+        let tints = ["Person", "Organization", "Place", "Project", "WORKS_AT", "MEMBER_OF", "RELATED_TO"]
+            .map(GraphLabelStyle.configuredTint)
+        XCTAssertGreaterThan(Set(tints.map { "\($0)" }).count, 1)
     }
 
     func testTheEmptyStateNamesWhatIsMissing() {

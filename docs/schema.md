@@ -209,7 +209,15 @@ unchanged, with its id, statement and vectors.
 | `nodes` | representatives behind it (restatements not counted) |
 | `spread` / `radius` | mean and largest cosine distance of its nodes to its centroid |
 | `drift` | cosine distance of its centroid from its seed (the centroid of the core it grew from) |
+| `anchor_key` | for an anchored distilled fact, the metadata value's exact key (`author:<id>`, `email:<address>`, `subject:<normalized>`; `018_fact_anchors.sql`); unique per `fact_class` |
 | `tsv` | generated `to_tsvector('english', statement)`, GIN-indexed |
+
+A mail's sender, recipients and subject and a Messages thread's participants are
+written as potential facts with no model (`facts.extractor = 'metadata'`,
+`prompt_name = 'metadata'`, the key in `attributes->>'key'`). Each distinct value
+is one anchored distilled fact: its metadata facts link to it by the key, and its
+centroid is its representative's vector, fixed. Inferred facts of the same class
+join it when close enough without moving it.
 
 Each embedding model has a `fact_emb_<slug>` table of distilled-fact vectors
 beside its `emb_<slug>` table, keyed on `distilled_fact_id` (`ON DELETE CASCADE`).

@@ -48,6 +48,15 @@ final class FactPromptConfigTests: XCTestCase {
         XCTAssertEqual(entries(json).map { $0["name"] as? String }, ["names"])
     }
 
+    func testSavingKeepsTheGraphBlockTheEditorDoesNotShow() throws {
+        let configured = #"[{"name": "people", "description": "Old.", "examples": [], "graph": {"vertices": [{"class": "person", "label": "Person"}]}}]"#
+        let json = try FactPromptConfig.saving(people(), in: configured, existingNames: ["default"])
+        let saved = try XCTUnwrap(entries(json).first)
+        XCTAssertEqual(saved["description"] as? String, "List every person named.")
+        let vertices = try XCTUnwrap((saved["graph"] as? [String: Any])?["vertices"] as? [[String: Any]])
+        XCTAssertEqual(vertices.first?["label"] as? String, "Person")
+    }
+
     func testSavingRefusesBadInput() {
         var badName = people()
         badName.name = "has space"

@@ -54,6 +54,16 @@ Two things keep a group honest where embeddings are not:
   is not kept, and its facts stay apart. Run without a model, every group is
   kept and stated by its representative's text.
 
+**Anchors.** Metadata facts (a mail's sender, recipients and subject, a
+thread's participants; :mod:`garage_rag.enrich.metadata`) are ground truth.
+Each distinct value (its class and exact key) is an *anchored* distilled fact
+(``distilled_facts.anchor_key``, ``018_fact_anchors.sql``), and every metadata
+fact with that key links to it by the key, never by its vector. Its centroid is
+its representative's vector and is fixed: an inferred fact of the same class
+joins the nearest anchor it is ``threshold`` similar to (the guard applies)
+before it is tried anywhere else, and joining moves nothing, needs no model and
+has no drift. Metadata facts take no part in level 1 or in growing groups.
+
 Potential facts are never changed: they are only linked. A distilled fact's
 vector in the clustering model's ``fact_emb_`` table is its centroid (with its
 ``seed``), normalized; ``garage backfill`` gives it one under every other model,
@@ -101,6 +111,8 @@ MAX_DISTILL_FACTS = 20
 GROWTH_NEIGHBORS = 50
 GROWTH_ROUNDS = 4
 ATTACH_CANDIDATES = 5
+# facts.extractor of a metadata fact (garage_rag.enrich.metadata.EXTRACTOR).
+METADATA_EXTRACTOR = "metadata"
 
 # ---------------------------------------------------------------------------
 # The guard: what an embedding cannot tell apart
@@ -626,6 +638,9 @@ class ClusterProgress:
     attached: int = 0
     # Groups tight enough to keep without asking the model.
     accepted: int = 0
+    # Anchored distilled facts (one per metadata value), and inferred facts that joined one.
+    anchors: int = 0
+    anchored: int = 0
     distilled: int = 0
     to_distill: int = 0
     # Distilled facts backing more than one potential fact, and how many they back.
@@ -662,6 +677,11 @@ def _iterative_scan(session: Session) -> None:
 
 def _has_vector(table: str, alias: str = "f") -> str:
     return f"EXISTS (SELECT 1 FROM {table} he WHERE he.fact_id = {alias}.id)"
+
+
+def _inferred(alias: str = "f") -> str:
+    """Not a metadata fact: metadata facts are placed by their key, never by their vector."""
+    return f"{alias}.extractor <> '{METADATA_EXTRACTOR}'"
 
 
 @dataclass
@@ -701,6 +721,8 @@ class _Pass:
         self.document: dict[int, int] = {}
         self.vectors: dict[int, Vector] = {}
         self._signatures: dict[int, ClaimSignature] = {}
+        # Classes with at least one anchor: only their facts are tried against anchors.
+        self.anchor_classes: set[str] = set()
 
     # -- plumbing -------------------------------------------------------------
 
@@ -797,7 +819,7 @@ class _Pass:
             WITH v AS (
                 SELECT e.fact_id, f.document_id, f.fact_class, e.embedding
                 FROM {self.table} e JOIN facts f ON f.id = e.fact_id
-                WHERE f.document_id = ANY(CAST(:docs AS bigint[]))
+                WHERE f.document_id = ANY(CAST(:docs AS bigint[])) AND {_inferred()}
             )
             SELECT a.fact_id, b.fact_id, 1 - (a.embedding <=> b.embedding)
             FROM v a JOIN v b ON b.document_id = a.document_id AND b.fact_class = a.fact_class AND a.fact_id < b.fact_id
@@ -975,7 +997,7 @@ class _Pass:
             for (i,) in self.session.execute(
                 text(
                     f"SELECT f.id FROM facts f WHERE f.restates_fact_id IS NULL AND {_has_vector(self.table)}"
-                    " ORDER BY f.id"
+                    f" AND {_inferred()} ORDER BY f.id"
                 )
             ).all()
         ]
@@ -986,7 +1008,7 @@ class _Pass:
                 f"""
                 SELECT e.fact_id, e.embedding::text
                 FROM {self.table} e JOIN facts f ON f.id = e.fact_id
-                WHERE f.fact_class = :fact_class AND f.restates_fact_id IS NULL
+                WHERE f.fact_class = :fact_class AND f.restates_fact_id IS NULL AND {_inferred()}
                 ORDER BY e.embedding {self.op} {self.cast("v")}
                 LIMIT :k
                 """
@@ -999,6 +1021,168 @@ class _Pass:
             self.vectors.setdefault(fid, parse_vector(literal))
             found.append(fid)
         return found
+
+    # -- anchors: metadata values, ground truth ------------------------------------
+
+    def anchor(self) -> None:
+        """Make each metadata value an anchored distilled fact, link its facts to it, and fix its centroid."""
+        key = "f.attributes->>'key'"
+        first = f"""
+            SELECT DISTINCT ON (f.fact_class, {key}) f.id, f.fact, f.fact_class, {key} AS key
+            FROM facts f WHERE f.extractor = '{METADATA_EXTRACTOR}' AND {key} IS NOT NULL
+            ORDER BY f.fact_class, {key}, f.id
+        """
+        # An anchor whose value no document states any more goes; facts that joined it are placed afresh.
+        self.session.execute(
+            text(
+                f"""
+                DELETE FROM distilled_facts df WHERE df.anchor_key IS NOT NULL AND NOT EXISTS (
+                    SELECT 1 FROM facts f WHERE f.extractor = '{METADATA_EXTRACTOR}'
+                      AND f.fact_class = df.fact_class AND {key} = df.anchor_key)
+                """
+            )
+        )
+        # A representative deleted from under its anchor (its document read again): the
+        # value's first fact takes over, and the anchor's vectors are made again from it.
+        reseated = [
+            int(i)
+            for (i,) in self.session.execute(
+                text(
+                    f"""
+                    UPDATE distilled_facts df SET representative_fact_id = m.id, statement = m.fact
+                    FROM ({first}) m
+                    WHERE df.anchor_key IS NOT NULL AND df.representative_fact_id IS NULL
+                      AND m.fact_class = df.fact_class AND m.key = df.anchor_key
+                    RETURNING df.id
+                    """
+                )
+            ).all()
+        ]
+        if reseated:
+            for table in [self.fact_table, *self.other_fact_tables()]:
+                self.session.execute(
+                    text(f"DELETE FROM {table} WHERE distilled_fact_id = ANY(CAST(:ids AS bigint[]))"),
+                    {"ids": reseated},
+                )
+        self.session.execute(
+            text(
+                f"""
+                INSERT INTO distilled_facts (fact_class, statement, representative_fact_id, members_sha256,
+                                             anchor_key, model_slug, nodes, spread, drift, radius)
+                SELECT m.fact_class, m.fact, m.id,
+                       sha256(convert_to('anchor:' || m.fact_class || ':' || m.key, 'UTF8')),
+                       m.key, :slug, 1, 0, 0, 0
+                FROM ({first}) m
+                ON CONFLICT (fact_class, anchor_key) WHERE anchor_key IS NOT NULL DO NOTHING
+                """
+            ),
+            {"slug": self.model.slug},
+        )
+        self.session.execute(
+            text("UPDATE distilled_facts SET model_slug = :slug WHERE anchor_key IS NOT NULL"),
+            {"slug": self.model.slug},
+        )
+        self.session.execute(
+            text(
+                f"""
+                UPDATE facts f SET distilled_fact_id = df.id, distilled_similarity = 1
+                FROM distilled_facts df
+                WHERE f.extractor = '{METADATA_EXTRACTOR}' AND df.anchor_key = {key} AND df.fact_class = f.fact_class
+                  AND (f.distilled_fact_id IS DISTINCT FROM df.id OR f.distilled_similarity IS DISTINCT FROM 1)
+                """
+            )
+        )
+        # The fixed centroid: the representative's own vector, once it has one, never moved after.
+        self.session.execute(
+            text(
+                f"""
+                INSERT INTO {self.fact_table} (distilled_fact_id, embedding, seed)
+                SELECT df.id, e.embedding, e.embedding
+                FROM distilled_facts df JOIN {self.table} e ON e.fact_id = df.representative_fact_id
+                WHERE df.anchor_key IS NOT NULL
+                ON CONFLICT (distilled_fact_id) DO NOTHING
+                """
+            )
+        )
+        self.anchor_classes = {
+            c
+            for (c,) in self.session.execute(
+                text(
+                    f"SELECT DISTINCT df.fact_class FROM distilled_facts df JOIN {self.fact_table} fe"
+                    " ON fe.distilled_fact_id = df.id WHERE df.anchor_key IS NOT NULL"
+                )
+            ).all()
+        }
+        self.state.anchors = int(
+            self.session.execute(text("SELECT count(*) FROM distilled_facts WHERE anchor_key IS NOT NULL")).scalar_one()
+        )
+
+    def to_anchors(self, facts: Sequence[int]) -> list[int]:
+        """Join each of ``facts`` to the nearest anchor of its class it is close enough to; those that joined."""
+        tried = [f for f in facts if self.fact_class[f] in self.anchor_classes]
+        if not tried:
+            return []
+        self.load_vectors(tried)
+        nearest = text(
+            f"""
+            SELECT fe.distilled_fact_id, fe.embedding::text, df.representative_fact_id
+            FROM {self.fact_table} fe JOIN distilled_facts df ON df.id = fe.distilled_fact_id
+            WHERE df.fact_class = :fact_class AND df.anchor_key IS NOT NULL
+            ORDER BY fe.embedding {self.op} {self.cast("v")}
+            LIMIT :k
+            """
+        )
+        joined: list[int] = []
+        links: list[dict[str, object]] = []
+        for fact_id in tried:
+            vector = self.vectors.get(fact_id)
+            if vector is None:
+                continue
+            for did, centroid, rep in self.session.execute(
+                nearest,
+                {
+                    "fact_class": self.fact_class[fact_id],
+                    "v": vector_literal(vector),
+                    "k": self.params.attach_candidates,
+                },
+            ).all():
+                if rep is None or self.signature(int(rep)) != self.signature(fact_id):
+                    continue
+                similarity = cosine(vector, parse_vector(centroid))
+                if similarity < self.params.threshold:
+                    continue
+                links.append({"did": int(did), "similarity": similarity, "id": fact_id})
+                joined.append(fact_id)
+                break
+        if links:
+            self.session.execute(
+                text("UPDATE facts SET distilled_fact_id = :did, distilled_similarity = :similarity WHERE id = :id"),
+                links,
+            )
+        self.state.anchored += len(joined)
+        return joined
+
+    def anchor_stats(self) -> None:
+        """Record how many nodes each anchor backs and how far they sit from its fixed centroid."""
+        self.session.execute(
+            text(
+                f"""
+                UPDATE distilled_facts df SET nodes = s.n, spread = s.spread, radius = s.radius, drift = 0
+                FROM (
+                    SELECT d.id, count(*) AS n,
+                           coalesce(avg(e.embedding <=> fe.embedding), 0) AS spread,
+                           coalesce(max(e.embedding <=> fe.embedding), 0) AS radius
+                    FROM distilled_facts d
+                    JOIN facts f ON f.distilled_fact_id = d.id AND f.restates_fact_id IS NULL
+                    LEFT JOIN {self.fact_table} fe ON fe.distilled_fact_id = d.id
+                    LEFT JOIN {self.table} e ON e.fact_id = f.id
+                    WHERE d.anchor_key IS NOT NULL
+                    GROUP BY d.id
+                ) s
+                WHERE df.id = s.id
+                """
+            )
+        )
 
     # -- level 2: a full run ----------------------------------------------------
 
@@ -1018,8 +1202,14 @@ class _Pass:
             )
         )
 
+        self.anchor()
         nodes = self.nodes()
         self.state.nodes = len(nodes)
+        # Ground truth first: a node close enough to an anchor joins it and grows no group.
+        taken: set[int] = set()
+        for node in self.to_anchors(nodes):
+            taken.add(node)
+        nodes = [n for n in nodes if n not in taken]
         self.report("neighbors")
         neighbors: dict[int, list[tuple[int, float]]] = {}
         neighbor_sql = text(_neighbor_sql(self.table, self.op))
@@ -1035,7 +1225,6 @@ class _Pass:
 
         # Densest first: a seed with many close neighbours is likelier the middle of a claim than its edge.
         seeds = sorted(neighbors, key=lambda n: (-len({b for b, _ in neighbors[n]}), n))
-        taken: set[int] = set()
         grown: list[Grown] = []
         for seed in seeds:
             if seed in taken:
@@ -1121,6 +1310,7 @@ class _Pass:
                        coalesce(array_agg(f.id ORDER BY f.id) FILTER (WHERE f.id IS NOT NULL), '{}')
                 FROM distilled_facts df
                 LEFT JOIN facts f ON f.distilled_fact_id = df.id AND f.restates_fact_id IS NULL
+                WHERE df.anchor_key IS NULL
                 GROUP BY df.id
                 HAVING count(f.id) IS DISTINCT FROM df.nodes
                 """
@@ -1201,7 +1391,7 @@ class _Pass:
             text(
                 f"""
                 DELETE FROM distilled_facts df
-                WHERE df.model_slug IS NULL
+                WHERE df.model_slug IS NULL AND df.anchor_key IS NULL
                   AND NOT EXISTS (SELECT 1 FROM {self.fact_table} fe WHERE fe.distilled_fact_id = df.id
                                                                      AND fe.seed IS NOT NULL)
                   AND EXISTS (SELECT 1 FROM facts f WHERE f.id = df.representative_fact_id
@@ -1220,17 +1410,21 @@ class _Pass:
         ]
         self.state.nodes = len(new)
         self.load_vectors(new)
+        anchored = set(self.to_anchors(new))
         candidates = text(
             f"""
             SELECT fe.distilled_fact_id, fe.seed::text, df.representative_fact_id
             FROM {self.fact_table} fe JOIN distilled_facts df ON df.id = fe.distilled_fact_id
-            WHERE df.fact_class = :fact_class AND fe.seed IS NOT NULL
+            WHERE df.fact_class = :fact_class AND fe.seed IS NOT NULL AND df.anchor_key IS NULL
             ORDER BY fe.embedding {self.op} {self.cast("v")}
             LIMIT :k
             """
         )
         group_nodes = text("SELECT id FROM facts WHERE distilled_fact_id = :id AND restates_fact_id IS NULL")
         for fact_id in new:
+            if fact_id in anchored:
+                self.state.scanned += 1
+                continue
             vector = self.vectors[fact_id]
             placed = False
             for did, seed, rep in self.session.execute(
@@ -1319,6 +1513,7 @@ class _Pass:
     # -- both ------------------------------------------------------------------------
 
     def finish(self) -> None:
+        self.anchor_stats()
         # Every representative in no group stands alone: in the single distilled
         # fact it already had (a full run keeps its id), else in a new one.
         relink = text(
@@ -1388,8 +1583,8 @@ class _Pass:
         self.state.clusters, self.state.clustered_facts, self.state.distilled_facts = self.session.execute(
             text(
                 """
-                SELECT count(*) FILTER (WHERE df.model_slug IS NOT NULL),
-                       coalesce(sum(n) FILTER (WHERE df.model_slug IS NOT NULL), 0),
+                SELECT count(*) FILTER (WHERE df.model_slug IS NOT NULL AND n > 1),
+                       coalesce(sum(n) FILTER (WHERE df.model_slug IS NOT NULL AND n > 1), 0),
                        count(*)
                 FROM distilled_facts df
                 JOIN (SELECT distilled_fact_id, count(*) AS n FROM facts GROUP BY distilled_fact_id) m
@@ -1417,6 +1612,7 @@ def _neighbor_sql(table: str, op: str) -> str:
             FROM {table} e2
             JOIN facts f2 ON f2.id = e2.fact_id
             WHERE f2.fact_class = src.fact_class AND e2.fact_id <> src.fact_id AND f2.restates_fact_id IS NULL
+              AND {_inferred("f2")}
             ORDER BY e2.embedding {op} src.embedding
             LIMIT :k
         ) nb
@@ -1461,6 +1657,7 @@ def cluster_facts(
     if run.state.full:
         run.regroup()
     else:
+        run.anchor()
         run.refresh()
         run.place()
     run.finish()

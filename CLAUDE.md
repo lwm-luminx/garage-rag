@@ -275,18 +275,25 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     neighbour is too far from the centroid or pulls it too far from the seed; groups record
     `spread`/`radius`/`drift`. Incremental runs attach new facts to stored centroids; `--full` (or
     a changed `facts.cluster_*` grouping setting) regroups, keeping rows whose members are unchanged.
+  - Metadata is ground truth: `enrich-facts` writes a mail's sender/recipients/subject and a thread's
+    participants as facts with no model (`enrich/metadata.py`, `extractor = 'metadata'`). Each distinct
+    value is an anchored distilled fact (`anchor_key`, `018_fact_anchors.sql`) with a fixed centroid;
+    inferred facts of its class join it first, without moving it.
   - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
     loose group and states it once; a tight one is kept as is.
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
     clustering model's centroid and `seed`, and under other models the mean the backfill writes.
   - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
-    PotentialFact and Fact vertices into the graph `garage`. The same module reads it back over
-    AGE's label tables with bound parameters, never Cypher built from input: labels with counts, a
-    title search and a breadth-first neighbourhood walk with label filters (`GetGraphLabels`,
+    PotentialFact and Fact vertices into the graph `garage`. A prompt's `graph` block
+    (`facts.prompts[].graph`) adds vertex labels per class and edges from relation classes, so new
+    vertex and edge types are config (`graph_schema`, `projection`). The same module reads it back
+    over AGE's label tables with bound parameters, never Cypher built from input: labels with counts,
+    a title search and a breadth-first neighbourhood walk with label filters (`GetGraphLabels`,
     `FindGraphVertices`, `GetGraphNeighborhood`; `garage graph labels|find|neighbors`). Labels come
-    from the catalog, so a new edge label needs no change there. The app's Graph page
-    (`Views/GraphView.swift`, radial layout in `GraphLayout.swift`) draws one vertex's
-    neighbourhood; the Facts and Documents pages link into it with Show in Graph.
+    from the catalog, so a configured label needs no change there, and its vertices are searched by
+    their `title` property. The app's Graph page (`Views/GraphView.swift`, radial layout in
+    `GraphLayout.swift`) draws one vertex's neighbourhood; the Facts and Documents pages link into it
+    with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model

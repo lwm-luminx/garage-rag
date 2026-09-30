@@ -19,7 +19,7 @@ struct GraphLabelStyle: Equatable {
         case "Author": GraphLabelStyle(name: "Author", tint: .green, symbol: "person")
         case "PotentialFact": GraphLabelStyle(name: "Potential fact", tint: .orange, symbol: "lightbulb")
         case "Fact": GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill")
-        default: GraphLabelStyle(name: humanize(label), tint: .gray, symbol: "circle")
+        default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: "circle")
         }
     }
 
@@ -32,8 +32,21 @@ struct GraphLabelStyle: Equatable {
         case "STATES": GraphLabelStyle(name: "States", tint: .orange, symbol: nil)
         case "SUPPORTS": GraphLabelStyle(name: "Supports", tint: .purple, symbol: nil)
         case "RESTATES": GraphLabelStyle(name: "Restates", tint: .pink, symbol: nil)
-        default: GraphLabelStyle(name: humanize(label), tint: .gray, symbol: nil)
+        default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: nil)
         }
+    }
+
+    /// Tints for labels a fact prompt's `graph` block adds, none of them a built-in label's.
+    static let configuredPalette: [Color] = [.indigo, .cyan, .brown, .red, .yellow, .gray]
+
+    /// A configured label's tint: picked from its name, so it keeps its colour across launches
+    /// (Swift's `hashValue` is seeded per process, so it is not used).
+    static func configuredTint(_ label: String) -> Color {
+        var hash: UInt32 = 2_166_136_261
+        for byte in label.utf8 {
+            hash = (hash ^ UInt32(byte)) &* 16_777_619
+        }
+        return configuredPalette[Int(hash % UInt32(configuredPalette.count))]
     }
 
     /// `HAS_CHUNK` -> "Has chunk", `PotentialFact` -> "Potential fact".
