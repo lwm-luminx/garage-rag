@@ -37,6 +37,11 @@ from garage_rag.db.models import IndexKind, StorageKind
 # the index to be used at all; models.json declares it per model.
 Distance = Literal["cosine", "l2", "inner_product"]
 DISTANCES: tuple[Distance, ...] = ("cosine", "l2", "inner_product")
+# What a model embeds. A text model gets a chunk's text; an image model (a CLIP-style
+# pair of towers) gets the image file behind an image chunk, and embeds a text query
+# with its text tower.
+Modality = Literal["text", "image"]
+MODALITIES: tuple[Modality, ...] = ("text", "image")
 
 # pgvector's ordering operator for each metric (smaller sorts first; `<#>` is the
 # negated inner product, so ascending order is still best-first).
@@ -65,6 +70,7 @@ class ModelSpec:
     distance: Distance = "cosine"
     # Where a provider names the model differently from model_ref (Ollama tags).
     provider_refs: dict[str, str] = field(default_factory=dict)
+    modality: Modality = "text"
 
     def ref_for(self, provider: str) -> str:
         """The model's name under ``provider``."""
@@ -76,6 +82,13 @@ def check_distance(distance: str) -> Distance:
     if distance not in DISTANCES:
         raise ValueError(f"unknown distance {distance!r}; choose one of {', '.join(DISTANCES)}")
     return cast(Distance, distance)
+
+
+def check_modality(modality: str) -> Modality:
+    """``modality`` if it is one backfill knows how to feed, else ValueError."""
+    if modality not in MODALITIES:
+        raise ValueError(f"unknown modality {modality!r}; choose one of {', '.join(MODALITIES)}")
+    return cast(Modality, modality)
 
 
 def distance_operator(distance: str) -> str:

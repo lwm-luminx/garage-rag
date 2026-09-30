@@ -18,7 +18,7 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 /// Subclasses override `additionalSelfTests()`, `registerManagedServices(in:)`, `exportedInterface`
 /// and implement their service specific protocol methods, wrapping Python calls in
 /// `GaragePythonRuntime.shared.withGIL { ... }`.
-open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
+open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
     public enum Lifecycle: String, Sendable {
         case bootstrapping
         case ready
@@ -579,6 +579,19 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         GarageXPCOutputCapture.shared.log(message: "Received the LlamaXPCService endpoint from the app")
         reply(true, "LlamaXPCService endpoint received by \(serviceName)")
         rerunSelfTests(named: [GarageLlamaEndpointStore.dependentSelfTestName])
+    }
+
+    // MARK: - GarageImageEmbedEndpointReceiverProtocol
+
+    /// Keeps the GarageImageEmbedXPCService endpoint the app handed over for this process's
+    /// image embedding bridge, then re-runs the self test that needs it. Services whose exported
+    /// protocol does not adopt `GarageImageEmbedEndpointReceiverProtocol` never receive this call.
+    public func setImageEmbedEndpoint(_ endpoint: NSXPCListenerEndpoint, with reply: @escaping (Bool, String?) -> Void) {
+        GarageImageEmbedEndpointStore.shared.set(endpoint)
+        logger.info("\(self.serviceName, privacy: .public): received the GarageImageEmbedXPCService endpoint")
+        GarageXPCOutputCapture.shared.log(message: "Received the GarageImageEmbedXPCService endpoint from the app")
+        reply(true, "GarageImageEmbedXPCService endpoint received by \(serviceName)")
+        rerunSelfTests(named: [GarageImageEmbedEndpointStore.dependentSelfTestName])
     }
 
     // MARK: - GarageFolderAccessReceiverProtocol

@@ -1,5 +1,6 @@
 import Foundation
 import OSLog
+import ImageEmbedClient
 import LlamaClient
 import PythonXPCService
 
@@ -47,6 +48,12 @@ final class LlamaEndpointBroker: @unchecked Sendable {
     /// The services that receive the endpoint (XPCServiceManager ids).
     static let receiverServiceIds = ["garage-xpc", "embed-xpc", "mcp-server-xpc"]
 
+    /// The source service, as its messages name it: LlamaXPCService by default, or
+    /// GarageImageEmbedXPCService for the broker that hands its endpoint to the same receivers.
+    let sourceName: String
+    /// The source's XPCServiceManager id, which the log lines about hand-overs are filed under.
+    let sourceServiceId: String
+
     private let queue = DispatchQueue(label: "me.rickmark.garage-rag.llama-endpoint-broker", qos: .utility)
     private let connector: LlamaEndpointConnector
     private let receiverIds: [String]
@@ -75,6 +82,8 @@ final class LlamaEndpointBroker: @unchecked Sendable {
     init(
         connector: LlamaEndpointConnector,
         receiverIds: [String] = LlamaEndpointBroker.receiverServiceIds,
+        sourceName: String = "LlamaXPCService",
+        sourceServiceId: String = "llama-xpc",
         retryDelays: [TimeInterval] = [1, 2, 5, 10, 30, 60],
         lostDelay: TimeInterval = 1,
         roundTimeout: TimeInterval = 30,
@@ -82,6 +91,8 @@ final class LlamaEndpointBroker: @unchecked Sendable {
     ) {
         self.connector = connector
         self.receiverIds = receiverIds
+        self.sourceName = sourceName
+        self.sourceServiceId = sourceServiceId
         self.retryDelays = retryDelays.isEmpty ? [1] : retryDelays
         self.lostDelay = lostDelay
         self.roundTimeout = roundTimeout
@@ -170,7 +181,7 @@ final class LlamaEndpointBroker: @unchecked Sendable {
         guard round == current else { return }
         guard let fetched else {
             dropSource()
-            finishRound(failure: "LlamaXPCService gave no endpoint: \(message ?? "no reason given")")
+            finishRound(failure: "\(sourceName) gave no endpoint: \(message ?? "no reason given")")
             return
         }
         endpoint = fetched
@@ -201,19 +212,19 @@ final class LlamaEndpointBroker: @unchecked Sendable {
             dropReceiver(id)
         }
         guard pendingReceivers.isEmpty else { return }
-        finishRound(failure: failedReceivers.isEmpty ? nil : "Could not hand the LlamaXPCService endpoint to \(failedReceivers.joined(separator: "; "))")
+        finishRound(failure: failedReceivers.isEmpty ? nil : "Could not hand the \(sourceName) endpoint to \(failedReceivers.joined(separator: "; "))")
     }
 
     private func roundTimedOut(_ current: UUID) {
         guard round == current else { return }
-        let waitingOn = pendingReceivers.isEmpty ? ["llama-xpc"] : pendingReceivers.sorted()
+        let waitingOn = pendingReceivers.isEmpty ? [sourceServiceId] : pendingReceivers.sorted()
         if pendingReceivers.isEmpty {
             dropSource()
         }
         for id in pendingReceivers {
             dropReceiver(id)
         }
-        finishRound(failure: "The LlamaXPCService endpoint hand-over timed out waiting on \(waitingOn.joined(separator: ", "))")
+        finishRound(failure: "The \(sourceName) endpoint hand-over timed out waiting on \(waitingOn.joined(separator: ", "))")
     }
 
     private func finishRound(failure: String?) {
@@ -228,8 +239,8 @@ final class LlamaEndpointBroker: @unchecked Sendable {
         } else {
             consecutiveFailures = 0
             _successfulRounds += 1
-            logger.info("Handed the LlamaXPCService endpoint to \(self.receiverIds.joined(separator: ", "), privacy: .public)")
-            report("Handed the LlamaXPCService endpoint to \(receiverIds.joined(separator: ", "))", false)
+            logger.info("Handed the \(self.sourceName, privacy: .public) endpoint to \(self.receiverIds.joined(separator: ", "), privacy: .public)")
+            report("Handed the \(sourceName) endpoint to \(receiverIds.joined(separator: ", "))", false)
         }
         if rerunRequested {
             rerunRequested = false
@@ -282,7 +293,7 @@ final class LlamaEndpointBroker: @unchecked Sendable {
     /// LlamaXPCService went away: its endpoint died with it. Fetch a new one and hand it to everyone.
     private func sourceLost(_ token: UUID) {
         guard running, source?.token == token else { return }
-        logger.warning("Lost the connection to LlamaXPCService; handing a new endpoint over")
+        logger.warning("Lost the connection to \(self.sourceName, privacy: .public); handing a new endpoint over")
         dropSource()
         schedule(after: max(lostDelay, consecutiveFailures > 0 ? retryDelay() : 0))
     }
@@ -321,6 +332,21 @@ extension LlamaEndpointConnector {
             },
             connectReceiver: { id, onLost in
                 XPCLlamaEndpointReceiver(bundleId: receiverBundleIds[id] ?? id, onLost: onLost)
+            }
+        )
+    }
+}
+
+extension LlamaEndpointConnector {
+    /// The same hand-over for GarageImageEmbedXPCService's endpoint, which the Python in the receivers
+    /// embeds `image_xpc` models through (`ImageEmbedBridge`).
+    static func imageEmbedXPC(imageEmbedBundleId: String = ImageEmbedXPCConstants.serviceName, receiverBundleIds: [String: String]) -> LlamaEndpointConnector {
+        LlamaEndpointConnector(
+            connectSource: { onLost in
+                XPCImageEmbedEndpointSource(bundleId: imageEmbedBundleId, onLost: onLost)
+            },
+            connectReceiver: { id, onLost in
+                XPCImageEmbedEndpointReceiver(bundleId: receiverBundleIds[id] ?? id, onLost: onLost)
             }
         )
     }
@@ -379,6 +405,66 @@ private final class XPCLlamaEndpointReceiver: LlamaEndpointReceiver {
             return
         }
         proxy.setLlamaEndpoint(endpoint) { accepted, message in
+            reply(accepted, message)
+        }
+    }
+
+    func invalidate() {
+        connection.invalidate()
+    }
+}
+
+private final class XPCImageEmbedEndpointSource: LlamaEndpointSource {
+    private let connection: NSXPCConnection
+    private let bundleId: String
+
+    init(bundleId: String, onLost: @escaping () -> Void) {
+        self.bundleId = bundleId
+        connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
+        connection.remoteObjectInterface = NSXPCInterface(with: GarageImageEmbedXPCServiceProtocol.self)
+        connection.interruptionHandler = onLost
+        connection.invalidationHandler = onLost
+        connection.resume()
+    }
+
+    func fetchEndpoint(_ reply: @escaping (NSXPCListenerEndpoint?, String?) -> Void) {
+        guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+            reply(nil, error.localizedDescription)
+        }) as? GarageImageEmbedXPCServiceProtocol else {
+            reply(nil, "no GarageImageEmbedXPCServiceProtocol proxy for \(bundleId)")
+            return
+        }
+        proxy.getListenerEndpoint { endpoint, error in
+            reply(endpoint, error?.localizedDescription ?? (endpoint == nil ? "empty reply" : nil))
+        }
+    }
+
+    func invalidate() {
+        connection.invalidate()
+    }
+}
+
+private final class XPCImageEmbedEndpointReceiver: LlamaEndpointReceiver {
+    private let connection: NSXPCConnection
+    private let bundleId: String
+
+    init(bundleId: String, onLost: @escaping () -> Void) {
+        self.bundleId = bundleId
+        connection = GarageInProcessServices.makeConnection(serviceName: bundleId)
+        connection.remoteObjectInterface = NSXPCInterface(with: GarageImageEmbedEndpointReceiverProtocol.self)
+        connection.interruptionHandler = onLost
+        connection.invalidationHandler = onLost
+        connection.resume()
+    }
+
+    func deliver(_ endpoint: NSXPCListenerEndpoint, _ reply: @escaping (Bool, String?) -> Void) {
+        guard let proxy = connection.remoteObjectProxyWithErrorHandler({ error in
+            reply(false, error.localizedDescription)
+        }) as? GarageImageEmbedEndpointReceiverProtocol else {
+            reply(false, "no GarageImageEmbedEndpointReceiverProtocol proxy for \(bundleId)")
+            return
+        }
+        proxy.setImageEmbedEndpoint(endpoint) { accepted, message in
             reply(accepted, message)
         }
     }

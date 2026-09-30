@@ -549,10 +549,32 @@ test_suite(
 )
 
 py_test(
+    name = "test_image_embedding",
+    srcs = ["test_image_embedding.py"],
+    data = [
+        "//data/models",
+        "//data/sql:sql_schema",
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/embed",
+        "//garage_python/src/garage_rag/extract",
+        "//garage_python/src/garage_rag/ingest",
+        "//garage_python/src/garage_rag/proto",
+        "//garage_python/src/garage_rag/service",
+        "//garage_python/src/garage_rag/xpc",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_image_extract",
     srcs = ["test_image_extract.py"],
     deps = [
         ":conftest",
+        "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/extract",
         "@pypi//pillow",
         "@pypi//pytest",

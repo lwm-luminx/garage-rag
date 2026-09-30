@@ -413,7 +413,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   `macapp/README.md` for why Homebrew's build won't work) in `pgdata/` of the data folder.
 - The data folder (`pgdata`, `models`, `logs`, `garage.json`) is `Library/Application Support/GarageApp`
   in the App Group container, `Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp` under the home folder, so the App Store and Developer ID
-  builds share one corpus. Both sign the app and its six XPC services with the team-prefixed group
+  builds share one corpus. Both sign the app and its seven XPC services with the team-prefixed group
   (`GarageAppGroup` in `PythonXPCService`); the Developer ID app adds its application identifier
   and team identifier, backed by the embedded `macapp/GarageRAGDeveloperID.provisionprofile`
   (`macapp/Sources/GarageApp/GarageDeveloperID.entitlements`), while its XPC services carry only
@@ -518,8 +518,9 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   listens and re-runs their tests; the backend helper gets the same keys from `startServer`. A
   test still skipped is named in the Status page's row ("7 passed, 1 skipped (Model File)").
 - Each `*XPCService` (`GarageEmbedXPCService`, `GarageIngestXPCService`, `LlamaXPCService`,
-  `ModelDownloadXPCService`, `PythonXPCService`, …) is a separate XPC service process paired with a
-  `*Client` module (`IngestClient`, `LlamaClient`, `ModelDownloadClient`, `MCPServerClient`) — this
+  `ModelDownloadXPCService`, `GarageImageEmbedXPCService`, `PythonXPCService`, …) is a separate XPC
+  service process paired with a `*Client` module (`IngestClient`, `LlamaClient`,
+  `ModelDownloadClient`, `ImageEmbedClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
   gRPC bridge to the Python `garage_rag` package. Every connection a listener accepts, from the service
   listener and the anonymous ones, carries `GarageXPCPeerRequirement` (set on the connection in

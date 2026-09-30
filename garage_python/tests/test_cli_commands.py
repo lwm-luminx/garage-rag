@@ -74,6 +74,7 @@ def _model_row(slug: str = "bge-m3", *, is_default: bool = True) -> SimpleNamesp
         storage_kind="vector",
         index_kind="hnsw",
         distance="cosine",
+        modality="text",
         table_name=f"emb_{slug.replace('-', '_')}",
         is_default=is_default,
     )
@@ -208,6 +209,7 @@ class TestModels:
             provider="llama_xpc",
             model_id=None,
             distance="cosine",
+            modality=None,
             make_default=False,
         )
         assert "registered big: 4096-dim -> halfvec(2000)" in out.output
@@ -245,6 +247,7 @@ class TestModels:
                 "storage_kind": "vector",
                 "index_kind": "hnsw",
                 "distance": "cosine",
+                "modality": "text",
                 "table_name": "emb_bge_m3",
                 "is_default": True,
             }

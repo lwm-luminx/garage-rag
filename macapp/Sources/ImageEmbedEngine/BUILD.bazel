@@ -1,0 +1,18 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# ImageEmbedEngine: CLIP-style image embedding on Core ML (an image tower and a text tower sharing
+# one space), the tokenizer of the text tower, image preprocessing, and the catalog lookup that
+# finds a model's downloaded packages. Used by GarageImageEmbedXPCService; no Python, no network.
+swift_library(
+    name = "ImageEmbedEngine",
+    srcs = glob(["**/*.swift"]),
+    module_name = "ImageEmbedEngine",
+    visibility = [
+        "//macapp/Sources/GarageImageEmbedXPCService:__pkg__",
+        "//macapp/Tests:__subpackages__",
+    ],
+    deps = [
+        "//macapp/Sources/ImageEmbedClient",
+        "//macapp/Sources/PythonXPCService",
+    ],
+)

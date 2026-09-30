@@ -101,6 +101,7 @@ extension GarageGRPCService {
         provider: String? = nil,
         modelID: String? = nil,
         distance: String? = nil,
+        modality: String? = nil,
         makeDefault: Bool = false
     ) async throws -> Garage_RegisterModelResponse {
         var request = Garage_RegisterModelRequest()
@@ -111,6 +112,8 @@ extension GarageGRPCService {
         request.modelID = modelID ?? ""
         // Empty: models.json's metric for a catalogued model, cosine otherwise.
         request.distance = distance ?? ""
+        // Empty: the catalog's section for a catalogued model, text otherwise.
+        request.modality = modality ?? ""
         request.makeDefault = makeDefault
         return try await call { try await $0.registerModel(request, callOptions: $1) }
     }

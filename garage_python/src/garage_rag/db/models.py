@@ -333,6 +333,9 @@ class EmbeddingModel(Base):
     # cosine | l2 | inner_product (009_model_distance.sql): the index's operator
     # class and the search operator both follow it.
     distance: Mapped[str] = mapped_column(Text, default="cosine")
+    # text | image (014_model_modality.sql): which chunks backfill gives the model,
+    # and whether it embeds their text or the image file behind them.
+    modality: Mapped[str] = mapped_column(Text, default="text")
     normalized: Mapped[bool] = mapped_column(Boolean, default=True)
     table_name: Mapped[str] = mapped_column(Text, unique=True)
     is_default: Mapped[bool] = mapped_column(Boolean, default=False)

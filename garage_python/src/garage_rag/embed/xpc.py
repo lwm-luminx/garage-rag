@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from garage_rag.embed.base import EmbeddingError
+from garage_rag.embed.base import EmbeddingError, ImageEmbedder
 from garage_rag.embed.factory import get_embedder
 from garage_rag.proto.garage_pb2 import (
     ChunkEmbeddingItem,
@@ -82,7 +82,13 @@ def _embed_loop(client: Any, *, model_slug: str | None, limit: int | None, batch
             loaded_model_key = model_key
 
         texts = [chunk.text for chunk in resp.chunks]
-        vectors = embedder.embed(texts)
+        if resp.modality == "image":
+            # An image model's batch carries the image files' paths, not text.
+            if not isinstance(embedder, ImageEmbedder):
+                raise EmbeddingError(f"{model_ref} is an image model but provider {provider!r} embeds text only")
+            vectors = embedder.embed_images(texts)
+        else:
+            vectors = embedder.embed(texts)
         if len(vectors) != len(resp.chunks):
             raise EmbeddingError(
                 f"{model_ref} returned {len(vectors)} vectors for {len(resp.chunks)} chunks; refusing to write"

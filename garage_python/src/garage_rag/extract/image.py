@@ -5,9 +5,14 @@ low-contrast captures, dense UI, diagrams and handwriting; those images yield
 little or no text, and there is no fallback -- no image is ever sent to a cloud
 vision model.
 
-An image that yields no usable text raises :class:`NoTextFound`: it is not
-indexed as an empty document, and it is not an error either -- most images
-simply hold no text -- so the pipeline records it as rejected.
+An image that yields no usable text is indexed as a picture when
+``ingest.index_images`` is on (the default): a document whose one chunk
+(:data:`~garage_rag.ingest.chunking.IMAGE_CHUNKER`) an image embedding model
+embeds from the file itself, and whose text is the file's name, for full-text
+search. With it off, such an image raises :class:`NoTextFound`: not indexed as
+an empty document, and not an error either -- most images simply hold no
+text -- so the pipeline records it as rejected. Either way an image too small
+to be a picture worth finding (an icon, a spacer) is rejected.
 
 Note on the corpus: most images in a source tree are UI assets -- icons, arrows,
 logos. Those have no recoverable text and should not consume OCR time at all, so
@@ -21,6 +26,7 @@ it without libheif and its GPL/LGPL HEVC codecs.
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 from garage_rag.config import get_settings
@@ -28,7 +34,8 @@ from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult,
 
 log = logging.getLogger(__name__)
 
-VERSION = "2"
+# 3: images without text become picture documents (ingest.index_images).
+VERSION = "3"
 
 # Below this, an image is an icon or a spacer, not a document. Screenshots and
 # scans are comfortably larger in both dimensions.
@@ -57,8 +64,8 @@ def _open_image(path: Path):
     return image
 
 
-def _tesseract(path: Path) -> tuple[str, float]:
-    """Run Tesseract, returning ``(text, mean_word_confidence)``.
+def _tesseract(path: Path) -> tuple[str, float, tuple[int, int]]:
+    """Run Tesseract, returning ``(text, mean_word_confidence, (width, height))``.
 
     Confidence comes from the per-word results rather than the plain text:
     "returned something" and "returned something legible" are different, and only
@@ -91,18 +98,36 @@ def _tesseract(path: Path) -> tuple[str, float]:
 
     text = " ".join(words)
     mean_conf = sum(confidences) / len(confidences) if confidences else 0.0
-    return normalize_text(text), mean_conf
+    return normalize_text(text), mean_conf, (width, height)
+
+
+_NAME_SEPARATORS = re.compile(r"[_\-\.]+")
+
+
+def picture_text(path: Path) -> str:
+    """What a picture without text says in the index: its name, as words, so
+    full-text search finds ``kitchen-remodel-03.heic`` by "kitchen remodel"."""
+    return normalize_text(_NAME_SEPARATORS.sub(" ", path.stem)).strip() or path.stem
 
 
 def extract_image(path: Path) -> ExtractResult:
-    """Extract text from an image with Tesseract."""
+    """Extract text from an image with Tesseract, or index it as a picture."""
     settings = get_settings()
 
-    text, confidence = _tesseract(path)
+    text, confidence, (width, height) = _tesseract(path)
     if len(text) < settings.ocr_min_chars:
-        # Not indexed as an empty document, and not an error: most images in a
-        # code tree are icons and genuinely contain nothing.
-        raise NoTextFound(f"no usable text in image (confidence {confidence:.0f}, {len(text)} chars): {path}")
+        if not settings.index_images:
+            # Not indexed as an empty document, and not an error: most images in a
+            # code tree are icons and genuinely contain nothing.
+            raise NoTextFound(f"no usable text in image (confidence {confidence:.0f}, {len(text)} chars): {path}")
+        return ExtractResult(
+            text=picture_text(path),
+            kind=ContentKind.IMAGE,
+            extractor="image",
+            extractor_version=VERSION,
+            title=path.stem,
+            meta={"image": {"width": width, "height": height}},
+        )
 
     return ExtractResult(
         text=text,
@@ -110,5 +135,9 @@ def extract_image(path: Path) -> ExtractResult:
         extractor="tesseract",
         extractor_version=VERSION,
         title=path.stem,
-        meta={"ocr_engine": "tesseract", "ocr_confidence": round(confidence, 2)},
+        meta={
+            "ocr_engine": "tesseract",
+            "ocr_confidence": round(confidence, 2),
+            "image": {"width": width, "height": height},
+        },
     )

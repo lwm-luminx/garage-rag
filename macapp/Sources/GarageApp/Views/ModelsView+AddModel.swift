@@ -67,7 +67,9 @@ extension ModelsView {
                             .accessibilityLabel("Origin \(preset.originSummary)")
                     }
                     let presetProvider = ModelProvider.from(string: preset.provider)
-                    if presetProvider != .llamaXPC {
+                    if presetProvider == .imageXPC {
+                        StatusBadge("IMAGES", tint: .indigo)
+                    } else if presetProvider != .llamaXPC {
                         StatusBadge(presetProvider.displayName.uppercased(), tint: presetProvider == .ollama ? .orange : .teal)
                     }
                 }

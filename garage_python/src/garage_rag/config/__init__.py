@@ -428,6 +428,15 @@ class Settings(BaseModel):
             "Below this many characters an image is treated as having no text. Most images in a source tree are icons."
         ),
     )
+    index_images: bool = Field(
+        default=True,
+        description=(
+            "Index pictures as documents: an image with no text becomes a document with one image chunk, and a "
+            "screenshot or scan gets one beside its text chunks. Image embedding models (SigLIP 2 in the catalog) "
+            "embed the picture itself; full-text search sees the file's name. Icons and other tiny images are "
+            "still skipped. Off, an image without text is not indexed."
+        ),
+    )
 
     # ---- facts / local generation ---------------------------------------
     fact_model: str = Field(
@@ -670,6 +679,7 @@ SECTIONS: dict[str, dict[str, str]] = {
         "max_file_bytes": "max_file_bytes",
         "pdf_min_chars_per_page": "pdf_min_chars_per_page",
         "ocr_min_chars": "ocr_min_chars",
+        "index_images": "index_images",
     },
     "mcp": {
         "host": "mcp_host",

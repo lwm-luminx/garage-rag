@@ -16,6 +16,8 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
     public let tableName: String
     public let isDefault: Bool
     public let modelId: String?
+    /// `text` or `image`: which chunks the model embeds.
+    public let modality: String
 
     public init(
         slug: String,
@@ -27,7 +29,8 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
         indexKind: String,
         tableName: String,
         isDefault: Bool,
-        modelId: String? = nil
+        modelId: String? = nil,
+        modality: String = "text"
     ) {
         self.slug = slug
         self.provider = provider
@@ -39,6 +42,7 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
         self.tableName = tableName
         self.isDefault = isDefault
         self.modelId = modelId
+        self.modality = modality
     }
 }
 
@@ -743,7 +747,7 @@ final class PostgresService: ObservableObject {
     /// Fetches all registered embedding models directly from the backing database.
     func listRegisteredModels() async throws -> [RegisteredModel] {
         try requireRunning()
-        let sql = "SELECT slug, provider, model_ref, dims, stored_dims, storage_kind, index_kind, table_name, is_default, coalesce(model_id, '') FROM embedding_models ORDER BY id;"
+        let sql = "SELECT slug, provider, model_ref, dims, stored_dims, storage_kind, index_kind, table_name, is_default, coalesce(model_id, ''), coalesce(modality, 'text') FROM embedding_models ORDER BY id;"
         let rows = try await commandRunner().query(sql)
         var models: [RegisteredModel] = []
         for parts in rows {
@@ -758,6 +762,7 @@ final class PostgresService: ObservableObject {
             let tableName = parts[7]
             let isDefault = parts[8] == "t" || parts[8] == "true"
             let modelId = parts.count >= 10 && !parts[9].isEmpty ? parts[9] : nil
+            let modality = parts.count >= 11 && !parts[10].isEmpty ? parts[10] : "text"
             models.append(RegisteredModel(
                 slug: slug,
                 provider: provider,
@@ -768,7 +773,8 @@ final class PostgresService: ObservableObject {
                 indexKind: indexKind,
                 tableName: tableName,
                 isDefault: isDefault,
-                modelId: modelId
+                modelId: modelId,
+                modality: modality
             ))
         }
         return models

@@ -59,6 +59,7 @@ struct ModelsView: View {
         case llamaXPC = "Llama XPC"
         case ollama = "Ollama"
         case lmStudio = "LM Studio"
+        case imageXPC = "Image XPC"
 
         public var id: Self { self }
 
@@ -66,6 +67,7 @@ struct ModelsView: View {
         public var displayName: String {
             switch self {
             case .llamaXPC: "Built-in engine"
+            case .imageXPC: "Built-in image engine"
             case .ollama, .lmStudio: rawValue
             }
         }
@@ -75,6 +77,7 @@ struct ModelsView: View {
             case .llamaXPC: "llama_xpc"
             case .ollama: "ollama"
             case .lmStudio: "lmstudio"
+            case .imageXPC: "image_xpc"
             }
         }
 
@@ -84,7 +87,14 @@ struct ModelsView: View {
             }
             if str.contains("ollama") { return .ollama }
             if str.contains("lmstudio") || str.contains("lm_studio") || str.contains("lm studio") { return .lmStudio }
+            if str.contains("image") { return .imageXPC }
             return .llamaXPC
+        }
+
+        /// Whether the model's files are downloaded into the models folder by the app (the built-in
+        /// engines), as opposed to being served by another program.
+        public var downloadsFiles: Bool {
+            self == .llamaXPC || self == .imageXPC
         }
     }
 
@@ -693,6 +703,13 @@ struct ModelsView: View {
     }
 
     func isModelFileDownloaded(item: UnifiedModelItem) -> Bool {
+        if item.provider == .imageXPC {
+            // A Core ML package's files sit inside a package folder, which the downloader's listing
+            // does not descend into, so an image model is checked on disk, file by file.
+            let targets = item.downloadFileTargets
+            guard !targets.isEmpty else { return false }
+            return targets.allSatisfy { FileManager.default.fileExists(atPath: Paths.modelsDir.appendingPathComponent($0.filename).path) }
+        }
         if let filename = item.effectiveFilename {
             return modelDownload.isModelDownloaded(filename: filename)
         }
@@ -709,6 +726,9 @@ struct ModelsView: View {
     func isModelDownloading(item: UnifiedModelItem) -> Bool {
         if isModelFileDownloaded(item: item) {
             return false
+        }
+        if item.provider == .imageXPC {
+            return item.downloadFileTargets.contains { modelDownload.isModelDownloading(url: $0.url) }
         }
         if let url = item.effectiveDownloadURL {
             return modelDownload.isModelDownloading(url: url)
@@ -743,6 +763,19 @@ struct ModelsView: View {
     }
 
     func downloadModelToLlamaXPC(item: UnifiedModelItem) {
+        if item.provider == .imageXPC {
+            // Every file of the package, queued in order; a file already on disk is skipped.
+            let targets = item.downloadFileTargets.filter {
+                !FileManager.default.fileExists(atPath: Paths.modelsDir.appendingPathComponent($0.filename).path)
+            }
+            guard !targets.isEmpty else { return }
+            Task {
+                for target in targets {
+                    await modelDownload.startDownload(url: target.url, filename: target.filename, modelId: item.slug, sha256: target.sha256)
+                }
+            }
+            return
+        }
         guard let url = item.effectiveDownloadURL else { return }
         Task {
             await modelDownload.startDownload(

@@ -1,6 +1,7 @@
 import Foundation
 import Darwin
 import OSLog
+import ImageEmbedBridge
 import LlamaModelLoader
 import PythonXPCService
 import PythonKit
@@ -140,6 +141,7 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
             GarageXPCStandardSelfTests.serviceModule("garage_rag.mcp_server.server", attributes: ["start_background_server", "stop_background_server", "is_background_server_running", "background_server_error"]),
             GarageXPCStandardSelfTests.sitePackages(modules: ["uvicorn", "starlette", "mcp.server.streamable_http_manager"]),
             LlamaModelLoaderBridge.selfTest(),
+            ImageEmbedBridge.selfTest(),
         ]
     }
 
@@ -147,6 +149,7 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
     /// LlamaXPCService endpoint the app hands this process (`setLlamaEndpoint`).
     override func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {
         LlamaModelLoaderBridge.install()
+        ImageEmbedBridge.install()
     }
 
     override func registerManagedServices(in host: GarageXPCServiceHost) {

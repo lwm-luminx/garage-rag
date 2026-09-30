@@ -54,7 +54,8 @@ class TestTheCommittedCatalog:
 
     def test_slugs_are_unique_across_the_catalog(self) -> None:
         document = json.loads(MODELS_JSON.read_text())
-        slugs = [entry["slug"] for section in ("text_embedding", "inference_models") for entry in document[section]]
+        sections = ("text_embedding", "inference_models", "image_embedding")
+        slugs = [entry["slug"] for section in sections for entry in document[section]]
         assert len(slugs) == len(set(slugs))
 
     def test_every_inference_model_downloads_with_a_checksum(self) -> None:

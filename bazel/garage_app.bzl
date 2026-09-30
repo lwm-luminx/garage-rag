@@ -16,6 +16,7 @@ load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
 GARAGE_XPC_SERVICES = [
     "//macapp/Sources/GarageMCPServerService:GarageMCPServerService",
     "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
+    "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
     "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
     "//macapp/Sources/GarageXPCService:GarageXPCService",
     "//macapp/Sources/ModelDownloadXPCService:ModelDownloadXPCService",

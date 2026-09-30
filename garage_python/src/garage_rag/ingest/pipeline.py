@@ -42,11 +42,11 @@ from garage_rag.attribute.resolver import SelfIdentity, resolve
 from garage_rag.config import get_settings
 from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult, NoTextFound, file_sha256, sha256_text
 from garage_rag.extract.contact_names import ContactNames
-from garage_rag.extract.dispatch import extract
+from garage_rag.extract.dispatch import IMAGE_EXTENSIONS, extract
 from garage_rag.extract.placeholder import PlaceholderFile
 from garage_rag.extract.quality import assess
 from garage_rag.ingest.author_names import name_authors
-from garage_rag.ingest.chunking import TextChunk, chunk_text
+from garage_rag.ingest.chunking import TextChunk, chunk_text, image_chunk
 from garage_rag.ingest.classify import classify
 from garage_rag.ingest.gateway import (
     AuthorPayload,
@@ -303,8 +303,9 @@ def ingest_one(
 
     settings = get_settings()
 
-    # Content-based backstop for machine output the path rules missed.
-    if settings.reject_machine_generated:
+    # Content-based backstop for machine output the path rules missed. A picture's
+    # text is its file name, which is not prose to judge.
+    if settings.reject_machine_generated and result.kind is not ContentKind.IMAGE:
         verdict = assess(result.text)
         if verdict.machine_generated:
             counters.rejected += 1
@@ -323,6 +324,11 @@ def ingest_one(
     if not chunks:
         _reject_empty(gateway, source_ctx, candidate, counters, f"0 chunks from {len(result.text)} characters")
         return
+    is_image_file = candidate.path.suffix.lower() in IMAGE_EXTENSIONS
+    if settings.index_images and is_image_file and result.kind is not ContentKind.IMAGE:
+        # A screenshot or scan: its text is chunked for the text models above, and one
+        # image chunk lets an image embedding model embed the picture itself.
+        chunks.append(image_chunk(result.title or candidate.path.stem, ord=len(chunks)))
 
     # Final safety net: no single document may dominate the index.
     truncated_chunks = 0

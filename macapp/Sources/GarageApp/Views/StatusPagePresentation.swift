@@ -818,6 +818,7 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         case "embed-xpc": "Embeddings"
         case "llama-xpc": "Built-in Engine"
         case "model-download-xpc": "Model Downloads"
+        case "image-embed-xpc": "Image Embeddings"
         case "mcp-server-xpc": "MCP Server"
         case "garage-xpc": "Garage Backend"
         default: id

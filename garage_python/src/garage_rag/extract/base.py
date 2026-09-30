@@ -22,6 +22,8 @@ class ContentKind(StrEnum):
     CODE = "code"
     TABULAR = "tabular"
     CONVERSATION = "conversation"
+    # A picture with no text worth indexing: one chunk, for image embedding models.
+    IMAGE = "image"
 
 
 @dataclass

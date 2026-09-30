@@ -365,11 +365,17 @@ def register_model_cmd(
     slug: Annotated[str, typer.Argument(help="Model slug, e.g. bge-m3.")],
     dims: Annotated[int | None, typer.Option(help="Output width. Required for unknown models.")] = None,
     model_ref: Annotated[str | None, typer.Option(help="Provider-side name, if it differs from the slug.")] = None,
-    provider: Annotated[str | None, typer.Option(help="Embedding backend: llama_xpc | ollama | lmstudio.")] = None,
+    provider: Annotated[
+        str | None, typer.Option(help="Embedding backend: llama_xpc | ollama | lmstudio | image_xpc.")
+    ] = None,
     model_id: Annotated[str | None, typer.Option(help="Model identifier (e.g. HuggingFace repo).")] = None,
     distance: Annotated[
         str | None,
         typer.Option(help="Similarity the model was trained for: cosine | l2 | inner_product. Default: models.json."),
+    ] = None,
+    modality: Annotated[
+        str | None,
+        typer.Option(help="What the model embeds: text | image (a CLIP-style model). Default: models.json."),
     ] = None,
     default: Annotated[bool, typer.Option("--default", help="Make this the default.")] = False,
 ) -> None:
@@ -384,13 +390,14 @@ def register_model_cmd(
             provider=provider,
             model_id=model_id,
             distance=distance,
+            modality=modality,
             make_default=default,
         )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
         raise typer.Exit(code=2) from None
     console.print(
-        f"[green]registered[/green] {row.slug}: {row.dims}-dim -> "
+        f"[green]registered[/green] {row.slug}{' (image model)' if row.modality == 'image' else ''}: {row.dims}-dim -> "
         f"{row.storage_kind}({row.stored_dims}), index={row.index_kind}, "
         f"distance={row.distance}, table={row.table_name}"
     )
@@ -415,6 +422,7 @@ def list_models_cmd(
                 "storage_kind": m.storage_kind,
                 "index_kind": m.index_kind,
                 "distance": m.distance,
+                "modality": m.modality,
                 "table_name": m.table_name,
                 "is_default": bool(m.is_default),
             }
@@ -437,6 +445,7 @@ def list_models_cmd(
         "storage",
         "index",
         "distance",
+        "modality",
         "table",
         "default",
     )
@@ -453,6 +462,7 @@ def list_models_cmd(
             row["storage_kind"],
             row["index_kind"],
             row["distance"],
+            row["modality"],
             row["table_name"],
             "*" if row["is_default"] else "",
         )

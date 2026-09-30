@@ -167,6 +167,11 @@
           "type": "integer",
           "description": "Below this many characters an image is treated as having no text. Most images in a source tree are icons.",
           "default": 16
+        },
+        "index_images": {
+          "type": "boolean",
+          "description": "Index pictures as documents: an image with no text becomes a document with one image chunk, and a screenshot or scan gets one beside its text chunks. Image embedding models (SigLIP 2 in the catalog) embed the picture itself; full-text search sees the file's name. Icons and other tiny images are still skipped. Off, an image without text is not indexed.",
+          "default": true
         }
       }
     },

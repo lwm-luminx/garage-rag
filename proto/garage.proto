@@ -367,6 +367,7 @@ message ModelInfo {
     bool is_default = 9;
     string model_id = 10;
     string distance = 11;  // cosine | l2 | inner_product
+    string modality = 12;  // text | image: what the model embeds
 }
 
 message ListModelsRequest {}
@@ -514,6 +515,7 @@ message RegisterModelRequest {
     string model_id = 5;
     bool make_default = 6;
     string distance = 7;     // empty = models.json (cosine for models it does not list)
+    string modality = 8;     // text | image; empty = models.json (text for models it does not list)
 }
 
 message RegisterModelResponse {
@@ -904,6 +906,9 @@ message GetEmbeddingBatchesResponse {
     int64 total_pending = 9;
     repeated EmbeddingChunkItem chunks = 10;
     bool has_more = 11;
+    // text | image. For an image model each chunk's `text` is the path of the image
+    // file to embed, not text.
+    string modality = 12;
 }
 
 message ChunkEmbeddingItem {

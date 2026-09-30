@@ -129,6 +129,14 @@ the owner and `received` otherwise. See [`attribution.md`](attribution.md).
 See [`schema.md`](schema.md). Chunks are model-agnostic; each embedding model
 owns a table keyed on `chunk_id` with `ON DELETE CASCADE`.
 
+A picture (an image file whose OCR found little or no text, or a screenshot's
+title beside its OCR text) gets one `image` chunk (`chunker = 'image'`): its
+text is what full-text search sees, its vector comes from the file. Embedding
+models carry a `modality`: text models skip image chunks, and an image model
+(`image_xpc`, the app's `GarageImageEmbedXPCService`, a CLIP-style model on Core
+ML) embeds only them, from the file bytes, and embeds search queries through
+the model's text tower so a phrase finds pictures.
+
 ### 7. Distill facts (`enrich/facts.py`)
 
 An optional pass over stored documents, run as `garage enrich-facts` or the
@@ -476,6 +484,12 @@ servers — LM Studio, Ollama and the app's `LlamaXPCService` — used by the
 embedders (`embed/ollama.py`, `embed/lmstudio.py`, `embed/llama_xpc.py`),
 `LocalChatModel` and the LangExtract provider. There is no `ollama` or `openai`
 package behind it; it is httpx and a few hundred lines.
+
+Image models are the exception: `embed/image_xpc.py` never speaks HTTP. The
+Swift host of each Python-hosting helper installs two C functions
+(`xpc/image_host.py`) that call `GarageImageEmbedXPCService` over NSXPC through
+the endpoint the app hands over, so `garage` from a venv cannot embed with an
+image model and says so.
 
 - **`Backend`** — `kind` (`lmstudio` | `ollama` | `llama_xpc`), `base_url` (the
   server root: a trailing `/v1`, as `lmstudio_host` carries, is dropped and

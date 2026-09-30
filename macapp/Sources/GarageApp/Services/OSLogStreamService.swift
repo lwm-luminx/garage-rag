@@ -450,5 +450,6 @@ public final class OSLogStreamService: ObservableObject {
         loadLogsFromFile(fileName: "garage-xpc.log", for: .grpc)
         loadLogsFromFile(fileName: "llama-xpc.log", for: .llama)
         loadLogsFromFile(fileName: "model-download-xpc.log", for: .modelDownload)
+        loadLogsFromFile(fileName: "image-embed-xpc.log", for: .imageEmbed)
     }
 }

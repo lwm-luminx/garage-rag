@@ -677,5 +677,73 @@
       ],
       "featured": false
     }
+  ],
+  "image_embedding": [
+    {
+      "name": "SigLIP 2 Base (256 px)",
+      "model_id": "google/siglip2-base-patch16-256",
+      "model_card_url": "https://huggingface.co/google/siglip2-base-patch16-256",
+      "slug": "siglip2-base-256",
+      "model_ref": "siglip2-base-256",
+      "provider": "image_xpc",
+      "modality": "image",
+      "native_dims": 768,
+      "default_dims": 768,
+      "distance": "cosine",
+      "image_size": 256,
+      "text_length": 64,
+      "image_mean": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "image_std": [
+        0.5,
+        0.5,
+        0.5
+      ],
+      "text_lowercase": true,
+      "download_model_id": "FluidInference/siglip2-base-patch16-256-coreml",
+      "image_model": "siglip2-base-patch16-256-image-fp16.mlpackage",
+      "text_model": "siglip2-base-patch16-256-text-fp16.mlpackage",
+      "tokenizer": "tokenizer.json",
+      "download_files": [
+        {
+          "path": "siglip2-base-patch16-256-image-fp16.mlpackage/Manifest.json",
+          "sha256": null
+        },
+        {
+          "path": "siglip2-base-patch16-256-image-fp16.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "sha256": "702fdc0b557984e16e4bbcce4eec3568f08a7459bd3c27c770a487823bda808b"
+        },
+        {
+          "path": "siglip2-base-patch16-256-image-fp16.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "sha256": "da086438b60ada3566f8c91bd8a632462f28d344186e7f60cb5abd223d2e99a8"
+        },
+        {
+          "path": "siglip2-base-patch16-256-text-fp16.mlpackage/Manifest.json",
+          "sha256": null
+        },
+        {
+          "path": "siglip2-base-patch16-256-text-fp16.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+          "sha256": "69fce0f538fbe78c45b953e1cc396fb912d701c6f985ac825bdec92833aca452"
+        },
+        {
+          "path": "siglip2-base-patch16-256-text-fp16.mlpackage/Data/com.apple.CoreML/weights/weight.bin",
+          "sha256": "9a52dd8222973b6b4cdf55983689bb2fa18a27fcd20b83f8d8fb89de544530b5"
+        },
+        {
+          "path": "tokenizer.json",
+          "sha256": "caefd63119539a63be2d55ef3e05023fbb793948c4bda5bc0c366b42a382f903"
+        }
+      ],
+      "description": "Google's SigLIP 2 image-text model (Apache 2.0) as Core ML fp16 packages, about 750 MB in all. Embeds pictures and text queries into one 768-dimension space, so a search phrase finds photos and screenshots; runs on the Neural Engine.",
+      "use_cases": [
+        "Photo search",
+        "Screenshots and diagrams",
+        "Text-to-image retrieval"
+      ],
+      "featured": true
+    }
   ]
 }
