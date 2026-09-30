@@ -51,8 +51,8 @@ class BackfillProgress:
     batches: int = 0
     # Communication chunks left unembedded because the provider is off-box.
     withheld: int = 0
-    # Distilled facts given a vector (data/sql/015_distilled_facts.sql): copied from their
-    # representative's chunk, or embedded when the local model wrote their statement.
+    # Distilled facts given a vector (data/sql/015_distilled_facts.sql): the mean of their
+    # representatives' vectors, so nothing is embedded for them.
     distilled: int = 0
 
     @property
@@ -173,7 +173,7 @@ def backfill_model(
         if state.withheld:
             log.warning("%s embeds off this machine; withholding %d communication chunk(s)", model.slug, state.withheld)
     if state.total == 0:
-        backfill_distilled(session, model, embedder, plan, state, size, include_communications=local)
+        backfill_distilled(session, model, state)
         return state
 
     insert_sql = text(
@@ -214,82 +214,41 @@ def backfill_model(
             break
 
     if not state.failed and (limit is None or state.embedded < limit):
-        backfill_distilled(session, model, embedder, plan, state, size, include_communications=local)
+        backfill_distilled(session, model, state)
     return state
 
 
-def backfill_distilled(
-    session: Session,
-    model: EmbeddingModel,
-    embedder: Embedder,
-    plan: StoragePlan,
-    state: BackfillProgress,
-    batch_size: int,
-    *,
-    include_communications: bool,
-) -> None:
+def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillProgress) -> None:
     """Give every distilled fact a vector in the model's ``fact_emb_`` table.
 
-    A distilled fact stated by one of its potential facts' own text has that
-    fact's vector already, on its chunk: it is copied, not embedded again. One
-    whose statement the local model wrote is embedded, unless a member is a
-    communication and the provider is off this machine. Pure insert, like the
-    chunk backfill.
+    Its vector is the normalized centroid of its representatives' vectors under
+    this model (``garage cluster-facts`` writes the clustering model's own, with
+    the group's seed). Nothing is embedded, so nothing leaves the machine; a
+    distilled fact waits until every one of its representatives has a vector
+    here, so its centroid is not skewed toward the ones embedded first. Pure
+    insert, like the chunk backfill.
     """
     table = assert_safe_table(model.table_name)
     fact_table = ensure_fact_table(session, model)
-    copied = session.execute(
+    made = session.execute(
         text(
             f"""
             INSERT INTO {fact_table} (distilled_fact_id, embedding)
-            SELECT df.id, e.embedding
-            FROM distilled_facts df
-            JOIN chunks c ON c.fact_id = df.representative_fact_id
-            JOIN {table} e ON e.chunk_id = c.id
-            WHERE NOT df.statement_generated
-              AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = df.id)
+            SELECT f.distilled_fact_id, l2_normalize(avg(e.embedding))
+            FROM facts f
+            JOIN chunks c ON c.fact_id = f.id
+            LEFT JOIN {table} e ON e.chunk_id = c.id
+            WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
+              AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = f.distilled_fact_id)
+            GROUP BY f.distilled_fact_id
+            HAVING count(e.chunk_id) = count(*)
             ON CONFLICT (distilled_fact_id) DO NOTHING
             RETURNING distilled_fact_id
             """
         )
     ).all()
     session.commit()
-    state.distilled += len(copied)
-
-    withheld = (
-        ""
-        if include_communications
-        else (
-            " AND NOT EXISTS (SELECT 1 FROM facts f JOIN documents d ON d.id = f.document_id"
-            " WHERE f.distilled_fact_id = df.id AND d.corpus_class = 'communication')"
-        )
-    )
-    pending = text(
-        f"SELECT df.id, df.statement FROM distilled_facts df WHERE df.statement_generated"
-        f" AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = df.id){withheld}"
-        " ORDER BY df.id LIMIT :limit"
-    )
-    insert_sql = text(
-        f"INSERT INTO {fact_table} (distilled_fact_id, embedding) VALUES (:id, :embedding)"
-        " ON CONFLICT (distilled_fact_id) DO NOTHING"
-    )
-    while rows := session.execute(pending, {"limit": batch_size}).all():
-        try:
-            vectors = embedder.embed([statement for _, statement in rows])
-            for vec in vectors:
-                if len(vec) != model.dims:
-                    raise EmbeddingError(
-                        f"{model.model_ref} returned a {len(vec)}-dim vector; registered as {model.dims}"
-                    )
-        except Exception as exc:  # noqa: BLE001 - logged, never re-raised, as for chunks
-            log.error("distilled-fact batch failed (%d statements): %s", len(rows), exc)
-            return
-        session.execute(
-            insert_sql,
-            [{"id": int(did), "embedding": _adapt(vec, plan)} for (did, _), vec in zip(rows, vectors, strict=True)],
-        )
-        session.commit()
-        state.distilled += len(rows)
+    state.distilled += len(made)
 
 
 def verify_model_dims(model: EmbeddingModel) -> tuple[bool, int]:

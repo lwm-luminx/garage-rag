@@ -1198,12 +1198,13 @@ final class AppState: ObservableObject {
 
     /// Distills the potential facts into distinct facts ("Distill Facts"): groups restatements by
     /// their embeddings and has the local model state each group once, on the enrich-facts runner.
+    /// `full` ("Regroup All Facts") regroups the corpus; otherwise only new facts are placed.
     @discardableResult
-    func runClusterFacts() async -> Bool {
+    func runClusterFacts(full: Bool = false) async -> Bool {
         let grpc = self.grpc
         let result = await enrichFacts.run { runner in
             await self.loadFactsModelForDistilling(runner)
-            let finished = try await grpc.clusterFacts { status in
+            let finished = try await grpc.clusterFacts(full: full) { status in
                 if status.phase != "finished", !status.message.isEmpty {
                     runner.appendLog(status.message, stream: .stdout)
                 }

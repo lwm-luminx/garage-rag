@@ -39,6 +39,21 @@ final class FactListItemTests: XCTestCase {
         XCTAssertEqual(item.documentDisplayTitle, "house.md")
     }
 
+    func testMapsTheDistilledFactsVariabilityAndRestatement() {
+        var proto = summary()
+        XCTAssertNil(FactListItem(summary: proto).restatesFactID)
+        XCTAssertNil(FactListItem(summary: proto).agreementPercent)
+
+        proto.distilledFactID = 11
+        proto.distilledSize = 3
+        proto.distilledSpread = 0.0125
+        proto.restatesFactID = 5
+        let item = FactListItem(summary: proto)
+        XCTAssertEqual(item.restatesFactID, 5)
+        XCTAssertTrue(item.restatesWithinDocument)
+        XCTAssertEqual(item.agreementPercent, 98)
+    }
+
     func testGroundedExcerptSplitsAroundTheSpan() throws {
         // The excerpt starts 100 characters into the document; the span is "heat pump".
         let item = FactListItem(summary: summary(excerpt: "Our heat pump works.", excerptStart: 100, span: (104, 113)))

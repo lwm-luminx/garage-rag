@@ -615,6 +615,8 @@ class GarageRpcServicer(GarageServiceServicer):
                 distilled_size=f.distilled_size,
                 distilled_statement=f.distilled_statement or "",
                 distilled_generated=f.distilled_generated,
+                distilled_spread=f.distilled_spread,
+                restates_fact_id=f.restates_fact_id or 0,
             )
             for f in page.facts
         ]
@@ -1080,11 +1082,7 @@ class GarageRpcServicer(GarageServiceServicer):
 
         def run(emit: Callable[[ClusterFactsStatus], None]) -> object:
             def on_progress(state) -> None:
-                if state.phase == "neighbors":
-                    message = f"finding neighbours: {state.scanned:,}/{state.facts - state.unembedded:,} facts"
-                elif state.phase == "distill":
-                    message = f"distilling: {state.distilled:,}/{state.to_distill:,} groups"
-                else:
+                if not state.message:
                     return
                 emit(
                     ClusterFactsStatus(
@@ -1094,7 +1092,12 @@ class GarageRpcServicer(GarageServiceServicer):
                         scanned=state.scanned,
                         to_distill=state.to_distill,
                         distilled=state.distilled,
-                        message=message,
+                        full=state.full,
+                        documents=state.documents,
+                        nodes=state.nodes,
+                        attached=state.attached,
+                        candidates=state.candidates,
+                        message=state.message,
                     )
                 )
 
@@ -1104,11 +1107,18 @@ class GarageRpcServicer(GarageServiceServicer):
                 neighbors=request.neighbors or None,
                 distill=not request.no_distill,
                 graph=not request.no_graph,
+                full=request.full,
                 on_progress=on_progress,
             )
             emit(
                 ClusterFactsStatus(
                     phase="finished",
+                    full=summary.full,
+                    documents=summary.documents,
+                    restatements=summary.restatements,
+                    nodes=summary.nodes,
+                    attached=summary.attached,
+                    accepted=summary.accepted,
                     facts=summary.facts,
                     unembedded=summary.unembedded,
                     distilled_facts=summary.distilled_facts,

@@ -63,8 +63,12 @@ def create_embedding_table(
     if facts:
         table = fact_table_name(table)
         key = "distilled_fact_id bigint PRIMARY KEY REFERENCES distilled_facts(id) ON DELETE CASCADE"
+        # ``embedding`` is the centroid of the distilled fact's representatives; ``seed``
+        # is where the corpus pass started the group (NULL for a vector the backfill made).
+        extra = f"seed        {coltype},"
     else:
         key = "chunk_id    bigint PRIMARY KEY REFERENCES chunks(id) ON DELETE CASCADE"
+        extra = ""
 
     session.execute(
         text(
@@ -72,6 +76,7 @@ def create_embedding_table(
             CREATE TABLE IF NOT EXISTS {table} (
                 {key},
                 embedding   {coltype} NOT NULL,
+                {extra}
                 embedded_at timestamptz NOT NULL DEFAULT now()
             )
             """
@@ -243,13 +248,21 @@ def drop_model(session: Session, slug: str) -> None:
     session.delete(row)
 
 
-def ensure_fact_table(session: Session, model: EmbeddingModel) -> str:
-    """Create ``model``'s distilled-fact table if it has none (a model registered before 015); its name."""
-    plan = StoragePlan(
+def stored_plan(model: EmbeddingModel) -> StoragePlan:
+    """The storage plan ``model``'s tables were created with."""
+    return StoragePlan(
         stored_dims=model.stored_dims,
         storage_kind=model.storage_kind,
         index_kind=model.index_kind,
         truncated_from=model.dims if model.stored_dims < model.dims else None,
     )
+
+
+def ensure_fact_table(session: Session, model: EmbeddingModel) -> str:
+    """Create ``model``'s distilled-fact table if it has none (a model registered before 015); its name."""
+    plan = stored_plan(model)
     create_embedding_table(session, model.table_name, plan, model.distance, facts=True)
-    return fact_table_name(model.table_name)
+    table = fact_table_name(model.table_name)
+    # A table made before 016 has no seed column.
+    session.execute(text(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS seed {column_type_sql(plan)}"))
+    return table

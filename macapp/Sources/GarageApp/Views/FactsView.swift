@@ -128,7 +128,7 @@ public struct FactsView: View {
                 .accessibilityIdentifier("facts.group")
                 .help("List facts that state the same claim once")
 
-            Button(action: distillFacts) {
+            Button(action: { distillFacts() }) {
                 if appState.enrichFacts.isRunning {
                     ProgressView().controlSize(.small)
                         .frame(width: 20)
@@ -141,6 +141,10 @@ public struct FactsView: View {
             .accessibilityIdentifier("facts.distill")
             .disabled(appState.enrichFacts.isRunning || appState.postgres.status != .running)
             .help("Group the facts that restate one claim, and have the local model state each claim once")
+            .contextMenu {
+                Button("Regroup All Facts") { distillFacts(full: true) }
+                    .disabled(appState.enrichFacts.isRunning || appState.postgres.status != .running)
+            }
 
             Button(action: refreshFacts) {
                 if isLoading {
@@ -347,6 +351,11 @@ public struct FactsView: View {
                         .help("Stated \(fact.distilledSize) times")
                         .accessibilityIdentifier("facts.row.restatements")
                 }
+                if fact.restatesWithinDocument {
+                    StatusBadge("Repeated", tint: .gray, symbol: "arrow.turn.up.left")
+                        .help("Restates another fact of the same document")
+                        .accessibilityIdentifier("facts.row.repeated")
+                }
                 Text(fact.documentDisplayTitle)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -488,6 +497,12 @@ public struct FactsView: View {
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
+            if let agreement = fact.agreementPercent {
+                Text("The statements agree \(agreement)% (how close their meanings are).")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("facts.detail.agreement")
+            }
             if let id = fact.distilledFactID {
                 Button("Show All Statements") {
                     distilledFilter = (id, fact.distilledStatement)
@@ -556,9 +571,9 @@ public struct FactsView: View {
 
     // MARK: - Data Loading
 
-    private func distillFacts() {
+    private func distillFacts(full: Bool = false) {
         Task {
-            await appState.runClusterFacts()
+            await appState.runClusterFacts(full: full)
             refreshFacts()
         }
     }

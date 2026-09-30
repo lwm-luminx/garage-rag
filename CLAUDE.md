@@ -269,12 +269,16 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   `007_chunk_fact_link.sql` / `013_fact_prompts.sql`.
 - **Distilled facts** (`enrich/clusters.py`, `garage cluster-facts`, `ClusterFacts` RPC) — those
   facts are *potential* facts. The pass links each one to a `distilled_facts` row
-  (`facts.distilled_fact_id`, `015_distilled_facts.sql`):
-  - It groups restatements by nearest neighbours of their chunk vectors, a numbers/dates/negation
-    guard, and average linkage.
-  - The local chat model confirms each new group and states it once.
-  - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors, filled
-    by the backfill.
+  (`facts.distilled_fact_id`, `015_distilled_facts.sql`, `016_fact_dedup.sql`) in two levels:
+  - Per document, restatements point at a representative (`facts.restates_fact_id`).
+  - Across the corpus, representatives are grouped by growing each group from a tight seed until a
+    neighbour is too far from the centroid or pulls it too far from the seed; groups record
+    `spread`/`radius`/`drift`. Incremental runs attach new facts to stored centroids; `--full` (or
+    a changed `facts.cluster_*` grouping setting) regroups, keeping rows whose members are unchanged.
+  - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
+    loose group and states it once; a tight one is kept as is.
+  - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
+    clustering model's centroid and `seed`, and under other models the mean the backfill writes.
   - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
     PotentialFact and Fact vertices into the graph `garage`.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
