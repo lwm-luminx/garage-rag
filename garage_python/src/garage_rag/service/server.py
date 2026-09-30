@@ -1604,30 +1604,20 @@ class GarageRpcServicer(GarageServiceServicer):
         self, request: UpdateEmbeddingsRequest, context: grpc.ServicerContext
     ) -> UpdateEmbeddingsResponse:
         """Upsert computed embedding vectors for the given model table."""
-        from sqlalchemy import text
 
         from garage_rag.db.emb_tables import get_model
         from garage_rag.db.engine import session_scope
-        from garage_rag.embed.ollama import _adapt, _plan_from_row, assert_safe_table
+        from garage_rag.embed.ollama import store_vectors
 
         with session_scope() as session:
             model = get_model(session, request.model_slug or None)
             if not request.embeddings:
                 return UpdateEmbeddingsResponse(success=True, count=0)
-
-            table = assert_safe_table(model.table_name)
-            plan = _plan_from_row(model)
-
-            insert_sql = text(
-                f"INSERT INTO {table} (chunk_id, embedding) VALUES (:chunk_id, :embedding) "
-                "ON CONFLICT (chunk_id) DO UPDATE SET embedding = EXCLUDED.embedding"
+            # A potential fact's chunk lands in the model's potential-fact table.
+            count = store_vectors(
+                session, model, [(item.chunk_id, list(item.vector)) for item in request.embeddings], replace=True
             )
-
-            params = [
-                {"chunk_id": item.chunk_id, "embedding": _adapt(list(item.vector), plan)} for item in request.embeddings
-            ]
-            session.execute(insert_sql, params)
-            return UpdateEmbeddingsResponse(success=True, count=len(params))
+            return UpdateEmbeddingsResponse(success=True, count=count)
 
 
 # Largest request the server accepts.

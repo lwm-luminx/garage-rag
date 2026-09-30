@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from garage_rag.config import get_settings
-from garage_rag.db.emb_tables import assert_safe_table, ensure_fact_table
+from garage_rag.db.emb_tables import assert_safe_table, ensure_fact_table, potential_fact_table_name
 from garage_rag.db.models import EmbeddingModel
 from garage_rag.db.registry import StoragePlan, truncate_vector
 from garage_rag.embed.base import Embedder, EmbeddingError
@@ -97,7 +97,11 @@ def _adapt(values: list[float], plan: StoragePlan):
 
 
 def pending_chunks_sql(table: str, *, select: str, include_communications: bool) -> str:
-    """``SELECT <select>`` over the chunks ``table`` has no vector for.
+    """``SELECT <select>`` over the chunks the model of chunk table ``table`` has no vector for.
+
+    A content chunk's vector goes in ``table``, keyed on the chunk; a potential
+    fact's chunk (``chunks.fact_id``) has its vector in the model's potential-fact
+    table, keyed on the fact (:func:`store_vectors` routes them).
 
     ``include_communications=False`` leaves out chunks of communication
     documents: the query for a provider that is not on this machine, since
@@ -111,7 +115,60 @@ def pending_chunks_sql(table: str, *, select: str, include_communications: bool)
             " WHERE d.id = c.document_id AND d.corpus_class = 'communication')"
         )
     )
-    return f"SELECT {select} FROM chunks c LEFT JOIN {table} e ON e.chunk_id = c.id WHERE e.chunk_id IS NULL{withheld}"
+    facts = potential_fact_table_name(table)
+    return (
+        f"SELECT {select} FROM chunks c"
+        f" LEFT JOIN {table} e ON c.fact_id IS NULL AND e.chunk_id = c.id"
+        f" LEFT JOIN {facts} pe ON c.fact_id IS NOT NULL AND pe.fact_id = c.fact_id"
+        f" WHERE e.chunk_id IS NULL AND pe.fact_id IS NULL{withheld}"
+    )
+
+
+def store_vectors(
+    session: Session, model: EmbeddingModel, vectors: Sequence[tuple[int, Sequence[float]]], *, replace: bool = False
+) -> int:
+    """Store ``(chunk_id, vector)`` pairs in ``model``'s tables; how many were given.
+
+    A content chunk's vector goes in the chunk table; a potential fact's chunk's in
+    the potential-fact table, keyed on its fact. ``replace`` overwrites a vector
+    already there, otherwise it is kept.
+    """
+    if not vectors:
+        return 0
+    table = assert_safe_table(model.table_name)
+    facts = potential_fact_table_name(table)
+    plan = _plan_from_row(model)
+    fact_of = {
+        int(cid): (int(fid) if fid is not None else None)
+        for cid, fid in session.execute(
+            text("SELECT id, fact_id FROM chunks WHERE id = ANY(CAST(:ids AS bigint[]))"),
+            {"ids": [int(cid) for cid, _ in vectors]},
+        ).all()
+    }
+    content = [{"key": cid, "embedding": _adapt(list(vec), plan)} for cid, vec in vectors if fact_of.get(cid) is None]
+    fact_rows = [
+        {"key": fact_of[cid], "embedding": _adapt(list(vec), plan)}
+        for cid, vec in vectors
+        if fact_of.get(cid) is not None
+    ]
+    on_conflict = "DO UPDATE SET embedding = EXCLUDED.embedding, embedded_at = now()" if replace else "DO NOTHING"
+    if content:
+        session.execute(
+            text(
+                f"INSERT INTO {table} (chunk_id, embedding) VALUES (:key, :embedding) "
+                f"ON CONFLICT (chunk_id) {on_conflict}"
+            ),
+            content,
+        )
+    if fact_rows:
+        session.execute(
+            text(
+                f"INSERT INTO {facts} (fact_id, embedding) VALUES (:key, :embedding) "
+                f"ON CONFLICT (fact_id) {on_conflict}"
+            ),
+            fact_rows,
+        )
+    return len(vectors)
 
 
 def _pending_chunk_batches(
@@ -163,7 +220,6 @@ def backfill_model(
     settings = get_settings()
     size = batch_size or settings.embed_batch_size
     table = assert_safe_table(model.table_name)
-    plan = _plan_from_row(model)
     local = provider_is_local(model.provider)
     embedder = get_embedder(model.provider, model.model_ref)
 
@@ -175,10 +231,6 @@ def backfill_model(
     if state.total == 0:
         backfill_distilled(session, model, state)
         return state
-
-    insert_sql = text(
-        f"INSERT INTO {table} (chunk_id, embedding) VALUES (:chunk_id, :embedding) ON CONFLICT (chunk_id) DO NOTHING"
-    )
 
     for batch in _pending_chunk_batches(session, table, size, include_communications=local):
         ids = [cid for cid, _ in batch]
@@ -200,10 +252,7 @@ def backfill_model(
             # subsequent batch too.
             break
 
-        session.execute(
-            insert_sql,
-            [{"chunk_id": cid, "embedding": _adapt(vec, plan)} for cid, vec in zip(ids, vectors, strict=True)],
-        )
+        store_vectors(session, model, list(zip(ids, vectors, strict=True)))
         session.commit()
 
         state.embedded += len(batch)
@@ -228,7 +277,7 @@ def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillP
     here, so its centroid is not skewed toward the ones embedded first. Pure
     insert, like the chunk backfill.
     """
-    table = assert_safe_table(model.table_name)
+    table = potential_fact_table_name(assert_safe_table(model.table_name))
     fact_table = ensure_fact_table(session, model)
     made = session.execute(
         text(
@@ -236,12 +285,11 @@ def backfill_distilled(session: Session, model: EmbeddingModel, state: BackfillP
             INSERT INTO {fact_table} (distilled_fact_id, embedding)
             SELECT f.distilled_fact_id, l2_normalize(avg(e.embedding))
             FROM facts f
-            JOIN chunks c ON c.fact_id = f.id
-            LEFT JOIN {table} e ON e.chunk_id = c.id
+            LEFT JOIN {table} e ON e.fact_id = f.id
             WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
               AND NOT EXISTS (SELECT 1 FROM {fact_table} fe WHERE fe.distilled_fact_id = f.distilled_fact_id)
             GROUP BY f.distilled_fact_id
-            HAVING count(e.chunk_id) = count(*)
+            HAVING count(e.fact_id) = count(*)
             ON CONFLICT (distilled_fact_id) DO NOTHING
             RETURNING distilled_fact_id
             """

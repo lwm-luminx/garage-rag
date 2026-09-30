@@ -27,7 +27,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from garage_rag.config import Settings, ensure_psycopg_database_url, reset_settings, set_settings
-from garage_rag.db.emb_tables import get_model, register_model
+from garage_rag.db.emb_tables import get_model, potential_fact_table_name, register_model
 from garage_rag.db.engine import reset_engine, session_scope
 from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations, sql_dir, to_psycopg_conninfo
 from garage_rag.db.registry import ModelSpec
@@ -73,7 +73,10 @@ def db(database_url: str) -> Iterator[Session]:
         yield session
     with session_scope() as session:
         tables = session.execute(
-            text("SELECT tablename FROM pg_tables WHERE tablename LIKE 'emb\\_%' OR tablename LIKE 'fact\\_emb\\_%'")
+            text(
+                "SELECT tablename FROM pg_tables WHERE tablename LIKE 'emb\\_%' OR tablename LIKE 'fact\\_emb\\_%' "
+                "OR tablename LIKE 'potential\\_fact\\_emb\\_%'"
+            )
         ).scalars()
         for table in tables:
             session.execute(text(f'DROP TABLE "{table}"'))
@@ -136,6 +139,42 @@ def _embed(session: Session, table: str, chunk_id: int, vector: list[float], kin
         text(f"INSERT INTO {table} (chunk_id, embedding) VALUES (:id, CAST(:v AS {kind}({len(vector)})))"),
         {"id": chunk_id, "v": json.dumps(vector)},
     )
+
+
+def _embed_fact(session: Session, model_table: str, fact_id: int, vector: list[float], kind: str = "vector") -> None:
+    """A potential fact's vector, in the model's potential-fact table (017_fact_vectors.sql)."""
+    session.execute(
+        text(
+            f"INSERT INTO {potential_fact_table_name(model_table)} (fact_id, embedding) "
+            f"VALUES (:id, CAST(:v AS {kind}({len(vector)})))"
+        ),
+        {"id": fact_id, "v": json.dumps(vector)},
+    )
+
+
+def _fact_chunk(session: Session, document_id: int, fact: str) -> tuple[int, int]:
+    """A potential fact of ``document_id`` and its chunk: ``(fact_id, chunk_id)``."""
+    ord = session.execute(
+        text("SELECT count(*) FROM facts WHERE document_id = :doc"), {"doc": document_id}
+    ).scalar_one()
+    fact_id = session.execute(
+        text("INSERT INTO facts (document_id, ord, fact) VALUES (:doc, :ord, :fact) RETURNING id"),
+        {"doc": document_id, "ord": ord, "fact": fact},
+    ).scalar_one()
+    chunk_id = session.execute(
+        text(
+            "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, fact_id) "
+            "VALUES (:doc, :ord, :fact, :sha, 'facts:test', :fact_id) RETURNING id"
+        ),
+        {
+            "doc": document_id,
+            "ord": 1000 + ord,
+            "fact": fact,
+            "sha": hashlib.sha256(fact.encode()).digest(),
+            "fact_id": fact_id,
+        },
+    ).scalar_one()
+    return fact_id, chunk_id
 
 
 def _halves(dims: int, sign: float) -> list[float]:
@@ -296,6 +335,40 @@ class TestMigrations:
         assert db.execute(text("SELECT distance FROM embedding_models")).scalar_one() == "cosine"
         with pytest.raises(Exception, match="embedding_models_distance_check"):
             db.execute(text("UPDATE embedding_models SET distance = 'manhattan'"))
+
+    @pytest.mark.parametrize("dims", [8, 4096])
+    def test_017_moves_fact_vectors_to_their_own_table(self, db: Session, dims: int) -> None:
+        """A model registered before 017 kept fact vectors in its chunk table; re-applied,
+        017 moves them once and rebuilds the chunk table's vector index beside them."""
+        model = register_model(db, ModelSpec(slug="old", model_ref="old", dims=dims))
+        facts = potential_fact_table_name(model.table_name)
+        db.execute(text(f"DROP TABLE {facts}"))
+        source = _source(db, "notes")
+        content = _chunk(db, source, "heat-pumps", "Heat pumps lose efficiency in deep cold.")
+        fact_id, fact_chunk = _fact_chunk(db, _document(db, source, "roof", "The roof is slate."), "The roof is slate.")
+        _embed(db, model.table_name, content, _halves(dims, 1.0))
+        _embed(db, model.table_name, fact_chunk, _halves(dims, -1.0))
+        db.flush()
+
+        migration = (sql_dir() / "017_fact_vectors.sql").read_text(encoding="utf-8")
+        db.connection().exec_driver_sql(migration)
+        db.connection().exec_driver_sql(migration)  # and again: idempotent
+
+        assert list(db.execute(text(f"SELECT chunk_id FROM {model.table_name}")).scalars()) == [content]
+        assert list(db.execute(text(f"SELECT fact_id FROM {facts}")).scalars()) == [fact_id]
+        chunk_index = _index_definition(db, model.table_name)
+        fact_index = _index_definition(db, facts)
+        assert fact_index == chunk_index.replace(model.table_name, facts)
+        assert (
+            db.execute(
+                text(
+                    "SELECT format_type(atttypid, atttypmod) FROM pg_attribute WHERE attrelid = CAST(:t AS regclass) "
+                    "AND attname = 'embedding'"
+                ),
+                {"t": facts},
+            ).scalar_one()
+            == f"vector({dims})"
+        )
 
     def test_014_adds_direction_and_sender_to_chunks(self, db: Session) -> None:
         """Re-applied, 014 leaves one column each and one check; only messages carry a value."""
@@ -501,6 +574,23 @@ class TestModelTables:
         assert "binary_quantize(embedding)" in index
         assert "bit_hamming_ops" in index
 
+    @pytest.mark.parametrize(
+        ("dims", "ops"), [(8, "vector_cosine_ops"), (3000, "halfvec_cosine_ops"), (4096, "bit_hamming_ops")]
+    )
+    def test_potential_facts_get_a_table_and_index_of_their_own(self, db: Session, dims: int, ops: str) -> None:
+        model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=dims))
+        table = potential_fact_table_name(model.table_name)
+        assert ops in _index_definition(db, table)
+        key = db.execute(
+            text(
+                "SELECT a.attname, cf.relname FROM pg_constraint k "
+                "JOIN pg_attribute a ON a.attrelid = k.conrelid AND a.attnum = k.conkey[1] "
+                "JOIN pg_class cf ON cf.oid = k.confrelid WHERE k.conrelid = CAST(:t AS regclass) AND k.contype = 'f'"
+            ),
+            {"t": table},
+        ).one()
+        assert tuple(key) == ("fact_id", "facts")
+
 
 class TestSearch:
     """Two documents whose vectors point in opposite directions and whose words do
@@ -535,6 +625,18 @@ class TestSearch:
     def test_binary_quantized_search_re_ranks_on_the_exact_distance(self, db: Session) -> None:
         slug, dims = self._corpus(db, ModelSpec(slug="huge", model_ref="huge", dims=4096), "vector")
         assert self._search(db, slug, dims, mode="vector") == ["heat-pumps", "sourdough"]
+
+    @pytest.mark.parametrize("dims", [8, 4096])
+    def test_vector_search_finds_potential_facts_in_their_own_table(self, db: Session, dims: int) -> None:
+        model = register_model(db, ModelSpec(slug="m", model_ref="m", dims=dims))
+        source = _source(db, "notes")
+        bread = _chunk(db, source, "sourdough", "A sourdough starter needs wild yeast and flour.")
+        heat = _document(db, source, "heat-pumps", "Heat pumps lose efficiency in deep cold.")
+        fact_id, _ = _fact_chunk(db, heat, "Heat pumps lose efficiency in deep cold.")
+        _embed(db, model.table_name, bread, _halves(dims, -1.0))
+        _embed_fact(db, model.table_name, fact_id, _halves(dims, 1.0))
+        db.flush()
+        assert self._search(db, model.slug, dims, mode="vector") == ["heat-pumps", "sourdough"]
 
     def test_keyword_search_needs_no_model(self, db: Session) -> None:
         source = _source(db, "notes")
@@ -959,30 +1061,10 @@ class TestDistilledFacts:
     def _fact(
         self, db: Session, model, document_id: int, fact: str, vector: list[float] | None, *, table: str | None = None
     ) -> int:
-        ord = db.execute(text("SELECT count(*) FROM facts WHERE document_id = :doc"), {"doc": document_id}).scalar_one()
-        fact_id = db.execute(
-            text("INSERT INTO facts (document_id, ord, fact) VALUES (:doc, :ord, :fact) RETURNING id"),
-            {"doc": document_id, "ord": ord, "fact": fact},
-        ).scalar_one()
-        chunk_id = db.execute(
-            text(
-                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, fact_id) "
-                "VALUES (:doc, :ord, :fact, :sha, 'facts:test', :fact_id) RETURNING id"
-            ),
-            {
-                "doc": document_id,
-                "ord": 1000 + ord,
-                "fact": fact,
-                "sha": hashlib.sha256(fact.encode()).digest(),
-                "fact_id": fact_id,
-            },
-        ).scalar_one()
+        fact_id, _ = _fact_chunk(db, document_id, fact)
         if vector is not None:
-            _embed(db, table or model.table_name, chunk_id, vector)
+            _embed_fact(db, table or model.table_name, fact_id, vector)
         return fact_id
-
-    def _chunk_of(self, db: Session, fact_id: int) -> int:
-        return db.execute(text("SELECT id FROM chunks WHERE fact_id = :id"), {"id": fact_id}).scalar_one()
 
     def _groups(self, db: Session) -> list[list[str]]:
         """The potential facts behind each distilled fact that has more than one."""
@@ -1225,7 +1307,7 @@ class TestDistilledFacts:
         written = self._fact(db, model, self._doc(db), "The notes were written by Ada.", self._direction(5))
         roof = self._fact(db, model, self._doc(db), "The roof is slate.", self._direction(0, axis=4))
         for fact_id, vector in ((ada, self._direction(0, axis=2)), (roof, self._direction(0, axis=6))):
-            _embed(db, other.table_name, self._chunk_of(db, fact_id), vector)
+            _embed_fact(db, other.table_name, fact_id, vector)
         db.flush()
         self._run(db, model)
 
@@ -1238,7 +1320,7 @@ class TestDistilledFacts:
         assert distilled(model) == 0
         # The group waits until both its nodes have a vector under m2.
         assert distilled(other) == 1
-        _embed(db, other.table_name, self._chunk_of(db, written), self._direction(10, axis=2))
+        _embed_fact(db, other.table_name, written, self._direction(10, axis=2))
         db.flush()
         assert distilled(other) == 1
         assert distilled(other) == 0
