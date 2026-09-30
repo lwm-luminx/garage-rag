@@ -277,6 +277,18 @@
                 "description": "Set false to stop running this prompt.",
                 "title": "Enabled",
                 "type": "boolean"
+              },
+              "graph": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FactGraph"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "How this prompt's classes appear in the graph: vertices of their own label, or edges between other classes. Left out: its facts are PotentialFact and Fact vertices only."
               }
             },
             "required": [
@@ -473,6 +485,142 @@
         "text"
       ],
       "title": "FactExtractionExample",
+      "type": "object"
+    },
+    "FactGraph": {
+      "additionalProperties": false,
+      "description": "How a prompt's classes appear in the graph.",
+      "properties": {
+        "vertices": {
+          "description": "Classes projected as vertices.",
+          "items": {
+            "$ref": "#/$defs/GraphVertex"
+          },
+          "title": "Vertices",
+          "type": "array"
+        },
+        "edges": {
+          "description": "Classes projected as edges.",
+          "items": {
+            "$ref": "#/$defs/GraphEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "title": "FactGraph",
+      "type": "object"
+    },
+    "GraphEdge": {
+      "additionalProperties": false,
+      "description": "A class whose potential facts are edges between two other classes' distilled facts.",
+      "properties": {
+        "class": {
+          "description": "The extraction class (facts.fact_class) projected.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Class",
+          "type": "string"
+        },
+        "source": {
+          "description": "The attribute naming the edge's source.",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+          "title": "Source",
+          "type": "string"
+        },
+        "source_class": {
+          "description": "The class the source is a distilled fact of.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Source Class",
+          "type": "string"
+        },
+        "target": {
+          "description": "The attribute naming the edge's target.",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "target_class": {
+          "description": "The class the target is a distilled fact of.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Target Class",
+          "type": "string"
+        },
+        "label": {
+          "default": "RELATED_TO",
+          "description": "The edge label, or the fallback when label_attribute names none of labels.",
+          "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+          "title": "Label",
+          "type": "string"
+        },
+        "label_attribute": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "An attribute (e.g. predicate) whose value, upper-cased with spaces as _, picks the label.",
+          "title": "Label Attribute"
+        },
+        "labels": {
+          "description": "The labels label_attribute may pick, e.g. WORKS_AT; any other value takes label.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        }
+      },
+      "required": [
+        "class",
+        "source",
+        "source_class",
+        "target",
+        "target_class"
+      ],
+      "title": "GraphEdge",
+      "type": "object"
+    },
+    "GraphVertex": {
+      "additionalProperties": false,
+      "description": "A class whose distilled facts are vertices of their own label.",
+      "properties": {
+        "class": {
+          "description": "The extraction class (facts.fact_class) projected.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Class",
+          "type": "string"
+        },
+        "label": {
+          "description": "The vertex label, e.g. Person. Not one of the built-in labels.",
+          "pattern": "^[A-Z][A-Za-z0-9]{0,62}$",
+          "title": "Label",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attribute whose value names the vertex (its representative fact's); unset: the distilled fact's statement.",
+          "title": "Title"
+        }
+      },
+      "required": [
+        "class",
+        "label"
+      ],
+      "title": "GraphVertex",
       "type": "object"
     }
   }

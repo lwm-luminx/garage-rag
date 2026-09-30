@@ -292,6 +292,32 @@ graph `garage` (`garage graph rebuild` does only that). The vertices are
 representative to its Fact). Vertices carry the relational ids; text,
 spans and vectors stay in the tables.
 
+New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
+carry a `graph` block, which the projection reads (`graph_schema` in
+`config/fact_prompts.py`, `projection` in `db/graph.py`). For example:
+
+```json
+"graph": {
+  "vertices": [{"class": "person", "label": "Person", "title": "name"},
+               {"class": "organization", "label": "Organization"}],
+  "edges": [{"class": "relation", "source": "subject", "source_class": "person",
+             "target": "object", "target_class": "organization",
+             "label_attribute": "predicate", "labels": ["WORKS_AT", "MEMBER_OF"]}]
+}
+```
+
+A vertex entry makes the distilled facts of its class (its potential facts,
+deduplicated by the pass above: entity resolution is the same grouping) vertices
+of its label instead of `Fact`, titled by the representative's `title`
+attribute; their `SUPPORTS` edges point there. An edge entry turns each
+potential fact of its class into an edge between the distilled facts its
+`source` and `target` attributes name, resolved in the fact's own document
+first and then by statement; its label is the `label_attribute` value when
+`labels` lists it (upper-cased, spaces as `_`), else `label` (`RELATED_TO`).
+Labels are plain identifiers and may not take a built-in one; a class given two
+labels, or a label two classes, is refused when the config loads. The block is
+not part of the prompt's hash, so changing it only needs `garage graph rebuild`.
+
 ### 8. Search (`search/hybrid.py`)
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200

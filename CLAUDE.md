@@ -284,7 +284,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
     clustering model's centroid and `seed`, and under other models the mean the backfill writes.
   - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
-    PotentialFact and Fact vertices into the graph `garage`.
+    PotentialFact and Fact vertices into the graph `garage`. A prompt's `graph` block
+    (`facts.prompts[].graph`) adds vertex labels per class and edges from relation classes, so new
+    vertex and edge types are config (`graph_schema`, `projection`).
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model
