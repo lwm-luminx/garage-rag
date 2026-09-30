@@ -8,6 +8,8 @@ import PythonXPCService
 enum SplashLinks {
     static let patreon = URL(string: "https://www.patreon.com/rickmark")!
     static let linkedin = URL(string: "https://linkedin.com/in/penwellr")!
+    /// The privacy policy, which the App Store guidelines want reachable from inside the app.
+    static let privacyPolicy = URL(string: "https://garagerag.app/support/privacy-policy.html")!
     /// Bundled license texts for everything Garage redistributes (`//data/notices`). Nil in
     /// `swift run`, where there is no app bundle to carry it.
     static var thirdPartyNotices: URL? {
@@ -73,6 +75,12 @@ struct AppVersionInfo: Equatable {
     /// outside payment for a tip breaks App Review guideline 3.1.1 on most storefronts.
     var offersDonationLink: Bool {
         distribution != .appStore
+    }
+
+    /// Whether the splash offers the tip jar (`TipJar`), the App Store build's in-app purchase in
+    /// place of the Patreon link.
+    var offersTipJar: Bool {
+        distribution == .appStore
     }
 
     /// e.g. "Version 0.9 (build 42) · Developer ID", "Version 0.9", or "Development build".
@@ -185,6 +193,10 @@ struct SplashView: View {
                 .controlSize(.large)
                 .accessibilityIdentifier("splash.patreon")
             }
+
+            if version.offersTipJar {
+                TipJarView()
+            }
         }
     }
 
@@ -213,6 +225,12 @@ struct SplashView: View {
                 .accessibilityIdentifier("splash.showAtLaunch")
 
             Spacer()
+
+            Button("Privacy Policy") {
+                NSWorkspace.shared.open(SplashLinks.privacyPolicy)
+            }
+            .buttonStyle(.link)
+            .accessibilityIdentifier("splash.privacyPolicy")
 
             if let notices = SplashLinks.thirdPartyNotices {
                 Button("Acknowledgements") {

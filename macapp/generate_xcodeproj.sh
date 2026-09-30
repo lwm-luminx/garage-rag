@@ -45,13 +45,15 @@ for setting in \
   }
 done
 
-# The UI test runner (GarageAppUITests-Runner.app): Xcode signs it from its sandboxed XCTRunner
-# template plus the test target's CODE_SIGN_ENTITLEMENTS, which macos_ui_test has no attribute
-# for. The store tests' data folders live in the App Group container, the one folder the sandboxed
-# store app, its XPC services and the runner all reach, so the runner needs the App Group, signed
-# by the team that owns it (an ad hoc signature leaves it out of the group, and setup fails with
-# Cocoa error 513). Only this target's build settings change.
-/usr/bin/python3 - "$pbxproj" "$BUILD_WORKSPACE_DIRECTORY/macapp/externals/GarageAppGroup.entitlements" <<'PY'
+# The UI test runners (GarageAppUITests-Runner.app and GarageAppModelUITests-Runner.app): Xcode
+# signs each from its sandboxed XCTRunner template plus the test target's CODE_SIGN_ENTITLEMENTS,
+# which macos_ui_test has no attribute for. A sandboxed runner's temporary folder is in its own
+# container, which macOS 27 closes to the app under test, so the tests' data folders live where both
+# reach: ~/Library/Caches/GarageUITests (a temporary exception in Runner.entitlements) for the
+# unsandboxed builds, and the App Group container for the sandboxed store build. The group needs
+# the team that owns it (an ad hoc signature leaves the runner out of it, and setup fails with Cocoa
+# error 513). Only these targets' build settings change.
+/usr/bin/python3 - "$pbxproj" "$BUILD_WORKSPACE_DIRECTORY/macapp/Tests/GarageAppUITests/Runner.entitlements" <<'PY'
 import re
 import sys
 
@@ -62,7 +64,7 @@ settings = {
     "DEVELOPMENT_TEAM": "DWVXMLB45Y",
 }
 text = open(path).read()
-target = re.compile(r'BAZEL_LABEL = "[^"]*:GarageAppUITests";|PRODUCT_NAME = GarageAppUITests;')
+target = re.compile(r'BAZEL_LABEL = "[^"]*:GarageApp(Model)?UITests";|PRODUCT_NAME = GarageApp(Model)?UITests;')
 changed = 0
 
 
@@ -82,10 +84,10 @@ def patch(block):
 
 text = re.sub(r"(buildSettings = \{)(.*?)(\n\s*\};)", patch, text, flags=re.S)
 if changed == 0:
-    print(f"warning: found no GarageAppUITests build settings in {path}; the UI test runner keeps "
-          "an ad hoc signature and no App Group, so the store UI tests cannot write their data folders",
+    print(f"warning: found no UI test build settings in {path}; the UI test runners keep "
+          "an ad hoc signature and no App Group, so the UI tests cannot write their data folders",
           file=sys.stderr)
 else:
     open(path, "w").write(text)
-    print(f"GarageAppUITests: App Group entitlements and team signing in {changed} configuration(s)")
+    print(f"GarageAppUITests, GarageAppModelUITests: App Group entitlements and team signing in {changed} configuration(s)")
 PY

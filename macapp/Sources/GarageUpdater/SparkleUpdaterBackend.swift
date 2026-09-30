@@ -15,6 +15,8 @@ enum UpdaterBackend {
 @MainActor
 final class SparkleUpdaterDriver: NSObject, UpdaterDriving {
     private let controller: SPUStandardUpdaterController
+    /// Held here because the controller keeps its delegate weakly.
+    private let channels: SparkleChannelDelegate
     private var canCheckObservation: NSKeyValueObservation?
 
     var onStateChange: (() -> Void)?
@@ -24,9 +26,11 @@ final class SparkleUpdaterDriver: NSObject, UpdaterDriving {
     /// before we start the updater so a misconfigured build fails visibly in
     /// the UI instead of silently at signature-check time.
     init(configuration _: UpdaterConfiguration) {
+        let channels = SparkleChannelDelegate()
+        self.channels = channels
         controller = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: channels,
             userDriverDelegate: nil
         )
         super.init()
@@ -60,7 +64,39 @@ final class SparkleUpdaterDriver: NSObject, UpdaterDriving {
         controller.updater.lastUpdateCheckDate
     }
 
+    var receivesBetaUpdates: Bool {
+        get { channels.receivesBetaUpdates }
+        set {
+            guard newValue != channels.receivesBetaUpdates else { return }
+            channels.receivesBetaUpdates = newValue
+            // Sparkle does this itself for its own settings, not for the channel list.
+            controller.updater.resetUpdateCycleAfterShortDelay()
+            onStateChange?()
+        }
+    }
+
     func checkForUpdates() {
         controller.checkForUpdates(nil)
+    }
+}
+
+/// Tells Sparkle which tagged entries to consider; untagged ones always are.
+/// A separate object because the controller takes its delegate before the
+/// driver's `super.init()` has run.
+@MainActor
+private final class SparkleChannelDelegate: NSObject, SPUUpdaterDelegate {
+    private let defaults: UserDefaults
+
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    var receivesBetaUpdates: Bool {
+        get { defaults.bool(forKey: updaterReceivesBetaUpdatesKey) }
+        set { defaults.set(newValue, forKey: updaterReceivesBetaUpdatesKey) }
+    }
+
+    func allowedChannels(for _: SPUUpdater) -> Set<String> {
+        receivesBetaUpdates ? [updaterBetaChannel] : []
     }
 }

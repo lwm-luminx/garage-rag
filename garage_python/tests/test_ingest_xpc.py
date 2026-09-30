@@ -272,3 +272,23 @@ def test_ingest_xpc_reports_an_unreadable_source_and_still_runs_the_others():
     assert [e.source for e in errors] == ["denied"]
     assert errors[0].error is not None and "permission denied" in errors[0].error
     assert progress_events[-1].phase == "complete" and progress_events[-1].source == "documents"
+
+
+def test_ingest_xpc_passes_the_apps_contact_names_to_the_pipeline():
+    seen: dict = {}
+
+    def fake_ingest_source(*, gateway, source_slug, **kwargs):
+        seen.update(kwargs)
+        return IngestCounters(), WalkStats(), MaterializationBudget()
+
+    with patch("garage_rag.ingest.pipeline.ingest_source", side_effect=fake_ingest_source):
+        ingest_xpc(
+            source="apple-sms",
+            gateway=MagicMock(),
+            contact_names=[["(555) 123-4567", "Alex Doe"], ["bad"], ["sam@example.com", "Sam Lee"]],
+        )
+
+    names = seen["contact_names"]
+    assert names.name_for("+15551234567") == "Alex Doe"
+    assert names.name_for("SAM@example.com") == "Sam Lee"
+    assert len(names) == 2  # the malformed pair is dropped

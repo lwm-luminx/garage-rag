@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Attribution & Identity
-description: Git-aware author detection, trust tiers, and evidence logging in Garage.
+description: How Garage works out who wrote each document it indexes, from git history, document metadata, path conventions and mail senders, and how trust tiers shape search.
 ---
 
 # Attribution
@@ -142,7 +142,9 @@ wrote it: `chunks.direction` is `sent` for your own messages and `received` for
 everyone else's, and `chunks.sender` is the handle, or `me`.
 
 A handle's author is named after the handle (`+15551234567`) until the ingest is
-given a contact name for it (`extract/contact_names.py`). When the name arrives,
+given a contact name for it (`extract/contact_names.py`): from Contacts, which the app
+reads and passes to each ingest, or, for a Messages handle Contacts does not know,
+the name that contact shared over iMessage (`extract/nicknames.py`). When the name arrives,
 that author row takes it; when another author already has the name (the same
 person's other number or email), the row is merged into that one, identities
 and document links included. An author that already has a real name keeps it.

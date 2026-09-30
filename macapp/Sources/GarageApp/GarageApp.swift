@@ -32,6 +32,9 @@ struct GarageApp: App {
                 Button("Troubleshooting Guide") {
                     NSWorkspace.shared.open(BugReportLinks.troubleshooting)
                 }
+                Button("Privacy Policy") {
+                    NSWorkspace.shared.open(SplashLinks.privacyPolicy)
+                }
                 Divider()
                 Button("Report a Bug…") {
                     showDialog(.garageShowBugReport)
@@ -40,6 +43,7 @@ struct GarageApp: App {
             }
             CommandGroup(after: .appInfo) {
                 CheckForUpdatesButton(updater: appState.updater)
+                BetaUpdatesToggle(updater: appState.updater)
                 Button("Setup Assistant…") {
                     showFirstRun()
                 }

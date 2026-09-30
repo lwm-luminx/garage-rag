@@ -35,6 +35,16 @@ def test_sql_dir_is_the_committed_ddl() -> None:
     assert "004_registry.sql" in names
 
 
+def test_an_installed_wheel_reads_its_packaged_data(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A PyPI install has no repository around it; the wheel's garage_rag/_data copy wins."""
+    import garage_rag.config as config
+
+    package = tmp_path / "site-packages" / "garage_rag"
+    (package / "_data" / "sql").mkdir(parents=True)
+    monkeypatch.setattr(config, "__file__", str(package / "config" / "__init__.py"))
+    assert sql_dir() == package / "_data" / "sql"
+
+
 def test_missing_sql_dir_is_an_error_everywhere(tmp_path: Path) -> None:
     """Swallowing it would create extensions and then report an empty database as ready."""
     missing = tmp_path / "nowhere"

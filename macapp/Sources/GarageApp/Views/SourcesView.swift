@@ -134,6 +134,9 @@ struct SourcesView: View {
 
     private func perform(_ action: SourcesAttention.Action) {
         switch action {
+        case .selectHomeFolder:
+            _ = appState.promptAndSelectHomeFolder()
+            _ = appState.testVolumeAccess()
         case .selectDisk:
             _ = appState.promptAndSelectRootVolume()
             _ = appState.testVolumeAccess()
@@ -1100,6 +1103,8 @@ struct SourcesView: View {
         appState.sourcesBeingRemoved.contains(trimmedSlug)
     }
 
+    /// The form's Choose…: the panel's grant is kept, as "Add Folder…" keeps its own, so the sandboxed
+    /// app can still read a folder outside the home grant after a relaunch.
     private func chooseRoot() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -1107,6 +1112,11 @@ struct SourcesView: View {
         panel.allowsMultipleSelection = false
         if panel.runModal() == .OK, let url = panel.url {
             root = url.path
+            do {
+                try appState.volumeAccess.grantSourceAccess(for: url, forSourcePath: url.path)
+            } catch {
+                addFolderError = "Could not keep access to \(url.lastPathComponent): \(error.localizedDescription)"
+            }
         }
     }
 

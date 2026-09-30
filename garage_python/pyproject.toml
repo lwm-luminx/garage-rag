@@ -6,6 +6,18 @@ readme = "README.md"
 license = { file = "LICENSE" }
 authors = [{ name = "Rick Mark-Penwell" }]
 requires-python = ">=3.13,<3.15"
+keywords = ["rag", "mcp", "pgvector", "postgres", "embeddings", "search"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Text Processing :: Indexing",
+]
 
 dependencies = [
     # storage
@@ -62,6 +74,8 @@ dev = [
     # tools/swiftcheck: Swift syntax checking where no Swift toolchain exists (Linux, web sessions)
     "tree-sitter>=0.25",
     "tree-sitter-swift>=0.7",
+    # garage_python/tests/fake_messages.py: the invented people and messages in the fake chat.db
+    "faker>=37",
 ]
 # aspect_rules_py builds sdists into wheels with `build` and `setuptools`, resolved from uv.lock
 # and from the hub's dependency group. grpcio ships no free-threaded (cp314t) wheels, so the 3.14t
@@ -74,6 +88,11 @@ build-tools = ["build", "setuptools"]
 # so it names the project itself, plus the sdist build tools.
 garage_rag = ["garage_rag[build-tools]"]
 
+[project.urls]
+Homepage = "https://garagerag.app"
+Source = "https://github.com/rickmark/garage-rag"
+Issues = "https://github.com/rickmark/garage-rag/issues"
+
 [project.scripts]
 garage = "garage_rag.cli:main_cli"
 garage-mcp = "garage_rag.mcp_server.server:main"
@@ -84,6 +103,17 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/garage_rag"]
+exclude = ["BUILD.bazel"]
+
+# PyPI's sdist: the package and its build hook, without the tests (their corpora are most of the
+# size) or the Bazel and uv files.
+[tool.hatch.build.targets.sdist]
+include = ["/src/garage_rag", "/hatch_build.py", "/README.md", "/LICENSE"]
+exclude = ["BUILD.bazel"]
+
+# hatch_build.py: copies ../data/sql and ../data/models/models.json into the package as
+# garage_rag/_data, which a PyPI install reads in place of the repository's data/.
+[tool.hatch.build.hooks.custom]
 
 [tool.uv]
 environments = ["sys_platform == 'darwin' and platform_machine == 'arm64'"]

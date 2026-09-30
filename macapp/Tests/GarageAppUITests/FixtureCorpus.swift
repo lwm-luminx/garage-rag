@@ -53,11 +53,17 @@ extension GarageUITestCase {
         return copy
     }
 
-    /// Copies the corpus into this test's data folder, adds it as the source `slug`, runs its Scan &
-    /// Ingest and waits until the Status page counts every document. Leaves the Status page open.
+    /// Copies the corpus into this test's data folder (or takes the copy at `root`), adds it as the
+    /// source `slug`, runs its Scan & Ingest and waits until the Status page counts every document.
+    /// Leaves the Status page open.
     @discardableResult
-    func ingestFixtureCorpus(slug: String = "fixture", file: StaticString = #filePath, line: UInt = #line) throws -> URL {
-        let corpus = try copyFixtureCorpus(file: file, line: line)
+    func ingestFixtureCorpus(
+        slug: String = "fixture",
+        root: URL? = nil,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> URL {
+        let corpus = try root ?? copyFixtureCorpus(file: file, line: line)
         addCustomSource(slug: slug, root: corpus, file: file, line: line)
 
         let scanIngest = element(identifier: "sources.row.\(slug).scanIngest")

@@ -330,6 +330,7 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
         grpcToken: String?,
         databaseUrl: String?,
         lmStudioApiToken: String?,
+        contactNames: [[String]]?,
         successPrefix: String,
         with reply: @escaping (Bool, String?) -> Void
     ) {
@@ -372,6 +373,8 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
                 let limitObj: PythonObject = limit != nil ? PythonObject(limit!) : Python.None
                 let grpcPortObj: PythonObject = grpcPort != nil ? PythonObject(grpcPort!) : Python.None
                 let grpcHostObj: PythonObject = grpcHost != nil ? PythonObject(grpcHost!) : Python.None
+                // Names stay out of the log: they are the user's contacts.
+                let contactNamesObj: PythonObject = contactNames.map { PythonObject($0) } ?? Python.None
 
                 logger.info("Invoking Python ingest_xpc synchronously for source '\(source, privacy: .public)' (includeCode: \(includeCode), force: \(force), limit: \(String(describing: limit)), grpcPort: \(String(describing: grpcPort)))")
                 _ = try ingestModule.ingest_xpc.throwing.dynamicallyCall(withKeywordArguments: [
@@ -380,7 +383,8 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
                     ("limit", limitObj),
                     ("force", force),
                     ("grpc_host", grpcHostObj),
-                    ("grpc_port", grpcPortObj)
+                    ("grpc_port", grpcPortObj),
+                    ("contact_names", contactNamesObj)
                 ])
             }
 
@@ -419,6 +423,7 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
             grpcToken: options.grpcToken,
             databaseUrl: options.databaseUrl,
             lmStudioApiToken: options.lmStudioApiToken,
+            contactNames: options.contactNames,
             successPrefix: "Ingestion completed successfully for",
             with: reply
         )

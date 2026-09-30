@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
 <!--
   Sparkle update feed for Developer ID builds of Garage, served at
   https://garagerag.app/appcast.xml (the SUFeedURL in
@@ -13,11 +13,40 @@
   An empty channel is a valid feed meaning "no updates available", which is what
   this is until the first Developer ID release is published.
 -->
-<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
-  <channel>
-    <title>Garage</title>
-    <link>https://garagerag.app/appcast.xml</link>
-    <description>Developer ID release feed for Garage.</description>
-    <language>en</language>
-  </channel>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Garage</title>
+        <link>https://garagerag.app/appcast.xml</link>
+        <description>Developer ID release feed for Garage.</description>
+        <language>en</language>
+        <item>
+            <title>1.5</title>
+            <pubDate>Mon, 28 Sep 2026 13:57:52 -0600</pubDate>
+            <sparkle:version>547</sparkle:version>
+            <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <sparkle:hardwareRequirements>arm64</sparkle:hardwareRequirements>
+            <description sparkle:format="markdown"><![CDATA[# Garage 1.5 beta 1
+
+This is the first beta of Garage 1.5. It is signed and notarized for Developer ID. It is the first build in the update feed: a 1.5 alpha offers it as an update, and this build updates to later 1.5 releases on its own. Garage 1.0 has no update check, so download it from here. Report problems through Help → Report a Bug… (⇧⌘B) or on GitHub issues.
+
+The same build (1.5, build 547) is on TestFlight for the Mac App Store. Both builds share one library, so you can switch between them.
+
+**Garage 1.5 runs on Apple Silicon Macs only.** Everything in the [alpha 1 notes](https://github.com/rickmark/garage-rag/releases/tag/v1.5-alpha.1) still applies, including backing up your Garage data folder before you upgrade.
+
+## Changes since alpha 2
+
+- **Ask Garage from the menu bar.** Type a question in the menu bar field and choose Ask Garage (or press ⇧↩). The local model searches your library before it answers, lists the documents it used, and says which model answered.
+- **A separate model for answering questions.** The Models page has an Inference tab for the model behind Ask Garage and the `rag_ask` tool. By default it follows the distillation model; pick a larger chat model to answer while a small one gleans facts. Chat-only models are marked on the Distillation tab. The catalog has more models and shows each one's country of origin.
+- **Messages read better.** Threads show contact names instead of phone numbers. Search can tell messages you sent from ones you received, and messages that belong to no thread are no longer dropped.
+- **MCP over stdio by default.** Connecting Claude or another assistant registers the bundled `garage-mcp` launcher, and each assistant starts its own. The HTTP server runs only if you turn it on. The launchers can also be copied onto your `PATH`.
+- **Private local connections.** Postgres, Garage's own services and the local model server now talk over Unix sockets only your account can open, instead of local network ports.
+- **Online-only files.** Dropbox and iCloud placeholders download when Garage needs them, without stalling a scan.
+- **Facts from the command line.** `garage facts list` and `garage facts stats` browse what distillation found.
+- **Polish.** A new app icon. The Status, Logs and Models pages have footer counts and icon buttons, and Automatic Updates has moved under Library. Reset Database shows its progress.
+
+]]></description>
+            <enclosure url="https://github.com/rickmark/garage-rag/releases/download/v1.5-beta.1/Garage-1.5.zip" length="150431410" type="application/octet-stream" sparkle:edSignature="qLuHWuUSRr5+jnaDKU+4YdDUr1T/O6gCUTVIW0+lak29N8VFy/BNEk87G8whd82T8d7YC5lAUHy6Dz3Nn9byCg=="/>
+        </item>
+    </channel>
 </rss>

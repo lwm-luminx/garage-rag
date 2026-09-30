@@ -4,12 +4,17 @@
 tests hold the committed feed to what that script checks, so a hand edit or a feed generated
 some other way cannot ship an entry the app would reject, or offer an arm64-only build to an
 Intel Mac, or point at a download that is not where releases are uploaded.
+
+An entry is on no channel, which every install is offered, or on the beta channel, which only
+installs with "Receive Beta Updates" on are offered (`updaterBetaChannel` in GarageUpdater). Any
+other channel is one no build of the app asks for, so its entry would reach nobody.
 """
 
 from __future__ import annotations
 
 import base64
 import plistlib
+import re
 import xml.etree.ElementTree as ET
 
 import pytest
@@ -21,6 +26,7 @@ DOWNLOADS = "https://github.com/rickmark/garage-rag/releases/download"
 FEED = repo_root() / "docs" / "appcast.xml"
 CNAME = repo_root() / "docs" / "CNAME"
 SPARKLE_PLIST = repo_root() / "macapp" / "Sources" / "GarageApp" / "Sparkle.plist"
+CHANNELS = {"beta"}
 
 
 def _version(item: ET.Element) -> str:
@@ -60,12 +66,19 @@ def feed_problems(xml: str) -> list[str]:
             problems.append(f"{label}: no sparkle:hardwareRequirements arm64, so Intel Macs would be offered it")
         if not item.findtext(SPARKLE + "minimumSystemVersion"):
             problems.append(f"{label}: no sparkle:minimumSystemVersion")
+        channel = item.findtext(SPARKLE + "channel")
+        if channel is not None and channel.strip() not in CHANNELS:
+            problems.append(f"{label}: sparkle:channel {channel!r} is not one the app offers (beta, or none)")
         enclosure = item.find("enclosure")
         if enclosure is None:
             problems.append(f"{label}: no enclosure")
             continue
-        expected = f"{DOWNLOADS}/v{short}/Garage-{short}.zip"
-        if enclosure.get("url") != expected:
+        # The release's tag is v<short>, or that with a pre-release suffix such as -beta.1.
+        tag = rf"v{re.escape(short)}(-[0-9A-Za-z][0-9A-Za-z.]*)?"
+        if not re.fullmatch(
+            rf"{re.escape(DOWNLOADS)}/{tag}/Garage-{re.escape(short)}\.zip", enclosure.get("url") or ""
+        ):
+            expected = f"{DOWNLOADS}/v{short}[-suffix]/Garage-{short}.zip"
             problems.append(f"{label}: enclosure url {enclosure.get('url')!r} is not {expected}")
         if not (enclosure.get("length") or "").isdigit() or int(enclosure.get("length", "0")) <= 0:
             problems.append(f"{label}: enclosure has no length")
@@ -86,10 +99,12 @@ def _item(**overrides: str | None) -> str:
         "url": f"{DOWNLOADS}/v1.5/Garage-1.5.zip",
         "signature": base64.b64encode(bytes(64)).decode(),
         "length": "123456789",
+        "channel": None,
     }
     fields.update(overrides)
     tag = "sparkle:hardwareRequirements"
     hardware = "" if fields["hardware"] is None else f"<{tag}>{fields['hardware']}</{tag}>"
+    channel = "" if fields["channel"] is None else f"<sparkle:channel>{fields['channel']}</sparkle:channel>"
     signature = "" if fields["signature"] is None else f'sparkle:edSignature="{fields["signature"]}"'
     return f"""
     <item>
@@ -98,6 +113,7 @@ def _item(**overrides: str | None) -> str:
       <sparkle:shortVersionString>{fields["short"]}</sparkle:shortVersionString>
       <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
       {hardware}
+      {channel}
       <enclosure url="{fields["url"]}" length="{fields["length"]}" type="application/octet-stream" {signature}/>
     </item>"""
 
@@ -126,6 +142,12 @@ class TestTheChecks:
     def test_a_generated_entry_passes(self) -> None:
         assert feed_problems(_feed(_item())) == []
 
+    def test_a_beta_channel_entry_passes(self) -> None:
+        assert feed_problems(_feed(_item(channel="beta"))) == []
+
+    def test_a_pre_release_tag_passes(self) -> None:
+        assert feed_problems(_feed(_item(url=f"{DOWNLOADS}/v1.5-beta.1/Garage-1.5.zip"))) == []
+
     def test_an_empty_feed_passes(self) -> None:
         assert feed_problems(_feed()) == []
 
@@ -137,8 +159,12 @@ class TestTheChecks:
             ({"signature": "not base64!"}, "EdDSA signature"),
             ({"url": "Garage-1.5.zip"}, "enclosure url"),
             ({"url": f"{DOWNLOADS}/v1.4/Garage-1.5.zip"}, "enclosure url"),
+            ({"url": f"{DOWNLOADS}/v1.4-beta.1/Garage-1.5.zip"}, "enclosure url"),
+            ({"url": f"{DOWNLOADS}/v1.5-/Garage-1.5.zip"}, "enclosure url"),
             ({"version": "1.5"}, "build number"),
             ({"length": "0"}, "length"),
+            ({"channel": "nightly"}, "sparkle:channel"),
+            ({"channel": ""}, "sparkle:channel"),
         ],
     )
     def test_a_broken_entry_fails(self, overrides: dict[str, str | None], problem: str) -> None:

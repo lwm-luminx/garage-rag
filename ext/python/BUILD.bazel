@@ -51,6 +51,13 @@ find $$INSTALLDIR/Python.framework -type f \\( -perm -111 -o -name "*.dylib" -o 
     fi
 done
 """,
+    # Build in parallel, install serially: CPython's framework install races under any
+    # parallel make (frameworkinstallmaclib symlinks into config-3.14t-darwin before that
+    # directory exists), which fails every time at -j2.
+    targets = [
+        "",
+        "install -j1",
+    ],
     visibility = ["//visibility:public"],
     deps = [
         "//ext:libzlib",

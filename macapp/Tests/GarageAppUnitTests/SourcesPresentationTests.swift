@@ -227,11 +227,18 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertTrue(items.isEmpty)
     }
 
-    func testAnUnconfiguredSandboxAsksForTheDiskFirst() {
-        let items = SourcesAttention.attentions(volumeStatus: .notConfigured, testResult: nil, sources: [])
+    func testAnUnconfiguredSandboxAsksForTheHomeFolderFirst() {
+        let items = SourcesAttention.attentions(volumeStatus: .notConfigured, testResult: nil, sources: [], sandboxed: true)
         XCTAssertEqual(items.map(\.id), ["disk"])
-        XCTAssertEqual(items.first?.primary.action, .selectDisk)
-        XCTAssertEqual(items.first?.primary.title, "Select Disk…")
+        XCTAssertEqual(items.first?.primary.action, .selectHomeFolder)
+        XCTAssertEqual(items.first?.primary.title, "Select Home Folder…")
+        XCTAssertEqual(items.first?.secondary.map(\.action), [.selectDisk, .openPrivacySettings(.fullDiskAccess)],
+                       "the startup disk stays as the second choice")
+        XCTAssertTrue(items.first?.detail.contains("home folder") ?? false)
+
+        let developerID = SourcesAttention.attentions(volumeStatus: .notConfigured, testResult: nil, sources: [], sandboxed: false)
+        XCTAssertEqual(developerID.first?.primary.action, .selectDisk, "no sandbox, so no home folder to grant")
+        XCTAssertEqual(developerID.first?.secondary.map(\.action), [.openPrivacySettings(.fullDiskAccess)])
     }
 
     func testDeniedAndStaleAccessAreNamed() {

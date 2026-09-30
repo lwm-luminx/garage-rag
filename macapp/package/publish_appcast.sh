@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Adds a signed Sparkle entry for one Developer ID release to docs/appcast.xml.
 #
-#   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md]
+#   aspect run //macapp/package:publish_appcast -- v1.5 [--notes notes.md] [--channel beta]
+#   aspect run //macapp/package:sign_appcast -- v1.5 --from Garage-1.5.zip [--notes ...]
 #   aspect run //macapp/package:publish_appcast -- --check-live
+#
+# The tag is v plus the archive's version, or that and a pre-release suffix (v1.5-beta.1).
 #
 # The first form takes the stapled dist/Garage-<version>.zip that notarize_all wrote, checks it
 # (version matches the tag, notarized, arm64 only, newer than every entry already in the
@@ -11,7 +14,16 @@
 #   - docs/appcast.xml with the new entry, to commit;
 #   - dist/Garage-<version>.zip, the exact archive the entry signs, to upload to the release.
 #
-# The second form fetches the feed from its SUFeedURL and checks that every enclosure is
+# Without --channel the entry is on no channel, so every install is offered it, whether or not
+# it opted into betas. --channel beta tags it for the installs that turned on "Receive Beta
+# Updates" only.
+#
+# The second form (sign_appcast) signs an archive notarize_all wrote on another Mac, given
+# with --from, on the Mac that holds the Keychain key; it needs no build here and skips only
+# the check that the archive is the build bazel-bin holds. It copies the archive to
+# dist/Garage-<version>.zip, so the release upload below is the same.
+#
+# The third form fetches the feed from its SUFeedURL and checks that every enclosure is
 # a download that exists, which is the last step before announcing a release.
 #
 # The private key never leaves the login Keychain: generate_appcast and sign_update read it
@@ -26,20 +38,22 @@ die() {
 }
 
 usage() {
-    sed -n '4,5p' "$0" | sed 's/^# \{0,1\}//' >&2
+    sed -n '4,6p' "$0" | sed 's/^# \{0,1\}//' >&2
     exit 2
 }
 
-archive="" generate_appcast="" sign_update="" generate_keys="" sparkle_plist=""
-tag="" notes="" check_live=0
+archive="" from="" generate_appcast="" sign_update="" generate_keys="" sparkle_plist=""
+tag="" notes="" channel="" check_live=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --archive) archive="$2"; shift 2 ;;
+        --from) from="$2"; shift 2 ;;
         --generate-appcast) generate_appcast="$2"; shift 2 ;;
         --sign-update) sign_update="$2"; shift 2 ;;
         --generate-keys) generate_keys="$2"; shift 2 ;;
         --sparkle-plist) sparkle_plist="$2"; shift 2 ;;
         --notes) notes="$2"; shift 2 ;;
+        --channel) channel="$2"; shift 2 ;;
         --check-live) check_live=1; shift ;;
         -h | --help) usage ;;
         -*) die "unknown option $1" ;;
@@ -48,11 +62,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]] || die "run this with 'aspect run //macapp/package:publish_appcast'"
+[[ -n "$archive" || -n "$from" || "$check_live" == 1 ]] || die "this target has no built archive; pass --from <Garage-<version>.zip>"
 for f in "$archive" "$generate_appcast" "$sign_update" "$generate_keys" "$sparkle_plist"; do
-    [[ -e "$f" ]] || die "missing runfile '$f'"
+    [[ -z "$f" || -e "$f" ]] || die "missing runfile '$f'"
 done
 # Resolve the runfiles before leaving the runfiles directory.
-archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
+[[ -z "$archive" ]] || archive="$(cd "$(dirname "$archive")" && pwd -P)/$(basename "$archive")"
 generate_appcast="$(cd "$(dirname "$generate_appcast")" && pwd -P)/$(basename "$generate_appcast")"
 sign_update="$(cd "$(dirname "$sign_update")" && pwd -P)/$(basename "$sign_update")"
 generate_keys="$(cd "$(dirname "$generate_keys")" && pwd -P)/$(basename "$generate_keys")"
@@ -91,19 +106,30 @@ fi
 
 [[ -n "$tag" ]] || usage
 [[ -z "$notes" || -f "$notes" ]] || die "no release notes at $notes"
+[[ -z "$channel" || "$channel" == beta ]] || die "unknown channel '$channel'; the feed's only channel is beta"
 [[ -f "$feed" ]] || die "no $feed in $BUILD_WORKSPACE_DIRECTORY"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/garage-appcast.XXXXXX")"
 trap 'rm -rf "$work"' EXIT
 
 # 1. What is being released: the stapled archive notarize_all left in dist/, which has to be
-#    the build bazel-bin holds now, not one left over from an earlier release.
-/usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
-    die "$archive does not contain Garage.app"
+#    the build bazel-bin holds now, not one left over from an earlier release. With --from, an
+#    archive notarize_all wrote on another Mac, taken as it is.
+if [[ -n "$from" ]]; then
+    [[ -f "$from" ]] || die "no archive at $from"
+    archive="$(cd "$(dirname "$from")" && pwd -P)/$(basename "$from")"
+    /usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
+        die "$archive does not contain Garage.app"
+else
+    /usr/bin/unzip -p "$archive" Garage.app/Contents/Info.plist >"$work/built-Info.plist" ||
+        die "$archive does not contain Garage.app"
+fi
 built_short="$(plist_value "$work/built-Info.plist" CFBundleShortVersionString)"
 built_build="$(plist_value "$work/built-Info.plist" CFBundleVersion)"
-archive="$PWD/dist/Garage-$built_short.zip"
-[[ -f "$archive" ]] || die "no $archive; run 'aspect run //macapp/package:notarize_all' first"
+if [[ -z "$from" ]]; then
+    archive="$PWD/dist/Garage-$built_short.zip"
+    [[ -f "$archive" ]] || die "no $archive; run 'aspect run //macapp/package:notarize_all' first"
+fi
 mkdir "$work/unpacked"
 /usr/bin/ditto -x -k "$archive" "$work/unpacked"
 app="$work/unpacked/Garage.app"
@@ -111,7 +137,8 @@ app="$work/unpacked/Garage.app"
 short="$(plist_value "$app/Contents/Info.plist" CFBundleShortVersionString)"
 build="$(plist_value "$app/Contents/Info.plist" CFBundleVersion)"
 echo "==> Garage $short (build $build)"
-[[ "$tag" == "v$short" ]] || die "tag $tag does not match the archive's version $short (expected v$short)"
+[[ "$tag" == "v$short" || "$tag" =~ ^v"$short"-[0-9A-Za-z][0-9A-Za-z.]*$ ]] ||
+    die "tag $tag does not match the archive's version $short (expected v$short or v$short-<suffix>)"
 [[ "$build" == "$built_build" ]] ||
     die "$archive is build $build, but bazel-bin holds build $built_build; run 'aspect run //macapp/package:notarize_all' again"
 [[ "$build" =~ ^[0-9]+$ ]] || die "CFBundleVersion '$build' is not a build number; was the build stamped?"
@@ -119,7 +146,9 @@ echo "==> Garage $short (build $build)"
     die "the archive has no SUFeedURL; it is not a Developer ID build"
 
 # 2. It must be the notarized, arm64-only Developer ID build.
-archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/Garage")"
+# Contents/MacOS/Garage would open the `garage` launcher link on a case-insensitive volume.
+executable="$(plist_value "$app/Contents/Info.plist" CFBundleExecutable)"
+archs="$(/usr/bin/lipo -archs "$app/Contents/MacOS/$executable")"
 [[ "$archs" == "arm64" ]] || die "Garage.app is built for '$archs'; releases are arm64 only"
 assessment="$(/usr/sbin/spctl --assess --type execute -vv "$app" 2>&1 || true)"
 grep -q "source=Notarized Developer ID" <<<"$assessment" ||
@@ -156,21 +185,22 @@ keychain_public="$("$generate_keys" -p)" || die "no Sparkle EdDSA key in the log
 name="Garage-$short"
 cp "$archive" "$work/$name.zip"
 cp "$feed" "$work/appcast.xml"
-embed=()
+embed=() channel_args=()
+[[ -z "$channel" ]] || channel_args=(--channel "$channel")
 if [[ -n "$notes" ]]; then
     cp "$notes" "$work/$name.${notes##*.}"
     embed=(--embed-release-notes)
 fi
 rm -rf "$work/unpacked"
 echo "==> Signing the entry (macOS may ask to allow Keychain access)"
-"$generate_appcast" --download-url-prefix "$REPO_DOWNLOADS/$tag/" "${embed[@]+"${embed[@]}"}" "$work"
+"$generate_appcast" --download-url-prefix "$REPO_DOWNLOADS/$tag/" "${embed[@]+"${embed[@]}"}" "${channel_args[@]+"${channel_args[@]}"}" "$work"
 
 # 6. Check what generate_appcast wrote before it replaces the committed feed.
-signature="$(/usr/bin/python3 - "$work/appcast.xml" "$build" "$REPO_DOWNLOADS/$tag/$name.zip" <<'PY'
+signature="$(/usr/bin/python3 - "$work/appcast.xml" "$build" "$REPO_DOWNLOADS/$tag/$name.zip" "$channel" <<'PY'
 import sys
 import xml.etree.ElementTree as ET
 ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
-path, build, url = sys.argv[1:]
+path, build, url, channel = sys.argv[1:]
 for item in ET.parse(path).getroot().iter("item"):
     version = item.findtext(ns + "version") or item.find("enclosure").get(ns + "version")
     if (version or "").strip() != build:
@@ -179,6 +209,8 @@ for item in ET.parse(path).getroot().iter("item"):
     problems = []
     if enclosure.get("url") != url:
         problems.append(f"enclosure url is {enclosure.get('url')}, expected {url}")
+    if (item.findtext(ns + "channel") or "") != channel:
+        problems.append(f"entry is on channel {item.findtext(ns + 'channel')!r}, expected {channel or None!r}")
     if not enclosure.get(ns + "edSignature"):
         problems.append("enclosure has no sparkle:edSignature")
     if "arm64" not in (item.findtext(ns + "hardwareRequirements") or ""):

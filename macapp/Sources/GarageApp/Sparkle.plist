@@ -21,7 +21,7 @@
 	<key>SUFeedURL</key>
 	<string>https://garagerag.app/appcast.xml</string>
 	<key>SUPublicEDKey</key>
-	<string>9uPTXe1BBLOmWFkrBm0fPMn9Y16BR57aI3ulI/GhNXg=</string>
+	<string>m7QKl6lawp2oe0yszf4m0A0ALnnHRYDzLmrCR7+3St8=</string>
 	<key>SUScheduledCheckInterval</key>
 	<integer>86400</integer>
 </dict>

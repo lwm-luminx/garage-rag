@@ -261,7 +261,7 @@ final class AppState: ObservableObject {
     func launch() {
         guard !hasLaunched else { return }
         hasLaunched = true
-        let arguments = CommandLine.arguments
+        let arguments = GarageAppLaunch.arguments
         guard arguments.contains(GarageAppLaunch.databaseResetArgument) else {
             maintenanceAtLaunchPending = true
             launchServices(startsPostgres: autoStartPostgres)
@@ -617,7 +617,11 @@ final class AppState: ObservableObject {
     private func relaunchAfterDatabaseReset() {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        configuration.arguments = Self.relaunchArguments(parentPID: getpid(), currentArguments: CommandLine.arguments)
+        let arguments = Self.relaunchArguments(parentPID: getpid(), currentArguments: GarageAppLaunch.arguments)
+        // Ignored when this process is sandboxed (the App Store build); the new instance then
+        // takes them from the handoff instead.
+        configuration.arguments = arguments
+        GarageRelaunchHandoff.record(arguments)
         // Before the new instance can start anything: a quit from here on must leave its services alone.
         markHandedOffToRelaunch()
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
@@ -629,6 +633,7 @@ final class AppState: ObservableObject {
                 }
                 // No second instance: create the new database in this one instead.
                 logger.error("Relaunch after reset failed: \(failure, privacy: .public)")
+                GarageRelaunchHandoff.discard()
                 self.hasHandedOffToRelaunch = false
                 self.isResettingDatabase = false
                 self.firstRun.begin(afterDatabaseReset: true)
@@ -1065,12 +1070,24 @@ final class AppState: ObservableObject {
         if slug == "*" {
             return await ingestAllSources(options: options, mode: mode)
         }
-        let result = await ingestService.ingest(slug: slug, options: options, mode: mode)
+        let result = await ingestService.ingest(
+            slug: slug, options: options, mode: mode, namesContacts: Self.sourceNamesContacts(slug: slug, in: registeredSources)
+        )
         await fetchRegisteredSources()
         await fetchCorpusStats()
         lastCommandSucceeded = result.succeeded
         lastCommandOutput = result.message ?? (result.succeeded ? "Ingestion completed" : "Ingestion failed")
         return result.succeeded
+    }
+
+    /// Whether a source's people are named from Contacts: only communications (Mail, Messages) carry
+    /// handles to name, so only their ingest asks for Contacts access (App Review guideline 5.1.1).
+    static func sourceNamesContacts(_ source: RegisteredSource) -> Bool {
+        source.corpusClass.lowercased() == "communication"
+    }
+
+    static func sourceNamesContacts(slug: String, in sources: [RegisteredSource]) -> Bool {
+        sources.first(where: { $0.slug == slug }).map(sourceNamesContacts) ?? false
     }
 
     /// Ingests all registered sources sequentially, looping over each source and streaming individual progress.
@@ -1125,7 +1142,9 @@ final class AppState: ObservableObject {
                 grpcHost: options.grpcHost,
                 grpcPort: options.grpcPort
             )
-            let result = await ingestService.ingest(slug: source.slug, options: sourceOptions, mode: mode)
+            let result = await ingestService.ingest(
+                slug: source.slug, options: sourceOptions, mode: mode, namesContacts: Self.sourceNamesContacts(source)
+            )
             await fetchRegisteredSources()
             await fetchCorpusStats()
             if !result.succeeded {

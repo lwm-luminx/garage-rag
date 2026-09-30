@@ -159,7 +159,14 @@ struct StatusView: View {
         case .testMCP:
             Task { await appState.mcp.testServerConnection() }
         case .chooseDisk:
-            _ = appState.promptAndSelectRootVolume()
+            // The sandboxed build asks for the home folder first (the panel also takes the startup disk);
+            // the Developer ID build reads the disk already, so a fix there means another volume.
+            if GarageAppGroup.isSandboxed {
+                _ = appState.promptAndSelectHomeFolder()
+            } else {
+                _ = appState.promptAndSelectRootVolume()
+            }
+            _ = appState.testVolumeAccess()
         case .grantFolder(let slug, let path):
             _ = appState.promptAndSelectSourceDirectory(slug: slug, suggestedPath: path)
         case .openPrivacySettings:

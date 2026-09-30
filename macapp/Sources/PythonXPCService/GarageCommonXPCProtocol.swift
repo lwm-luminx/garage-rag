@@ -256,6 +256,9 @@ public enum GarageXPCConfigurationKey {
     /// Directory the Python server works in, and so where it finds `./garage.json`: the
     /// app's working directory, as when the app ran the `garage` CLI there.
     public static let workingDirectory = "GARAGE_WORKING_DIRECTORY"
+    /// The models folder of a `--data-directory` launch (a UI test's), which an XPC service cannot
+    /// learn from the app's arguments. Unset otherwise; `GarageAppGroup.modelsDirectory` reads it.
+    public static let modelsDirectory = "GARAGE_MODELS_DIR"
 }
 
 public enum GarageMCPConstants {

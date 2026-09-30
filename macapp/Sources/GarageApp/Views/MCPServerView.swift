@@ -425,7 +425,7 @@ struct MCPServerView: View {
     }
 
     private func clientRow(_ client: MCPClientConfig, _ row: MCPClientRowPresentation) -> some View {
-        let home = GarageAppGroup.realHomeDirectory
+        let home = GarageAppGroup.clientHomeDirectory
 
         return HStack(alignment: .center, spacing: 10) {
             MenuBarSymbolCircle(symbol: row.symbol, tint: row.tint, isActive: row.isActive)

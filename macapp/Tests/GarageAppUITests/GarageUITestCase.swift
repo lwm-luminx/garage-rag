@@ -5,6 +5,15 @@ import XCTest
 /// Base for the XCUITests: every test launches the real app on its own throwaway `--data-directory`,
 /// so it gets a new cluster, config and models folder and never touches the real corpus.
 ///
+/// The data folders live in the App Group container's `UITests` folder (`GarageAppGroup.uiTestDataRoot`
+/// in the app, the one test root it accepts), not in the runner's temporary folder. Xcode signs the
+/// runner from its sandboxed XCTRunner template, so its temporary folder is inside its container, and
+/// macOS 27 refuses the app under test, its XPC services and Postgres entry into another app's container
+/// without offering a prompt (the sandboxed store build never could reach it). The runner writes to the
+/// group folder through the App Group the test target's entitlements give it; without that, setup
+/// fails with Cocoa error 513. On macOS 15 the first run may ask whether the runner may access data
+/// from other apps.
+///
 /// Launch arguments set the launch-time preferences in the argument domain, which overrides
 /// UserDefaults for that run without writing them. A test that clicks a control that saves a
 /// preference (such as the splash's "Show this window at launch") does write the real
@@ -22,6 +31,34 @@ class GarageUITestCase: XCTestCase {
     /// Every test's data folder is named with this, which is how leftovers from an earlier test are
     /// told apart from a Garage (or the real corpus's Postgres) someone is using.
     static let dataDirectoryPrefix = "GarageUITest-"
+    static let appGroup = "DWVXMLB45Y.group.me.rickmark.garage-rag"
+
+    /// The account's real home folder. The runner is sandboxed, so `NSHomeDirectory()` is its
+    /// container, and the app's view of `~` is exactly what the store tests check.
+    static var realHome: String {
+        if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
+            return String(cString: dir)
+        }
+        return NSHomeDirectory()
+    }
+
+    /// Where the unsandboxed builds' test data folders are made: `~/Library/Caches/GarageUITests`,
+    /// which the sandboxed runner reaches through a temporary exception (`Runner.entitlements`).
+    /// Not the runner's temporary folder, which is inside its container: macOS 27 refuses the app
+    /// under test entry there with no prompt. Not the App Group container either: a build signed
+    /// without a provisioning profile (local_signed, the Xcode project's) is not in the group, and
+    /// its XPC services cannot save the models folder there.
+    static var dataDirectoryRoot: URL {
+        URL(fileURLWithPath: realHome, isDirectory: true)
+            .appendingPathComponent("Library/Caches/GarageUITests", isDirectory: true)
+    }
+
+    /// Where the sandboxed App Store build's test data folders are made: the App Group container's
+    /// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one test root that build can reach.
+    static var storeDataDirectoryRoot: URL {
+        URL(fileURLWithPath: realHome, isDirectory: true)
+            .appendingPathComponent("Library/Group Containers/\(appGroup)/UITests", isDirectory: true)
+    }
 
     private(set) var dataDirectory: URL!
     private(set) var app: XCUIApplication!
@@ -58,10 +95,9 @@ class GarageUITestCase: XCTestCase {
 
     var configFile: URL { dataDirectory.appendingPathComponent("garage.json", isDirectory: false) }
 
-    /// The folder this test's data folder is made in. A subclass whose app cannot reach the
-    /// temporary folder (the sandboxed App Store build) overrides it.
+    /// The folder this test's data folder is made in (`dataDirectoryRoot`); a subclass may override it.
     func makeDataDirectoryParent() throws -> URL {
-        FileManager.default.temporaryDirectory
+        Self.dataDirectoryRoot
     }
 
     /// The app under test: the test target's host app unless a subclass launches another bundle.
@@ -98,6 +134,9 @@ class GarageUITestCase: XCTestCase {
             "-garage.mcp.httpEnabled", mcpHTTP ? "YES" : "NO",
             // The build's bundled models.json, not the website's copy, which can lag the branch under test.
             "-garage.modelCatalog.refreshAtLaunch", "NO",
+            // No Contacts lookup: the first ingest of a Mail or Messages fixture would otherwise put up
+            // the Contacts permission prompt, which the test cannot answer, and stall the ingest.
+            "-garage.contactNames.disabled", "YES",
             // Start from a clean window each time rather than the last run's restored state.
             "-ApplePersistenceIgnoreState", "YES",
         ] + additionalLaunchArguments
