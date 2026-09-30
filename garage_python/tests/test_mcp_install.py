@@ -151,6 +151,7 @@ class TestServerCommand:
         assert command == str(launcher)
         assert args == ["--config", str(cfg.resolve())]
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no executable bit: X_OK is true for any file")
     def test_non_executable_launcher_is_ignored(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         launcher = tmp_path / "garage-mcp"
         launcher.write_text("")
@@ -339,6 +340,7 @@ class TestClientTargets:
         for key in ("claude-desktop", "lmstudio", "cursor"):
             assert client_targets()[key].path.is_absolute()
 
+    @pytest.mark.skipif(sys.platform == "win32", reason="the App Sandbox is macOS; pwd does not exist on Windows")
     def test_sandboxed_service_targets_the_account_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """In the App Store build $HOME is the XPC service's container; the configs live in the real home."""
         import os
@@ -357,7 +359,35 @@ class TestClientTargets:
     def test_unsandboxed_targets_follow_home(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         monkeypatch.delenv("APP_SANDBOX_CONTAINER_ID", raising=False)
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() on Windows
         assert client_targets()["claude-code-user"].path == tmp_path / ".claude.json"
+
+    def test_windows_desktop_apps_keep_their_config_under_appdata(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.delenv("APP_SANDBOX_CONTAINER_ID", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path / "home"))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path / "home"))
+        monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+        targets = client_targets(project_dir=tmp_path)
+        assert targets["claude-desktop"].path == tmp_path / "Roaming" / "Claude" / "claude_desktop_config.json"
+        assert targets["zed"].path == tmp_path / "Roaming" / "Zed" / "settings.json"
+        assert targets["vscode-global"].path.is_relative_to(tmp_path / "Roaming" / "Code")
+        # The dot-folder clients stay under the home folder, as on macOS.
+        assert targets["claude-code-user"].path == tmp_path / "home" / ".claude.json"
+        assert targets["cursor"].path == tmp_path / "home" / ".cursor" / "mcp.json"
+
+    def test_windows_without_appdata_falls_back_to_roaming_under_home(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        monkeypatch.setattr(sys, "platform", "win32")
+        monkeypatch.delenv("APP_SANDBOX_CONTAINER_ID", raising=False)
+        monkeypatch.delenv("APPDATA", raising=False)
+        monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
+        expected = tmp_path / "AppData" / "Roaming" / "Claude" / "claude_desktop_config.json"
+        assert client_targets(project_dir=tmp_path)["claude-desktop"].path == expected
 
 
 class TestHttpEntry:

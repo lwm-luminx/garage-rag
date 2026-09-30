@@ -10,7 +10,8 @@ loaded (:func:`garage_rag.native.loaded_library`) and its English data sits in t
 framework's ``tessdata`` folder: in ``Resources`` beside the ``Frameworks`` folder that holds
 the library (the versioned layout the app ships), or beside ``Frameworks`` itself (a flat
 one). Elsewhere (a venv) the dynamic linker's search finds the library, and Tesseract's own
-default (or ``TESSDATA_PREFIX``) finds the data.
+default (or ``TESSDATA_PREFIX``) finds the data. On Windows the installed ``libtesseract-5.dll`` is
+also looked for in Tesseract's install folder, with the ``tessdata`` beside it.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
+import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -54,14 +56,53 @@ def _find_library() -> str:
     found = ctypes.util.find_library("tesseract")
     if found:
         return found
+    if sys.platform == "win32":
+        found = _find_windows_library()
+        if found:
+            return found
+        raise TesseractUnavailable(
+            "libtesseract not found: install Tesseract for Windows (winget install UB-Mannheim.TesseractOCR), "
+            f"which puts libtesseract-5.dll in {_windows_install_dirs()[0]}"
+        )
     raise TesseractUnavailable("libtesseract not found: not loaded by the app's framework, nor on the linker's path")
 
 
+def _windows_install_dirs() -> list[Path]:
+    """Where the Windows installer puts Tesseract: for every user, then for the current one."""
+    program_files = Path(os.environ.get("PROGRAMFILES", r"C:\Program Files"))
+    dirs = [program_files / "Tesseract-OCR"]
+    if local := os.environ.get("LOCALAPPDATA"):
+        dirs.append(Path(local) / "Programs" / "Tesseract-OCR")
+    return dirs
+
+
+def _find_windows_library(search_dirs: list[Path] | None = None) -> str | None:
+    """``libtesseract-<N>.dll`` on ``PATH`` or in a standard install folder, else None.
+
+    The Windows build Tesseract's documentation points to (UB Mannheim's) names the DLL
+    ``libtesseract-5.dll``, which ``find_library("tesseract")`` does not look for, and installs
+    it, its dependencies and ``tessdata`` into one folder that is usually not on ``PATH``.
+    Loading it by full path lets Windows find those dependencies beside it.
+    """
+    if search_dirs is None:
+        path_dirs = [Path(entry) for entry in os.environ.get("PATH", "").split(os.pathsep) if entry]
+        search_dirs = [*path_dirs, *_windows_install_dirs()]
+    for directory in search_dirs:
+        candidates = sorted(directory.glob("libtesseract-*.dll"), reverse=True) if directory.is_dir() else []
+        if candidates:
+            return str(candidates[0])
+    return None
+
+
 def _datapath(library: str) -> str | None:
-    """The framework's ``tessdata`` for a library in its ``Frameworks`` folder, else None
-    (Tesseract's own default, or ``TESSDATA_PREFIX``)."""
+    """The framework's ``tessdata`` for a library in its ``Frameworks`` folder, or the one beside
+    the library (a Windows install), else None (Tesseract's own default, or ``TESSDATA_PREFIX``).
+
+    On Windows the default is relative to the running executable, here ``python.exe``, so an
+    installed Tesseract's data is only found through the folder beside its DLL.
+    """
     version = Path(library).parent.parent
-    for tessdata in (version / "Resources" / "tessdata", version / "tessdata"):
+    for tessdata in (version / "Resources" / "tessdata", version / "tessdata", Path(library).parent / "tessdata"):
         if (tessdata / f"{LANGUAGE}.traineddata").is_file():
             return str(tessdata)
     return None

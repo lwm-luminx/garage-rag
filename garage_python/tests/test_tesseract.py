@@ -37,7 +37,8 @@ def test_then_the_linker_search(monkeypatch, nothing_loaded):
     assert tesseract._find_library() == "/usr/lib/libtesseract.dylib"
 
 
-def test_missing_library_is_unavailable(nothing_loaded):
+def test_missing_library_is_unavailable(monkeypatch, nothing_loaded):
+    monkeypatch.setattr(tesseract.sys, "platform", "darwin")
     with pytest.raises(tesseract.TesseractUnavailable, match="not loaded"):
         tesseract._find_library()
 
@@ -62,6 +63,45 @@ def test_data_comes_from_a_versioned_frameworks_resources(tmp_path):
 
     (version / "Resources" / "tessdata" / "eng.traineddata").touch()
     assert tesseract._datapath(str(library)) == str(version / "Resources" / "tessdata")
+
+
+def test_windows_finds_the_installed_dll_by_its_versioned_name(tmp_path):
+    empty = tmp_path / "on-path"
+    empty.mkdir()
+    install = tmp_path / "Tesseract-OCR"
+    install.mkdir()
+    (install / "tesseract.exe").touch()
+    assert tesseract._find_windows_library([empty, tmp_path / "missing", install]) is None
+
+    dll = install / "libtesseract-5.dll"
+    dll.touch()
+    assert tesseract._find_windows_library([empty, tmp_path / "missing", install]) == str(dll)
+
+
+def test_windows_install_dirs_cover_machine_and_user_installs(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path / "Program Files"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    assert tesseract._windows_install_dirs() == [
+        tmp_path / "Program Files" / "Tesseract-OCR",
+        tmp_path / "Local" / "Programs" / "Tesseract-OCR",
+    ]
+
+
+def test_windows_missing_library_says_how_to_install(monkeypatch, nothing_loaded):
+    monkeypatch.setattr(tesseract.sys, "platform", "win32")
+    monkeypatch.setattr(tesseract, "_find_windows_library", lambda: None)
+    with pytest.raises(tesseract.TesseractUnavailable, match="UB-Mannheim.TesseractOCR"):
+        tesseract._find_library()
+
+
+def test_data_comes_from_the_tessdata_beside_a_windows_install(tmp_path):
+    install = tmp_path / "Tesseract-OCR"
+    (install / "tessdata").mkdir(parents=True)
+    library = install / "libtesseract-5.dll"
+    assert tesseract._datapath(str(library)) is None, "no language data yet"
+
+    (install / "tessdata" / "eng.traineddata").touch()
+    assert tesseract._datapath(str(library)) == str(install / "tessdata")
 
 
 @pytest.mark.parametrize(

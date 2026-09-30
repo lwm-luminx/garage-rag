@@ -67,7 +67,9 @@ def client_targets(project_dir: Path | None = None) -> dict[str, ClientTarget]:
     """
     home = expand_home("~")
     project = (project_dir or Path.cwd()).resolve()
-    support = home / "Library" / "Application Support"
+    support = _app_support(home)
+    # Zed keeps its settings under ~/.config everywhere but Windows, where it uses %APPDATA%\Zed.
+    zed = support / "Zed" / "settings.json" if sys.platform == "win32" else home / ".config" / "zed" / "settings.json"
 
     targets = [
         ClientTarget(
@@ -139,10 +141,24 @@ def client_targets(project_dir: Path | None = None) -> dict[str, ClientTarget]:
         ClientTarget(
             key="zed",
             label="Zed",
-            path=home / ".config" / "zed" / "settings.json",
+            path=zed,
         ),
     ]
     return {t.key: t for t in targets}
+
+
+def _app_support(home: Path) -> Path:
+    """Where desktop apps keep per-user settings: ``%APPDATA%`` (Roaming) on Windows, else
+    ``~/Library/Application Support``, as before for macOS and Linux.
+
+    Claude Desktop, and the Cline extension in Cursor and VS Code, keep their MCP config there;
+    the dot-folder clients (Claude Code, Cursor, LM Studio, Windsurf) use the home folder on every
+    platform.
+    """
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        return Path(appdata) if appdata else home / "AppData" / "Roaming"
+    return home / "Library" / "Application Support"
 
 
 def target_keys() -> tuple[str, ...]:
