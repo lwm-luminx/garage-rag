@@ -53,6 +53,14 @@ service GarageService {
     rpc ClusterFacts (ClusterFactsRequest) returns (stream ClusterFactsStatus);
     rpc ListFactPrompts (ListFactPromptsRequest) returns (ListFactPromptsResponse);
 
+    // --- Graph (Apache AGE; every reply says `available` where the server has none) ---
+    // The graph's vertex and edge labels, with counts: the Graph page's filters.
+    rpc GetGraphLabels (GraphLabelsRequest) returns (GraphLabelsResponse);
+    // Vertices by title text or relational id, to pick where a walk starts.
+    rpc FindGraphVertices (FindGraphVerticesRequest) returns (FindGraphVerticesResponse);
+    // Everything within a few hops of one vertex, under label filters.
+    rpc GetGraphNeighborhood (GraphNeighborhoodRequest) returns (GraphNeighborhoodResponse);
+
     // --- Schema, Stats & Settings ---
     rpc GetStats (StatsRequest) returns (StatsResponse);
     rpc InitDb (InitDbRequest) returns (InitDbResponse);
@@ -324,6 +332,74 @@ message FactStatsResponse {
     int64 distilled = 6;        // distilled facts behind the matching potential facts
     int64 clusters = 7;         // of those, the ones behind more than one
     int64 clustered_facts = 8;  // and how many potential facts they group
+}
+
+// ---------------------------------------------------------------------------
+// Graph
+// ---------------------------------------------------------------------------
+
+// One vertex of the `garage` graph (garage_rag.db.graph).
+message GraphVertex {
+    int64 id = 1;              // the graph id, unique across labels; what edges refer to
+    string label = 2;          // Document, Chunk, Author, PotentialFact, Fact, ...
+    int64 key = 3;             // the relational id (documents.id, facts.id, ...); 0 for a label without one
+    string title = 4;          // what to call it on screen: the title, name, fact or statement
+    string properties_json = 5; // every property, as a JSON object
+}
+
+// One edge between two vertices' graph ids.
+message GraphEdge {
+    int64 id = 1;
+    string label = 2;          // HAS_CHUNK, WROTE, RECEIVED, STATES, SUPPORTS, ...
+    int64 source_id = 3;
+    int64 target_id = 4;
+    string properties_json = 5;
+}
+
+message GraphLabelCount {
+    string label = 1;
+    int64 count = 2;
+}
+
+message GraphLabelsRequest {}
+
+message GraphLabelsResponse {
+    bool available = 1;        // false where the server has no AGE or the graph is not built yet
+    repeated GraphLabelCount vertex_labels = 2;
+    repeated GraphLabelCount edge_labels = 3;
+}
+
+message FindGraphVerticesRequest {
+    string query = 1;          // matched case-insensitively against titles, and as a relational id when numeric; empty = the first vertices
+    string label = 2;          // one label; empty = every label with a title
+    int32 limit = 3;           // default 50
+}
+
+message FindGraphVerticesResponse {
+    bool available = 1;
+    repeated GraphVertex vertices = 2;
+}
+
+message GraphNeighborhoodRequest {
+    // The center, by graph id, or else by label and relational id (Document + documents.id, PotentialFact + facts.id, ...).
+    int64 vertex_id = 1;
+    string label = 2;
+    int64 key = 3;
+    int32 depth = 4;                    // hops out from the center; default 1, at most 6
+    repeated string vertex_labels = 5;  // keep only these labels; empty = all (see all_vertex_labels)
+    repeated string edge_labels = 6;    // keep only these labels; empty = all (see all_edge_labels)
+    // Since an empty list means no filter, these say an empty list was meant literally.
+    bool filter_vertex_labels = 7;
+    bool filter_edge_labels = 8;
+    int32 limit = 9;                    // stop at this many vertices; default 200
+}
+
+message GraphNeighborhoodResponse {
+    bool available = 1;
+    GraphVertex center = 2;
+    repeated GraphVertex vertices = 3;  // the center included
+    repeated GraphEdge edges = 4;       // both ends are in vertices
+    bool truncated = 5;                 // the limit cut the walk short
 }
 
 // ---------------------------------------------------------------------------

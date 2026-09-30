@@ -280,7 +280,13 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
     clustering model's centroid and `seed`, and under other models the mean the backfill writes.
   - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
-    PotentialFact and Fact vertices into the graph `garage`.
+    PotentialFact and Fact vertices into the graph `garage`. The same module reads it back over
+    AGE's label tables with bound parameters, never Cypher built from input: labels with counts, a
+    title search and a breadth-first neighbourhood walk with label filters (`GetGraphLabels`,
+    `FindGraphVertices`, `GetGraphNeighborhood`; `garage graph labels|find|neighbors`). Labels come
+    from the catalog, so a new edge label needs no change there. The app's Graph page
+    (`Views/GraphView.swift`, radial layout in `GraphLayout.swift`) draws one vertex's
+    neighbourhood; the Facts and Documents pages link into it with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model
@@ -507,7 +513,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   goes through the same `AppState.addSource` / `registerModel` / `setFactsModel` operations and
   `GarageMCPService` registration as the Sources, Models and MCP pages.
 - The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
-  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Search) and Advanced
+  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Graph, Search) and Advanced
   (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.
@@ -540,6 +546,11 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
 - Python 3.14 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
   `>=3.13,<3.15`). Ruff for lint/format (`E,F,I,UP,B,SIM`, 120-col lines); `ty` for type checking.
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
+- After editing `proto/garage.proto`, regenerate the checked-in Python stubs from the venv:
+  `python -m grpc_tools.protoc -I ../proto --python_out=src/garage_rag/proto --grpc_python_out=src/garage_rag/proto ../proto/garage.proto`
+  (in `garage_python/`). Then restore the `try: from . import garage_pb2` relative import in
+  `garage_pb2_grpc.py` and keep its `GRPC_GENERATED_VERSION` at the `grpcio` version in `uv.lock`
+  (the generated check refuses an older runtime). The Swift stubs are built by Bazel from the proto.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail
   tests, don't silently accumulate them.
 - The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and
