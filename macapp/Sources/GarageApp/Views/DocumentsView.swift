@@ -133,6 +133,7 @@ public struct DocumentsView: View {
             }
             .frame(width: 130)
             .onChange(of: selectedTrustTier) { _, _ in refreshDocuments() }
+            .accessibilityIdentifier("documents.trust")
 
             Button(action: refreshDocuments) {
                 if isLoadingList {
@@ -335,7 +336,11 @@ public struct DocumentsView: View {
 
                 HStack(spacing: 6) {
                     CorpusClassBadge(corpusClass: detail.corpusClass)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.class")
                     TrustTierBadge(tier: detail.trustTier)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.trust")
                     TagBadge(detail.sourceSlug)
                     if !detail.state.isEmpty {
                         StatusBadge(detail.state.uppercased(), tint: detail.state == "ok" ? .green : .red)
