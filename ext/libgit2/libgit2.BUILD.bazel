@@ -1,0 +1,5 @@
+filegroup(
+    name = "libgit2_source",
+    srcs = glob(["**"]),
+    visibility = ["//visibility:public"],
+)

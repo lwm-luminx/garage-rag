@@ -49,10 +49,12 @@ the *file*.
 > renamed file is attributed from commits touching its current path, which in
 > practice still identifies the right person.
 
-> **Needs git.** On a Mac this signal runs only when a working `git` is installed, from the
-> Xcode Command Line Tools or Xcode. macOS's own `/usr/bin/git` is a stub that asks to install
-> them, so without them Garage skips git history (it never opens that prompt) and attributes
-> files from the signals below.
+> **No git needed.** History is read in-process through libgit2; Garage never runs `git`,
+> so this signal works on a Mac without the Xcode Command Line Tools. The app's Python has a
+> built-in `_garage_git` module with libgit2 linked in statically (`//ext/python`,
+> `//ext/libgit2`). A venv or PyPI install reads through pygit2 instead
+> (`pip install 'garage-rag[git]'`); with neither, git history is skipped and files are
+> attributed from the signals below.
 
 ### 2. Embedded document metadata
 

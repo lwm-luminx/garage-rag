@@ -3,7 +3,7 @@
 
 The macOS app bundles a Python runtime plus every runtime package in `garage_python/uv.lock`,
 a from-source Postgres + pgvector + Apache AGE (with ICU and zlib), OpenSSL, llama.cpp, Tesseract +
-Leptonica, PythonKit, Sparkle, the Swift gRPC/NIO/protobuf runtime pulled in by rules_swift,
+Leptonica, libgit2, PythonKit, Sparkle, the Swift gRPC/NIO/protobuf runtime pulled in by rules_swift,
 and third-party code vendored into garage_python (see NOTICE). Their licenses (MIT, BSD, Apache,
 Unicode, PSF, LGPL, ...) require the license text to accompany binary redistribution, so this
 collects the actual license files from each upstream release into one text file that ships in
@@ -143,6 +143,15 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
         # Neither Hugging Face repository carries a LICENSE file; both declare apache-2.0.
         ("https://www.apache.org/licenses/LICENSE-2.0.txt",),
+    ),
+    Component(
+        # COPYING carries the GPL-2.0 linking exception and the licenses of the code libgit2
+        # bundles (xdiff, the SHA-1 collision detection, the builtin SHA-256, http-parser, ...).
+        "libgit2",
+        "1.9.7",
+        "GPL-2.0-only WITH GCC-exception-2.0",
+        "https://libgit2.org/",
+        (f"{RAW}/libgit2/libgit2/v1.9.7/COPYING",),
     ),
     Component(
         "Leptonica",

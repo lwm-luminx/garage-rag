@@ -40,6 +40,7 @@ let tests: [GarageXPCSelfTest] = [
     GarageXPCStandardSelfTests.libpq(runtime: runtime),
     GarageXPCStandardSelfTests.tlsTrust(runtime: runtime),
     GarageXPCStandardSelfTests.libtesseract(),
+    GarageXPCStandardSelfTests.gitHistory(),
     GarageXPCStandardSelfTests.serviceModule("garage_rag.ingest", attributes: ["ingest_xpc", "cancel_ingest"]),
     GarageXPCStandardSelfTests.serviceModule("garage_rag.service.server", attributes: ["create_grpc_server"]),
     GarageXPCStandardSelfTests.database(urlProvider: { ProcessInfo.processInfo.environment[GarageXPCConfigurationKey.databaseURL] }),

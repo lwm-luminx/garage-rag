@@ -1,0 +1,39 @@
+diff --git a/Makefile.pre.in b/Makefile.pre.in
+index 526d500..ffbd026 100644
+--- a/Makefile.pre.in
++++ b/Makefile.pre.in
+@@ -1066,7 +1066,7 @@ $(PYTHONFRAMEWORKDIR)/Versions/$(VERSION)/$(PYTHONFRAMEWORK): \
+ 		-install_name $(PYTHONFRAMEWORKINSTALLNAMEPREFIX)/$(PYTHONFRAMEWORK) \
+ 		-compatibility_version $(VERSION) \
+ 		-current_version $(VERSION) \
+-		-framework CoreFoundation $(LIBS);
++		-framework CoreFoundation $(LIBS) $(MODLIBS);
+ 	$(INSTALL) -d -m $(DIRMODE)  \
+ 		$(PYTHONFRAMEWORKDIR)/Versions/$(VERSION)/Resources/English.lproj
+ 	$(INSTALL_DATA) $(RESSRCDIR)/Info.plist \
+@@ -1087,7 +1087,7 @@ $(PYTHONFRAMEWORKDIR)/$(PYTHONFRAMEWORK): \
+ 		-install_name $(PYTHONFRAMEWORKINSTALLNAMEPREFIX)/$(PYTHONFRAMEWORK) \
+ 		-compatibility_version $(VERSION) \
+ 		-current_version $(VERSION) \
+-		-framework CoreFoundation $(LIBS);
++		-framework CoreFoundation $(LIBS) $(MODLIBS);
+ 	$(INSTALL_DATA) $(RESSRCDIR)/Info.plist $(PYTHONFRAMEWORKDIR)/Info.plist
+ 
+ # This rule builds the Cygwin Python DLL and import library if configured
+diff --git a/Modules/Setup.local b/Modules/Setup.local
+new file mode 100644
+--- /dev/null
++++ b/Modules/Setup.local
+@@ -0,0 +1,4 @@
++# Garage: _garage_git, built in statically with //ext/libgit2 linked in (see //ext/python).
++# The flags come from the environment the Bazel build sets.
++*static*
++_garage_git _garage_git.c $(MODULE__GARAGE_GIT_CFLAGS) $(MODULE__GARAGE_GIT_LDFLAGS)
+diff --git a/Modules/_garage_git.c b/Modules/_garage_git.c
+new file mode 100644
+--- /dev/null
++++ b/Modules/_garage_git.c
+@@ -0,0 +1,3 @@
++/* Garage: the module's source is ext/python/garage_git/garage_git.c in the Garage repository,
++ * found through MODULE__GARAGE_GIT_CFLAGS (see //ext/python). */
++#include "garage_git.c"

@@ -72,6 +72,7 @@ NETWORK_LIBRARIES = (
     "uvicorn",
     "psycopg",
     "psycopg_pool",
+    "pygit2",
 )
 # Inbound or local-only infrastructure, allowed outside the guard file by file.
 INBOUND_OR_LOCAL = {
@@ -83,6 +84,9 @@ INBOUND_OR_LOCAL = {
     "uvicorn": {"mcp_server/server.py"},  # serves MCP over HTTP (inbound)
     "socket": {"service/server.py"},  # probes its own Unix socket path for a live listener before binding
     "psycopg": {"db/engine.py", "db/migrate.py"},  # the Postgres connection
+    # Local repositories only: reads history, a remote's configured URL and the index; never
+    # clones, fetches or pushes. (The app's _garage_git has no network functions at all.)
+    "pygit2": {"attribute/git.py"},
 }
 
 # Top-level packages (or dotted prefixes) of cloud AI SDKs and of libraries whose

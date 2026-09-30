@@ -286,6 +286,30 @@ public enum GarageXPCStandardSelfTests {
         }
     }
 
+    /// Verifies the interpreter has `_garage_git` built in (libgit2 linked statically, no network transports) and that
+    /// garage_rag's git attribution reads through it.
+    public static func gitHistory() -> GarageXPCSelfTest {
+        GarageXPCSelfTest(name: "Git History", description: "The embedded Python has _garage_git built in, with a statically linked libgit2 without HTTPS or SSH, and garage_rag's git attribution uses it.") {
+            let sys = try Python.attemptImport("sys")
+            guard Bool(sys.builtin_module_names.__contains__("_garage_git")) == true else {
+                throw GarageXPCSelfTestFailure("_garage_git is not built into the interpreter", details: "//ext/python should build it through garage_git.patch")
+            }
+            let module = try Python.attemptImport("_garage_git")
+            let version = String(module.version()) ?? "unknown"
+            let features = Int(module.features()) ?? 0
+            // GIT_FEATURE_HTTPS and GIT_FEATURE_SSH.
+            if features & (1 << 1) != 0 || features & (1 << 2) != 0 {
+                throw GarageXPCSelfTestFailure("_garage_git's libgit2 has a network transport", details: "features: \(features)")
+            }
+            let git = try Python.attemptImport("garage_rag.attribute.git")
+            let reader = git.git_reader()
+            guard String(Python.getattr(reader, "__name__", "")) == "_garage_git" else {
+                throw GarageXPCSelfTestFailure("garage_rag reads git history through something else", details: String(describing: reader))
+            }
+            return ["libgit2: \(version)", "Features: \(features)"].joined(separator: "\n")
+        }
+    }
+
     /// Connects to PostgreSQL with psycopg and runs `SELECT version()` plus pgvector and Apache AGE extension probes.
     public static func database(urlProvider: @escaping @Sendable () -> String?) -> GarageXPCSelfTest {
         GarageXPCSelfTest(name: "Database Connection", description: "Opens a psycopg connection to GARAGE_DATABASE_URL, runs SELECT version() and checks the vector and age extensions.") {

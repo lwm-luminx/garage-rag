@@ -76,7 +76,12 @@ dev = [
     "tree-sitter-swift>=0.7",
     # garage_python/tests/fake_messages.py: the invented people and messages in the fake chat.db
     "faker>=37",
+    # tests/test_git_history.py reads through pygit2 as a venv does (the `git` extra)
+    "pygit2>=1.20",
 ]
+# Git attribution outside the app, where the Python has no built-in _garage_git: pygit2 reads
+# history in-process (garage_rag.attribute.git). Without it, git attribution is skipped.
+git = ["pygit2>=1.20"]
 # aspect_rules_py builds sdists into wheels with `build` and `setuptools`, resolved from uv.lock
 # and from the hub's dependency group. grpcio ships no free-threaded (cp314t) wheels, so the 3.14t
 # build compiles it from source. The Bazel group below pulls this extra in.

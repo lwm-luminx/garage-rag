@@ -1,0 +1,44 @@
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+load("//bazel:foreign_cc.bzl", "extract_foreign_cc_file", "normalize_install_names")
+
+# libgit2, static, linked into the app's Python for its built-in _garage_git module (see
+# //ext/python): garage_rag.attribute.git reads local repositories through it, in-process, with
+# nothing loaded at run time and no git command run.
+#
+# Built for local reads only: no HTTPS or SSH transport, so no TLS library and no libssh2. SHA-1
+# is libgit2's own collision-detecting implementation and SHA-256 its builtin one, which is what
+# lets HTTPS stay off. zlib and iconv come from the system when the interpreter is linked.
+cmake(
+    name = "libgit2",
+    build_args = [
+        "--",
+        "-j",
+    ],
+    cache_entries = {
+        "BUILD_CLI": "OFF",
+        "BUILD_EXAMPLES": "OFF",
+        "BUILD_FUZZERS": "OFF",
+        "BUILD_SHARED_LIBS": "OFF",
+        "BUILD_TESTS": "OFF",
+        "CMAKE_BUILD_TYPE": "Release",
+        # Linked into Python.framework's dylib.
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+        "USE_BUNDLED_ZLIB": "OFF",
+        "USE_GSSAPI": "OFF",
+        "USE_HTTPS": "OFF",
+        "USE_HTTP_PARSER": "builtin",
+        "USE_NTLMCLIENT": "OFF",
+        "USE_SHA1": "CollisionDetection",
+        "USE_SHA256": "Builtin",
+        "USE_SSH": "OFF",
+    },
+    # As in //ext/tesseract: keep `cmake --build/--install --config` on Release under
+    # compilation_mode=dbg (the rules_xcodeproj build).
+    configuration = "Release",
+    env = {
+        "AR": "/usr/bin/ar",
+    },
+    lib_source = "@libgit2//:libgit2_source",
+    out_static_libs = ["libgit2.a"],
+    visibility = ["//visibility:public"],
+)
