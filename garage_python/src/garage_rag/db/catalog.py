@@ -30,7 +30,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from garage_rag.config import repo_root
+from garage_rag.config import data_dir
 from garage_rag.db.registry import Modality, ModelSpec, check_distance, check_modality
 
 log = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ def manifest_path() -> Path | None:
     override = os.environ.get(MANIFEST_ENV)
     if override:
         return Path(override).expanduser()
-    candidate = repo_root() / "data" / "models" / "models.json"
+    candidate = data_dir() / "models" / "models.json"
     return candidate if candidate.is_file() else None
 
 

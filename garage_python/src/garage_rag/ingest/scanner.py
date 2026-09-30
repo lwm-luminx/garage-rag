@@ -27,7 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from garage_rag.attribute.git import git_executable
+from garage_rag.attribute.git import GIT_HARDENING, git_executable
 from garage_rag.config import (
     DEFAULT_EXCLUDE_DIRS,
     expand_home,
@@ -275,7 +275,7 @@ def _count_tracked_files(root: Path) -> int | None:
         return None
     try:
         proc = subprocess.run(
-            [git, "-C", str(root), "ls-files", "-z"],
+            [git, *GIT_HARDENING, "-C", str(root), "ls-files", "-z"],
             capture_output=True,
             check=False,
             timeout=10,

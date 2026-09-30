@@ -1,0 +1,154 @@
+name: Publish Python package
+
+# Publishes garage_python (the `garage_rag` distribution, `garage-rag` on the index) to PyPI or
+# TestPyPI with Trusted Publishing: the upload job authenticates with the workflow's OIDC token,
+# so there is no API token stored anywhere. Each index needs a trusted publisher registered
+# for this repository, this workflow file and the job's environment (RELEASING.md, "Python
+# package on PyPI").
+#
+# Run it by hand from the Actions tab:
+#
+# - `testpypi` (the default) is the dry run. It publishes the checked-out version with a
+#   `.dev<run number>` suffix, so it can be repeated, and from any branch.
+# - `pypi` publishes pyproject.toml's version as it is, from main only. A version can be
+#   uploaded to PyPI once; bump it in pyproject.toml and garage_rag/__init__.py first.
+#
+# Either way the last job installs the published version from that index into a fresh venv
+# and runs tools/pypi/smoke_test.sh against a pgvector Postgres.
+on:
+  workflow_dispatch:
+    inputs:
+      index:
+        description: "testpypi: a dry run as <version>.dev<run number>. pypi: the release, from main only."
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-python
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    defaults:
+      run:
+        working-directory: garage_python
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+      - name: Refuse a PyPI release off main
+        if: inputs.index == 'pypi' && github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::PyPI releases are published from main; this run is on ${GITHUB_REF}."
+          exit 1
+      - name: Version
+        id: version
+        env:
+          INDEX: ${{ inputs.index }}
+        run: |
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          module="$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' src/garage_rag/__init__.py)"
+          if [[ "$version" != "$module" ]]; then
+            echo "::error::pyproject.toml says $version but garage_rag/__init__.py says $module."
+            exit 1
+          fi
+          if [[ "$INDEX" == testpypi ]]; then
+            dev="${version}.dev${GITHUB_RUN_NUMBER}"
+            sed -i "s/^version = \"${version}\"$/version = \"${dev}\"/" pyproject.toml
+            sed -i "s/^__version__ = \"${version}\"$/__version__ = \"${dev}\"/" src/garage_rag/__init__.py
+            version="$dev"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Publishing garage-rag $version to $INDEX" >> "$GITHUB_STEP_SUMMARY"
+      - name: Build the sdist and wheel
+        run: uv build --out-dir dist
+      - name: Check the metadata
+        run: uvx twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: garage_python/dist/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.index }}
+      url: ${{ inputs.index == 'pypi' && 'https://pypi.org' || 'https://test.pypi.org' }}/project/garage-rag/${{ needs.build.outputs.version }}/
+    permissions:
+      # Trusted Publishing: the OIDC token PyPI exchanges for a short-lived upload token.
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ inputs.index == 'pypi' && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
+
+  smoke-test:
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+      INDEX: ${{ inputs.index }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v7
+      - name: Install garage-rag from the index
+        # The index takes a little while to serve a new upload. From TestPyPI only garage-rag
+        # itself comes from there (its wheel, fetched through the JSON API); its dependencies
+        # come from PyPI, since TestPyPI's copies of them are whatever anyone uploaded.
+        run: |
+          uv venv --python 3.14 "$RUNNER_TEMP/venv"
+          if [[ "$INDEX" == pypi ]]; then
+            base=https://pypi.org
+          else
+            base=https://test.pypi.org
+          fi
+          for attempt in $(seq 1 20); do
+            wheel="$(curl -fsS "$base/pypi/garage-rag/$VERSION/json" \
+              | jq -r '.urls[] | select(.packagetype == "bdist_wheel") | .url' || true)"
+            [[ -n "$wheel" ]] && break
+            echo "garage-rag $VERSION is not on $base yet (attempt $attempt)"
+            sleep 15
+          done
+          if [[ -z "$wheel" ]]; then
+            echo "::error::garage-rag $VERSION never appeared on $base."
+            exit 1
+          fi
+          if [[ "$INDEX" == pypi ]]; then
+            uv pip install --python "$RUNNER_TEMP/venv" --no-cache "garage-rag==$VERSION"
+          else
+            file="$RUNNER_TEMP/$(basename "$wheel")"
+            curl -fsSL -o "$file" "$wheel"
+            uv pip install --python "$RUNNER_TEMP/venv" --no-cache "$file"
+          fi
+      - name: Smoke test
+        env:
+          GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+        run: tools/pypi/smoke_test.sh "$RUNNER_TEMP/venv/bin/python" "$VERSION"

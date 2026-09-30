@@ -16,8 +16,10 @@ What is read, and what is left out:
   messages have no text of their own and are skipped. A chat left with no text
   at all yields no conversation.
 * **People.** Participants are the chat's handles (phone numbers and email
-  addresses) as Messages stores them. Contact names live in the Address Book,
-  which this reader does not open.
+  addresses) as Messages stores them; ``chat.db`` has no names for them apart
+  from a group's own ``display_name``. The ingest can attach names from
+  elsewhere (:mod:`garage_rag.extract.contact_names`) through
+  :attr:`Conversation.names`; this reader does not look them up.
 * **Orphans.** A chat's messages are its ``chat_message_join`` rows plus the
   messages no ``chat_message_join`` row names at all, which older macOS and
   iCloud sync leave behind by the thousand. An orphan with a ``handle_id``
@@ -106,6 +108,12 @@ class Conversation:
     service: str
     participants: list[str] = field(default_factory=list)
     messages: list[ChatMessage] = field(default_factory=list)
+    # Names for some of the handles above, when the ingest was given any.
+    names: dict[str, str] = field(default_factory=dict)
+
+    def label(self, handle: str) -> str:
+        """A handle's name when one is known, else the handle itself."""
+        return self.names.get(handle) or handle
 
     @property
     def is_group(self) -> bool:
@@ -116,7 +124,7 @@ class Conversation:
         if self.display_name:
             return self.display_name
         if self.participants:
-            return ", ".join(self.participants)
+            return ", ".join(self.label(handle) for handle in self.participants)
         return self.chat_identifier or self.guid
 
     @property

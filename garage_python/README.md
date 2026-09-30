@@ -1,10 +1,10 @@
 # garage_rag
 
-The Python half of [Garage](../README.md): a local-first personal RAG pipeline over
+The Python half of [Garage](https://github.com/rickmark/garage-rag#readme): a local-first personal RAG pipeline over
 PostgreSQL + pgvector. It walks personal documents, code repositories and communications,
 extracts and chunks their text, attributes authorship, embeds every chunk under each
 registered model, distills documents into span-grounded facts, and serves the corpus over
-MCP 2.0 and gRPC. Garage never sends communications off the machine (MCP clients you connect still receive what they retrieve); see [`docs/privacy.md`](../docs/privacy.md).
+MCP 2.0 and gRPC. Garage never sends communications off the machine (MCP clients you connect still receive what they retrieve); see [`docs/privacy.md`](https://github.com/rickmark/garage-rag/blob/main/docs/privacy.md).
 
 ## Entry points
 
@@ -76,7 +76,7 @@ The lockfile resolves for macOS only; on Linux use
 
 ## Documentation
 
-`../docs/` — [architecture](../docs/architecture.md), [schema](../docs/schema.md),
-[attribution](../docs/attribution.md), [privacy](../docs/privacy.md), plus support and
+`../docs/` — [architecture](https://github.com/rickmark/garage-rag/blob/main/docs/architecture.md), [schema](https://github.com/rickmark/garage-rag/blob/main/docs/schema.md),
+[attribution](https://github.com/rickmark/garage-rag/blob/main/docs/attribution.md), [privacy](https://github.com/rickmark/garage-rag/blob/main/docs/privacy.md), plus support and
 troubleshooting guides. The generated config schema is committed at
 `../docs/.data/garage.schema.json` and served as `https://garagerag.app/.data/garage.schema.json`.

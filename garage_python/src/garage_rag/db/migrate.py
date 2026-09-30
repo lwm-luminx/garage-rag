@@ -17,7 +17,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from garage_rag.config import get_settings, repo_root
+from garage_rag.config import data_dir, get_settings
 
 log = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ def _connect(conninfo: str):
 
 
 def sql_dir() -> Path:
-    """The committed DDL: ``data/sql/`` at the repository root."""
-    return repo_root() / "data" / "sql"
+    """The committed DDL: ``data/sql/`` (see :func:`garage_rag.config.data_dir`)."""
+    return data_dir() / "sql"
 
 
 def redact_url(url: str) -> str:

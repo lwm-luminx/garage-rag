@@ -451,7 +451,7 @@ final class FirstRunCoordinator: ObservableObject {
     /// `begin` still runs from launch to start the readiness loop.
     init(
         defaults: UserDefaults = .standard,
-        arguments: [String] = CommandLine.arguments,
+        arguments: [String] = GarageAppLaunch.arguments,
         persistsCompletion: Bool = GarageAppGroup.dataDirectoryOverride == nil,
         isSandboxed: Bool = GarageAppGroup.isSandboxed
     ) {

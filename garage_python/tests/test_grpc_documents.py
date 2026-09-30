@@ -256,6 +256,42 @@ def test_grpc_list_facts_defaults_the_page_size():
     assert response.total_count == 0
 
 
+def test_grpc_get_fact_stats_maps_the_counts():
+    from garage_rag.ops.facts import FactStats
+    from garage_rag.proto.garage_pb2 import FactStatsRequest
+
+    servicer = GarageRpcServicer()
+    stats = FactStats(facts=12, documents=3, by_source={"notes": 9, "mail": 3}, by_class={"fact": 10, "event": 2})
+    with (
+        patch("garage_rag.db.engine.session_scope"),
+        patch("garage_rag.ops.facts.fact_stats", return_value=stats) as fact_stats,
+    ):
+        response = servicer.GetFactStats(FactStatsRequest(corpus_class="communication"), MagicMock())
+
+    assert fact_stats.call_args.kwargs == {
+        "query": "",
+        "source": "",
+        "fact_class": "",
+        "corpus_class": "communication",
+        "document_id": None,
+    }
+    assert (response.facts, response.documents) == (12, 3)
+    assert dict(response.facts_by_source) == {"notes": 9, "mail": 3}
+    assert dict(response.facts_by_class) == {"fact": 10, "event": 2}
+    assert response.formatted_output == "12 facts across 3 documents"
+
+
+def test_grpc_get_fact_stats_rejects_an_unknown_corpus_class():
+    from garage_rag.proto.garage_pb2 import FactStatsRequest
+
+    servicer = GarageRpcServicer()
+    context = MagicMock()
+    context.abort.side_effect = grpc.RpcError()
+    with patch("garage_rag.db.engine.session_scope"), pytest.raises(grpc.RpcError):
+        servicer.GetFactStats(FactStatsRequest(corpus_class="memo"), context)
+    assert context.abort.call_args.args[0] == grpc.StatusCode.INVALID_ARGUMENT
+
+
 def test_grpc_list_sources_counts_documents_per_source():
     from types import SimpleNamespace
 

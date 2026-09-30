@@ -47,6 +47,8 @@ All data indexed by Garage is processed and stored locally on your device in you
 
 Garage never sends your communications off your device, and sends other content only to a model server you have configured yourself (see section 4). Content you retrieve through a connected MCP client is subject to that client.
 
+If you allow Garage to access your Contacts, it uses the names there to show people by name instead of by phone number or email address in the Messages and Mail it indexes. Those names are stored with your indexed communications in the same local database and are treated the same way: they never leave your device except as part of search results you send to an MCP client yourself. Declining Contacts access changes nothing else.
+
 ---
 
 ## 4. No Third-Party Services
@@ -65,7 +67,7 @@ If you connect an MCP client such as Claude Desktop or Claude Code to Garage, th
 Apart from the model server you configure (section 4), Garage connects to the internet only for the following. None of these requests contains your documents, communications, search queries, or any identifier for you or your device.
 
 - **Model list.** Each time it starts, GarageApp downloads the current list of recommended models (`https://garagerag.app/.data/models.json`) so its Models page and setup assistant can offer them. The request is an ordinary HTTPS download of a public file; it sends no data about you or your library.
-- **Model downloads.** When you choose to download a model, GarageApp downloads that model file from Hugging Face (`huggingface.co`). It downloads nothing until you ask.
+- **Model downloads.** When you choose to download a model, GarageApp downloads that model file from Hugging Face (`huggingface.co` and the download servers it redirects to). It downloads nothing until you ask.
 - **Update checks (website download only).** The version of GarageApp downloaded from this website can check `https://garagerag.app/appcast.xml` for new versions. It checks automatically only if you agree when it first asks. The App Store version gets updates from the App Store instead and makes no update checks of its own.
 
 Like any server, garagerag.app (hosted on GitHub Pages) and Hugging Face receive the network information that every web request carries, such as your IP address and the app's user agent, and handle it under their own privacy policies. Garage does not receive or keep that information.
@@ -86,7 +88,7 @@ This applies to the website only. GarageApp and the `garage` tools contain no an
 
 - **Keychain Security**: Database superuser passwords and optional API tokens (e.g., LM Studio API keys) are stored securely in the native **macOS Keychain**.
 - **Loopback by default**: By default the embedded HTTP MCP server binds only to `127.0.0.1` and refuses remote clients, and it checks the Host and Origin headers so web pages cannot reach your corpus. Serving other computers takes an explicit opt-in for power users, `--allow-remote`; with it, and with no `--allow-host`, the Host check is off.
-- **macOS Sandboxing & TCC**: Access to protected directories (Documents, Downloads, Desktop, Messages, Mail) requires explicit macOS user authorization under System Settings.
+- **macOS Sandboxing & TCC**: Access to protected directories (Documents, Downloads, Desktop, Messages, Mail) requires explicit macOS user authorization under System Settings. So does Contacts, which macOS asks about once.
 
 ---
 

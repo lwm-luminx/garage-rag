@@ -121,6 +121,32 @@ sh_binary(
     target_compatible_with = ["@platforms//os:macos"],
 )
 
+# 7. The same, for an archive notarize_all wrote on another Mac: signs it on the Mac that
+#    holds the Keychain key without building anything here.
+#    `aspect run //macapp/package:sign_appcast -- <tag> --from path/to/Garage-<version>.zip`.
+sh_binary(
+    name = "sign_appcast",
+    srcs = ["publish_appcast.sh"],
+    args = [
+        "--generate-appcast",
+        "$(rootpath //ext/sparkle:generate_appcast)",
+        "--sign-update",
+        "$(rootpath //ext/sparkle:sign_update)",
+        "--generate-keys",
+        "$(rootpath //ext/sparkle:generate_keys)",
+        "--sparkle-plist",
+        "$(rootpath //macapp/Sources/GarageApp:Sparkle.plist)",
+    ],
+    data = [
+        "//ext/sparkle:generate_appcast",
+        "//ext/sparkle:generate_keys",
+        "//ext/sparkle:sign_update",
+        "//macapp/Sources/GarageApp:Sparkle.plist",
+    ],
+    tags = ["manual"],
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
 pkg_install(
     name = "install",
     pkg = ":GarageInstaller",

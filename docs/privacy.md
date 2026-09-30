@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Privacy and macOS Permissions
-description: One egress choke point, a destination allowlist, communications kept local, and the macOS TCC security model.
+description: How Garage keeps your data on your Mac, with one egress choke point, a destination allowlist, messages that never leave the machine, and the macOS permissions it asks for.
 ---
 
 # Privacy and macOS permissions
@@ -170,6 +170,24 @@ re-run — idempotency means nothing already indexed is re-done.
 If you would rather not grant blanket access, copy `chat.db` (plus `-wal` and
 `-shm`) to a working directory via Finder and register that copy as the source.
 Narrower grant, more friction per refresh.
+
+### Contacts
+
+Messages and Mail know people by phone number or email address. To show names
+instead, the app asks once for access to Contacts (`NSContactsUsageDescription`,
+and the `com.apple.security.personal-information.addressbook` entitlement in both
+builds) before its first ingest. The app, not the ingest service, reads the names
+(`ContactNamesService`) and hands them to each ingest. They label the Messages
+threads, sender lines and authors they match, stay in the corpus on this Mac, and
+never go to a model server beyond what communications already allow (layer 4).
+Declining leaves every handle as it is. `defaults write me.rickmark.garage-rag
+garage.contactNames.disabled -bool YES` turns the lookup off without revoking
+the permission.
+
+Names that iMessage contacts shared with you ("Share Name and Photo") fill in
+for handles Contacts does not know. Garage reads them from
+`~/Library/Messages/NickNameCache`, inside the Messages folder you already
+granted, so they need no other permission.
 
 ## Cloud placeholders and network traffic
 

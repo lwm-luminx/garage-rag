@@ -21,6 +21,8 @@ public protocol UpdaterDriving: AnyObject {
     var canCheckForUpdates: Bool { get }
     var automaticallyChecksForUpdates: Bool { get set }
     var lastUpdateCheckDate: Date? { get }
+    /// Whether entries on the `beta` channel are offered as well as untagged ones.
+    var receivesBetaUpdates: Bool { get set }
     /// Invoked when any of the above change, so the service can republish them.
     var onStateChange: (() -> Void)? { get set }
     func checkForUpdates()
@@ -51,6 +53,15 @@ public final class UpdaterService: ObservableObject {
         didSet {
             guard !isRepublishing else { return }
             driver?.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+        }
+    }
+
+    /// "Receive Beta Updates". The driver persists it, so like the setting above
+    /// this is a view onto the driver's value.
+    @Published public var receivesBetaUpdates = false {
+        didSet {
+            guard !isRepublishing else { return }
+            driver?.receivesBetaUpdates = receivesBetaUpdates
         }
     }
 
@@ -125,5 +136,6 @@ public final class UpdaterService: ObservableObject {
         canCheckForUpdates = driver.canCheckForUpdates
         automaticallyChecksForUpdates = driver.automaticallyChecksForUpdates
         lastUpdateCheckDate = driver.lastUpdateCheckDate
+        receivesBetaUpdates = driver.receivesBetaUpdates
     }
 }

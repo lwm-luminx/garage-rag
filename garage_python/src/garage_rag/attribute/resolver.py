@@ -34,7 +34,7 @@ from garage_rag.attribute.git import (
 )
 from garage_rag.attribute.pathrules import classify_path
 from garage_rag.config import get_settings
-from garage_rag.db.models import Author, AuthorIdentity, AuthorRole, TrustTier
+from garage_rag.db.models import Author, AuthorIdentity, AuthorRole, DocumentAuthor, TrustTier
 
 log = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ def get_or_create_author(
     for kind, value in valid_pairs:
         existing = session.query(AuthorIdentity).filter_by(kind=kind, value=value).one_or_none()
         if existing is not None:
-            return existing.author
+            return _adopt_name(session, existing.author, name)
 
     author = session.query(Author).filter_by(display_name=name).one_or_none()
     if author is None:
@@ -324,6 +324,58 @@ def get_or_create_author(
             session.add(AuthorIdentity(author_id=author.id, kind=kind, value=value))
     session.flush()
     return author
+
+
+def _named_after_handle(author: Author) -> bool:
+    """Whether the author's name is one of its own handles (a phone number or email)."""
+    return any(identity.value == author.display_name for identity in author.identities)
+
+
+def _adopt_name(session: Session, author: Author, name: str) -> Author:
+    """Give an author known only by a handle the real name it now arrives with.
+
+    Messages authors were created named after their phone number or email. When
+    the same handle later arrives with a contact name, the row takes that name;
+    if another author already has it (the same person's other handle, already
+    named), the handle's row is merged into that one.
+    """
+    if not name or author.is_self or name == author.display_name or not _named_after_handle(author):
+        return author
+    if any(identity.value == name for identity in author.identities):
+        return author
+    named = (
+        session.query(Author)
+        .filter(Author.display_name == name, Author.id != author.id, Author.is_self.is_(False))
+        .order_by(Author.id)
+        .first()
+    )
+    if named is None:
+        author.display_name = name
+        session.flush()
+        return author
+    for link in session.query(DocumentAuthor).filter_by(author_id=author.id).all():
+        clash = (
+            session.query(DocumentAuthor)
+            .filter_by(document_id=link.document_id, author_id=named.id, role=link.role)
+            .one_or_none()
+        )
+        if clash is None:
+            session.add(
+                DocumentAuthor(
+                    document_id=link.document_id,
+                    author_id=named.id,
+                    role=link.role,
+                    confidence=link.confidence,
+                    evidence=link.evidence,
+                )
+            )
+        session.delete(link)
+    for identity in list(author.identities):
+        identity.author = named
+    session.flush()
+    session.delete(author)
+    session.flush()
+    return named
 
 
 def ensure_self_author(session: Session) -> Author | None:

@@ -14,6 +14,8 @@
   --card-bg: #ffffff;
   --card-border: #d0d7de;
   --card-shadow: 0 1px 3px rgba(31, 35, 40, 0.08), 0 1px 2px rgba(31, 35, 40, 0.04);
+  /* A macOS window's own shadow, drawn by CSS rather than baked into the screenshot. */
+  --window-shadow: drop-shadow(0 22px 28px rgba(31, 35, 40, 0.22)) drop-shadow(0 0 1px rgba(31, 35, 40, 0.35));
   --callout-info-bg: #e6f6ff;
   --callout-info-border: #54aeff;
   --callout-warn-bg: #fff8c5;
@@ -45,6 +47,7 @@
     --card-bg: #161b22;
     --card-border: #30363d;
     --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --window-shadow: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(240, 246, 252, 0.28));
     --callout-info-bg: #0c2d6b;
     --callout-info-border: #1f6feb;
     --callout-warn-bg: #3b2300;
@@ -717,5 +720,67 @@ details .faq-content {
   .hero-strip-actions,
   .hero-strip-actions .btn {
     width: 100%;
+  }
+}
+
+/* Screenshots of Garage for Mac (_includes/screenshot.html). */
+.screenshot {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* A whole window: transparent rounded corners in the image, the shadow from CSS. */
+.screenshot-window {
+  filter: var(--window-shadow);
+}
+
+/* A close-up of part of a window: no window chrome, framed like the site's cards. */
+.screenshot-detail {
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  box-shadow: var(--card-shadow);
+}
+
+.screenshot-figure {
+  margin: 0 0 2.5rem;
+}
+
+.screenshot-figure figcaption {
+  margin-top: 0.75rem;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.screenshot-hero {
+  margin: -0.5rem auto 3rem;
+  padding: 0 0.5rem 1.5rem;
+}
+
+.screenshot-tour h3 {
+  margin-bottom: 0.25rem;
+}
+
+.screenshot-tour p {
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* Diagrams */
+.diagram {
+  margin: 24px 0;
+}
+
+.diagram img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+@media (max-width: 640px) {
+  .diagram img {
+    max-width: 380px;
+    margin: 0 auto;
   }
 }

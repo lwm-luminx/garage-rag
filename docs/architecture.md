@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Architecture Guide
-description: Ingestion pipeline, extractors, quality filtering, and concurrency model.
+description: How Garage's local RAG pipeline works, from walking folders and extracting PDF, Office, mail and Messages text to chunking, embedding with pgvector and hybrid search.
 ---
 
 # Architecture
@@ -164,6 +164,12 @@ which also runs a disabled one. `garage facts prompts list` and
 `garage facts prompts show NAME` print the effective prompts, and the app's
 Models page lists and edits them (the `ListFactPrompts` RPC reads them;
 `SetSetting facts.prompts` writes the list back).
+
+Stored facts are browsed with `garage facts list` / `garage facts stats`, over the
+same `ops.facts` functions as the `ListFacts` / `GetFactStats` RPCs behind the
+app's Facts page: filtered by text (full-text or substring), source, document,
+extraction class and corpus class, each fact with the document text around its
+grounding span (`--evidence` prints the span), and counted per source and class.
 
 **Recipe: entities as facts.** Nothing constrains `fact_class` to `'fact'`, so an
 `entities` prompt asking for people, places, organizations, projects and events
@@ -378,7 +384,7 @@ presenter over the same function the CLI command calls (`ops/`), and a
 `PermissionError` onto gRPC status codes. The RPCs fall in three groups:
 
 - **Corpus reads** for the app's views: `Search`, `ListDocuments`,
-  `GetDocument`, `ListFacts`, `ListSources`, `ListModels`, `GetStats`,
+  `GetDocument`, `ListFacts`, `GetFactStats`, `ListSources`, `ListModels`, `GetStats`,
   `GetStatus`, `GetVersion`, `Ping`.
 - **Operations**: `AddSource`, `RemoveSource`, `Scan` (streaming),
   `SyncSources`, `ImportSourcesToConfig`, `Reconcile`, `RegisterModel`,

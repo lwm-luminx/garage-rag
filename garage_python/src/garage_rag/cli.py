@@ -885,7 +885,7 @@ def enrich_facts(
 # ---------------------------------------------------------------------------
 # fact prompts
 # ---------------------------------------------------------------------------
-facts_app = typer.Typer(help="Fact extraction: the prompts enrich-facts runs.", no_args_is_help=True)
+facts_app = typer.Typer(help="Distilled facts: browse them, and the prompts enrich-facts runs.", no_args_is_help=True)
 app.add_typer(facts_app, name="facts")
 prompts_app = typer.Typer(
     help="The effective fact prompts: the built-in default merged with facts.prompts.", no_args_is_help=True
@@ -959,6 +959,128 @@ def _prompt_json(prompt: EffectivePrompt) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# browsing facts
+# ---------------------------------------------------------------------------
+_FactQuery = Annotated[
+    str, typer.Option("--query", "-q", help="Full-text (websearch syntax) or substring match on the fact.")
+]
+_FactSource = Annotated[str, typer.Option("--source", "-s", help="Source slug.")]
+_FactDocument = Annotated[int | None, typer.Option("--document-id", help="Only this document's facts.")]
+_FactClass = Annotated[str, typer.Option("--class", help="Extraction class, e.g. fact.")]
+_FactCorpusClass = Annotated[str, typer.Option("--corpus-class", help="document | code | communication")]
+
+
+def _fact_evidence(fact) -> str:
+    """The grounded span itself, cut out of the excerpt around it."""
+    if fact.excerpt is None or fact.char_start is None or fact.char_end is None:
+        return ""
+    return fact.excerpt[fact.char_start - fact.excerpt_start : fact.char_end - fact.excerpt_start]
+
+
+@facts_app.command("list")
+def facts_list(
+    query: _FactQuery = "",
+    source: _FactSource = "",
+    document_id: _FactDocument = None,
+    fact_class: _FactClass = "",
+    corpus_class: _FactCorpusClass = "",
+    limit: Annotated[int, typer.Option(help="Facts per page.")] = 50,
+    offset: Annotated[int, typer.Option(help="Facts to skip.")] = 0,
+    evidence: Annotated[bool, typer.Option("--evidence", help="Show the grounded text under each fact.")] = False,
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
+) -> None:
+    """List distilled facts, newest first (best match first with --query), with the document each came from."""
+    from dataclasses import asdict
+
+    from garage_rag.ops.facts import list_facts
+
+    try:
+        with session_scope() as session:
+            page = list_facts(
+                session,
+                query=query,
+                source=source,
+                fact_class=fact_class,
+                corpus_class=corpus_class,
+                document_id=document_id,
+                limit=limit,
+                offset=offset,
+            )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from None
+
+    if json_output:
+        payload = {
+            "total": page.total,
+            "limit": limit,
+            "offset": offset,
+            "facts": [{**asdict(f), "evidence": _fact_evidence(f)} for f in page.facts],
+        }
+        typer.echo(json.dumps(payload, indent=2, default=str, ensure_ascii=False))
+        return
+    if not page.facts:
+        if page.total:
+            console.print(f"[yellow]no facts past {offset:,} of {page.total:,}[/yellow]")
+        else:
+            console.print("[yellow]no facts[/yellow] (run `garage enrich-facts` to distill some)")
+        return
+    table = Table(title=f"facts {offset + 1:,}-{offset + len(page.facts):,} of {page.total:,}")
+    for col in ("id", "class", "fact", "document", "source"):
+        table.add_column(col, overflow="fold")
+    for f in page.facts:
+        text = f.fact
+        grounded = _fact_evidence(f) if evidence else ""
+        if grounded:
+            text += f"\n[dim]“{grounded}”[/dim]"
+        table.add_row(str(f.id), f.fact_class, text, f.document_title or f.document_uri, f.source_slug)
+    console.print(table)
+
+
+@facts_app.command("stats")
+def facts_stats(
+    query: _FactQuery = "",
+    source: _FactSource = "",
+    document_id: _FactDocument = None,
+    fact_class: _FactClass = "",
+    corpus_class: _FactCorpusClass = "",
+    json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
+) -> None:
+    """Count facts per source and per extraction class."""
+    from dataclasses import asdict
+
+    from garage_rag.ops.facts import fact_stats
+
+    try:
+        with session_scope() as session:
+            stats = fact_stats(
+                session,
+                query=query,
+                source=source,
+                fact_class=fact_class,
+                corpus_class=corpus_class,
+                document_id=document_id,
+            )
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=2) from None
+
+    if json_output:
+        typer.echo(json.dumps(asdict(stats), indent=2, ensure_ascii=False))
+        return
+    console.print(stats.message)
+    for title, counts in (("source", stats.by_source), ("class", stats.by_class)):
+        if not counts:
+            continue
+        table = Table()
+        table.add_column(title)
+        table.add_column("facts", justify="right")
+        for key, count in counts.items():
+            table.add_row(key, f"{count:,}")
+        console.print(table)
+
+
 @app.command()
 def reconcile(
     source: Annotated[str, typer.Option("--source", "-s", help="Source slug.")],
@@ -1017,14 +1139,14 @@ def mcp_install(
         bool | None,
         typer.Option(
             "--http",
-            help="Register a URL for an HTTP server (preferred/default).",
+            help="Register the URL of a running HTTP server instead of the stdio command.",
         ),
     ] = None,
     stdio: Annotated[
         bool,
         typer.Option(
             "--stdio",
-            help="Register a spawned command using STDIO instead of an HTTP URL.",
+            help="Register the `garage-mcp` command, which the client starts itself (the default).",
         ),
     ] = False,
     host: Annotated[str | None, typer.Option(help="HTTP host, with --http.")] = None,
@@ -1043,7 +1165,9 @@ def mcp_install(
 
     if http is True and stdio is True:
         raise typer.BadParameter("choose either --http or --stdio")
-    use_stdio = bool(stdio or http is False)
+    # stdio unless --http: the app no longer serves HTTP until the user turns it on, so a
+    # URL registered by default would point at nothing.
+    use_stdio = http is not True
 
     def announce(outcome: McpTargetOutcome) -> None:
         console.print(f"\n[bold]{outcome.label}[/bold] -> {outcome.path}")

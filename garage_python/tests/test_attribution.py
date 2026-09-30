@@ -379,3 +379,16 @@ def test_has_developer_dir_needs_an_existing_folder(fresh_git_executable, monkey
     assert git_mod._has_developer_dir() is False
     monkeypatch.setattr(git_mod.subprocess, "run", MagicMock(side_effect=FileNotFoundError()))
     assert git_mod._has_developer_dir() is False
+
+
+def test_run_git_disables_the_repository_fsmonitor(fresh_git_executable, monkeypatch):
+    """A checkout is user-chosen data: its .git/config must not get to run a fsmonitor command."""
+    git_mod = fresh_git_executable
+    monkeypatch.setattr(git_mod.shutil, "which", lambda name: "/usr/local/bin/git")
+    monkeypatch.setattr(git_mod.sys, "platform", "linux")
+    run = MagicMock(return_value=MagicMock(returncode=0, stdout="origin\n"))
+    monkeypatch.setattr(git_mod.subprocess, "run", run)
+    assert git_mod._run_git(["remote"], Path("/tmp")) == "origin\n"
+    argv = run.call_args.args[0]
+    assert argv[:3] == ["/usr/local/bin/git", "-c", "core.fsmonitor=false"]
+    assert argv[3:] == ["remote"]

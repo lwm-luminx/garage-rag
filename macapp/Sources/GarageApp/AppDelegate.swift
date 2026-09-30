@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var _appState: AppState?
     private var isTerminating = false
     private var quitObserver: NSObjectProtocol?
+    /// The App Store build's `TipJar.finishTransactionUpdates()`, held for the life of the process.
+    private var tipTransactions: Task<Void, Never>?
 
     /// Quit Garage (⌘Q and the menu bar's Quit). AppKit refuses to terminate while a window shows a
     /// sheet ("App termination blocked by modal sheet"), and the splash is shown as one at every
@@ -54,6 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the window SwiftUI opens at launch (the Dock icon or menu bar item reopens it).
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyAppearanceArgument()
+
+        if AppVersionInfo.Distribution.current == .appStore {
+            tipTransactions = TipJar.finishTransactionUpdates()
+        }
 
         // `garage quit`: quit as the Quit menu item does, from the run loop.
         quitObserver = DistributedNotificationCenter.default().addObserver(
