@@ -1035,7 +1035,9 @@ final class PostgresService: ObservableObject {
     /// Registered models and whether each one's vector table exists. A separate statement so that a
     /// database without the registry (`004_registry.sql`) still reports its core counts.
     private static let modelRegistrySQL = """
-    SELECT slug, table_name, is_default::text, (to_regclass(format('public.%I', table_name)) IS NOT NULL)::text
+    SELECT slug, table_name, is_default::text, (to_regclass(format('public.%I', table_name)) IS NOT NULL)::text,
+           left('potential_fact_' || table_name, 63),
+           (to_regclass(format('public.%I', left('potential_fact_' || table_name, 63))) IS NOT NULL)::text
     FROM embedding_models
     ORDER BY id;
     """
@@ -1058,6 +1060,9 @@ final class PostgresService: ObservableObject {
         var modelStats: [CorpusStats.ModelEmbeddingStats] = []
         var sourceDocumentCounts: [String: Int] = [:]
         var existingModelTables: Set<String> = []
+        // A model's potential facts' vectors live beside its chunk table (017_fact_vectors.sql),
+        // keyed on the fact; their chunks are embedded when their fact has a row there.
+        var factTables: [String: String] = [:]
 
         for row in rows {
             switch row.first {
@@ -1085,8 +1090,11 @@ final class PostgresService: ObservableObject {
             if row[3] == "true" {
                 existingModelTables.insert(row[1])
             }
+            if row.count >= 6, row[5] == "true" {
+                factTables[row[1]] = row[4]
+            }
         }
-        modelStats = try await countEmbeddings(for: modelStats, existingTables: existingModelTables)
+        modelStats = try await countEmbeddings(for: modelStats, existingTables: existingModelTables, factTables: factTables)
 
         var factsCount = 0
         var documentsDistilledCount = 0
@@ -1124,15 +1132,25 @@ final class PostgresService: ObservableObject {
     /// here from names that exist and match the `emb_` pattern `db/models.py` generates.
     private func countEmbeddings(
         for models: [CorpusStats.ModelEmbeddingStats],
-        existingTables: Set<String>
+        existingTables: Set<String>,
+        factTables: [String: String] = [:]
     ) async throws -> [CorpusStats.ModelEmbeddingStats] {
         let countable = models.filter {
             existingTables.contains($0.tableName) && $0.tableName.range(of: "^emb_[a-z0-9_]+$", options: .regularExpression) != nil
         }
         guard !countable.isEmpty else { return models }
 
+        // Content chunks' vectors plus potential facts' (one per fact chunk), so a gleaned corpus
+        // reads 100% once Embed All has run.
         let sql = countable
-            .map { "SELECT '\($0.tableName)', count(*) FROM public.\"\($0.tableName)\"" }
+            .map { model -> String in
+                var parts = ["(SELECT count(*) FROM public.\"\(model.tableName)\")"]
+                if let facts = factTables[model.tableName],
+                   facts.range(of: "^potential_fact_emb_[a-z0-9_]+$", options: .regularExpression) != nil {
+                    parts.append("(SELECT count(*) FROM public.\"\(facts)\")")
+                }
+                return "SELECT '\(model.tableName)', \(parts.joined(separator: " + "))"
+            }
             .joined(separator: " UNION ALL ")
         var counts: [String: Int] = [:]
         for row in try await commandRunner().query(sql) where row.count >= 2 {
