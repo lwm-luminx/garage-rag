@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
+from garage_rag.attribute.git import git_reader
 from garage_rag.cli import app
 from garage_rag.db.models import CorpusClass, Source, TrustTier
 from garage_rag.ingest import scanner
@@ -153,7 +154,8 @@ def test_scan_git_repository(tmp_path: Path) -> None:
     assert res_no_code.item_count == 2  # README.md and untracked.md (main.py is code)
     assert res_no_code.item_type == "files"
     assert res_no_code.details.get("is_git_repo") is True
-    assert res_no_code.details.get("tracked_files") == 2
+    # The tracked-file count needs a git reader (_garage_git or pygit2); without one it is left out.
+    assert res_no_code.details.get("tracked_files") == (2 if git_reader() is not None else None)
 
     res_code = scan_git(tmp_path, source_slug="git-test", include_code=True)
     assert res_code.item_count == 3  # plus main.py

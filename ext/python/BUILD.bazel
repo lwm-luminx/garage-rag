@@ -10,6 +10,11 @@ configure_make(
     args = [
         "-e",
     ],
+    # _garage_git: garage_git.patch adds it to Modules/Setup.local as a static built-in module
+    # (libpython, so Python.framework's own binary) and passes Setup.local's libraries to the
+    # framework link. Its source is garage_git/garage_git.c, and libgit2 is linked in statically,
+    # so git history needs nothing loaded at run time. make reads these from the environment.
+    build_data = ["garage_git/garage_git.c"],
     configure_in_place = True,
     configure_options = [
         "--enable-framework=$$INSTALLDIR$$/",
@@ -28,6 +33,8 @@ configure_make(
     env = {
         "AR": "/usr/bin/ar",
         "ARFLAGS": "crs",
+        "MODULE__GARAGE_GIT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/ext/python/garage_git -I$$EXT_BUILD_DEPS$$/libgit2/include",
+        "MODULE__GARAGE_GIT_LDFLAGS": "$$EXT_BUILD_DEPS$$/libgit2/lib/libgit2.a -lz -liconv",
         "PYTHONAPPSDIR": "$$INSTALLDIR$$/",
     },
     lib_source = "@python_source//:python_source",
@@ -62,6 +69,7 @@ done
     deps = [
         "//ext:libzlib",
         "//ext:openssl",
+        "//ext/libgit2",
     ],
 )
 

@@ -18,7 +18,6 @@ import logging
 import os
 import re
 import sqlite3
-import subprocess
 import time
 import xml.etree.ElementTree as ET
 from collections.abc import Callable
@@ -27,7 +26,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from garage_rag.attribute.git import GIT_HARDENING, git_executable
+from garage_rag.attribute.git import count_tracked_files
 from garage_rag.config import (
     DEFAULT_EXCLUDE_DIRS,
     expand_home,
@@ -261,31 +260,12 @@ def scan_git(
     )
     result.kind = "git"
     if result.error is None:
-        tracked = _count_tracked_files(root)
-        result.details = {**result.details, "is_git_repo": tracked is not None}
+        tracked = count_tracked_files(root)
+        result.details = {**result.details, "is_git_repo": (root / ".git").exists()}
+        # None as well when this Python has no git reader (see garage_rag.attribute.git).
         if tracked is not None:
             result.details["tracked_files"] = tracked
     return result
-
-
-def _count_tracked_files(root: Path) -> int | None:
-    """``git ls-files`` count, or None when ``root`` is not a git work tree or git can't run."""
-    git = git_executable()
-    if git is None:
-        return None
-    try:
-        proc = subprocess.run(
-            [git, *GIT_HARDENING, "-C", str(root), "ls-files", "-z"],
-            capture_output=True,
-            check=False,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        log.debug("git ls-files failed on %s: %s", root, exc)
-        return None
-    if proc.returncode != 0:
-        return None
-    return sum(1 for entry in proc.stdout.split(b"\x00") if entry)
 
 
 # ---------------------------------------------------------------------------

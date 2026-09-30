@@ -186,10 +186,14 @@ build-tools = [
 dev = [
     { name = "faker", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "grpcio-tools", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+    { name = "pygit2", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "pytest-asyncio", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "ruff", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "tree-sitter", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
     { name = "tree-sitter-swift", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+git = [
+    { name = "pygit2", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
 ]
 
 [package.dev-dependencies]
@@ -214,6 +218,8 @@ requires-dist = [
     { name = "protobuf", specifier = ">=5.29.0" },
     { name = "psycopg", extras = ["pool"], specifier = ">=3.2" },
     { name = "pydantic", specifier = ">=2.7.4" },
+    { name = "pygit2", marker = "extra == 'dev'", specifier = ">=1.20" },
+    { name = "pygit2", marker = "extra == 'git'", specifier = ">=1.20" },
     { name = "pypdf", specifier = ">=6.16" },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
@@ -231,7 +237,7 @@ requires-dist = [
     { name = "typer", specifier = ">=0.15" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
-provides-extras = ["dev", "build-tools"]
+provides-extras = ["dev", "git", "build-tools"]
 
 [package.metadata.requires-dev]
 garage-rag = [{ name = "garage-rag", extras = ["build-tools"] }]
@@ -614,6 +620,20 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/c1/81/4fa520eaffa8bd7d1525e644cd6d39e7d60b1592bc5b516693c7340b50f1/pydantic_core-2.46.4-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:c94f0688e7b8d0a67abf40e57a7eaaecd17cc9586706a31b76c031f63df052b4", size = 1951906, upload-time = "2026-05-06T13:37:17.012Z" },
     { url = "https://files.pythonhosted.org/packages/ad/1f/8970b150a4b4365623ae00fc88603491f763c627311ae8031e3111356d6e/pydantic_core-2.46.4-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:23ace664830ee0bfe014a0c7bc248b1f7f25ed7ad103852c317624a1083af462", size = 1952179, upload-time = "2026-05-06T13:36:59.812Z" },
     { url = "https://files.pythonhosted.org/packages/fb/1b/8784a54c65edb5f49f0a14d6977cf1b209bba85a4c77445b255c2de58ab3/pydantic_core-2.46.4-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:5a4330cdbc57162e4b3aa303f588ba752257694c9c9be3e7ebb11b4aca659b5d", size = 1935226, upload-time = "2026-05-06T13:40:40.428Z" },
+]
+
+[[package]]
+name = "pygit2"
+version = "1.20.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cffi", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9c/11/592cc7854795830a7257ab6025a1fc803b58b0e7bf7d31f619bc7288ed4d/pygit2-1.20.1.tar.gz", hash = "sha256:36dff84d237f2b8f18b0b146d6e7c3f99a7bce2da98cc4103a14387f53319f95", size = 888235, upload-time = "2026-09-12T10:33:12.681Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/69/03cc1329295f144ab05bd0f4f8d1b16688e5e58e52010ac8be386809aed8/pygit2-1.20.1-cp313-cp313-macosx_11_0_arm64.whl", hash = "sha256:e60f5d8a01593d8d51c97325a7b6b5b1f644fccef1f54c1b0a6d47f11ab359c1", size = 2740977, upload-time = "2026-09-12T10:32:07.957Z" },
+    { url = "https://files.pythonhosted.org/packages/05/4b/a769e5bc68af8a4ad515b06cd7b5bc050469b7132de483d119ae0efe8242/pygit2-1.20.1-cp314-cp314-macosx_11_0_arm64.whl", hash = "sha256:6c69da2cd18366c2b9827d9a9c7ebb9dc593fea5defbbc9b7704c8a6222a7d56", size = 2740907, upload-time = "2026-09-12T10:32:27.934Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/a5/2b68dea362f47659bc6d8d6814be799305e6451236459a0b6954b9aa1944/pygit2-1.20.1-cp314-cp314t-macosx_11_0_arm64.whl", hash = "sha256:1ecb9382e94a7cc55339c7dd0024c011746a400543f61e518736012effad4fb4", size = 2744554, upload-time = "2026-09-12T10:32:47.392Z" },
 ]
 
 [[package]]

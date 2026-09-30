@@ -252,12 +252,18 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
 - **Quality gate** (`extract/quality.py`) — content-based backstop against non-prose text (repeated
   line shapes, timestamp prefixes, hex/base64 density) that path rules alone miss.
 - **Attribute** (`attribute/`) — precedence-ordered signals, each recording its `evidence`: git
-  history (`git.py`, one `git log --name-only` pass per repo, not per file) → embedded document
+  history (`git.py`, one pass over each repo's history, not one per file) → embedded document
   metadata (filtered through `looks_like_tool_name` so `python-pptx`/`openpyxl` don't self-attribute)
   → path convention (`pathrules.py`, data-driven table) → source default. A mail message is
   attributed by its sender instead of by metadata (the owner's name or address → `authored`, anyone
   else → `received`); a Messages thread records its handles as `sender`/`recipient`. See
-  `docs/attribution.md`.
+  `docs/attribution.md`. History, the origin URL and the tracked-file count are read in-process through
+  libgit2, never by running `git`: in the app through `_garage_git`, a built-in module of its Python
+  (`ext/python/garage_git/garage_git.c`, added to `Modules/Setup.local` by `ext/python/garage_git.patch`)
+  with `//ext/libgit2` (1.9, no HTTPS or SSH transport) linked statically, so nothing is loaded at run time;
+  elsewhere through pygit2 (the `git` extra), and with neither git attribution is skipped.
+  `test_git_history.py` holds both to what `git` reports; CI compiles `_garage_git` as an extension for it
+  (`tools/garage_git/build_extension.sh`).
 - **Store** — chunks are model-agnostic; see the schema section below.
 - **Distill facts** (`enrich/facts.py`, `garage enrich-facts`, `EnrichFacts` RPC) — optional
   post-ingest pass: LangExtract (only its local part, vendored as `enrich/langextract`), driven

@@ -407,6 +407,7 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag",
+        "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/ops",
@@ -598,6 +599,16 @@ py_test(
         ":conftest",
         "//garage_python/src/garage_rag/extract",
         "@pypi//pillow",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_git_history",
+    srcs = ["test_git_history.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/attribute",
         "@pypi//pytest",
     ],
 )
