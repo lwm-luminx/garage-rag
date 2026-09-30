@@ -50,7 +50,16 @@ service GarageService {
 
     // --- Facts ---
     rpc EnrichFacts (EnrichFactsRequest) returns (stream EnrichFactsStatus);
+    rpc ClusterFacts (ClusterFactsRequest) returns (stream ClusterFactsStatus);
     rpc ListFactPrompts (ListFactPromptsRequest) returns (ListFactPromptsResponse);
+
+    // --- Graph (Apache AGE; every reply says `available` where the server has none) ---
+    // The graph's vertex and edge labels, with counts: the Graph page's filters.
+    rpc GetGraphLabels (GraphLabelsRequest) returns (GraphLabelsResponse);
+    // Vertices by title text or relational id, to pick where a walk starts.
+    rpc FindGraphVertices (FindGraphVerticesRequest) returns (FindGraphVerticesResponse);
+    // Everything within a few hops of one vertex, under label filters.
+    rpc GetGraphNeighborhood (GraphNeighborhoodRequest) returns (GraphNeighborhoodResponse);
 
     // --- Schema, Stats & Settings ---
     rpc GetStats (StatsRequest) returns (StatsResponse);
@@ -265,6 +274,19 @@ message FactSummary {
     string excerpt = 16;
     // Where the excerpt starts in documents.content, to place the span in it.
     int32 excerpt_start = 17;
+    // The distilled fact this potential fact backs (garage cluster-facts); 0
+    // when none yet. distilled_size counts the potential facts behind it, and
+    // distilled_generated says the local model wrote its statement (so it is
+    // not a quotation).
+    int64 distilled_fact_id = 18;
+    int32 distilled_size = 19;
+    string distilled_statement = 20;
+    bool distilled_generated = 21;
+    // How varied the distilled fact's group is: the mean cosine distance of its
+    // members to their centroid (0 for a fact standing alone).
+    double distilled_spread = 22;
+    // The fact of the same document this one restates; 0 when it restates none.
+    int64 restates_fact_id = 23;
 }
 
 message FactClassCount {
@@ -280,6 +302,8 @@ message ListFactsRequest {
     int64 document_id = 5; // one document's facts; 0 = all
     int32 limit = 6;
     int32 offset = 7;
+    bool collapse = 8; // list the potential facts behind one distilled fact once
+    int64 distilled_fact_id = 9; // only the potential facts behind this distilled fact; 0 = all
 }
 
 message ListFactsResponse {
@@ -305,6 +329,77 @@ message FactStatsResponse {
     map<string, int64> facts_by_source = 3;
     map<string, int64> facts_by_class = 4;
     string formatted_output = 5;
+    int64 distilled = 6;        // distilled facts behind the matching potential facts
+    int64 clusters = 7;         // of those, the ones behind more than one
+    int64 clustered_facts = 8;  // and how many potential facts they group
+}
+
+// ---------------------------------------------------------------------------
+// Graph
+// ---------------------------------------------------------------------------
+
+// One vertex of the `garage` graph (garage_rag.db.graph).
+message GraphVertex {
+    int64 id = 1;              // the graph id, unique across labels; what edges refer to
+    string label = 2;          // Document, Chunk, Author, PotentialFact, Fact, ...
+    int64 key = 3;             // the relational id (documents.id, facts.id, ...); 0 for a label without one
+    string title = 4;          // what to call it on screen: the title, name, fact or statement
+    string properties_json = 5; // every property, as a JSON object
+}
+
+// One edge between two vertices' graph ids.
+message GraphEdge {
+    int64 id = 1;
+    string label = 2;          // HAS_CHUNK, WROTE, RECEIVED, STATES, SUPPORTS, ...
+    int64 source_id = 3;
+    int64 target_id = 4;
+    string properties_json = 5;
+}
+
+message GraphLabelCount {
+    string label = 1;
+    int64 count = 2;
+}
+
+message GraphLabelsRequest {}
+
+message GraphLabelsResponse {
+    bool available = 1;        // false where the server has no AGE or the graph is not built yet
+    repeated GraphLabelCount vertex_labels = 2;
+    repeated GraphLabelCount edge_labels = 3;
+}
+
+message FindGraphVerticesRequest {
+    string query = 1;          // matched case-insensitively against titles, and as a relational id when numeric; empty = the first vertices
+    string label = 2;          // one label; empty = every label with a title
+    int32 limit = 3;           // default 50
+}
+
+message FindGraphVerticesResponse {
+    bool available = 1;
+    repeated GraphVertex vertices = 2;
+}
+
+message GraphNeighborhoodRequest {
+    // The center, by graph id, or else by label and relational id (Document + documents.id, PotentialFact + facts.id, ...).
+    int64 vertex_id = 1;
+    string label = 2;
+    int64 key = 3;
+    int32 depth = 4;                    // hops out from the center; default 1, at most 6
+    repeated string vertex_labels = 5;  // keep only these labels; empty = all (see all_vertex_labels)
+    repeated string edge_labels = 6;    // keep only these labels; empty = all (see all_edge_labels)
+    // Since an empty list means no filter, these say an empty list was meant literally.
+    bool filter_vertex_labels = 7;
+    bool filter_edge_labels = 8;
+    int32 limit = 9;                    // stop at this many vertices; default 200
+}
+
+message GraphNeighborhoodResponse {
+    bool available = 1;
+    GraphVertex center = 2;
+    repeated GraphVertex vertices = 3;  // the center included
+    repeated GraphEdge edges = 4;       // both ends are in vertices
+    bool truncated = 5;                 // the limit cut the walk short
 }
 
 // ---------------------------------------------------------------------------
@@ -578,6 +673,44 @@ message EnrichFactsStatus {
     string message = 12;
     int64 skipped = 13;            // finished: documents no prompt ran on; document: 1 when skipped
     repeated string prompts = 14;  // document: the prompts that ran on it; finished: the prompts selected
+}
+
+// garage cluster-facts: link every potential fact to a distilled fact.
+message ClusterFactsRequest {
+    string model = 1;       // embedding model whose vectors are compared; empty = the default model
+    double threshold = 2;   // cosine similarity a pair must reach; 0 = facts.cluster_threshold
+    int32 neighbors = 3;    // nearest neighbours per fact; 0 = facts.cluster_neighbors
+    bool no_distill = 4;    // do not ask the local chat model; groups are stated by a member's text
+    bool no_graph = 5;      // do not rebuild the AGE graph afterwards
+    bool full = 6;          // regroup the corpus, not only what is new (a changed model or setting does too)
+}
+
+// phase is documents | neighbors | grow | attach | distill (progress) | finished (the totals).
+message ClusterFactsStatus {
+    string phase = 1;
+    int64 facts = 2;            // potential facts
+    int64 unembedded = 3;       // potential facts with no vector under the model yet
+    int64 scanned = 4;          // neighbors: facts whose neighbours were fetched
+    int64 to_distill = 5;       // distill: new groups to put to the model
+    int64 distilled = 6;        // distill: groups asked so far
+    int64 distilled_facts = 7;  // finished: every distilled fact
+    int64 clusters = 8;         // finished: distilled facts behind more than one potential fact
+    int64 clustered_facts = 9;  // finished: the potential facts those group
+    int64 dissolved = 10;       // groups the model said do not state one claim
+    int64 failed = 11;          // groups the model could not be asked about
+    int64 withheld = 12;        // groups with communications, not sent to an off-box model
+    string model = 13;
+    string distill_model = 14;
+    string graph = 15;          // finished: the AGE projection, empty where the server has no AGE
+    repeated string errors = 16;
+    string message = 17;
+    bool full = 18;             // the corpus was regrouped rather than new facts placed
+    int64 documents = 19;       // documents whose facts were compared with each other
+    int64 restatements = 20;    // potential facts restating another of their own document
+    int64 nodes = 21;           // representatives placed (incremental) or grouped (full)
+    int64 attached = 22;        // new facts that joined a distilled fact
+    int64 accepted = 23;        // groups tight enough to keep without asking the model
+    int64 candidates = 24;      // grow: groups grown so far
 }
 
 message ListFactPromptsRequest {}

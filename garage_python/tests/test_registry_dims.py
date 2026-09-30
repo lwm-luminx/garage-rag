@@ -266,8 +266,11 @@ class TestSearchBindType:
         # Stage two orders the prefetched rows on exact cosine.
         assert "ORDER BY b.embedding <=> :qv" in sql
         # Filters apply during the index scan, not after the prefetch.
-        prefetch = sql[sql.index("vec_bq AS") : sql.index("vec AS")]
-        assert "WHERE" in prefetch
+        # Each table (content chunks, potential facts) is prefetched on its own index.
+        for cte, nxt in (("vec_bq_chunks AS", "vec_bq_facts AS"), ("vec_bq_facts AS", "vec AS")):
+            prefetch = sql[sql.index(cte) : sql.index(nxt)]
+            assert "WHERE" in prefetch
+            assert "binary_quantize(e.embedding)::bit(4096)" in prefetch
 
     def test_hnsw_model_orders_on_cosine_directly(self) -> None:
         session, _ = self._run(_model_row(dims=1024, stored_dims=1024, storage_kind="vector"), mode="vector")

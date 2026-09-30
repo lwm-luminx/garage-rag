@@ -167,6 +167,69 @@ leaves every other prompt's alone.
 | `prompt_name` | the `facts.prompts` entry that produced the fact; `'default'` (the built-in prompt) for facts from before 013 |
 | `prompt_sha256` | SHA-256 of that prompt's description and examples when it ran; NULL before 013 |
 | `tsv` | generated `to_tsvector('english', fact)`, GIN-indexed — the keyword half of hybrid search over facts |
+| `distilled_fact_id` | the distilled fact this *potential* fact backs (`015_distilled_facts.sql`), `ON DELETE SET NULL`; NULL until `garage cluster-facts` runs |
+| `distilled_similarity` | the fact's cosine similarity to its group's centroid (a restatement: to its representative); NULL when it stands alone |
+| `restates_fact_id` | the fact of the same document this one restates (`016_fact_dedup.sql`), `ON DELETE SET NULL`; NULL for a representative |
+| `restates_similarity` | cosine similarity to that representative, 1 for the same normalized text |
+| `dedup_key` | the model and `facts.cluster_restate_threshold` the document's restatement pass ran with; NULL until the fact has a vector |
+
+These rows are *potential* facts: what one prompt extracted from one document.
+The same claim is often extracted many times, so `garage cluster-facts` links
+each to one distilled fact (below).
+
+### `distilled_facts`
+
+The distinct claims of the corpus (`015_distilled_facts.sql`, `016_fact_dedup.sql`),
+each backed by the potential facts that state it (`facts.distilled_fact_id`).
+`garage cluster-facts` builds them in two levels (`enrich/clusters.py`):
+
+- Within each document, restatements point at the document's representative of
+  the claim (`facts.restates_fact_id`) and back whatever it backs.
+- Across the corpus, representatives (the *nodes*) are grouped by growing each
+  group from a tight seed under the default model, stopping at the first
+  neighbour too far from the centroid (`facts.cluster_threshold`) or pulling
+  the centroid too far from the seed (`facts.cluster_max_drift`).
+- A group whose members differ in numbers, dates or negation is never formed.
+- A loose group is shown to the local chat model, which confirms it and states
+  its claim once; a tight one (`facts.cluster_tight_similarity`) is kept as is.
+
+A node nothing restates gets a distilled fact of its own. Potential facts are
+never changed. A re-run places only new facts unless it is `--full` or a
+grouping setting changed, and a full run keeps each row whose nodes are
+unchanged, with its id, statement and vectors.
+
+| Column | Purpose |
+|---|---|
+| `statement` | the claim: the local model's sentence, or the text of `representative_fact_id` |
+| `statement_generated` | true when the model wrote `statement`, which is then not a quotation |
+| `representative_fact_id` | the longest member; its text is the statement when the model wrote none; `ON DELETE SET NULL` |
+| `members_sha256` | SHA-256 over the sorted member ids, which is how a re-run recognizes an unchanged group |
+| `model_slug` / `threshold` | the embedding model and cosine threshold that grouped the members; NULL for a fact standing alone |
+| `distill_model` | the chat model asked, when one was |
+| `nodes` | representatives behind it (restatements not counted) |
+| `spread` / `radius` | mean and largest cosine distance of its nodes to its centroid |
+| `drift` | cosine distance of its centroid from its seed (the centroid of the core it grew from) |
+| `anchor_key` | for an anchored distilled fact, the metadata value's exact key (`author:<id>`, `email:<address>`, `subject:<normalized>`; `018_fact_anchors.sql`); unique per `fact_class` |
+| `tsv` | generated `to_tsvector('english', statement)`, GIN-indexed |
+
+A mail's sender, recipients and subject and a Messages thread's participants are
+written as potential facts with no model (`facts.extractor = 'metadata'`,
+`prompt_name = 'metadata'`, the key in `attributes->>'key'`). Each distinct value
+is one anchored distilled fact: its metadata facts link to it by the key, and its
+centroid is its representative's vector, fixed. Inferred facts of the same class
+join it when close enough without moving it.
+
+Each embedding model has a `fact_emb_<slug>` table of distilled-fact vectors
+beside its `emb_<slug>` table, keyed on `distilled_fact_id` (`ON DELETE CASCADE`).
+It is created and dropped with the model, not by a migration, because its width
+is the model's. Under the clustering model, `cluster-facts` writes each row: the
+normalized centroid of its nodes, and in `seed` the seed it grew from (a single
+fact's own vector for both), which later facts are attached against. Under every
+other model the backfill writes the normalized mean of the nodes' vectors, once
+each node has one; nothing is embedded for distilled facts.
+
+`fact_cluster_state` holds the one row saying which model and grouping settings
+the last corpus pass ran with; a difference makes the next run a full one.
 
 ### `fact_runs`
 
@@ -223,6 +286,23 @@ CREATE TABLE emb_<slug> (
 `chunk_id` as both primary key and cascading foreign key is the load-bearing
 detail: deleting a chunk removes its vectors from *every* model table at once,
 so stale vectors cannot outlive the text they came from.
+
+Each model has two more tables of the same shape, each with its own vector
+index built the same way:
+
+- `potential_fact_emb_<slug>`, keyed on `fact_id` (`REFERENCES facts ON DELETE
+  CASCADE`), holds the potential facts' vectors. A fact's text is embedded
+  through its chunk (`chunks.fact_id`) like any other, but the backfill stores
+  the vector here rather than in `emb_<slug>`, so fact-to-fact neighbour queries
+  (`cluster-facts`) walk an index of facts only and passage search an index of
+  passages only. Vector search takes its nearest neighbours from both tables
+  and ranks them together. `017_fact_vectors.sql` created these for models
+  registered earlier, copying the chunk table's index, and moved their fact
+  vectors across.
+- `fact_emb_<slug>`, keyed on `distilled_fact_id`, holds the distilled facts'
+  vectors (see [`distilled_facts`](#distilled_facts)).
+
+Names longer than Postgres's 63-byte identifier limit are cut to it.
 
 #### Storage selection
 

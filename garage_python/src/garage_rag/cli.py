@@ -882,6 +882,171 @@ def enrich_facts(
     console.print(line + f" (prompts: {', '.join(summary.prompts)})")
 
 
+@app.command(name="cluster-facts")
+def cluster_facts(
+    model: Annotated[
+        str | None,
+        typer.Option("--model", "-m", help="Embedding model whose vectors are compared. Default: the default model."),
+    ] = None,
+    threshold: Annotated[
+        float | None,
+        typer.Option(
+            "--threshold", help="Cosine similarity a pair must reach. Default: facts.cluster_threshold (0.9)."
+        ),
+    ] = None,
+    neighbors: Annotated[
+        int | None,
+        typer.Option("--neighbors", help="Nearest neighbours fetched per fact. Default: facts.cluster_neighbors."),
+    ] = None,
+    distill: Annotated[
+        bool,
+        typer.Option(
+            "--distill/--no-distill",
+            help="Ask the local chat model to confirm each group and state its claim once.",
+        ),
+    ] = True,
+    graph: Annotated[
+        bool, typer.Option("--graph/--no-graph", help="Rebuild the AGE graph afterwards, where the server has AGE.")
+    ] = True,
+    full: Annotated[
+        bool,
+        typer.Option(
+            "--full",
+            help="Regroup the whole corpus instead of placing only new facts (a changed model or setting does too).",
+        ),
+    ] = False,
+) -> None:
+    """Distill the potential facts into distinct claims, in two levels: restatements within each document,
+    then groups across the corpus, each confirmed and stated once by the local model.
+
+    Every potential fact is linked to one distilled fact; the potential facts themselves are never changed.
+    A run places only what is new since the last one unless --full. Facts need vectors first (garage
+    backfill); 'garage backfill' then gives the distilled facts vectors under the other models.
+    """
+    from garage_rag.enrich.clusters import ClusterProgress
+    from garage_rag.ops.facts import cluster_facts as run_clusters
+
+    status = console.status("comparing each document's facts...")
+    status.start()
+
+    def on_progress(state: ClusterProgress) -> None:
+        if state.message:
+            status.update(state.message)
+
+    try:
+        summary = run_clusters(
+            model=model,
+            threshold=threshold,
+            neighbors=neighbors,
+            distill=distill,
+            graph=graph,
+            full=full,
+            on_progress=on_progress,
+        )
+    except (LookupError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    finally:
+        status.stop()
+
+    via = f" via [cyan]{summary.distill_model}[/cyan]" if summary.distill_model else ""
+    console.print(f"[cyan]{summary.model}[/cyan] at {summary.threshold:g}{via}: {summary.message}")
+    for error in summary.errors:
+        console.print(f"  [red]{error}[/red]")
+    if summary.graph:
+        console.print(summary.graph)
+
+
+graph_app = typer.Typer(help="The corpus as an Apache AGE graph (where the server has AGE).", no_args_is_help=True)
+app.add_typer(graph_app, name="graph")
+
+
+@graph_app.command("rebuild")
+def graph_rebuild() -> None:
+    """Re-project documents, chunks, authors, potential facts and distilled facts into the 'garage' graph."""
+    from garage_rag.ops.graph import rebuild_graph
+
+    summary = rebuild_graph()
+    if not summary.available:
+        console.print(f"[yellow]{summary.message}[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(summary.message)
+
+
+@graph_app.command("labels")
+def graph_labels_command() -> None:
+    """Count the graph's vertices and edges by label."""
+    from garage_rag.ops.graph import graph_labels
+
+    labels = graph_labels()
+    if not labels.available:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    for name, count in labels.vertices.items():
+        console.print(f"({name}) {count:,}")
+    for name, count in labels.edges.items():
+        console.print(f"-[{name}]- {count:,}")
+
+
+@graph_app.command("find")
+def graph_find(
+    query: Annotated[str, typer.Argument(help="Text of a title, name, fact or statement, or a relational id.")],
+    label: Annotated[str, typer.Option("--label", "-l", help="One vertex label (Document, Author, Fact, ...).")] = "",
+    limit: Annotated[int, typer.Option("--limit", "-n")] = 20,
+) -> None:
+    """Find vertices to start a walk from."""
+    from garage_rag.ops.graph import find_vertices
+
+    for vertex in find_vertices(query, label=label, limit=limit):
+        console.print(f"[cyan]{vertex.id}[/cyan] ({vertex.label} {vertex.key}) {vertex.title}")
+
+
+@graph_app.command("neighbors")
+def graph_neighbors(
+    vertex: Annotated[
+        str, typer.Argument(help="A graph id from `garage graph find`, or LABEL:ID with a relational id (Document:12).")
+    ],
+    depth: Annotated[int, typer.Option("--depth", "-d", help="Hops out from the vertex, at most 6.")] = 1,
+    vertex_labels: Annotated[
+        list[str] | None, typer.Option("--vertex", "-v", help="Keep only these vertex labels (repeatable).")
+    ] = None,
+    edge_labels: Annotated[
+        list[str] | None, typer.Option("--edge", "-e", help="Keep only these edge labels (repeatable).")
+    ] = None,
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Stop at this many vertices.")] = 200,
+) -> None:
+    """Walk out from one vertex and list what it is connected to."""
+    from garage_rag.ops.graph import neighborhood
+
+    label, _, key = vertex.partition(":")
+    try:
+        if key:
+            result = neighborhood(
+                label=label,
+                key=int(key),
+                depth=depth,
+                vertex_labels=vertex_labels,
+                edge_labels=edge_labels,
+                limit=limit,
+            )
+        else:
+            result = neighborhood(
+                vertex_id=int(vertex), depth=depth, vertex_labels=vertex_labels, edge_labels=edge_labels, limit=limit
+            )
+    except (LookupError, ValueError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    if not result.available or result.center is None:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    titles = {v.id: f"({v.label} {v.key}) {v.title}" for v in result.vertices}
+    console.print(f"[bold]{titles[result.center.id]}[/bold]")
+    for edge in result.edges:
+        console.print(f"  {titles[edge.source_id]} -[{edge.label}]-> {titles[edge.target_id]}")
+    note = f"{len(result.vertices):,} vertices, {len(result.edges):,} edges"
+    console.print(f"[dim]{note}{', cut at the limit' if result.truncated else ''}[/dim]")
+
+
 # ---------------------------------------------------------------------------
 # fact prompts
 # ---------------------------------------------------------------------------
@@ -988,6 +1153,12 @@ def facts_list(
     limit: Annotated[int, typer.Option(help="Facts per page.")] = 50,
     offset: Annotated[int, typer.Option(help="Facts to skip.")] = 0,
     evidence: Annotated[bool, typer.Option("--evidence", help="Show the grounded text under each fact.")] = False,
+    collapse: Annotated[
+        bool, typer.Option("--collapse", help="List restatements of one claim once (garage cluster-facts).")
+    ] = False,
+    distilled: Annotated[
+        int | None, typer.Option("--distilled", help="Only the potential facts behind this distilled fact.")
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Output as JSON.")] = False,
 ) -> None:
     """List distilled facts, newest first (best match first with --query), with the document each came from."""
@@ -1006,6 +1177,8 @@ def facts_list(
                 document_id=document_id,
                 limit=limit,
                 offset=offset,
+                collapse=collapse,
+                distilled_fact_id=distilled,
             )
     except ValueError as exc:
         console.print(f"[red]{exc}[/red]")
@@ -1034,6 +1207,10 @@ def facts_list(
         grounded = _fact_evidence(f) if evidence else ""
         if grounded:
             text += f"\n[dim]“{grounded}”[/dim]"
+        if f.distilled_size > 1:
+            text += (
+                f"\n[cyan]distilled {f.distilled_fact_id} ({f.distilled_size} facts): {f.distilled_statement}[/cyan]"
+            )
         table.add_row(str(f.id), f.fact_class, text, f.document_title or f.document_uri, f.source_slug)
     console.print(table)
 

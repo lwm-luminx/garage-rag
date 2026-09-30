@@ -10,6 +10,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case mcp = "MCP Server"
     case documents = "Documents"
     case facts = "Facts"
+    case graph = "Graph"
     case search = "Search"
     case database = "Database"
     case logs = "Logs"
@@ -23,6 +24,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .sources: "tray.and.arrow.down"
         case .documents: "doc.text.magnifyingglass"
         case .facts: "lightbulb"
+        case .graph: "point.3.connected.trianglepath.dotted"
         case .models: "cpu"
         case .mcp: "server.rack"
         case .search: "magnifyingglass"
@@ -49,7 +51,7 @@ enum SidebarGroup: String, CaseIterable, Identifiable {
     var sections: [AppSection] {
         switch self {
         case .configuration: [.sources, .models, .mcp]
-        case .data: [.documents, .facts, .search]
+        case .data: [.documents, .facts, .graph, .search]
         case .advanced: [.database, .logs]
         }
     }
@@ -75,6 +77,8 @@ struct ContentView: View {
     @State private var selection: AppSection? = .status
     /// A document another page asked the Documents page to show.
     @State private var documentFocus: DocumentFocus?
+    /// A vertex another page asked the Graph page to center on.
+    @State private var graphFocus: GraphFocus?
     @State private var activeSheet: ActiveSheet?
     @State private var pendingPresentation: Task<Void, Never>?
     @AppStorage(SplashPreferences.showAtLaunchKey) private var showSplashAtLaunch = true
@@ -198,9 +202,21 @@ struct ContentView: View {
             case .status: StatusView(selection: $selection)
             case .database: DatabaseView()
             case .sources: SourcesView()
-            case .documents: DocumentsView(focus: $documentFocus)
+            case .documents:
+                DocumentsView(focus: $documentFocus, openGraph: { focus in
+                    graphFocus = focus
+                    selection = .graph
+                })
             case .facts:
                 FactsView(openDocument: { focus in
+                    documentFocus = focus
+                    selection = .documents
+                }, openGraph: { focus in
+                    graphFocus = focus
+                    selection = .graph
+                })
+            case .graph:
+                GraphView(focus: $graphFocus, openDocument: { focus in
                     documentFocus = focus
                     selection = .documents
                 })

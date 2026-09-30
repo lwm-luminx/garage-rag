@@ -27,6 +27,7 @@ from garage_rag.ops.sources import AddSourceResult, RemoveSourceResult, ScanEven
 from garage_rag.proto.garage_pb2 import (
     AddSourceRequest,
     BackfillRequest,
+    ClusterFactsRequest,
     EnrichFactsRequest,
     McpInstallRequest,
     McpUninstallRequest,
@@ -261,6 +262,61 @@ class TestStreaming:
         with patch("garage_rag.ops.facts.enrich_facts", side_effect=fake):
             list(client.enrich_facts(EnrichFactsRequest()))
         assert received["prompts"] is None and received["stale_only"] is False
+
+    def test_cluster_facts_streams_progress_and_the_totals(self, client: GarageClient) -> None:
+        from garage_rag.enrich.clusters import ClusterProgress
+        from garage_rag.ops.facts import ClusterSummary
+
+        received: dict = {}
+
+        def fake(*, model, threshold, neighbors, distill, graph, full, on_progress):
+            received.update(
+                model=model, threshold=threshold, neighbors=neighbors, distill=distill, graph=graph, full=full
+            )
+            on_progress(ClusterProgress(phase="documents", facts=10, documents=4))
+            on_progress(ClusterProgress(phase="attach", facts=10, nodes=8, scanned=8, attached=2))
+            on_progress(ClusterProgress(phase="distill", facts=10, to_distill=3, distilled=1))
+            on_progress(ClusterProgress(phase="done"))
+            return ClusterSummary(
+                model="bge-m3",
+                threshold=0.9,
+                distill_model="llama_xpc/gemma",
+                facts=10,
+                unembedded=2,
+                distilled_facts=7,
+                clusters=2,
+                clustered_facts=5,
+                kept=0,
+                dissolved=1,
+                failed=0,
+                withheld=0,
+                graph="graph 'garage': 1 Document",
+                restatements=3,
+                nodes=8,
+                attached=2,
+                accepted=1,
+            )
+
+        with patch("garage_rag.ops.facts.cluster_facts", side_effect=fake):
+            statuses = list(client.cluster_facts(ClusterFactsRequest(threshold=0.85, no_graph=True)))
+        assert received == {
+            "model": None,
+            "threshold": 0.85,
+            "neighbors": None,
+            "distill": True,
+            "graph": False,
+            "full": False,
+        }
+        assert [s.phase for s in statuses] == ["documents", "attach", "distill", "finished"]
+        assert statuses[0].message == "comparing each document's facts: 4 documents"
+        assert statuses[1].message == "placing new facts: 8/8"
+        assert statuses[2].message == "asking the model about group 1"
+        final = statuses[-1]
+        assert (final.distilled_facts, final.clusters, final.clustered_facts, final.dissolved) == (7, 2, 5, 1)
+        assert (final.restatements, final.nodes, final.attached, final.accepted) == (3, 8, 2, 1)
+        assert final.graph == "graph 'garage': 1 Document"
+        assert final.message.startswith("10 potential facts distilled into 7")
+        assert "2 of 8 new facts joined a distilled fact" in final.message
 
     def test_backfill_streams_over_a_real_channel(self) -> None:
         stop = threading.Event()

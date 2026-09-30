@@ -273,6 +273,33 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   backfill embeds facts under every model with no fact-specific path. The prompts are
   configurable (`facts.prompts`, more than one). Schema in `data/sql/006_facts.sql` /
   `007_chunk_fact_link.sql` / `013_fact_prompts.sql`.
+- **Distilled facts** (`enrich/clusters.py`, `garage cluster-facts`, `ClusterFacts` RPC) — those
+  facts are *potential* facts. The pass links each one to a `distilled_facts` row
+  (`facts.distilled_fact_id`, `015_distilled_facts.sql`, `016_fact_dedup.sql`) in two levels:
+  - Per document, restatements point at a representative (`facts.restates_fact_id`).
+  - Across the corpus, representatives are grouped by growing each group from a tight seed until a
+    neighbour is too far from the centroid or pulls it too far from the seed; groups record
+    `spread`/`radius`/`drift`. Incremental runs attach new facts to stored centroids; `--full` (or
+    a changed `facts.cluster_*` grouping setting) regroups, keeping rows whose members are unchanged.
+  - Metadata is ground truth: `enrich-facts` writes a mail's sender/recipients/subject and a thread's
+    participants as facts with no model (`enrich/metadata.py`, `extractor = 'metadata'`). Each distinct
+    value is an anchored distilled fact (`anchor_key`, `018_fact_anchors.sql`) with a fixed centroid;
+    inferred facts of its class join it first, without moving it.
+  - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
+    loose group and states it once; a tight one is kept as is.
+  - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
+    clustering model's centroid and `seed`, and under other models the mean the backfill writes.
+  - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
+    PotentialFact and Fact vertices into the graph `garage`. A prompt's `graph` block
+    (`facts.prompts[].graph`) adds vertex labels per class and edges from relation classes, so new
+    vertex and edge types are config (`graph_schema`, `projection`). The same module reads it back
+    over AGE's label tables with bound parameters, never Cypher built from input: labels with counts,
+    a title search and a breadth-first neighbourhood walk with label filters (`GetGraphLabels`,
+    `FindGraphVertices`, `GetGraphNeighborhood`; `garage graph labels|find|neighbors`). Labels come
+    from the catalog, so a configured label needs no change there, and its vertices are searched by
+    their `title` property. The app's Graph page (`Views/GraphView.swift`, radial layout in
+    `GraphLayout.swift`) draws one vertex's neighbourhood; the Facts and Documents pages link into it
+    with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model
@@ -332,7 +359,9 @@ Embeddings live one table per model (`emb_<slug>`, e.g. `emb_bge_m3`) rather tha
 because different models have different vector widths and pgvector can't share a column across
 them. `chunk_id` is both primary key and `ON DELETE CASCADE` FK back to `chunks`, so deleting a
 chunk removes its vectors from every model table atomically — re-indexing onto a new model is a
-backfill, not a re-ingest. Storage type is selected by dimension against pgvector 0.8 HNSW ceilings
+backfill, not a re-ingest. Potential facts' vectors sit beside it in `potential_fact_emb_<slug>`
+(keyed on `fact_id`, `017_fact_vectors.sql`; the backfill routes a fact chunk's vector there), so
+facts and passages each have their own index; search's vector side unions the two. Storage type is selected by dimension against pgvector 0.8 HNSW ceilings
 (`vector` ≤2000 dims, `halfvec` ≤4000, binary-quantized beyond that for non-MRL models). Full
 reference: `docs/schema.md`.
 
@@ -501,7 +530,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   goes through the same `AppState.addSource` / `registerModel` / `setFactsModel` operations and
   `GarageMCPService` registration as the Sources, Models and MCP pages.
 - The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
-  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Search) and Advanced
+  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Graph, Search) and Advanced
   (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.
@@ -534,6 +563,11 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
 - Python 3.14 (hermetic toolchain via Bazel; `garage_python/pyproject.toml` pins
   `>=3.13,<3.15`). Ruff for lint/format (`E,F,I,UP,B,SIM`, 120-col lines); `ty` for type checking.
   Generated protobuf files (`*_pb2.py`, `*_pb2_grpc.py`, `*_pb2.pyi`) are excluded from both.
+- After editing `proto/garage.proto`, regenerate the checked-in Python stubs from the venv:
+  `python -m grpc_tools.protoc -I ../proto --python_out=src/garage_rag/proto --grpc_python_out=src/garage_rag/proto ../proto/garage.proto`
+  (in `garage_python/`). Then restore the `try: from . import garage_pb2` relative import in
+  `garage_pb2_grpc.py` and keep its `GRPC_GENERATED_VERSION` at the `grpcio` version in `uv.lock`
+  (the generated check refuses an older runtime). The Swift stubs are built by Bazel from the proto.
 - `filterwarnings = ["error::DeprecationWarning"]` in pytest config — deprecation warnings fail
   tests, don't silently accumulate them.
 - The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and

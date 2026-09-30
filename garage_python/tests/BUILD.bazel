@@ -237,12 +237,35 @@ py_test(
 )
 
 py_test(
+    name = "test_graph",
+    srcs = ["test_graph.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/db",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_grpc_documents",
     srcs = ["test_grpc_documents.py"],
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/ops",
+        "//garage_python/src/garage_rag/proto",
+        "//garage_python/src/garage_rag/service",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_grpc_graph",
+    srcs = ["test_grpc_graph.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/proto",
         "//garage_python/src/garage_rag/service",
         "@pypi//grpcio",
@@ -259,6 +282,7 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/ops",
         "//garage_python/src/garage_rag/proto",
@@ -477,6 +501,7 @@ py_test(
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/embed",
+        "//garage_python/src/garage_rag/enrich",
         "//garage_python/src/garage_rag/enrich/langextract",
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/ops",
@@ -656,6 +681,28 @@ py_test(
 )
 
 py_test(
+    name = "test_metadata_facts",
+    srcs = ["test_metadata_facts.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/enrich",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_graph_schema",
+    srcs = ["test_graph_schema.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_messages",
     srcs = ["test_messages.py"],
     deps = [
@@ -759,6 +806,17 @@ py_test(
         "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
+    ],
+)
+
+py_test(
+    name = "test_fact_clusters",
+    srcs = ["test_fact_clusters.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
+        "@pypi//pytest",
     ],
 )
 

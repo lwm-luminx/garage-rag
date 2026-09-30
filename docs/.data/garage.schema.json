@@ -282,6 +282,18 @@
                 "description": "Set false to stop running this prompt.",
                 "title": "Enabled",
                 "type": "boolean"
+              },
+              "graph": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FactGraph"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "description": "How this prompt's classes appear in the graph: vertices of their own label, or edges between other classes. Left out: its facts are PotentialFact and Fact vertices only."
               }
             },
             "required": [
@@ -292,6 +304,61 @@
           },
           "description": "Fact-extraction prompts for 'garage enrich-facts', each a name, a description (the instructions), few-shot examples and an optional scope. Merged by name with the built-in 'default' prompt: an entry named 'default' overrides it (fields left out keep the built-in's; enabled false turns it off), and any other entry is added. Every enabled prompt that applies to a document runs; 'garage facts prompts list' shows the result.",
           "default": []
+        },
+        "cluster_threshold": {
+          "type": "number",
+          "description": "Cosine similarity two facts' vectors must reach, under the default embedding model, for 'garage cluster-facts' to consider them the same claim. Paraphrases of a short sentence sit around 0.9 and up on the bge/nomic family; raise it if unrelated facts are grouped, lower it if restatements are missed.",
+          "default": 0.9
+        },
+        "cluster_restate_threshold": {
+          "type": "number",
+          "description": "Cosine similarity two facts of one document must reach for 'garage cluster-facts' to treat one as a restatement of the other. No model confirms these, so it is a little stricter than cluster_threshold; facts with the same text always count.",
+          "default": 0.92
+        },
+        "cluster_neighbors": {
+          "type": "integer",
+          "description": "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for restatements of it. More finds larger groups at the cost of a slower run.",
+          "default": 10
+        },
+        "cluster_seed_threshold": {
+          "type": "number",
+          "description": "Cosine similarity a fact's neighbours must reach to form the core a group grows from in 'garage cluster-facts --full'. The core's centroid is the group's seed, which its centroid may not drift far from. At least cluster_threshold.",
+          "default": 0.95
+        },
+        "cluster_max_drift": {
+          "type": "number",
+          "description": "Cosine distance a group's centroid may move from its seed as 'garage cluster-facts' adds facts to it. Smaller keeps a group to one claim when similar ones sit close by; larger lets loosely worded restatements join.",
+          "default": 0.05
+        },
+        "cluster_tight_similarity": {
+          "type": "number",
+          "description": "Cosine similarity every pair of a group's facts must reach, as judged by its farthest fact from the centroid, for 'garage cluster-facts' to keep the group without asking the local chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks the model about every group.",
+          "default": 0.97
+        },
+        "cluster_growth_neighbors": {
+          "type": "integer",
+          "description": "Nearest facts 'garage cluster-facts --full' fetches around a growing group's centroid in each round. A group cannot gain more than this many facts in one round.",
+          "default": 50
+        },
+        "cluster_growth_rounds": {
+          "type": "integer",
+          "description": "Times 'garage cluster-facts --full' re-centres a growing group and looks again before it stops; growth usually settles in two or three.",
+          "default": 4
+        },
+        "cluster_attach_candidates": {
+          "type": "integer",
+          "description": "Nearest distilled facts 'garage cluster-facts' tries for each new fact before it gives the fact a distilled fact of its own.",
+          "default": 5
+        },
+        "cluster_distill_facts": {
+          "type": "integer",
+          "description": "Facts of one group shown to the local chat model when it is asked to confirm the group (those nearest the group's centroid). More costs a longer prompt.",
+          "default": 20
+        },
+        "cluster_max_pairwise": {
+          "type": "integer",
+          "description": "Largest set of one document's facts 'garage cluster-facts' compares pair by pair. A larger set is grouped from its closest pairs alone, which can only keep facts apart.",
+          "default": 300
         }
       }
     },
@@ -423,6 +490,142 @@
         "text"
       ],
       "title": "FactExtractionExample",
+      "type": "object"
+    },
+    "FactGraph": {
+      "additionalProperties": false,
+      "description": "How a prompt's classes appear in the graph.",
+      "properties": {
+        "vertices": {
+          "description": "Classes projected as vertices.",
+          "items": {
+            "$ref": "#/$defs/GraphVertex"
+          },
+          "title": "Vertices",
+          "type": "array"
+        },
+        "edges": {
+          "description": "Classes projected as edges.",
+          "items": {
+            "$ref": "#/$defs/GraphEdge"
+          },
+          "title": "Edges",
+          "type": "array"
+        }
+      },
+      "title": "FactGraph",
+      "type": "object"
+    },
+    "GraphEdge": {
+      "additionalProperties": false,
+      "description": "A class whose potential facts are edges between two other classes' distilled facts.",
+      "properties": {
+        "class": {
+          "description": "The extraction class (facts.fact_class) projected.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Class",
+          "type": "string"
+        },
+        "source": {
+          "description": "The attribute naming the edge's source.",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+          "title": "Source",
+          "type": "string"
+        },
+        "source_class": {
+          "description": "The class the source is a distilled fact of.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Source Class",
+          "type": "string"
+        },
+        "target": {
+          "description": "The attribute naming the edge's target.",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+          "title": "Target",
+          "type": "string"
+        },
+        "target_class": {
+          "description": "The class the target is a distilled fact of.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Target Class",
+          "type": "string"
+        },
+        "label": {
+          "default": "RELATED_TO",
+          "description": "The edge label, or the fallback when label_attribute names none of labels.",
+          "pattern": "^[A-Z][A-Z0-9_]{0,62}$",
+          "title": "Label",
+          "type": "string"
+        },
+        "label_attribute": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "An attribute (e.g. predicate) whose value, upper-cased with spaces as _, picks the label.",
+          "title": "Label Attribute"
+        },
+        "labels": {
+          "description": "The labels label_attribute may pick, e.g. WORKS_AT; any other value takes label.",
+          "items": {
+            "type": "string"
+          },
+          "title": "Labels",
+          "type": "array"
+        }
+      },
+      "required": [
+        "class",
+        "source",
+        "source_class",
+        "target",
+        "target_class"
+      ],
+      "title": "GraphEdge",
+      "type": "object"
+    },
+    "GraphVertex": {
+      "additionalProperties": false,
+      "description": "A class whose distilled facts are vertices of their own label.",
+      "properties": {
+        "class": {
+          "description": "The extraction class (facts.fact_class) projected.",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$",
+          "title": "Class",
+          "type": "string"
+        },
+        "label": {
+          "description": "The vertex label, e.g. Person. Not one of the built-in labels.",
+          "pattern": "^[A-Z][A-Za-z0-9]{0,62}$",
+          "title": "Label",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,62}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The attribute whose value names the vertex (its representative fact's); unset: the distilled fact's statement.",
+          "title": "Title"
+        }
+      },
+      "required": [
+        "class",
+        "label"
+      ],
+      "title": "GraphVertex",
       "type": "object"
     }
   }

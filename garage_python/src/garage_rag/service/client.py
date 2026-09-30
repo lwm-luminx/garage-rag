@@ -22,6 +22,8 @@ from garage_rag.proto.garage_pb2 import (
     BeginIngestSessionResponse,
     CheckDocumentStatRequest,
     CheckDocumentStatResponse,
+    ClusterFactsRequest,
+    ClusterFactsStatus,
     DropModelRequest,
     DropModelResponse,
     EnrichFactsRequest,
@@ -32,12 +34,18 @@ from garage_rag.proto.garage_pb2 import (
     FactStatsResponse,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
+    FindGraphVerticesRequest,
+    FindGraphVerticesResponse,
     GetDocumentRequest,
     GetDocumentResponse,
     GetEmbeddingBatchesRequest,
     GetEmbeddingBatchesResponse,
     GetSettingRequest,
     GetSettingResponse,
+    GraphLabelsRequest,
+    GraphLabelsResponse,
+    GraphNeighborhoodRequest,
+    GraphNeighborhoodResponse,
     ImportSourcesToConfigRequest,
     ImportSourcesToConfigResponse,
     InitDbRequest,
@@ -334,6 +342,9 @@ class GarageClient:
     def enrich_facts(self, request: EnrichFactsRequest) -> Iterator[EnrichFactsStatus]:
         return self._invoke_stream("EnrichFacts", request, EnrichFactsStatus)
 
+    def cluster_facts(self, request: ClusterFactsRequest) -> Iterator[ClusterFactsStatus]:
+        return self._invoke_stream("ClusterFacts", request, ClusterFactsStatus)
+
     def list_facts(self, request: ListFactsRequest | None = None) -> ListFactsResponse:
         return self._invoke_unary("ListFacts", request or ListFactsRequest(), ListFactsResponse)
 
@@ -342,6 +353,15 @@ class GarageClient:
 
     def list_fact_prompts(self) -> ListFactPromptsResponse:
         return self._invoke_unary("ListFactPrompts", ListFactPromptsRequest(), ListFactPromptsResponse)
+
+    def get_graph_labels(self) -> GraphLabelsResponse:
+        return self._invoke_unary("GetGraphLabels", GraphLabelsRequest(), GraphLabelsResponse)
+
+    def find_graph_vertices(self, request: FindGraphVerticesRequest) -> FindGraphVerticesResponse:
+        return self._invoke_unary("FindGraphVertices", request, FindGraphVerticesResponse)
+
+    def get_graph_neighborhood(self, request: GraphNeighborhoodRequest) -> GraphNeighborhoodResponse:
+        return self._invoke_unary("GetGraphNeighborhood", request, GraphNeighborhoodResponse)
 
     def init_db(self, schema_dir: str = "") -> InitDbResponse:
         return self._invoke_unary("InitDb", InitDbRequest(schema_dir=schema_dir), InitDbResponse)

@@ -503,7 +503,21 @@ class TestFactsSection:
         settings = load_config(cfg)
         assert settings.fact_model == "gemma2:2b"
         assert settings.fact_provider == "ollama"
-        assert nest(settings)["facts"] == {"model": "gemma2:2b", "provider": "ollama"}
+        assert nest(settings)["facts"] == {
+            "model": "gemma2:2b",
+            "provider": "ollama",
+            "cluster_threshold": 0.9,
+            "cluster_restate_threshold": 0.92,
+            "cluster_neighbors": 10,
+            "cluster_seed_threshold": 0.95,
+            "cluster_max_drift": 0.05,
+            "cluster_tight_similarity": 0.97,
+            "cluster_growth_neighbors": 50,
+            "cluster_growth_rounds": 4,
+            "cluster_attach_candidates": 5,
+            "cluster_distill_facts": 20,
+            "cluster_max_pairwise": 300,
+        }
 
     def test_provider_is_restricted_to_local_backends(self, tmp_path: Path) -> None:
         cfg = tmp_path / CONFIG_FILENAME
@@ -686,7 +700,21 @@ class TestSetGetHelpers:
         assert settings.fact_provider == "ollama"
         document = json.loads(target.read_text())
         assert document["$schema"] == SCHEMA_URL
-        assert document["facts"] == {"model": "gemma2-2b", "provider": "ollama"}
+        assert document["facts"] == {
+            "model": "gemma2-2b",
+            "provider": "ollama",
+            "cluster_threshold": 0.9,
+            "cluster_restate_threshold": 0.92,
+            "cluster_neighbors": 10,
+            "cluster_seed_threshold": 0.95,
+            "cluster_max_drift": 0.05,
+            "cluster_tight_similarity": 0.97,
+            "cluster_growth_neighbors": 50,
+            "cluster_growth_rounds": 4,
+            "cluster_attach_candidates": 5,
+            "cluster_distill_facts": 20,
+            "cluster_max_pairwise": 300,
+        }
         # Every other section is written at its default, as `config init` does.
         assert document["chunking"]["size"] == Settings().chunk_size
 

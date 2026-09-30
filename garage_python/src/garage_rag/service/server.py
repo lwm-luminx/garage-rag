@@ -37,6 +37,8 @@ from garage_rag.proto.garage_pb2 import (
     BeginIngestSessionResponse,
     CheckDocumentStatRequest,
     CheckDocumentStatResponse,
+    ClusterFactsRequest,
+    ClusterFactsStatus,
     DocumentAuthorInfo,
     DocumentChunkInfo,
     DocumentDetail,
@@ -56,12 +58,21 @@ from garage_rag.proto.garage_pb2 import (
     FactSummary,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
+    FindGraphVerticesRequest,
+    FindGraphVerticesResponse,
     GetDocumentRequest,
     GetDocumentResponse,
     GetEmbeddingBatchesRequest,
     GetEmbeddingBatchesResponse,
     GetSettingRequest,
     GetSettingResponse,
+    GraphEdge,
+    GraphLabelCount,
+    GraphLabelsRequest,
+    GraphLabelsResponse,
+    GraphNeighborhoodRequest,
+    GraphNeighborhoodResponse,
+    GraphVertex,
     ImportSourcesToConfigRequest,
     ImportSourcesToConfigResponse,
     InitDbRequest,
@@ -291,6 +302,17 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
 
     cast(Any, wrapper).__garage_config_change__ = True  # the test checks every listed method carries it
     return wrapper
+
+
+def _graph_vertex(vertex: Any) -> GraphVertex:
+    """A db.graph.GraphVertex as its proto."""
+    return GraphVertex(
+        id=vertex.id,
+        label=vertex.label,
+        key=vertex.key,
+        title=vertex.title,
+        properties_json=json.dumps(vertex.properties, sort_keys=True),
+    )
 
 
 class GarageRpcServicer(GarageServiceServicer):
@@ -586,6 +608,8 @@ class GarageRpcServicer(GarageServiceServicer):
                 document_id=request.document_id or None,
                 limit=request.limit or 200,
                 offset=request.offset,
+                collapse=request.collapse,
+                distilled_fact_id=request.distilled_fact_id or None,
             )
 
         summaries = [
@@ -607,6 +631,12 @@ class GarageRpcServicer(GarageServiceServicer):
                 corpus_class=f.corpus_class or "",
                 excerpt=f.excerpt or "",
                 excerpt_start=f.excerpt_start if f.excerpt else 0,
+                distilled_fact_id=f.distilled_fact_id or 0,
+                distilled_size=f.distilled_size,
+                distilled_statement=f.distilled_statement or "",
+                distilled_generated=f.distilled_generated,
+                distilled_spread=f.distilled_spread,
+                restates_fact_id=f.restates_fact_id or 0,
             )
             for f in page.facts
         ]
@@ -638,6 +668,74 @@ class GarageRpcServicer(GarageServiceServicer):
             facts_by_source=stats.by_source,
             facts_by_class=stats.by_class,
             formatted_output=stats.message,
+            distilled=stats.distilled,
+            clusters=stats.clusters,
+            clustered_facts=stats.clustered_facts,
+        )
+
+    # -----------------------------------------------------------------------
+    # Graph
+    # -----------------------------------------------------------------------
+
+    @_grpc_errors
+    def GetGraphLabels(self, request: GraphLabelsRequest, context: grpc.ServicerContext) -> GraphLabelsResponse:
+        """The graph's vertex and edge labels with counts; ``available`` is false without AGE or a graph."""
+        from garage_rag.ops.graph import graph_labels
+
+        labels = graph_labels()
+        return GraphLabelsResponse(
+            available=labels.available,
+            vertex_labels=[GraphLabelCount(label=name, count=n) for name, n in labels.vertices.items()],
+            edge_labels=[GraphLabelCount(label=name, count=n) for name, n in labels.edges.items()],
+        )
+
+    @_grpc_errors
+    def FindGraphVertices(
+        self, request: FindGraphVerticesRequest, context: grpc.ServicerContext
+    ) -> FindGraphVerticesResponse:
+        """Vertices titled like the query, or carrying it as their relational id."""
+        from garage_rag.ops.graph import find_vertices, graph_labels
+
+        if not graph_labels().available:
+            return FindGraphVerticesResponse(available=False)
+        found = find_vertices(request.query, label=request.label, limit=request.limit or 50)
+        return FindGraphVerticesResponse(available=True, vertices=[_graph_vertex(v) for v in found])
+
+    @_grpc_errors
+    def GetGraphNeighborhood(
+        self, request: GraphNeighborhoodRequest, context: grpc.ServicerContext
+    ) -> GraphNeighborhoodResponse:
+        """One vertex and everything within ``depth`` hops of it, under the label filters."""
+        from garage_rag.ops.graph import neighborhood
+
+        result = neighborhood(
+            vertex_id=request.vertex_id or None,
+            label=request.label,
+            key=request.key if request.label else None,
+            depth=request.depth or 1,
+            vertex_labels=list(request.vertex_labels)
+            if request.filter_vertex_labels or request.vertex_labels
+            else None,
+            edge_labels=list(request.edge_labels) if request.filter_edge_labels or request.edge_labels else None,
+            limit=request.limit or 200,
+        )
+        if not result.available or result.center is None:
+            return GraphNeighborhoodResponse(available=False)
+        return GraphNeighborhoodResponse(
+            available=True,
+            center=_graph_vertex(result.center),
+            vertices=[_graph_vertex(v) for v in result.vertices],
+            edges=[
+                GraphEdge(
+                    id=e.id,
+                    label=e.label,
+                    source_id=e.source_id,
+                    target_id=e.target_id,
+                    properties_json=json.dumps(e.properties, sort_keys=True),
+                )
+                for e in result.edges
+            ],
+            truncated=result.truncated,
         )
 
     # -----------------------------------------------------------------------
@@ -1066,6 +1164,69 @@ class GarageRpcServicer(GarageServiceServicer):
         yield from _stream_events(run, context)
 
     @_grpc_errors
+    def ClusterFacts(self, request: ClusterFactsRequest, context: grpc.ServicerContext) -> Iterator[ClusterFactsStatus]:
+        """Link every potential fact to a distilled fact, streaming progress, then the totals."""
+        from garage_rag.ops.facts import cluster_facts
+
+        def run(emit: Callable[[ClusterFactsStatus], None]) -> object:
+            def on_progress(state) -> None:
+                if not state.message:
+                    return
+                emit(
+                    ClusterFactsStatus(
+                        phase=state.phase,
+                        facts=state.facts,
+                        unembedded=state.unembedded,
+                        scanned=state.scanned,
+                        to_distill=state.to_distill,
+                        distilled=state.distilled,
+                        full=state.full,
+                        documents=state.documents,
+                        nodes=state.nodes,
+                        attached=state.attached,
+                        candidates=state.candidates,
+                        message=state.message,
+                    )
+                )
+
+            summary = cluster_facts(
+                model=request.model or None,
+                threshold=request.threshold or None,
+                neighbors=request.neighbors or None,
+                distill=not request.no_distill,
+                graph=not request.no_graph,
+                full=request.full,
+                on_progress=on_progress,
+            )
+            emit(
+                ClusterFactsStatus(
+                    phase="finished",
+                    full=summary.full,
+                    documents=summary.documents,
+                    restatements=summary.restatements,
+                    nodes=summary.nodes,
+                    attached=summary.attached,
+                    accepted=summary.accepted,
+                    facts=summary.facts,
+                    unembedded=summary.unembedded,
+                    distilled_facts=summary.distilled_facts,
+                    clusters=summary.clusters,
+                    clustered_facts=summary.clustered_facts,
+                    dissolved=summary.dissolved,
+                    failed=summary.failed,
+                    withheld=summary.withheld,
+                    model=summary.model,
+                    distill_model=summary.distill_model,
+                    graph=summary.graph,
+                    errors=summary.errors,
+                    message=summary.message,
+                )
+            )
+            return summary
+
+        yield from _stream_events(run, context)
+
+    @_grpc_errors
     def ListFactPrompts(
         self, request: ListFactPromptsRequest, context: grpc.ServicerContext
     ) -> ListFactPromptsResponse:
@@ -1457,30 +1618,20 @@ class GarageRpcServicer(GarageServiceServicer):
         self, request: UpdateEmbeddingsRequest, context: grpc.ServicerContext
     ) -> UpdateEmbeddingsResponse:
         """Upsert computed embedding vectors for the given model table."""
-        from sqlalchemy import text
 
         from garage_rag.db.emb_tables import get_model
         from garage_rag.db.engine import session_scope
-        from garage_rag.embed.ollama import _adapt, _plan_from_row, assert_safe_table
+        from garage_rag.embed.ollama import store_vectors
 
         with session_scope() as session:
             model = get_model(session, request.model_slug or None)
             if not request.embeddings:
                 return UpdateEmbeddingsResponse(success=True, count=0)
-
-            table = assert_safe_table(model.table_name)
-            plan = _plan_from_row(model)
-
-            insert_sql = text(
-                f"INSERT INTO {table} (chunk_id, embedding) VALUES (:chunk_id, :embedding) "
-                "ON CONFLICT (chunk_id) DO UPDATE SET embedding = EXCLUDED.embedding"
+            # A potential fact's chunk lands in the model's potential-fact table.
+            count = store_vectors(
+                session, model, [(item.chunk_id, list(item.vector)) for item in request.embeddings], replace=True
             )
-
-            params = [
-                {"chunk_id": item.chunk_id, "embedding": _adapt(list(item.vector), plan)} for item in request.embeddings
-            ]
-            session.execute(insert_sql, params)
-            return UpdateEmbeddingsResponse(success=True, count=len(params))
+            return UpdateEmbeddingsResponse(success=True, count=count)
 
 
 # Largest request the server accepts.

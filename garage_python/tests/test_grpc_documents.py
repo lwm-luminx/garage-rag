@@ -187,6 +187,10 @@ def test_grpc_list_facts_maps_the_page():
         corpus_class="document",
         excerpt="Notes: The heat pump was installed in March 2024. More.",
         excerpt_start=3,
+        distilled_fact_id=4,
+        distilled_size=3,
+        distilled_statement="The heat pump went in during March 2024.",
+        distilled_generated=True,
     )
     ungrounded = FactRow(
         id=8,
@@ -212,7 +216,16 @@ def test_grpc_list_facts_maps_the_page():
         patch("garage_rag.ops.facts.list_facts", return_value=page) as list_facts,
     ):
         response = servicer.ListFacts(
-            ListFactsRequest(query="heat", source="notes", fact_class="event", limit=50, offset=100), MagicMock()
+            ListFactsRequest(
+                query="heat",
+                source="notes",
+                fact_class="event",
+                limit=50,
+                offset=100,
+                collapse=True,
+                distilled_fact_id=4,
+            ),
+            MagicMock(),
         )
 
     kwargs = list_facts.call_args.kwargs
@@ -224,6 +237,8 @@ def test_grpc_list_facts_maps_the_page():
         "document_id": None,
         "limit": 50,
         "offset": 100,
+        "collapse": True,
+        "distilled_fact_id": 4,
     }
     assert response.total_count == 12
     assert [(c.fact_class, c.count) for c in response.classes] == [("fact", 9), ("event", 3)]
@@ -238,6 +253,9 @@ def test_grpc_list_facts_maps_the_page():
     assert not second.HasField("char_start")
     assert second.excerpt == ""
     assert second.attributes_json == ""
+    assert (first.distilled_fact_id, first.distilled_size, first.distilled_generated) == (4, 3, True)
+    assert first.distilled_statement == "The heat pump went in during March 2024."
+    assert (second.distilled_fact_id, second.distilled_size, second.distilled_statement) == (0, 0, "")
 
 
 def test_grpc_list_facts_defaults_the_page_size():

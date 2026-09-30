@@ -231,14 +231,119 @@ Every fact also gets a `chunks` row of its own (`chunks.fact_id`,
 `chunker = 'facts:langextract:<model>'`). That is the entire embedding story: a
 chunk is a chunk regardless of where its text came from, so the ordinary
 backfill anti-join picks fact chunks up and every registered model ends up with
-a vector for them, with no fact-specific embedding path. Deleting a fact
-cascades into its chunk and, from there, into every `emb_*` table.
+a vector for them, with no fact-specific embedding path. The vector itself goes
+in the model's `potential_fact_emb_<slug>` table, keyed on the fact, so facts
+and passages each have an index of their own (`017_fact_vectors.sql`). Deleting
+a fact cascades into its chunk and its vectors.
+
+#### Distilled facts and the graph (`enrich/clusters.py`, `db/graph.py`)
+
+The facts above are *potential* facts. A claim restated across documents, or in
+every message of a quoted mail thread, is extracted once per statement.
+`garage cluster-facts` (the `ClusterFacts` RPC) links every potential fact to one
+row of `distilled_facts`, in two levels, from each fact's chunk vector under the
+default model:
+
+1. **Per document.** A document's facts of one class are compared pair by pair.
+   Those with the same normalized text, or at least
+   `facts.cluster_restate_threshold` similar (default 0.92), point at the
+   longest of them (`facts.restates_fact_id`). A document is compared again
+   when one of its facts gains a vector.
+2. **Guard.** Facts that disagree on numbers, dates or negation are never
+   grouped, at either level. Embeddings place "42 employees" beside "45
+   employees", and "on Tuesday" beside "not on Tuesday".
+3. **Across the corpus, full run** (`--full`, or a changed model or grouping
+   setting). The representatives' nearest neighbours
+   (`facts.cluster_neighbors`) give each a density. Densest first, a seed and
+   its neighbours at `facts.cluster_seed_threshold` or closer form a core,
+   whose mean is the group's seed. The group grows by the nearest neighbours of
+   its centroid while each is `facts.cluster_threshold` similar to it and to
+   the seed and keeps the centroid within `facts.cluster_max_drift` of the
+   seed, stopping at the first that is not. A group found again with the same
+   members keeps its row.
+4. **Across the corpus, incremental run.** Groups that lost members are
+   re-centred, and each new representative joins the nearest distilled fact
+   that passes the same tests (`facts.cluster_attach_candidates` tried), or
+   stands alone for later ones to join. Existing groups are never merged;
+   `--full` regroups after the corpus has grown a lot.
+5. **Distill.** A group whose farthest member is closer to its centroid than
+   members all `facts.cluster_tight_similarity` alike would be is kept as is.
+   The local chat model (`inference.*`, else `facts.*`) sees any other and
+   either confirms it with one sentence stating the claim, or says no, and the
+   group dissolves. A group containing a communication goes only to a loopback
+   model; when the model is elsewhere, such a group is not kept.
+
+Ground truth anchors groups. `enrich-facts` writes a mail's sender, recipients
+and subject and a Messages thread's participants as potential facts without a
+model (`enrich/metadata.py`: a person is keyed on their `authors` row where an
+identity matches, else the address; a subject on its text without `Re:`/`Fwd:`).
+Each distinct value becomes one anchored distilled fact (`anchor_key`,
+`018_fact_anchors.sql`). Its metadata facts link to it by key, whatever their
+vectors, and its centroid is its first fact's vector and never moves. Before a
+new inferred fact is grouped anywhere else, it joins the nearest anchor of its
+class that it is `facts.cluster_threshold` similar to and that passes the guard;
+no model is asked and nothing drifts. Metadata facts take no part in level 1 or
+in growing groups. Under other models an anchor's vector is its representative's.
+
+Nothing about a potential fact changes but its links. Each distilled fact
+records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
+seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it
+a vector under every other model, the normalized mean of its nodes' vectors
+there, so nothing is embedded for it. A binary-quantized model cannot be the
+clustering model.
+
+Where the server has Apache AGE, the run then re-projects the tables into the
+graph `garage` (`garage graph rebuild` does only that). The vertices are
+`Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
+`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact),
+`RESTATES` (a restatement to its representative) and `SUPPORTS` (a
+representative to its Fact). Vertices carry the relational ids; text,
+spans and vectors stay in the tables.
+
+New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
+carry a `graph` block, which the projection reads (`graph_schema` in
+`config/fact_prompts.py`, `projection` in `db/graph.py`). For example:
+
+```json
+"graph": {
+  "vertices": [{"class": "person", "label": "Person", "title": "name"},
+               {"class": "organization", "label": "Organization"}],
+  "edges": [{"class": "relation", "source": "subject", "source_class": "person",
+             "target": "object", "target_class": "organization",
+             "label_attribute": "predicate", "labels": ["WORKS_AT", "MEMBER_OF"]}]
+}
+```
+
+A vertex entry makes the distilled facts of its class (its potential facts,
+deduplicated by the pass above: entity resolution is the same grouping) vertices
+of its label instead of `Fact`, titled by the representative's `title`
+attribute; their `SUPPORTS` edges point there. An edge entry turns each
+potential fact of its class into an edge between the distilled facts its
+`source` and `target` attributes name, resolved in the fact's own document
+first and then by statement; its label is the `label_attribute` value when
+`labels` lists it (upper-cased, spaces as `_`), else `label` (`RELATED_TO`).
+Labels are plain identifiers and may not take a built-in one; a class given two
+labels, or a label two classes, is refused when the config loads. The block is
+not part of the prompt's hash, so changing it only needs `garage graph rebuild`.
+
+The app's Graph page reads it back: the labels with counts (its filters), a
+search of titles, names, facts and statements to pick a starting vertex, and
+that vertex's neighbourhood a few hops out, drawn with one ring per hop
+(`GetGraphLabels`, `FindGraphVertices`, `GetGraphNeighborhood`; the same
+functions behind `garage graph labels|find|neighbors`). The reads go over AGE's
+label tables with bound parameters rather than through `cypher()`, and take
+their labels from the catalog, so a label added later (a `RESTATES` edge) shows
+up in the page without a change to it, and a configured vertex label is
+searched by its `title` property.
 
 ### 8. Search (`search/hybrid.py`)
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200
 candidates per engine. RRF needs only each side's *ranking*, which matters
-because cosine distance and `ts_rank_cd` are not comparably scaled.
+because cosine distance and `ts_rank_cd` are not comparably scaled. The vector
+side takes the nearest content chunks from `emb_<slug>` and the nearest
+potential facts from `potential_fact_emb_<slug>`, each on its own index, and
+ranks the union by distance.
 
 The keyword half ORs its terms rather than ANDing them. `websearch_to_tsquery`
 would require every word of "secure enclave firmware validation" in one chunk and

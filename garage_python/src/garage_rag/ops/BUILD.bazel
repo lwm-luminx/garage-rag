@@ -6,6 +6,7 @@ py_library(
         "__init__.py",
         "backfill.py",
         "facts.py",
+        "graph.py",
         "mcp.py",
         "models.py",
         "settings.py",

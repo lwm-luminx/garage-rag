@@ -47,7 +47,9 @@ Each stored fact is also, optionally, given a ``chunks`` row of its own
 regardless of where its text came from, so ``embed.ollama.backfill_model``
 picks up a fact's chunk the same anti-join pass it already uses for content
 chunks, and every registered embedding model ends up with a vector for it --
-with no fact-specific embedding path to write or maintain.
+with no fact-specific embedding path to write or maintain. The vector is stored
+in the model's ``potential_fact_emb_`` table, keyed on the fact
+(``embed.ollama.store_vectors``).
 """
 
 from __future__ import annotations

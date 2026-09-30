@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -14,6 +14,9 @@ from sqlalchemy.orm import Session
 from garage_rag.config.fact_prompts import EffectivePrompt, select_prompts
 from garage_rag.db.engine import session_scope
 from garage_rag.db.models import CorpusClass, Document, FactRun, Source
+
+if TYPE_CHECKING:
+    from garage_rag.enrich.clusters import ClusterProgress
 
 
 @dataclass
@@ -91,6 +94,7 @@ def enrich_facts(
     the run continues. Raises LookupError when there is nothing to enrich or a
     named prompt does not exist.
     """
+    from garage_rag.enrich import metadata
     from garage_rag.enrich.facts import configured_backend, extract_and_store_facts, is_stale
 
     model_id, provider = configured_backend(model, provider)
@@ -122,13 +126,25 @@ def enrich_facts(
             event = EnrichEvent(index=index, total=len(documents), document_id=document.id, uri=document.uri or "")
             corpus_class = getattr(document.corpus_class, "value", document.corpus_class)
             applicable = [p for p in selected if p.applies_to(corpus_class, slugs.get(document.source_id))]
+            runs = (
+                {run.prompt_name: run for run in session.query(FactRun).filter(FactRun.document_id == document.id)}
+                if stale_only
+                else {}
+            )
             if stale_only and applicable:
-                runs = {
-                    run.prompt_name: run
-                    for run in session.query(FactRun).filter(FactRun.document_id == document.id).all()
-                }
                 applicable = [p for p in applicable if is_stale(runs.get(p.name), document, p, model_id)]
             errors: list[str] = []
+            # A mail's sender, recipients and subject, a thread's participants: no model, nothing sent.
+            if not stale_only or metadata.is_stale(runs.get(metadata.PROMPT_NAME), document):
+                try:
+                    written = metadata.store_metadata_facts(session, document)
+                    session.commit()
+                    if written:
+                        event.facts += len(written)
+                        event.prompts.append(metadata.PROMPT_NAME)
+                except Exception as exc:
+                    session.rollback()
+                    errors.append(f"{metadata.PROMPT_NAME}: {exc}")
             for prompt in applicable:
                 try:
                     facts = extract_and_store_facts(
@@ -144,7 +160,7 @@ def enrich_facts(
             if errors:
                 failed += 1
                 event.error = "; ".join(errors)
-            elif not applicable:
+            elif not applicable and not event.prompts:
                 skipped += 1
                 event.skipped = True
             if on_event is not None:
@@ -190,6 +206,17 @@ class FactRow:
     # document keeps no content.
     excerpt: str | None = None
     excerpt_start: int = 0
+    # The distilled fact this potential fact backs (garage cluster-facts), how
+    # many potential facts back it, and its statement; whether the local model
+    # wrote that statement (it is then not a quotation).
+    distilled_fact_id: int | None = None
+    distilled_size: int = 0
+    distilled_statement: str | None = None
+    distilled_generated: bool = False
+    # How varied that distilled fact's group is (mean cosine distance to its centroid; 0 alone),
+    # and the fact of the same document this one restates, if any.
+    distilled_spread: float = 0.0
+    restates_fact_id: int | None = None
 
 
 @dataclass
@@ -207,6 +234,14 @@ def _like_pattern(value: str) -> str:
 
 
 _FACT_JOINS = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN sources s ON s.id = d.source_id"
+
+# A fact's distilled fact, for the columns list_facts adds; LEFT JOINed onto _FACT_JOINS.
+_DISTILLED_JOIN = " LEFT JOIN distilled_facts df ON df.id = f.distilled_fact_id"
+
+# With collapse, a potential fact is listed only when it stands for its distilled fact: it is the
+# representative (or, when that is gone, the lowest id), or it has none yet.
+_COLLAPSED = """(f.distilled_fact_id IS NULL OR f.id = COALESCE(df.representative_fact_id,
+    (SELECT min(f2.id) FROM facts f2 WHERE f2.distilled_fact_id = f.distilled_fact_id)))"""
 
 
 def _where(clauses: list[str]) -> str:
@@ -263,17 +298,30 @@ def list_facts(
     document_id: int | None = None,
     limit: int = 100,
     offset: int = 0,
+    collapse: bool = False,
+    distilled_fact_id: int | None = None,
 ) -> FactPage:
     """Facts matching the filters, newest first, or best match first given ``query``.
 
     ``query`` matches a fact's words (Postgres full-text search, stemmed) or any
     substring of it, so a partial word still finds something. Empty filters
-    match everything.
+    match everything. ``collapse`` lists the potential facts behind one distilled
+    fact once, as its representative; ``distilled_fact_id`` lists one distilled
+    fact's potential facts.
     """
     query = query.strip()
     base, filtered, params = _fact_filters(
         query=query, source=source, fact_class=fact_class, corpus_class=corpus_class, document_id=document_id
     )
+    extra: list[str] = []
+    if collapse:
+        extra.append(_COLLAPSED)
+    if distilled_fact_id:
+        extra.append("f.distilled_fact_id = :distilled_fact_id")
+        params["distilled_fact_id"] = distilled_fact_id
+    base = [*base, *extra]
+    filtered = [*filtered, *extra]
+    joins = _FACT_JOINS + _DISTILLED_JOIN
     params["ctx"] = EXCERPT_CONTEXT
 
     order = (
@@ -295,8 +343,16 @@ def list_facts(
                         THEN substr(d.content, GREATEST(f.char_start - :ctx, 0) + 1,
                                     f.char_end - GREATEST(f.char_start - :ctx, 0) + :ctx)
                    END AS excerpt,
-                   GREATEST(COALESCE(f.char_start, 0) - :ctx, 0) AS excerpt_start
-            {_FACT_JOINS}
+                   GREATEST(COALESCE(f.char_start, 0) - :ctx, 0) AS excerpt_start,
+                   f.distilled_fact_id,
+                   CASE WHEN f.distilled_fact_id IS NULL THEN 0 ELSE
+                        (SELECT count(*) FROM facts f3 WHERE f3.distilled_fact_id = f.distilled_fact_id)
+                   END AS distilled_size,
+                   df.statement AS distilled_statement,
+                   COALESCE(df.statement_generated, false) AS distilled_generated,
+                   COALESCE(df.spread, 0) AS distilled_spread,
+                   f.restates_fact_id
+            {joins}
             {_where(filtered)}
             ORDER BY {order}
             LIMIT :limit OFFSET :offset
@@ -306,13 +362,11 @@ def list_facts(
     ).mappings()
     facts = [FactRow(**_fact_row_values(row)) for row in rows]
 
-    total = session.execute(text(f"SELECT count(*) {_FACT_JOINS} {_where(filtered)}"), params).scalar_one()
+    total = session.execute(text(f"SELECT count(*) {joins} {_where(filtered)}"), params).scalar_one()
     classes = [
         (name, count)
         for name, count in session.execute(
-            text(
-                f"SELECT f.fact_class, count(*) {_FACT_JOINS} {_where(base)} GROUP BY f.fact_class ORDER BY 2 DESC, 1"
-            ),
+            text(f"SELECT f.fact_class, count(*) {joins} {_where(base)} GROUP BY f.fact_class ORDER BY 2 DESC, 1"),
             params,
         ).all()
     ]
@@ -325,10 +379,18 @@ class FactStats:
     documents: int
     by_source: dict[str, int]
     by_class: dict[str, int]
+    # Distilled facts backed by these potential facts; how many are backed by
+    # more than one, and how many potential facts those groups hold.
+    distilled: int = 0
+    clusters: int = 0
+    clustered_facts: int = 0
 
     @property
     def message(self) -> str:
-        return f"{self.facts:,} facts across {self.documents:,} documents"
+        text = f"{self.facts:,} facts across {self.documents:,} documents"
+        if self.distilled:
+            text += f", distilled into {self.distilled:,}"
+        return text
 
 
 def fact_stats(
@@ -359,4 +421,154 @@ def fact_stats(
             text(f"SELECT f.fact_class, count(*) {scope} GROUP BY f.fact_class ORDER BY 2 DESC, 1"), params
         ).all()
     }
-    return FactStats(facts=int(facts or 0), documents=int(documents or 0), by_source=by_source, by_class=by_class)
+    linked = _where([*filtered, "f.distilled_fact_id IS NOT NULL"])
+    distilled, clusters, clustered = session.execute(
+        text(
+            f"""
+            SELECT count(*), count(*) FILTER (WHERE n > 1), coalesce(sum(n) FILTER (WHERE n > 1), 0)
+            FROM (SELECT f.distilled_fact_id, count(*) AS n {_FACT_JOINS} {linked} GROUP BY f.distilled_fact_id) g
+            """
+        ),
+        params,
+    ).one()
+    return FactStats(
+        facts=int(facts or 0),
+        documents=int(documents or 0),
+        by_source=by_source,
+        by_class=by_class,
+        distilled=int(distilled or 0),
+        clusters=int(clusters or 0),
+        clustered_facts=int(clustered or 0),
+    )
+
+
+@dataclass
+class ClusterSummary:
+    """The outcome of one ``cluster-facts`` run (see :mod:`garage_rag.enrich.clusters`)."""
+
+    model: str
+    threshold: float
+    distill_model: str
+    facts: int
+    unembedded: int
+    distilled_facts: int
+    clusters: int
+    clustered_facts: int
+    kept: int
+    dissolved: int
+    failed: int
+    withheld: int
+    errors: list[str] = field(default_factory=list)
+    # The AGE graph, re-projected after the run; empty where the server has no AGE.
+    graph: str = ""
+    # Whether the corpus was regrouped (rather than new facts placed), and what each level did.
+    full: bool = False
+    documents: int = 0
+    restatements: int = 0
+    nodes: int = 0
+    attached: int = 0
+    accepted: int = 0
+
+    @property
+    def message(self) -> str:
+        text = (
+            f"{self.facts:,} potential facts distilled into {self.distilled_facts:,}; "
+            f"{self.clusters:,} of those group {self.clustered_facts:,} restatements"
+        )
+        if self.restatements:
+            text += f" ({self.restatements:,} restate another fact of their own document)"
+        if self.full:
+            text += "; regrouped the corpus"
+        elif self.nodes:
+            text += f"; {self.attached:,} of {self.nodes:,} new facts joined a distilled fact"
+        if self.dissolved:
+            text += f", {self.dissolved} rejected by the model"
+        if self.failed:
+            text += f", {self.failed} not distilled (model error)"
+        if self.withheld:
+            text += f", {self.withheld} left ungrouped (communications stay on this machine)"
+        if self.unembedded:
+            text += f"; {self.unembedded:,} facts have no vector yet (run the backfill)"
+        return text
+
+
+def cluster_facts(
+    *,
+    model: str | None = None,
+    threshold: float | None = None,
+    neighbors: int | None = None,
+    distill: bool = True,
+    graph: bool = True,
+    full: bool = False,
+    on_progress: Callable[[ClusterProgress], None] | None = None,
+) -> ClusterSummary:
+    """Link every potential fact to a distilled fact, grouping those that state the same claim, and have
+        the local model state each group once.
+
+        ``model`` is the embedding model whose vectors are compared (default: the
+        default model); ``threshold``/``neighbors`` default to
+        facts.cluster_threshold/facts.cluster_neighbors. ``full`` regroups the whole
+        corpus rather than placing only what is new (a change of model or parameter
+        does that anyway). Without ``distill`` no chat
+        model is asked and each group is stated by its representative. With ``graph``
+    the AGE projection is rebuilt afterwards, where the server has AGE. Raises LookupError for an
+        unknown model, ValueError for a threshold outside 0..1.
+    """
+    from garage_rag.config import get_settings
+    from garage_rag.db.emb_tables import get_model
+    from garage_rag.enrich.clusters import ClusterParams, Distiller
+    from garage_rag.enrich.clusters import cluster_facts as run_clusters
+
+    settings = get_settings()
+    threshold = settings.fact_cluster_threshold if threshold is None else threshold
+    neighbors = neighbors or settings.fact_cluster_neighbors
+    if not 0.0 < threshold <= 1.0:
+        raise ValueError(f"threshold must be above 0 and at most 1, not {threshold}")
+    if neighbors < 1:
+        raise ValueError(f"neighbors must be at least 1, not {neighbors}")
+    params = ClusterParams(
+        threshold=threshold,
+        neighbors=neighbors,
+        seed_threshold=max(threshold, settings.fact_cluster_seed_threshold),
+        max_drift=settings.fact_cluster_max_drift,
+        tight_similarity=settings.fact_cluster_tight_similarity,
+        growth_neighbors=settings.fact_cluster_growth_neighbors,
+        growth_rounds=settings.fact_cluster_growth_rounds,
+        attach_candidates=settings.fact_cluster_attach_candidates,
+        distill_facts=settings.fact_cluster_distill_facts,
+        max_pairwise=settings.fact_cluster_max_pairwise,
+        restate_threshold=settings.fact_cluster_restate_threshold,
+    )
+    distiller = Distiller() if distill else None
+    with session_scope() as session:
+        row = get_model(session, model)
+        state = run_clusters(session, row, params, full=full, distiller=distiller, progress=on_progress)
+        return ClusterSummary(
+            model=row.slug,
+            threshold=threshold,
+            distill_model=distiller.model_id if distiller is not None else "",
+            facts=state.facts,
+            unembedded=state.unembedded,
+            distilled_facts=int(state.distilled_facts),
+            clusters=int(state.clusters),
+            clustered_facts=int(state.clustered_facts),
+            kept=state.kept,
+            dissolved=state.dissolved,
+            failed=state.failed,
+            withheld=state.withheld,
+            errors=list(state.errors),
+            graph=_rebuilt_graph(session) if graph else "",
+            full=state.full,
+            documents=state.documents,
+            restatements=state.restatements,
+            nodes=state.nodes,
+            attached=state.attached,
+            accepted=state.accepted,
+        )
+
+
+def _rebuilt_graph(session: Session) -> str:
+    from garage_rag.db.graph import rebuild_graph
+
+    summary = rebuild_graph(session)
+    return summary.message if summary.available else ""
