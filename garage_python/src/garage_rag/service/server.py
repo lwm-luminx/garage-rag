@@ -58,12 +58,21 @@ from garage_rag.proto.garage_pb2 import (
     FactSummary,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
+    FindGraphVerticesRequest,
+    FindGraphVerticesResponse,
     GetDocumentRequest,
     GetDocumentResponse,
     GetEmbeddingBatchesRequest,
     GetEmbeddingBatchesResponse,
     GetSettingRequest,
     GetSettingResponse,
+    GraphEdge,
+    GraphLabelCount,
+    GraphLabelsRequest,
+    GraphLabelsResponse,
+    GraphNeighborhoodRequest,
+    GraphNeighborhoodResponse,
+    GraphVertex,
     ImportSourcesToConfigRequest,
     ImportSourcesToConfigResponse,
     InitDbRequest,
@@ -293,6 +302,17 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
 
     cast(Any, wrapper).__garage_config_change__ = True  # the test checks every listed method carries it
     return wrapper
+
+
+def _graph_vertex(vertex: Any) -> GraphVertex:
+    """A db.graph.GraphVertex as its proto."""
+    return GraphVertex(
+        id=vertex.id,
+        label=vertex.label,
+        key=vertex.key,
+        title=vertex.title,
+        properties_json=json.dumps(vertex.properties, sort_keys=True),
+    )
 
 
 class GarageRpcServicer(GarageServiceServicer):
@@ -651,6 +671,71 @@ class GarageRpcServicer(GarageServiceServicer):
             distilled=stats.distilled,
             clusters=stats.clusters,
             clustered_facts=stats.clustered_facts,
+        )
+
+    # -----------------------------------------------------------------------
+    # Graph
+    # -----------------------------------------------------------------------
+
+    @_grpc_errors
+    def GetGraphLabels(self, request: GraphLabelsRequest, context: grpc.ServicerContext) -> GraphLabelsResponse:
+        """The graph's vertex and edge labels with counts; ``available`` is false without AGE or a graph."""
+        from garage_rag.ops.graph import graph_labels
+
+        labels = graph_labels()
+        return GraphLabelsResponse(
+            available=labels.available,
+            vertex_labels=[GraphLabelCount(label=name, count=n) for name, n in labels.vertices.items()],
+            edge_labels=[GraphLabelCount(label=name, count=n) for name, n in labels.edges.items()],
+        )
+
+    @_grpc_errors
+    def FindGraphVertices(
+        self, request: FindGraphVerticesRequest, context: grpc.ServicerContext
+    ) -> FindGraphVerticesResponse:
+        """Vertices titled like the query, or carrying it as their relational id."""
+        from garage_rag.ops.graph import find_vertices, graph_labels
+
+        if not graph_labels().available:
+            return FindGraphVerticesResponse(available=False)
+        found = find_vertices(request.query, label=request.label, limit=request.limit or 50)
+        return FindGraphVerticesResponse(available=True, vertices=[_graph_vertex(v) for v in found])
+
+    @_grpc_errors
+    def GetGraphNeighborhood(
+        self, request: GraphNeighborhoodRequest, context: grpc.ServicerContext
+    ) -> GraphNeighborhoodResponse:
+        """One vertex and everything within ``depth`` hops of it, under the label filters."""
+        from garage_rag.ops.graph import neighborhood
+
+        result = neighborhood(
+            vertex_id=request.vertex_id or None,
+            label=request.label,
+            key=request.key if request.label else None,
+            depth=request.depth or 1,
+            vertex_labels=list(request.vertex_labels)
+            if request.filter_vertex_labels or request.vertex_labels
+            else None,
+            edge_labels=list(request.edge_labels) if request.filter_edge_labels or request.edge_labels else None,
+            limit=request.limit or 200,
+        )
+        if not result.available or result.center is None:
+            return GraphNeighborhoodResponse(available=False)
+        return GraphNeighborhoodResponse(
+            available=True,
+            center=_graph_vertex(result.center),
+            vertices=[_graph_vertex(v) for v in result.vertices],
+            edges=[
+                GraphEdge(
+                    id=e.id,
+                    label=e.label,
+                    source_id=e.source_id,
+                    target_id=e.target_id,
+                    properties_json=json.dumps(e.properties, sort_keys=True),
+                )
+                for e in result.edges
+            ],
+            truncated=result.truncated,
         )
 
     # -----------------------------------------------------------------------

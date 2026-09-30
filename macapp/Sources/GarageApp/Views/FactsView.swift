@@ -10,6 +10,8 @@ public struct FactsView: View {
 
     /// Shows a fact's document on the Documents page.
     private let openDocument: (DocumentFocus) -> Void
+    /// Centers the Graph page on a fact.
+    private let openGraph: (GraphFocus) -> Void
 
     @State private var facts: [FactListItem] = []
     @State private var totalCount = 0
@@ -38,8 +40,12 @@ public struct FactsView: View {
     private static let pageSize = 200
     private let corpusClasses = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.corpusClasses)
 
-    public init(openDocument: @escaping (DocumentFocus) -> Void = { _ in }) {
+    public init(
+        openDocument: @escaping (DocumentFocus) -> Void = { _ in },
+        openGraph: @escaping (GraphFocus) -> Void = { _ in }
+    ) {
         self.openDocument = openDocument
+        self.openGraph = openGraph
     }
 
     public var body: some View {
@@ -476,6 +482,11 @@ public struct FactsView: View {
                 if let url = URL(string: fact.documentURI), url.isFileURL {
                     Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
+                Button("Show in Graph") {
+                    openGraph(GraphFocus(label: "PotentialFact", key: fact.id))
+                }
+                .accessibilityIdentifier("facts.detail.graph")
+                .help("Center the Graph page on this fact: its document, and the claim it supports")
             }
             .controlSize(.small)
         }
