@@ -3,8 +3,9 @@
 The rows of ``facts`` are *potential* facts: what one prompt extracted from one
 document, each a verbatim, grounded quote. Every one already has a vector: its
 chunk (``chunks.fact_id``) is embedded by the ordinary backfill under every
-registered model. This pass reads those vectors under one model (the default,
-unless named) and dedups in two levels
+registered model, into the model's ``potential_fact_emb_`` table, keyed on the
+fact and with an index of facts alone (``017_fact_vectors.sql``). This pass reads
+those vectors under one model (the default, unless named) and dedups in two levels
 (``data/sql/015_distilled_facts.sql``, ``016_fact_dedup.sql``):
 
 **Level 1, per document.** A document's facts of one class are compared pair by
@@ -73,7 +74,13 @@ from dataclasses import dataclass, field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from garage_rag.db.emb_tables import assert_safe_table, ensure_fact_table, fact_table_name, stored_plan
+from garage_rag.db.emb_tables import (
+    assert_safe_table,
+    ensure_fact_table,
+    fact_table_name,
+    potential_fact_table_name,
+    stored_plan,
+)
 from garage_rag.db.engine import apply_search_tuning
 from garage_rag.db.models import CorpusClass, EmbeddingModel
 from garage_rag.db.registry import column_type_sql, distance_operator
@@ -654,7 +661,7 @@ def _iterative_scan(session: Session) -> None:
 
 
 def _has_vector(table: str, alias: str = "f") -> str:
-    return f"EXISTS (SELECT 1 FROM chunks hv JOIN {table} he ON he.chunk_id = hv.id WHERE hv.fact_id = {alias}.id)"
+    return f"EXISTS (SELECT 1 FROM {table} he WHERE he.fact_id = {alias}.id)"
 
 
 @dataclass
@@ -679,7 +686,8 @@ class _Pass:
         self.distiller = distiller
         self.progress = progress
         self.state = ClusterProgress()
-        self.table = assert_safe_table(model.table_name)
+        # The model's potential-fact vectors, keyed on fact_id (017_fact_vectors.sql).
+        self.table = potential_fact_table_name(assert_safe_table(model.table_name))
         self.fact_table = ensure_fact_table(session, model)
         self.coltype = column_type_sql(stored_plan(model))
         # Order by the model's own distance, so its index serves the scan; judge
@@ -711,8 +719,8 @@ class _Pass:
         for start in range(0, len(missing), 1000):
             for fid, literal in self.session.execute(
                 text(
-                    f"SELECT c.fact_id, e.embedding::text FROM chunks c JOIN {self.table} e ON e.chunk_id = c.id"
-                    " WHERE c.fact_id = ANY(CAST(:ids AS bigint[]))"
+                    f"SELECT e.fact_id, e.embedding::text FROM {self.table} e"
+                    " WHERE e.fact_id = ANY(CAST(:ids AS bigint[]))"
                 ),
                 {"ids": missing[start : start + 1000]},
             ).all():
@@ -787,8 +795,8 @@ class _Pass:
         above = text(
             f"""
             WITH v AS (
-                SELECT c.fact_id, f.document_id, f.fact_class, e.embedding
-                FROM chunks c JOIN facts f ON f.id = c.fact_id JOIN {self.table} e ON e.chunk_id = c.id
+                SELECT e.fact_id, f.document_id, f.fact_class, e.embedding
+                FROM {self.table} e JOIN facts f ON f.id = e.fact_id
                 WHERE f.document_id = ANY(CAST(:docs AS bigint[]))
             )
             SELECT a.fact_id, b.fact_id, 1 - (a.embedding <=> b.embedding)
@@ -976,8 +984,8 @@ class _Pass:
         rows = self.session.execute(
             text(
                 f"""
-                SELECT c.fact_id, e.embedding::text
-                FROM {self.table} e JOIN chunks c ON c.id = e.chunk_id JOIN facts f ON f.id = c.fact_id
+                SELECT e.fact_id, e.embedding::text
+                FROM {self.table} e JOIN facts f ON f.id = e.fact_id
                 WHERE f.fact_class = :fact_class AND f.restates_fact_id IS NULL
                 ORDER BY e.embedding {self.op} {self.cast("v")}
                 LIMIT :k
@@ -1340,8 +1348,7 @@ class _Pass:
                 INSERT INTO {self.fact_table} AS fe (distilled_fact_id, embedding, seed)
                 SELECT df.id, e.embedding, e.embedding
                 FROM distilled_facts df
-                JOIN chunks c ON c.fact_id = df.representative_fact_id
-                JOIN {self.table} e ON e.chunk_id = c.id
+                JOIN {self.table} e ON e.fact_id = df.representative_fact_id
                 WHERE df.model_slug IS NULL
                   AND NOT EXISTS (SELECT 1 FROM {self.fact_table} x WHERE x.distilled_fact_id = df.id
                                                                       AND x.seed IS NOT NULL)
@@ -1400,18 +1407,16 @@ def _neighbor_sql(table: str, op: str) -> str:
     return f"""
         SELECT src.fact_id AS a, nb.fact_id AS b, nb.similarity
         FROM (
-            SELECT c.fact_id, f.fact_class, e.embedding
-            FROM chunks c
-            JOIN facts f ON f.id = c.fact_id
-            JOIN {table} e ON e.chunk_id = c.id
-            WHERE c.fact_id = ANY(CAST(:ids AS bigint[]))
+            SELECT e.fact_id, f.fact_class, e.embedding
+            FROM {table} e
+            JOIN facts f ON f.id = e.fact_id
+            WHERE e.fact_id = ANY(CAST(:ids AS bigint[]))
         ) src
         CROSS JOIN LATERAL (
-            SELECT c2.fact_id, 1 - (e2.embedding <=> src.embedding) AS similarity
+            SELECT e2.fact_id, 1 - (e2.embedding <=> src.embedding) AS similarity
             FROM {table} e2
-            JOIN chunks c2 ON c2.id = e2.chunk_id
-            JOIN facts f2 ON f2.id = c2.fact_id
-            WHERE f2.fact_class = src.fact_class AND c2.fact_id <> src.fact_id AND f2.restates_fact_id IS NULL
+            JOIN facts f2 ON f2.id = e2.fact_id
+            WHERE f2.fact_class = src.fact_class AND e2.fact_id <> src.fact_id AND f2.restates_fact_id IS NULL
             ORDER BY e2.embedding {op} src.embedding
             LIMIT :k
         ) nb
@@ -1420,11 +1425,10 @@ def _neighbor_sql(table: str, op: str) -> str:
 
 def _pairwise_sql(table: str) -> str:
     return f"""
-        SELECT ca.fact_id AS a, cb.fact_id AS b, 1 - (ea.embedding <=> eb.embedding) AS similarity
-        FROM chunks ca JOIN {table} ea ON ea.chunk_id = ca.id,
-             chunks cb JOIN {table} eb ON eb.chunk_id = cb.id
-        WHERE ca.fact_id = ANY(CAST(:ids AS bigint[])) AND cb.fact_id = ANY(CAST(:ids AS bigint[]))
-          AND ca.fact_id < cb.fact_id
+        SELECT ea.fact_id AS a, eb.fact_id AS b, 1 - (ea.embedding <=> eb.embedding) AS similarity
+        FROM {table} ea, {table} eb
+        WHERE ea.fact_id = ANY(CAST(:ids AS bigint[])) AND eb.fact_id = ANY(CAST(:ids AS bigint[]))
+          AND ea.fact_id < eb.fact_id
     """
 
 

@@ -77,11 +77,18 @@ def test_servicer_get_embedding_batches_and_update():
             ChunkEmbeddingItem(chunk_id=11, vector=[0.4, 0.5, 0.6]),
         ]
         up_req = UpdateEmbeddingsRequest(model_slug="test-model", embeddings=items)
+        # Chunk 10 is a content chunk; chunk 11 is potential fact 7's.
+        mock_session.execute.reset_mock()
+        mock_session.execute.return_value.all.return_value = [(10, None), (11, 7)]
         up_resp = servicer.UpdateEmbeddings(up_req, mock_context)
 
         assert up_resp.success is True
         assert up_resp.count == 2
-        mock_session.execute.assert_called()
+        lookup, content, fact = mock_session.execute.call_args_list
+        assert "INSERT INTO emb_test_model (chunk_id" in str(content.args[0])
+        assert [row["key"] for row in content.args[1]] == [10]
+        assert "INSERT INTO potential_fact_emb_test_model (fact_id" in str(fact.args[0])
+        assert [row["key"] for row in fact.args[1]] == [7]
 
 
 def test_embed_via_grpc_workflow():
