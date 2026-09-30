@@ -74,15 +74,142 @@ For detailed architectural and design specifications, see:
 
 ## Getting Started
 
-### Prerequisites
+Garage runs three ways:
 
-- [Aspect CLI](https://aspect.build/docs/cli/install) or [Bazel](https://bazel.build/) (v8+)
-- Python 3.14+ (when running outside the Bazel hermetic toolchains)
-- PostgreSQL with `pgvector` (or use the embedded instance provided by `GarageApp`)
-- An embedding server: the app's built-in llama.cpp engine (provider `llama_xpc`, available while
-  Garage is running), or [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/)
+- **The macOS app** (`GarageApp`) bundles Postgres, pgvector, llama.cpp and Tesseract, so it needs
+  nothing else installed. See the [User Guide](docs/support/guide.md).
+- **The `garage` CLI on Windows**, with Postgres in Docker, Ollama for models, and Tesseract for OCR.
+  See [Quickstart: Windows](#quickstart-windows) below.
+- **The `garage` CLI on macOS or Linux**, against your own Postgres and model server. See
+  [Quickstart: macOS and Linux](#quickstart-macos-and-linux).
 
-### Python CLI Quickstart
+### Quickstart: Windows
+
+This installs everything the CLI needs on Windows 10/11 (x64) and ends with a searchable corpus
+connected to Claude. Commands are PowerShell; run them from a clone of this repository.
+
+**You need:** [Python 3.14](https://www.python.org/downloads/) (`winget install Python.Python.3.14`),
+[Docker Desktop](https://www.docker.com/products/docker-desktop/), `winget`, and the
+[GitHub CLI](https://cli.github.com/) signed in (`winget install GitHub.cli`, then `gh auth login`)
+to download Garage's Postgres client library. Plan for about 3 GB of disk for the models below.
+
+1. **Postgres with pgvector**, in Docker. The port is bound to `127.0.0.1`, so the database is not
+   reachable from the network. Pick your own password.
+   ```powershell
+   docker run -d --name garage-pg --restart unless-stopped `
+     -e POSTGRES_PASSWORD=choose-a-password `
+     -p 127.0.0.1:5432:5432 -v garage-pgdata:/var/lib/postgresql `
+     pgvector/pgvector:pg18
+   docker exec garage-pg createdb -U postgres rag
+   ```
+
+2. **Ollama and the models.** `bge-m3` (1.2 GB) makes the embeddings. `gemma2:2b` (1.6 GB) distills
+   facts and answers `garage ask`; skip it if you only need search.
+   ```powershell
+   winget install --id Ollama.Ollama --exact
+   ollama pull bge-m3
+   ollama pull gemma2:2b
+   ```
+
+3. **Tesseract**, for text in images. Garage finds `libtesseract-5.dll` and its `tessdata` in the
+   install folder (`C:\Program Files\Tesseract-OCR`, or `%LOCALAPPDATA%\Programs\Tesseract-OCR` for a
+   per-user install) on its own. It does not need to be on `PATH`.
+   ```powershell
+   winget install --id UB-Mannheim.TesseractOCR --exact
+   ```
+
+4. **Install `garage`** into a virtual environment, with Garage's Postgres client library.
+   Windows has no `libpq`, so use the one the Windows build compiles from `//ext/postgres`, the same
+   Postgres version the Mac app bundles. `GARAGE_LIBPQ` tells Garage where it is. Use pip, not
+   `uv sync`: the lockfile only resolves for macOS.
+   ```powershell
+   $pgsql = "$env:LOCALAPPDATA\Garage\pgsql"
+   $run = gh run list -R rickmark/garage-rag -w windows.yaml -b main -s success -L 1 --json databaseId -q '.[0].databaseId'
+   gh run download $run -R rickmark/garage-rag -n postgres-windows-x64 -D $pgsql
+   [Environment]::SetEnvironmentVariable('GARAGE_LIBPQ', "$pgsql\bin\libpq.dll", 'User')
+   $env:GARAGE_LIBPQ = "$pgsql\bin\libpq.dll"
+   py -3.14 -m venv garage_python\.venv
+   garage_python\.venv\Scripts\pip install -e garage_python
+   garage_python\.venv\Scripts\Activate.ps1
+   ```
+
+5. **Configure.** The defaults assume the Mac app: a Unix-socket database and its built-in llama.cpp
+   engine. Point them at Docker and Ollama instead. The first line reads the password from the
+   container so it is never typed or shown. If the password contains `@ : / %`, percent-encode
+   those characters in the URL.
+   ```powershell
+   garage config init --user          # writes ~/.garage.json with every setting at its default
+   $pw = docker exec garage-pg printenv POSTGRES_PASSWORD
+   garage config set database.url "postgresql://postgres:$pw@127.0.0.1:5432/rag"
+   garage config set facts.provider ollama
+   garage config set facts.model gemma2:2b
+   ```
+   This stores the password in `~/.garage.json`. Alternatively, set the `GARAGE_DATABASE_URL`
+   environment variable, which overrides the file.
+
+6. **Create the schema** and register the embedding model:
+   ```powershell
+   garage init-db
+   garage register-model bge-m3 --provider ollama --dims 1024 --default
+   ```
+
+7. **Add a folder and index it.** `scan` counts what a source holds without indexing anything, and
+   `--limit` makes a quick trial run.
+   ```powershell
+   garage add-source notes "$HOME\Documents\Notes" --class document --trust authored
+   garage scan --source notes
+   garage ingest --source notes --limit 200
+   garage ingest
+   garage backfill                    # embeds every chunk that has no vector yet
+   ```
+
+8. **Search**, or ask a question answered from your files with citations:
+   ```powershell
+   garage search "distributed consensus"
+   garage ask "what did I write about consensus?"
+   ```
+
+9. **Connect Claude.** On Windows the Claude Desktop, Cline and Zed targets use their `%APPDATA%`
+   config files. Restart Claude Desktop afterwards.
+   ```powershell
+   garage mcp-install --target claude-code-user
+   garage mcp-install --target claude-desktop
+   ```
+
+#### Windows notes
+
+- **`no pq wrapper available`:** psycopg found no `libpq.dll`. Set `GARAGE_LIBPQ` as in step 4, then
+  open a new terminal so it takes effect. A `GARAGE_LIBPQ` that names no `libpq.dll` stops Garage
+  with a message saying so, rather than loading some other copy from `PATH`.
+- **`password authentication failed`:** `database.url` does not hold the container's password.
+  Repeat the two `$pw` lines in step 5.
+- **`libtesseract not found`:** install Tesseract (step 3). Images that failed before it was
+  installed are remembered as failed and skipped. Re-extract them with
+  `garage ingest --source <slug> --force`; unchanged chunks keep their embeddings, so the following
+  `backfill` only embeds what is new.
+- **Google Drive for desktop** puts your Drive at `G:\My Drive`, and a folder there can be added
+  like any other.
+  - It streams files: every file looks local, and reading one downloads it. Mark folders "Available
+    offline", or switch Drive to *Mirror files*, to keep indexing from downloading on demand.
+  - Google Docs and Sheets appear only as `.gdoc`/`.gsheet` shortcuts, which Garage skips. Download
+    them as `.docx`/`.xlsx` to index them.
+- **OneDrive** online-only files are not recognised as placeholders on Windows yet, so indexing one
+  downloads it. Index folders kept on the device.
+- **Not on Windows:** HEIC images (decoded by macOS ImageIO) and Apple Messages.
+- **Privacy:** Ollama runs on `localhost`, so document text, and communications in particular, never
+  leave the machine.
+
+### Quickstart: macOS and Linux
+
+**You need:**
+- Python 3.14;
+- PostgreSQL with `pgvector` (on a Mac, `brew install postgresql@18 pgvector`), with a `rag`
+  database (`createdb rag`);
+- an embedding server: [Ollama](https://ollama.com/), [LM Studio](https://lmstudio.ai/), or the Mac
+  app's built-in llama.cpp engine (provider `llama_xpc`, available while Garage is running).
+
+Install the CLI with `uv sync` in `garage_python/` on a Mac. On Linux, use
+`uv venv --python 3.14 .venv && uv pip install -e .`.
 
 1. **Initialize configuration**:
    ```bash
