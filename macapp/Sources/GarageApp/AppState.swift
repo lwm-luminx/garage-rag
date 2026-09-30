@@ -231,11 +231,15 @@ final class AppState: ObservableObject {
         downloadService.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         // A Gemma 4 download becomes the chat model when chat would otherwise have no tools.
         // Checked again once the backend is up, since the setting is written through it.
-        Publishers.CombineLatest(
-            downloadService.$downloadedModels.map { $0.map(\.path) },
-            grpc.$status.map { $0 == .running }
-        )
-            .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
+        // Typed pieces: the whole chain as one expression is too much for the type checker.
+        let downloadedPaths: AnyPublisher<[String], Never> = downloadService.$downloadedModels
+            .map { $0.map(\.path) }
+            .eraseToAnyPublisher()
+        let backendRunning: AnyPublisher<Bool, Never> = grpc.$status
+            .map { $0 == .running }
+            .eraseToAnyPublisher()
+        Publishers.CombineLatest(downloadedPaths, backendRunning)
+            .removeDuplicates { (old: ([String], Bool), new: ([String], Bool)) -> Bool in old == new }
             .sink { [weak self] _ in Task { @MainActor in await self?.adoptDownloadedGemma4ForInference() } }
             .store(in: &cancellables)
         llama.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
