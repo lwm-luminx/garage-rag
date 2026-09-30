@@ -75,6 +75,17 @@ enum GraphPagePresentation {
     static let title = "Graph"
     static let searchPlaceholder = "Find a document, author, fact or statement…"
 
+    /// The page's depth before anything is chosen.
+    static let defaultDepth = 2
+
+    /// How many hops out the page starts when another page centers it on a vertex of `label`.
+    /// From a claim, three hops reach the other documents that state it (the fact, its
+    /// distilled fact, that fact's other statements, their documents); from a document, an author
+    /// or a chunk, two hops already fan out wide.
+    static func startingDepth(for label: String) -> Int {
+        ["Document", "Author", "Chunk"].contains(label) ? defaultDepth : 3
+    }
+
     /// The page's empty state, from what it knows.
     struct Empty: Equatable {
         let symbol: String
@@ -94,7 +105,7 @@ enum GraphPagePresentation {
             return Empty(
                 symbol: "point.3.connected.trianglepath.dotted",
                 title: "No Graph Yet",
-                message: "The graph is built when facts are distilled: choose Distill Facts on the Facts page. It needs the Apache AGE extension, which Garage's own database has."
+                message: "The graph is built when facts are gleaned or distilled: choose Glean Facts or Distill Facts on the Facts page. It needs the Apache AGE extension, which Garage's own database has."
             )
         }
         if searched {
@@ -122,6 +133,6 @@ enum GraphPagePresentation {
     static func summary(vertices: Int, edges: Int, depth: Int, truncated: Bool) -> String {
         let hops = depth == 1 ? "1 hop" : "\(depth) hops"
         let counts = "\(vertices) \(vertices == 1 ? "vertex" : "vertices"), \(edges) \(edges == 1 ? "edge" : "edges") within \(hops)"
-        return truncated ? counts + " (cut at the limit; filter or look nearer)" : counts
+        return truncated ? counts + " (some connections left out; filter or look nearer)" : counts
     }
 }

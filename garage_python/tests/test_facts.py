@@ -551,3 +551,68 @@ def test_is_stale() -> None:
     assert is_stale(fresh, Document(id=1, content_sha256=b"d"), prompt, "m")
     reworded = effective_prompts([FactPrompt(name="default", description="Other.")])[0]
     assert is_stale(fresh, document, reworded, "m")
+
+
+class TestEnrichFactsRebuildsTheGraph:
+    """A glean gives a document's facts new ids, so the graph is re-projected; otherwise the Graph
+    page's Show in Graph looks for a vertex that is gone and finds nothing until the next Distill Facts."""
+
+    @pytest.fixture
+    def run(self, monkeypatch) -> Iterator:
+        from contextlib import contextmanager
+
+        from garage_rag.db.graph import GraphSummary
+        from garage_rag.ops import facts as ops_facts
+
+        document = Document(id=7, uri="file:///note.md", content="Some text.", corpus_class=CorpusClass.DOCUMENT)
+        session = MagicMock()
+        session.get.return_value = document
+        session.query.return_value.all.return_value = []
+
+        @contextmanager
+        def scope():
+            yield session
+
+        rebuilds: list[object] = []
+
+        def rebuild_graph(s):
+            rebuilds.append(s)
+            return GraphSummary(available=True, vertices={"PotentialFact": 2})
+
+        monkeypatch.setattr(ops_facts, "session_scope", scope)
+        monkeypatch.setattr("garage_rag.enrich.facts.configured_backend", lambda model, provider: ("m", "ollama"))
+        monkeypatch.setattr("garage_rag.enrich.metadata.store_metadata_facts", lambda s, d: [])
+        monkeypatch.setattr("garage_rag.db.graph.rebuild_graph", rebuild_graph)
+
+        def go(extracted: list | Exception):
+            def extract(*args, **kwargs):
+                if isinstance(extracted, Exception):
+                    raise extracted
+                return extracted
+
+            monkeypatch.setattr("garage_rag.enrich.facts.extract_and_store_facts", extract)
+            return ops_facts.enrich_facts(document_id=7), rebuilds
+
+        yield go
+
+    def test_a_glean_that_ran_rebuilds_the_graph(self, run) -> None:
+        summary, rebuilds = run([MagicMock(), MagicMock()])
+        assert summary.facts == 2
+        assert len(rebuilds) == 1
+        assert summary.graph
+        assert summary.message.endswith(summary.graph)
+
+    def test_a_glean_that_wrote_nothing_leaves_the_graph(self, run) -> None:
+        summary, rebuilds = run(RuntimeError("model gone"))
+        assert summary.failed == 1
+        assert rebuilds == []
+        assert summary.graph == ""
+
+    def test_a_failed_rebuild_is_reported_not_raised(self, run, monkeypatch) -> None:
+        def broken(session):
+            raise RuntimeError("no graph for you")
+
+        monkeypatch.setattr("garage_rag.db.graph.rebuild_graph", broken)
+        summary, _ = run([MagicMock()])
+        assert summary.facts == 1
+        assert "graph not rebuilt" in summary.graph

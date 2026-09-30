@@ -29,7 +29,7 @@ public struct GraphView: View {
     /// The graph id of the vertex in the middle; nil before one is chosen.
     @State private var centerID: Int64?
     @State private var neighborhood: GraphNeighborhood?
-    @State private var depth = 1
+    @State private var depth = GraphPagePresentation.defaultDepth
     @State private var selectedVertexID: Int64?
     @State private var hoveredVertexID: Int64?
 
@@ -582,6 +582,7 @@ public struct GraphView: View {
         focus = nil
         centerID = nil
         selectedVertexID = nil
+        depth = GraphPagePresentation.startingDepth(for: target.label)
         loadNeighborhood(focus: target)
     }
 

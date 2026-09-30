@@ -13,7 +13,11 @@ from unittest.mock import MagicMock
 import pytest
 
 from garage_rag.db.graph import (
+    EDGES_PER_VERTEX,
+    GraphEdge,
     GraphVertex,
+    _germane_order,
+    edge_rank,
     find_vertex,
     graph_labels,
     label_from_relation,
@@ -214,3 +218,66 @@ def test_a_missing_vertex_is_a_lookup_error(graph: FakeGraph):
         neighborhood(graph.session(), vertex_id=999)
     with pytest.raises(ValueError):
         neighborhood(graph.session())
+
+
+def test_each_vertex_reaches_at_most_its_most_germane_neighbours(graph: FakeGraph):
+    # Ada also wrote 30 more documents, with rising confidence; only the surest 20 are drawn: the
+    # house (0.9) and the 19 surest notes.
+    for n in range(30):
+        graph.vertices[200 + n] = ("Document", {"document_id": 200 + n, "title": f"Note {n}"})
+        graph.edges[300 + n] = ("WROTE", 4, 200 + n, {"role": "author", "confidence": n / 100})
+    result = neighborhood(graph.session(), vertex_id=4, closeness=lambda *args: {})
+    assert result.truncated
+    assert {v.id for v in result.vertices} == {4, 1, *range(211, 230)}
+    assert len(result.edges) == EDGES_PER_VERTEX
+
+
+def test_the_cap_keeps_the_way_back_and_ranks_against_the_center(graph: FakeGraph):
+    for n in range(30):
+        graph.vertices[200 + n] = ("Document", {"document_id": 200 + n, "title": f"Note {n}"})
+        graph.edges[300 + n] = ("WROTE", 4, 200 + n, {"role": "author", "confidence": 1.0})
+    asked: list[tuple[int, set[int]]] = []
+
+    def closeness(session, center, neighbours):
+        asked.append((center.id, {v.id for v in neighbours}))
+        # The ten notes nearest the house say much the same; Ada's edges alone would pick the newest.
+        return {200 + n: n / 100 for n in range(10)}
+
+    # From the house, Ada is one hop; at the second, her edge back to the house (confidence 0.9, below
+    # every other) is kept, and she adds 20 of her other documents: the ten nearest the house first.
+    result = neighborhood(graph.session(), vertex_id=1, depth=2, closeness=closeness)
+    assert 102 in {e.id for e in result.edges}
+    others = {v.id for v in result.vertices} & set(range(200, 230))
+    assert len(others) == 20
+    assert set(range(200, 210)) <= others
+    # Measured against the center, the house, not against Ada.
+    assert [center for center, _ in asked] == [1]
+
+
+def test_a_neighbour_close_to_the_center_and_linked_to_the_picture_ranks_first():
+    edges = [GraphEdge(10 + n, "WROTE", 4, 100 + n, {"confidence": 1.0}) for n in range(5)]
+    # 100 has the weakest edge rank (oldest); it is nearest the center and links to two shown vertices.
+    order = _germane_order(edges, 4, links={100: 2}, closeness={100: 0.1, 104: 0.5})
+    assert order[0] == 100
+    assert order[1] == 104
+    assert sorted(order) == [100, 101, 102, 103, 104]
+
+
+def test_edges_rank_by_what_they_say_about_a_claim():
+    def edge(eid: int, label: str, **props) -> GraphEdge:
+        return GraphEdge(eid, label, 1, eid, props)
+
+    ranked = sorted(
+        [
+            edge(1, "HAS_CHUNK", ord=0),
+            edge(2, "WROTE", role="committer", confidence=0.9),
+            edge(3, "WROTE", role="author", confidence=0.9),
+            edge(4, "STATES", char_start=40),
+            edge(5, "STATES", char_start=3),
+            edge(6, "SUPPORTS"),
+            edge(7, "SUPPORTS", similarity=0.8),
+            edge(8, "LIVES_IN"),
+        ],
+        key=edge_rank,
+    )
+    assert [e.id for e in ranked] == [7, 6, 8, 5, 4, 3, 2, 1]

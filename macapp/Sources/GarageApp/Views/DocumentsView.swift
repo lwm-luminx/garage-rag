@@ -310,6 +310,9 @@ public struct DocumentsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         } else if let detail = selectedDetail {
             documentDetailContent(detail)
+                // A new identity per document: reused, the selectable title kept the previous
+                // document's accessibility value, so UI tests read a stale title.
+                .id(detail.id)
         } else {
             VStack(spacing: 10) {
                 Spacer()
