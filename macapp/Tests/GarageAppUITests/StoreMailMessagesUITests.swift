@@ -14,24 +14,11 @@ import XCTest
 ///       xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests \
 ///       -only-testing:GarageAppUITests/StoreMailMessagesUITests
 ///
-/// Unzip the bundle first if Bazel produced `GarageStore.app.zip`. The sandbox keeps the app out of
-/// the runner's temporary folder, so each test's data folder lives in the App Group container's
-/// `UITests` folder (`GarageAppGroup.uiTestDataRoot`), the one place both can reach. The runner is
-/// sandboxed too (Xcode's XCTRunner template), so it writes there through the App Group the test
-/// target's entitlements give it; without that, setup fails with Cocoa error 513. On macOS 15 the
-/// first run may ask whether the test runner may access data from other apps.
+/// Unzip the bundle first if Bazel produced `GarageStore.app.zip`. Each test's data folder lives in
+/// the App Group container's `UITests` folder, as every UI test's does (`GarageUITestCase`), the one
+/// place the sandboxed app and the sandboxed runner both reach.
 class StoreUITestCase: GarageUITestCase {
     static let storeAppVariable = "GARAGE_UITEST_STORE_APP"
-    static let appGroup = "DWVXMLB45Y.group.me.rickmark.garage-rag"
-
-    /// The account's real home folder. The runner is sandboxed, so `NSHomeDirectory()` is its
-    /// container, and the app's view of `~` is exactly what these tests check.
-    static var realHome: String {
-        if let entry = getpwuid(getuid()), let dir = entry.pointee.pw_dir {
-            return String(cString: dir)
-        }
-        return NSHomeDirectory()
-    }
 
     private static func storeAppURL() throws -> URL {
         let path = ProcessInfo.processInfo.environment[storeAppVariable] ?? ""
@@ -51,9 +38,9 @@ class StoreUITestCase: GarageUITestCase {
         return XCUIApplication(url: url)
     }
 
+    /// The sandboxed store build reaches no test root but the App Group's.
     override func makeDataDirectoryParent() throws -> URL {
-        URL(fileURLWithPath: Self.realHome, isDirectory: true)
-            .appendingPathComponent("Library/Group Containers/\(Self.appGroup)/UITests", isDirectory: true)
+        Self.storeDataDirectoryRoot
     }
 
     static func entitlements(of bundle: URL) throws -> [String: Any] {
@@ -226,9 +213,9 @@ final class StoreMailMessagesUITests: StoreUITestCase {
         XCTAssertTrue(waitForEnabled(scanIngest), "Scan & Ingest stayed disabled", file: file, line: line)
         click(scanIngest)
 
-        // The scan's count is the source's expected total, shown as "<ingested>/<expected> DOCS".
+        // The scan's count is the source's expected total, shown as "<ingested> of <expected> documents".
         XCTAssertTrue(
-            element(textContaining: "/\(expected) DOCS").waitForExistence(timeout: 120),
+            element(textContaining: "of \(expected) documents").waitForExistence(timeout: 120),
             "the scan did not count \(expected) items in the fixture",
             file: file,
             line: line

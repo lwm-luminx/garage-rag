@@ -51,6 +51,8 @@ from garage_rag.proto.garage_pb2 import (
     EnsureLlamaModelResponse,
     FactClassCount,
     FactPrompt,
+    FactStatsRequest,
+    FactStatsResponse,
     FactSummary,
     FinalizeIngestSessionRequest,
     FinalizeIngestSessionResponse,
@@ -613,6 +615,29 @@ class GarageRpcServicer(GarageServiceServicer):
             total_count=page.total,
             classes=[FactClassCount(fact_class=name, count=count) for name, count in page.classes],
             formatted_output=f"{len(summaries)} of {page.total} facts",
+        )
+
+    @_grpc_errors
+    def GetFactStats(self, request: FactStatsRequest, context: grpc.ServicerContext) -> FactStatsResponse:
+        """Count facts under ListFacts' filters: overall, per source and per class."""
+        from garage_rag.db.engine import session_scope
+        from garage_rag.ops.facts import fact_stats
+
+        with session_scope() as session:
+            stats = fact_stats(
+                session,
+                query=request.query,
+                source=request.source,
+                fact_class=request.fact_class,
+                corpus_class=request.corpus_class,
+                document_id=request.document_id or None,
+            )
+        return FactStatsResponse(
+            facts=stats.facts,
+            documents=stats.documents,
+            facts_by_source=stats.by_source,
+            facts_by_class=stats.by_class,
+            formatted_output=stats.message,
         )
 
     # -----------------------------------------------------------------------

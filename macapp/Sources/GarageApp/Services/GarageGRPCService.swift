@@ -117,6 +117,11 @@ final class GarageGRPCService: ObservableObject {
         if FileManager.default.fileExists(atPath: Paths.modelsJSON.path) {
             env["GARAGE_MODEL_MANIFEST"] = Paths.modelsJSON.path
         }
+        // A --data-directory launch's models folder, which the helpers cannot see in the app's
+        // arguments; they load on-demand models from it rather than from the real data folder.
+        if GarageAppGroup.dataDirectoryOverride != nil {
+            env[GarageXPCConfigurationKey.modelsDirectory] = GarageAppGroup.modelsDirectory.path
+        }
         return env
     }
 

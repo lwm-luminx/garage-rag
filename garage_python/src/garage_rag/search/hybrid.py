@@ -139,7 +139,8 @@ def _filter_clause(
     if author:
         parts.append(
             "EXISTS (SELECT 1 FROM document_authors da JOIN authors a ON a.id = da.author_id "
-            "WHERE da.document_id = d.id AND a.display_name ILIKE :author)"
+            "WHERE da.document_id = d.id AND (a.display_name ILIKE :author OR EXISTS "
+            "(SELECT 1 FROM author_identities ai WHERE ai.author_id = a.id AND ai.value ILIKE :author)))"
         )
     if direction:
         parts.append("c.direction = :direction")

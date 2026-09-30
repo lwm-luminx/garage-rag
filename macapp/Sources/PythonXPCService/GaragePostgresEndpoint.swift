@@ -332,8 +332,66 @@ public enum GarageAppLaunch {
     /// store size and cannot count on dragging the window's corner.
     public static let windowSizeArgument = "--window-size"
 
+    /// `--client-home <path>`: look for the assistants' MCP configs under this folder instead of the
+    /// home folder, and show their paths relative to it. Only with `--data-directory`; for the App
+    /// Store screenshot tests, which show made-up assistants rather than the ones on the Mac.
+    public static let clientHomeArgument = "--client-home"
+
     /// Posted by `garage quit` as a distributed notification: every running Garage quits as its Quit
     /// menu item would. A notification rather than an Apple event, which the sandboxed App Store
     /// launcher may not send and which would ask for Automation consent.
     public static let quitNotification = "me.rickmark.garage-rag.quit"
+
+    /// This process's arguments: `CommandLine.arguments`, plus those an instance that relaunched
+    /// the app left for it (`GarageRelaunchHandoff`). Read the reset and data folder flags from
+    /// here, never from `CommandLine.arguments`: the App Store build's relaunch arrives without them.
+    public static let arguments: [String] = GarageRelaunchHandoff.merged(
+        commandLine: CommandLine.arguments,
+        handoff: GarageRelaunchHandoff.take()
+    )
+}
+
+/// Arguments an app instance hands the instance it relaunches ("Reset Database"), through the app's
+/// own defaults. `NSWorkspace.OpenConfiguration.arguments` is ignored when the caller is sandboxed,
+/// so the App Store build's relaunch starts with none: without this the new instance never learns
+/// that it follows a reset, and neither waits for the old one nor opens the setup assistant.
+///
+/// The new instance takes the record once, at its first read of `GarageAppLaunch.arguments`, and
+/// removes it. A record older than `maximumAge` is from a relaunch that never happened, and is dropped.
+public enum GarageRelaunchHandoff {
+    static let argumentsKey = "garage.relaunch.arguments"
+    static let dateKey = "garage.relaunch.date"
+    static let maximumAge: TimeInterval = 120
+
+    /// Leaves `arguments` for the next instance. Call right before launching it.
+    public static func record(_ arguments: [String], in defaults: UserDefaults = .standard, now: Date = Date()) {
+        defaults.set(arguments, forKey: argumentsKey)
+        defaults.set(now, forKey: dateKey)
+    }
+
+    /// Forgets a record, when the relaunch it was left for failed.
+    public static func discard(in defaults: UserDefaults = .standard) {
+        defaults.removeObject(forKey: argumentsKey)
+        defaults.removeObject(forKey: dateKey)
+    }
+
+    /// The recorded arguments when recent, else none; either way the record is gone afterwards.
+    static func take(from defaults: UserDefaults = .standard, now: Date = Date()) -> [String] {
+        let arguments = defaults.stringArray(forKey: argumentsKey) ?? []
+        let recordedAt = defaults.object(forKey: dateKey) as? Date
+        guard !arguments.isEmpty || recordedAt != nil else { return [] }
+        discard(in: defaults)
+        guard let recordedAt, now.timeIntervalSince(recordedAt) >= 0,
+              now.timeIntervalSince(recordedAt) <= maximumAge else { return [] }
+        return arguments
+    }
+
+    /// The command line with a handoff appended. A command line that already names a reset parent
+    /// (the Developer ID build, whose relaunch passes its arguments) is taken as it is.
+    static func merged(commandLine: [String], handoff: [String]) -> [String] {
+        guard !handoff.isEmpty, !commandLine.contains(GarageAppLaunch.databaseResetArgument) else {
+            return commandLine
+        }
+        return commandLine + handoff
+    }
 }

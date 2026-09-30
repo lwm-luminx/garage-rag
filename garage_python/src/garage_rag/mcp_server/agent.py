@@ -104,6 +104,23 @@ _HIDDEN_ARGUMENTS = {"rag_search": frozenset({"mode"}), "rag_get_document": froz
 
 NO_ANSWER_TEXT = "The model kept asking for tools instead of answering. Try a more specific question."
 
+# Appended to the opening search's result when nothing in it matched the question's words. A
+# vector search always returns its nearest neighbours, however far, and a small model reads an
+# unrelated hit as the answer ("When did I last talk to BMW?" answered with the bike service's
+# date) unless it is told the hits may be about something else.
+FIRST_SEARCH_NO_HITS_NOTE = (
+    "Note: this search found nothing. Search once more with different keywords (a name, a "
+    "company, a subject); if that finds nothing either, say that you found nothing about it in "
+    "the user's files."
+)
+FIRST_SEARCH_VECTOR_ONLY_NOTE = (
+    "Note: none of these hits contains the question's words. They are only the documents "
+    "nearest in meaning and may be about something else entirely. Use a hit only if its text "
+    "answers the question. Otherwise search once more with different keywords (a name, a company, "
+    "a subject), and if that finds nothing either, say that you found nothing about it in the "
+    "user's files. Never read an answer into an unrelated document."
+)
+
 FINAL_ANSWER_PROMPT = (
     "No more tool calls are available. Answer the question now in plain prose from what the "
     "tool results so far contain, and say plainly if they do not contain the answer."
@@ -358,6 +375,22 @@ def render_tool_result(tool: str, result: Any, *, limit: int = TOOL_RESULT_CHARS
     return text
 
 
+def first_search_note(result: Any) -> str | None:
+    """The caution to add to the opening search's result, or None when a keyword matched.
+
+    A hit matched only by the vector side (``matched_by == "vector"``) shares no word with
+    the question, so a result made of those, or of nothing, gets a note telling the model
+    not to treat them as the answer.
+    """
+    data = _plain(result)
+    hits = data.get("hits") if isinstance(data, dict) else None
+    if not hits:
+        return FIRST_SEARCH_NO_HITS_NOTE
+    if all(isinstance(hit, dict) and hit.get("matched_by") == "vector" for hit in hits):
+        return FIRST_SEARCH_VECTOR_ONLY_NOTE
+    return None
+
+
 def summarize_step(tool: str, arguments: Mapping[str, Any], result: Any) -> str:
     """One line for the caller's step list: what was asked and how much came back."""
     data = _plain(result)
@@ -478,8 +511,11 @@ def run_agent(
             completion_tokens += reply.completion_tokens or 0
         return reply
 
-    def call_tool(name: str, arguments: dict[str, Any]) -> None:
-        """Run one tool call and append it, and its result or error, to the conversation."""
+    def call_tool(name: str, arguments: dict[str, Any]) -> Any:
+        """Run one tool call and append it, and its result or error, to the conversation.
+
+        Returns the result, or None when the call failed or was refused.
+        """
         messages.append({"role": "assistant", "content": json.dumps({"tool": name, "arguments": arguments})})
         tool = by_name.get(name)
         if tool is None:
@@ -492,7 +528,7 @@ def run_agent(
                     "content": f"Error: there is no tool named {name!r}. The tools are: {', '.join(by_name)}.",
                 }
             )
-            return
+            return None
         to_run = restrict_for_host(name, arguments, communications_allowed=communications_allowed)
         if name == "rag_get_document":
             # Ask for no more text than fits in the result, so its ``truncated`` flag tells the truth.
@@ -505,7 +541,7 @@ def run_agent(
                 AgentStep(n=len(steps) + 1, tool=name, arguments=arguments, summary=f"{name} failed: {exc}", ok=False)
             )
             messages.append({"role": "user", "content": f"Error from {name}: {_trim(str(exc), 600)}"})
-            return
+            return None
         if not result_allowed_for_host(name, result, communications_allowed=communications_allowed):
             steps.append(
                 AgentStep(
@@ -525,16 +561,19 @@ def run_agent(
                     ),
                 }
             )
-            return
+            return None
         steps.append(
             AgentStep(n=len(steps) + 1, tool=name, arguments=arguments, summary=summarize_step(name, arguments, result))
         )
         _collect_citations(name, result, citations, seen_documents)
         messages.append({"role": "user", "content": f"Result of {name}:\n{render_tool_result(name, result)}"})
+        return result
 
     # The opening search is the harness's, not the model's, so it does not count against max_steps.
     if search_first and "rag_search" in by_name:
-        call_tool("rag_search", {"query": question, "limit": FIRST_SEARCH_LIMIT})
+        result = call_tool("rag_search", {"query": question, "limit": FIRST_SEARCH_LIMIT})
+        if result is not None and (note := first_search_note(result)):
+            messages[-1]["content"] += "\n" + note
 
     answer: str | None = None
     for _ in range(max_steps):

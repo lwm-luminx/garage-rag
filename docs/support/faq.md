@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Frequently Asked Questions (FAQ)
-description: Frequently asked questions about Garage local RAG, privacy guarantees, performance, and integrations.
+description: Answers to common questions about Garage, the local RAG app for macOS, covering privacy, supported files, models, performance and MCP clients such as Claude.
 redirect_from:
   - /faq.html
 ---

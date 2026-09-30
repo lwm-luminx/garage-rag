@@ -60,11 +60,21 @@ final class GarageMCPManagedServer: GarageManagedService {
         try GaragePythonRuntime.shared.withGILDescribingErrors {
             let os = Python.import("os")
             for (key, value) in opts {
-                os.environ[key] = PythonObject(value)
+                if key == GarageXPCConfigurationKey.workingDirectory {
+                    try FileManager.default.createDirectory(atPath: value, withIntermediateDirectories: true)
+                    os.chdir(PythonObject(value))
+                } else {
+                    os.environ[key] = PythonObject(value)
+                }
             }
             if let dbURL = opts[GarageXPCConfigurationKey.databaseURL] ?? opts["database_url"] {
                 // Normalize database URL to ensure psycopg is used
                 os.environ[GarageXPCConfigurationKey.databaseURL] = PythonObject(XPCSitePathSetup.ensurePsycopgDatabaseURL(dbURL))
+            }
+            if opts[GarageXPCConfigurationKey.workingDirectory] != nil {
+                // Settings cached under the previous directory would miss its garage.json.
+                let config = try Python.attemptImport("garage_rag.config")
+                _ = config.reset_settings()
             }
             let mcpModule = try Python.attemptImport("garage_rag.mcp_server.server")
             let started = try mcpModule.start_background_server.throwing.dynamicallyCall(withKeywordArguments: [

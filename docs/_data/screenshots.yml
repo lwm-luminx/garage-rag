@@ -1,0 +1,16 @@
+# Written by tools/screenshots/web_images.py: each screenshot's 1x size, for its width and height.
+assistants:
+  width: 1040
+  height: 263
+library:
+  width: 1040
+  height: 109
+mcp-server:
+  width: 1040
+  height: 650
+search:
+  width: 1040
+  height: 332
+try-it:
+  width: 1040
+  height: 229

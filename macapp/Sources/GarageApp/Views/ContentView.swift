@@ -245,7 +245,7 @@ struct ContentView: View {
         guard showSplashAtLaunch,
               !isRunningInTestEnvironment,
               // The app relaunched itself after "Reset Database"; it is not a new launch to greet.
-              !CommandLine.arguments.contains(GarageAppLaunch.databaseResetArgument),
+              !GarageAppLaunch.arguments.contains(GarageAppLaunch.databaseResetArgument),
               !SplashLaunchGate.hasPresented else { return }
         SplashLaunchGate.hasPresented = true
         guard !appState.firstRun.isActive, !appState.firstRun.shouldPresentAtLaunch else { return }

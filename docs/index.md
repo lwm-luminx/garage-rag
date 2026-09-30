@@ -1,7 +1,28 @@
 ---
 layout: default
-title: Garage
-description: Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first, private by construction. Download for macOS.
+title: Garage — Private local RAG and MCP server for your Mac
+description: Garage is a free, open-source local RAG app for macOS. It indexes your documents, code and messages on your Mac and serves them to Claude and other AI assistants over MCP.
+structured_data:
+  "@context": https://schema.org
+  "@type": SoftwareApplication
+  name: Garage
+  description: A local-first personal RAG app for macOS. It indexes your documents, code, notes and messages on your Mac and serves them to your AI assistant over the Model Context Protocol (MCP).
+  applicationCategory: ProductivityApplication
+  operatingSystem: macOS 14 or later (Apple silicon)
+  url: https://garagerag.app/
+  downloadUrl: https://github.com/rickmark/garage-rag/releases/latest
+  image: https://garagerag.app/assets/social-card.png
+  screenshot: https://garagerag.app/assets/screenshots/mcp-server-light-1x.png
+  license: https://github.com/rickmark/garage-rag
+  isAccessibleForFree: true
+  offers:
+    "@type": Offer
+    price: "0"
+    priceCurrency: USD
+  author:
+    "@type": Person
+    name: Rick Mark-Penwell
+    url: https://garagerag.app/about.html
 ---
 
 <div class="hero hero-landing">
@@ -13,6 +34,7 @@ description: Garage indexes your documents, code and messages on your Mac and se
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
+  {% unless site.app_store_live %}{% if site.testflight_url and site.testflight_url != "" %}<p class="download-meta">Want the Mac App Store version? It's in beta: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight</a>.</p>{% endif %}{% endunless %}
   <div id="download-alpha" class="hero-strip hero-alpha" hidden>
     <div class="hero-strip-text">
       <strong>🧪 <span id="download-alpha-title">Try the next version</span> <small id="download-alpha-meta"></small></strong>
@@ -25,6 +47,11 @@ description: Garage indexes your documents, code and messages on your Mac and se
     </div>
   </div>
 </div>
+
+<figure class="screenshot-figure screenshot-hero">
+  {% include screenshot.html name="mcp-server" alt="Garage for Mac's MCP Server page: Claude Desktop, Claude Code and LM Studio connected, and a question about a sample library answered with its sources" class="screenshot-window" loading="eager" %}
+  <figcaption>Garage for Mac, answering a question about a sample library through its MCP server.</figcaption>
+</figure>
 
 <div class="hero-strip hero-hire">
   <div class="hero-strip-text">
@@ -77,6 +104,34 @@ description: Garage indexes your documents, code and messages on your Mac and se
   </div>
 </div>
 
+## A look inside
+
+<div class="screenshot-tour">
+  <figure class="screenshot-figure">
+    <h3>Search that finds the meaning and the exact line</h3>
+    <p>Every result shows how it matched, whether it is yours or someone else's, and the full text beside it.</p>
+    {% include screenshot.html name="search" alt="Search results for 'who kept the lighthouse during the storm', ranked by hybrid search, with the top document's text beside them" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Answers grounded in your own files</h3>
+    <p>Try a question in the app before your assistant does: a local model answers from what search returns, and cites it.</p>
+    {% include screenshot.html name="try-it" alt="Try It on the MCP Server page: the question 'Who kept the Marrowgate lighthouse, and for how long?' answered by a local model, with its source" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Connects to the assistants you already use</h3>
+    <p>Garage finds the MCP clients on your Mac and connects each one with a click.</p>
+    {% include screenshot.html name="assistants" alt="Connected Assistants: Claude Desktop, Claude Code and LM Studio connected, Cursor installed and ready to connect" class="screenshot-detail" %}
+  </figure>
+
+  <figure class="screenshot-figure">
+    <h3>Always knows where your library stands</h3>
+    <p>Documents, chunks, embeddings and distilled facts, counted on the Status page.</p>
+    {% include screenshot.html name="library" alt="The Status page's library card: up to date, five documents in one source, indexed with one model, facts gleaned" class="screenshot-detail" %}
+  </figure>
+</div>
+
 ## Where your data goes
 
 Garage never uploads your files or its index. What leaves your Mac depends on which AI you connect, and Garage's [privacy guarantee]({{ '/privacy.html' | relative_url }}) is enforced by tests, not by promise.
@@ -103,22 +158,14 @@ Garage never uploads your files or its index. What leaves your Mac depends on wh
 
 ## How it works
 
-```
-sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ quality gate
-                                                          │
-                            attribution ◀─────────────────┤
-                                  │                       ▼
-                                  └──────▶ documents ── chunks
-                                                          │
-                                              ┌───────────┴───────────┐
-                                              ▼                       ▼
-                                         emb_<model_1>           emb_<model_2>
-                                              └───────────┬───────────┘
-                                                          ▼
-                                              hybrid search (RRF)
-                                                          │
-                                                    MCP server
-```
+<figure class="diagram">
+  <picture>
+    <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-narrow-dark.svg' | relative_url }}">
+    <source media="(max-width: 640px)" srcset="{{ '/assets/diagrams/how-it-works-narrow-light.svg' | relative_url }}">
+    <source media="(prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-dark.svg' | relative_url }}">
+    <img src="{{ '/assets/diagrams/how-it-works-light.svg' | relative_url }}" width="1040" height="470" loading="lazy" alt="Your folders, git repositories, documents, Messages and Mail, and cloud folders feed Garage on your Mac. Garage reads each file, attributes it, splits it into passages and embeds them with on-device models into a private PostgreSQL and pgvector library. Hybrid search over that library is served over MCP: your AI assistant asks a question and gets back only the excerpts it searched for. Garage uploads nothing.">
+  </picture>
+</figure>
 
 Garage walks the sources you register, extracts text, decides who wrote each document and how much to trust it, and splits it into chunks. Each chunk is embedded under every model you register, one table per model, so adding a model is a backfill rather than a re-ingest. Search fuses the vector and keyword rankings and serves the result to your assistant over MCP. Everything lives in a PostgreSQL 18 + pgvector cluster the app bundles and runs for you.
 
@@ -131,9 +178,9 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
     <div class="hero-actions download-actions">
       <a id="download-pkg" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download installer</span></a>
       <a id="download-release" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener">All downloads on GitHub ↗</a>
-      <a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>
+      {% if site.app_store_live %}<a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>{% elsif site.testflight_url and site.testflight_url != "" %}<a id="download-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">App Store beta on TestFlight</a>{% endif %}
     </div>
-    <p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>
+    {% if site.app_store_live %}<p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
   </div>
   <div class="download-panel-aside">
     <h4>After installing</h4>
@@ -142,8 +189,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>The first-run assistant picks your folders, an embedding model and the AI clients to connect.</li>
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
-    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>{% if site.testflight_url and site.testflight_url != "" %}
-    <p><small>Want the App Store version? It's in testing: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight beta</a>.</small></p>{% endif %}
+    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
   </div>
 </div>
 

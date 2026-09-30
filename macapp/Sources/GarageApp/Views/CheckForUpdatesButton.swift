@@ -20,3 +20,17 @@ struct CheckForUpdatesButton: View {
         }
     }
 }
+
+/// "Receive Beta Updates" — a checkmark item under "Check for Updates…". Betas are
+/// appcast entries on the `beta` channel; releases on no channel reach everyone.
+/// Absent, like the button, when the build can't update itself.
+struct BetaUpdatesToggle: View {
+    @ObservedObject var updater: UpdaterService
+
+    var body: some View {
+        if updater.isAvailable {
+            Toggle("Receive Beta Updates", isOn: $updater.receivesBetaUpdates)
+                .accessibilityIdentifier("updates.beta")
+        }
+    }
+}

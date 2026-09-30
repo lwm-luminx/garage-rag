@@ -464,6 +464,36 @@ class TestSearchFirst:
         assert json.loads(messages[2]["content"])["tool"] == "rag_search"
         assert "Widgets ship on Tuesdays." in messages[3]["content"]
 
+    def test_keyword_backed_hits_carry_no_caution(self) -> None:
+        tools, _ = _tools()
+        model = _model(["Answer."])
+        run_agent("q", tools, model)
+        messages = model.complete.call_args_list[0].args[0]
+        assert "Note:" not in messages[3]["content"]
+
+    def test_vector_only_hits_are_flagged_as_possibly_unrelated(self) -> None:
+        """A vector search always returns its nearest neighbours, so a question the corpus cannot
+        answer still gets hits; the model is told they may be about something else."""
+        hit = _hit()
+        hit.matched_by = "vector"
+        tools, _ = _tools(search=lambda args: _search_result(hit, query=args["query"]))
+        model = _model(["I found nothing about BMW in your files."])
+
+        result = run_agent("When did I last talk to BMW", tools, model)
+
+        messages = model.complete.call_args_list[0].args[0]
+        assert messages[3]["content"].startswith("Result of rag_search:")
+        assert messages[3]["content"].endswith(agent.FIRST_SEARCH_VECTOR_ONLY_NOTE)
+        assert result.answer == "I found nothing about BMW in your files."
+        assert [c.document_id for c in result.citations] == [10]
+
+    def test_no_hits_asks_for_one_more_search_then_a_plain_answer(self) -> None:
+        tools, _ = _tools(search=lambda args: _search_result(query=args["query"]))
+        model = _model(["Nothing about that in your files."])
+        run_agent("q", tools, model)
+        messages = model.complete.call_args_list[0].args[0]
+        assert messages[3]["content"].endswith(agent.FIRST_SEARCH_NO_HITS_NOTE)
+
     def test_the_opening_search_does_not_use_up_a_step(self) -> None:
         tools, runners = _tools()
         model = _model([_call("rag_search", query="BMW"), "Answer."])

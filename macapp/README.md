@@ -374,8 +374,21 @@ is behind `select()`s on `//bazel:is_store`:
   into the app's `Info.plist` for the same configurations.
 
 The app never shows a disabled "Check for Updates…"; when the running build
-can't update itself the item is simply absent. Whether to check automatically is
-Sparkle's own question, asked on the second launch.
+can't update itself the item is simply absent, along with "Receive Beta Updates"
+below it. Whether to check automatically is Sparkle's own question, asked on the
+second launch.
+
+### Beta channel
+
+The feed has one Sparkle channel, `beta`. An entry with no `sparkle:channel` is offered to
+every install; one tagged `beta` only to installs with "Receive Beta Updates" on (the
+`garage.updates.beta` default, which `SparkleChannelDelegate` answers Sparkle's
+`allowedChannels(for:)` from). Sparkle still takes the highest `CFBundleVersion` it is allowed
+to see, so a tester is offered a stable release once it is newer than their beta, and turning
+betas off never downgrades anyone.
+
+`publish_appcast --channel beta` tags an entry; without it the entry is on both tracks, as
+1.5 beta 1 is. `test_appcast.py` rejects any other channel, since no build asks for one.
 
 ### The signing key
 
@@ -403,7 +416,8 @@ Build from an up-to-date `main`. Sparkle decides what is newer by `CFBundleVersi
 `bazel/workspace_status.sh` stamps with the commit count of `HEAD`, so a release built from a
 branch or a stale checkout can come out older than one already in the feed (the publish step
 refuses that). The marketing version is `short_version_string` in
-`macapp/Sources/GarageApp/BUILD.bazel`, and the release tag is `v` plus that version.
+`macapp/Sources/GarageApp/BUILD.bazel`, and the release tag is `v` plus that version, with a
+pre-release suffix for a beta in the feed (`v1.5-beta.1`).
 
 1. `aspect build //macapp/package:GarageApp` stages and signs the app, producing
    `bazel-bin/macapp/package/GarageApp.zip`: a zip of `Garage.app`, which is exactly the
@@ -423,9 +437,11 @@ refuses that). The marketing version is `short_version_string` in
    aspect run //macapp/package:publish_appcast -- v1.5 --notes path/to/notes.md
    ```
 
-   `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
+   `--channel beta` puts the entry on the beta channel (see above). `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
    in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
-   and refuses one whose build is not the one in `bazel-bin`. Before signing anything the
+   and refuses one whose build is not the one in `bazel-bin`. When the key is on another Mac,
+   copy that zip there and run `//macapp/package:sign_appcast -- v1.5 --from Garage-1.5.zip`,
+   which builds nothing and skips only that `bazel-bin` check. Before signing anything the
    script checks that the archive's version matches the tag, that it is notarized and
    stapled, arm64 only and newer than every entry
    already in `docs/appcast.xml`, and that the EdDSA key in the login Keychain is the one
@@ -484,6 +500,33 @@ with the embedding app's identity when it bundles it, and `macos_lipo_app`
 re-signs the nested `Updater.app`, the launcher helper bundles in `Contents/Helpers`
 (with the entitlements each carries) and `XPCServices/*.xpc` on the way to
 notarization.
+
+## Tip jar (App Store only)
+
+The App Store build offers tips as in-app purchases on the splash (`Services/TipJar.swift`,
+`Views/TipJarView.swift`), where the Developer ID build shows the Patreon link instead: a link to an
+outside payment breaks App Review guideline 3.1.1. A tip unlocks nothing. The Developer ID build
+never loads StoreKit products.
+
+The products are Consumable in-app purchases in App Store Connect:
+
+| Product ID | Reference name | Price (USD) |
+|---|---|---|
+| `me.rickmark.garage_rag.tip.small` | Small Tip | 4.99 |
+| `me.rickmark.garage_rag.tip.medium` | Medium Tip | 9.99 |
+| `me.rickmark.garage_rag.tip.large` | Large Tip | 19.99 |
+| `me.rickmark.garage_rag.tip.max` | Max Tip | 49.99 |
+| `me.rickmark.garage_rag.tip.ultra` | Ultra Tip | 99.99 |
+
+Buttons show the App Store's localized price, so other storefronts follow App Store Connect's
+equalized prices. When the store returns no products (not yet made, or not yet approved), the
+splash shows no tip buttons.
+
+`Sources/GarageApp/GarageTips.storekit` mirrors the products for local testing. In Xcode, choose it
+under the Garage scheme's Run > Options > StoreKit Configuration and run the App Store configuration
+to buy a tip against it; `TipJarTests` checks it lists the same products. A purchase is not unit
+tested: an `SKTestSession` needs a host app, and the unhosted unit tests get `SKInternalErrorDomain`
+3. Change both when a product changes.
 
 ## First-run setup assistant
 

@@ -5,6 +5,9 @@ name: CI
 # - `python`: ruff and the whole pytest suite in a uv venv, with a pgvector
 #   Postgres service so test_postgres.py runs instead of skipping. It is the same
 #   recipe the web-session hook uses (.claude/hooks/session-start.sh).
+# - `python-package`: builds the sdist and wheel PyPI would get, checks their
+#   metadata, and installs each into a fresh venv for tools/pypi/smoke_test.sh
+#   (console scripts, the packaged SQL and model catalog, `garage init-db`).
 # - `python-freethreaded`: the pytest suite again on free-threaded CPython 3.14t,
 #   informational (continue-on-error) while grpcio and lxml still re-enable the GIL.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
@@ -76,6 +79,54 @@ jobs:
           # test_scanner runs git; keep the runner's global config out of it. Only
           # here: job-wide, it breaks actions/checkout's post-job git config cleanup.
           GIT_CONFIG_GLOBAL: /dev/null
+
+  python-package:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # createdb's password; each smoke test gets its own database on the service.
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-suffix: package
+          cache-dependency-glob: garage_python/pyproject.toml
+      - name: Build the sdist and wheel
+        working-directory: garage_python
+        run: |
+          uv build --out-dir "$RUNNER_TEMP/dist"
+          uvx twine check --strict "$RUNNER_TEMP"/dist/*
+      - name: Smoke test the wheel
+        env:
+          GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_wheel
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' garage_python/pyproject.toml)"
+          createdb -h localhost -U postgres garage_wheel
+          uv venv --python 3.14 "$RUNNER_TEMP/wheel"
+          uv pip install --python "$RUNNER_TEMP/wheel" "$RUNNER_TEMP"/dist/*.whl
+          tools/pypi/smoke_test.sh "$RUNNER_TEMP/wheel/bin/python" "$version"
+      - name: Smoke test the sdist
+        env:
+          GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_sdist
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' garage_python/pyproject.toml)"
+          createdb -h localhost -U postgres garage_sdist
+          uv venv --python 3.14 "$RUNNER_TEMP/sdist"
+          uv pip install --python "$RUNNER_TEMP/sdist" --no-binary garage-rag "$RUNNER_TEMP"/dist/*.tar.gz
+          tools/pypi/smoke_test.sh "$RUNNER_TEMP/sdist/bin/python" "$version"
 
   python-freethreaded:
     # The same suite on the free-threaded build of CPython 3.14 (the `t` ABI),

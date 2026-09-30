@@ -96,13 +96,19 @@ class RepoAttribution:
         return sorted(tallies.values(), key=lambda t: (-t.commits, t.name))
 
 
+# Settings that stop a repository's own configuration from running code when Garage reads it. A
+# checkout is user-chosen data, and ``.git/config`` may name a ``core.fsmonitor`` command that git
+# would start; passing the override on the command line wins over every config file.
+GIT_HARDENING: tuple[str, ...] = ("-c", "core.fsmonitor=false")
+
+
 def _run_git(args: list[str], cwd: Path, *, timeout: float = _GIT_TIMEOUT) -> str | None:
     git = git_executable()
     if git is None:
         return None
     try:
         result = subprocess.run(  # noqa: S603 - fixed argv, no shell
-            [git, *args],
+            [git, *GIT_HARDENING, *args],
             cwd=cwd,
             capture_output=True,
             text=True,

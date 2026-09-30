@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Support Center
-description: Official support pages, troubleshooting guides, FAQ, and privacy documentation for Garage.
+description: Help for Garage, the local RAG app for macOS, with the user guide, troubleshooting, FAQ, privacy policy and how to reach the maintainer.
 ---
 
 <div class="hero">
