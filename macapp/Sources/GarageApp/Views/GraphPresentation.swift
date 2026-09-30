@@ -75,6 +75,21 @@ enum GraphPagePresentation {
     static let title = "Graph"
     static let searchPlaceholder = "Find a document, author, fact or statement…"
 
+    /// The labels a page opened with nothing chosen starts from, best first: a distilled fact ties
+    /// statements to their documents, a document ties them to its authors.
+    static let startingLabels = ["Fact", "Document", "PotentialFact", "Author"]
+
+    /// Where the page centers when it opens with nothing chosen, so there is a picture before any
+    /// search: the first vertex of the best starting label, else the first of any.
+    static func startingVertex(_ vertices: [GraphVertexItem]) -> GraphVertexItem? {
+        for label in startingLabels {
+            if let vertex = vertices.first(where: { $0.label == label }) {
+                return vertex
+            }
+        }
+        return vertices.first
+    }
+
     /// The page's empty state, from what it knows.
     struct Empty: Equatable {
         let symbol: String

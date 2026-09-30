@@ -613,6 +613,10 @@ public struct GraphView: View {
                     }
                     labels = loaded
                     isLoading = false
+                    // Nothing chosen yet: list what the graph holds and draw around a starting vertex.
+                    if loaded.available, centerID == nil, focus == nil, !hasSearched {
+                        search(thenCenter: true)
+                    }
                 }
             } catch {
                 await MainActor.run {
@@ -623,10 +627,12 @@ public struct GraphView: View {
         }
     }
 
-    private func search() {
+    /// Finds vertices matching the search field; `thenCenter` (the page's opening listing, with an
+    /// empty field) also centers on a starting vertex when nothing has been chosen meanwhile.
+    private func search(thenCenter: Bool = false) {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard databaseRunning else { return }
-        hasSearched = true
+        hasSearched = !thenCenter
         isSearching = true
         Task {
             do {
@@ -638,6 +644,9 @@ public struct GraphView: View {
                 await MainActor.run {
                     results = found
                     isSearching = false
+                    if thenCenter, centerID == nil, let start = GraphPagePresentation.startingVertex(found) {
+                        center(on: start.id)
+                    }
                 }
             } catch {
                 await MainActor.run {

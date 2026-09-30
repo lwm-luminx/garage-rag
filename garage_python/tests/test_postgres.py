@@ -1743,3 +1743,11 @@ class TestDistilledFacts:
         assert sorted(v.label for v in facts_only.vertices) == ["Fact", "PotentialFact", "PotentialFact"]
         with pytest.raises(LookupError):
             neighborhood(db, label="Document", key=doc + 1000)
+
+        # What the page does: list vertices with no query, then walk from one by its graph id.
+        listed = find_vertices(db, "")
+        assert {v.label for v in listed} >= {"Author", "Document", "Fact", "PotentialFact"}
+        picked = next(v for v in listed if v.label == "PotentialFact" and v.key == first)
+        by_id = neighborhood(db, vertex_id=picked.id)
+        assert by_id.center is not None and by_id.center.id == picked.id
+        assert sorted(v.label for v in by_id.vertices) == ["Document", "Fact", "PotentialFact"]

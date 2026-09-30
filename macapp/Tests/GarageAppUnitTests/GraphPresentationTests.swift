@@ -30,6 +30,17 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertGreaterThan(Set(tints.map { "\($0)" }).count, 1)
     }
 
+    func testThePageStartsFromAFactThenADocument() {
+        let author = GraphVertexItem(id: 1, label: "Author", key: 3, title: "Ada")
+        let document = GraphVertexItem(id: 2, label: "Document", key: 7, title: "notes.md")
+        let fact = GraphVertexItem(id: 3, label: "Fact", key: 9, title: "Ada wrote the notes.")
+        let person = GraphVertexItem(id: 4, label: "Person", key: 11, title: "Ada")
+        XCTAssertEqual(GraphPagePresentation.startingVertex([author, document, fact]), fact)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([author, document]), document)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([person]), person)
+        XCTAssertNil(GraphPagePresentation.startingVertex([]))
+    }
+
     func testTheEmptyStateNamesWhatIsMissing() {
         XCTAssertEqual(GraphPagePresentation.empty(databaseRunning: false, available: false, hasSelection: false, searched: false).title, "Database Offline")
         let noGraph = GraphPagePresentation.empty(databaseRunning: true, available: false, hasSelection: false, searched: false)
