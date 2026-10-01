@@ -301,7 +301,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     from the catalog, so a configured label needs no change there, and its vertices are searched by
     their `title` property. The app's Graph page (`Views/GraphView.swift`, radial layout in
     `GraphLayout.swift`) draws one vertex's neighbourhood, opening on the owner's own Author vertex
-    (`is_self`, which `find_vertices` lists first among authors); the Facts and Documents pages link into it
+    (`is_self`, which `find_vertices` lists first among authors, read from `authors` so no rebuild is needed; the app
+    fills an empty `identity.name` from the Mac account's full name, and setting it marks the owner's existing
+    author row, `ensure_self_author`); the Facts and Documents pages link into it
     with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the

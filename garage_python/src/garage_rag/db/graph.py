@@ -654,20 +654,34 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
         if query and not clauses:
             continue
         where = f"WHERE {' OR '.join(clauses)}" if clauses else ""
-        order = (
-            "CAST(ag_catalog.agtype_access_operator(v.properties, '\"is_self\"'::ag_catalog.agtype) AS text)"
-            " = 'true' DESC, v.id"
-            if name == "Author"
-            else "v.id"
-        )
+        order = f"{_IS_SELF} DESC, v.id" if name == "Author" else "v.id"
         rows = session.execute(
             text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY {order} LIMIT :limit'),
             {"pattern": f"%{_like_escape(query)}%", "key": key, "limit": max(1, limit - len(found))},
         )
-        found.extend(_vertex(*r) for r in rows)
+        vertices = [_vertex(*r) for r in rows]
+        if name == "Author":
+            _mark_self(session, vertices)
+        found.extend(vertices)
         if len(found) >= limit:
             break
     return found[:limit]
+
+
+# Whether an Author vertex is the owner's, read from ``authors`` rather than the projection: the
+# owner is marked when ``identity.name`` is set (``ensure_self_author``), which can be after the
+# graph was last rebuilt.
+_IS_SELF = (
+    "COALESCE((SELECT a.is_self FROM authors a WHERE a.id = CAST(CAST("
+    "ag_catalog.agtype_access_operator(v.properties, '\"author_id\"'::ag_catalog.agtype) AS text) AS bigint)), false)"
+)
+
+
+def _mark_self(session: Session, vertices: list[GraphVertex]) -> None:
+    """Set each Author vertex's ``is_self`` property to what ``authors`` says now."""
+    owners = set(session.execute(text("SELECT id FROM authors WHERE is_self")).scalars())
+    for vertex in vertices:
+        vertex.properties["is_self"] = vertex.key in owners
 
 
 def _like_escape(value: str) -> str:

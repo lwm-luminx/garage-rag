@@ -108,6 +108,19 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(GarageConfigLoader.loadDefaultEmbeddingModel(fileURL: silent), GarageConfigLoader.defaultEmbeddingModel)
     }
 
+    func testIdentityNameIsReadWhenDeclared() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let named = folder.appendingPathComponent("named.json")
+        let blank = folder.appendingPathComponent("blank.json")
+        try Data(#"{"identity": {"name": " Ada Lovelace "}}"#.utf8).write(to: named)
+        try Data(#"{"identity": {"name": ""}}"#.utf8).write(to: blank)
+
+        XCTAssertEqual(GarageConfigLoader.loadIdentityName(fileURL: named), "Ada Lovelace")
+        XCTAssertNil(GarageConfigLoader.loadIdentityName(fileURL: blank))
+    }
+
     func testLoadSourcesFromNonExistentFile() {
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_file_\(UUID().uuidString).json")
         let sources = GarageConfigLoader.loadSourcesFromConfig(fileURL: fakeURL)

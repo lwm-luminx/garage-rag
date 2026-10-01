@@ -380,6 +380,12 @@ public struct GarageConfigFile: Codable {
     /// `facts`; left empty, the distillation model answers.
     public let inference: FactsEntry?
     public let embedding: EmbeddingEntry?
+    public let identity: IdentityEntry?
+
+    /// The `identity` section, reduced to the owner's name.
+    public struct IdentityEntry: Codable {
+        public let name: String?
+    }
 }
 
 /// The on-disk shape of `models.json`: presets grouped by what they're used for,
@@ -590,6 +596,23 @@ public enum GarageConfigLoader {
             }
             let model = config.embedding?.defaultModel?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (model?.isEmpty == false) ? model : nil
+        }
+
+        return nil
+    }
+
+    /// `identity.name`, the corpus owner's name, or nil when the first file that parses names none.
+    public static func loadIdentityName(fileURL: URL? = nil) -> String? {
+        let targets = fileURL.map { [$0] } ?? candidateConfigFiles
+
+        for url in targets {
+            guard FileManager.default.fileExists(atPath: url.path) else { continue }
+            guard let data = try? Data(contentsOf: url),
+                  let config = try? JSONDecoder().decode(GarageConfigFile.self, from: data) else {
+                continue
+            }
+            let name = config.identity?.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (name?.isEmpty == false) ? name : nil
         }
 
         return nil
