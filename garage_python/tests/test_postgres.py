@@ -1799,3 +1799,17 @@ class TestDistilledFacts:
         by_id = neighborhood(db, vertex_id=picked.id)
         assert by_id.center is not None and by_id.center.id == picked.id
         assert sorted(v.label for v in by_id.vertices) == ["Document", "Fact", "PotentialFact"]
+
+        # The owner's own Author vertex lists first, whatever its id, so the page can open on it.
+        owner = db.execute(
+            text("INSERT INTO authors (display_name, is_self) VALUES ('Owner', true) RETURNING id")
+        ).scalar_one()
+        db.execute(
+            text("INSERT INTO document_authors (document_id, author_id, role) VALUES (:d, :a, 'author')"),
+            {"d": doc, "a": owner},
+        )
+        db.flush()
+        rebuild_graph(db)
+        authors = find_vertices(db, "", label="Author")
+        assert [v.key for v in authors] == [owner, author]
+        assert authors[0].properties["is_self"] is True

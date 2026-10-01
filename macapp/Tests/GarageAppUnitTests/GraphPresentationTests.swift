@@ -85,4 +85,16 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertEqual(GraphView.nodeRadius(for: 30), 8)
         XCTAssertEqual(GraphView.nodeRadius(for: 150), 5.5)
     }
+
+    func testThePageStartsFromTheOwnersOwnAuthorVertex() {
+        let fact = GraphVertexItem(id: 1, label: "Fact", key: 1, title: "A claim")
+        let other = GraphVertexItem(id: 2, label: "Author", key: 2, title: "Ada", propertiesJSON: #"{"is_self": false}"#)
+        let owner = GraphVertexItem(id: 3, label: "Author", key: 3, title: "Rick", propertiesJSON: #"{"author_id": 3, "is_self": true}"#)
+
+        XCTAssertTrue(GraphPagePresentation.isSelfAuthor(owner))
+        XCTAssertFalse(GraphPagePresentation.isSelfAuthor(other))
+        XCTAssertFalse(GraphPagePresentation.isSelfAuthor(fact))
+        XCTAssertEqual(GraphPagePresentation.startingVertex([fact, other, owner])?.id, 3)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([other, fact])?.id, 1, "no owner: the best starting label")
+    }
 }

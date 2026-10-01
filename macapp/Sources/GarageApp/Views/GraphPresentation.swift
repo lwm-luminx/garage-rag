@@ -80,14 +80,28 @@ enum GraphPagePresentation {
     static let startingLabels = ["Fact", "Document", "PotentialFact", "Author"]
 
     /// Where the page centers when it opens with nothing chosen, so there is a picture before any
-    /// search: the first vertex of the best starting label, else the first of any.
+    /// search: the owner's own Author vertex, else the first vertex of the best starting label,
+    /// else the first of any.
     static func startingVertex(_ vertices: [GraphVertexItem]) -> GraphVertexItem? {
+        if let owner = vertices.first(where: isSelfAuthor) {
+            return owner
+        }
         for label in startingLabels {
             if let vertex = vertices.first(where: { $0.label == label }) {
                 return vertex
             }
         }
         return vertices.first
+    }
+
+    /// Whether `vertex` is the owner's own Author vertex (`is_self` among its properties).
+    static func isSelfAuthor(_ vertex: GraphVertexItem) -> Bool {
+        guard vertex.label == "Author",
+              let data = vertex.propertiesJSON.data(using: .utf8),
+              let properties = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return properties["is_self"] as? Bool == true
     }
 
     /// The page's depth before anything is chosen.

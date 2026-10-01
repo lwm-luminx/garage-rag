@@ -623,7 +623,8 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
 
     ``label`` narrows to one label; an empty ``query`` lists the first vertices
     of each searchable label. Chunks have no title and are found through their
-    documents.
+    documents. The owner's own Author vertex (``is_self``) comes before other
+    authors, so the Graph page can open on it.
     """
     if not graph_exists(session):
         return []
@@ -653,8 +654,14 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
         if query and not clauses:
             continue
         where = f"WHERE {' OR '.join(clauses)}" if clauses else ""
+        order = (
+            "CAST(ag_catalog.agtype_access_operator(v.properties, '\"is_self\"'::ag_catalog.agtype) AS text)"
+            " = 'true' DESC, v.id"
+            if name == "Author"
+            else "v.id"
+        )
         rows = session.execute(
-            text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY v.id LIMIT :limit'),
+            text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY {order} LIMIT :limit'),
             {"pattern": f"%{_like_escape(query)}%", "key": key, "limit": max(1, limit - len(found))},
         )
         found.extend(_vertex(*r) for r in rows)

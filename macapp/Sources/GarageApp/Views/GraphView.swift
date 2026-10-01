@@ -635,6 +635,7 @@ public struct GraphView: View {
         guard databaseRunning else { return }
         hasSearched = !thenCenter
         isSearching = true
+        let looksForOwner = thenCenter && labels?.vertexLabels.contains(where: { $0.label == "Author" }) == true
         Task {
             do {
                 let found = try await appState.findGraphVertices(
@@ -642,11 +643,18 @@ public struct GraphView: View {
                     label: searchLabel == CorpusTaxonomy.allSentinel ? nil : searchLabel,
                     limit: 50
                 )
+                // The page opens on the owner's own Author vertex, which the server lists first among
+                // authors; the general listing can stop before it reaches the authors.
+                let owner = looksForOwner
+                    ? (try? await appState.findGraphVertices(query: "", label: "Author", limit: 1))?
+                        .first(where: GraphPagePresentation.isSelfAuthor)
+                    : nil
                 await MainActor.run {
                     results = found
                     isSearching = false
-                    if thenCenter, centerID == nil, let first = GraphPagePresentation.startingVertex(found) {
-                        start(at: first.id)
+                    if thenCenter, centerID == nil,
+                       let first = owner ?? GraphPagePresentation.startingVertex(found) {
+                        start(at: first)
                     }
                 }
             } catch {
@@ -662,9 +670,15 @@ public struct GraphView: View {
     /// result), at the depth that suits its kind; Center Here and the picture keep the depth.
     private func start(at id: Int64) {
         if let vertex = results.first(where: { $0.id == id }) {
-            depth = GraphPagePresentation.startingDepth(for: vertex.label)
+            start(at: vertex)
+        } else {
+            center(on: id)
         }
-        center(on: id)
+    }
+
+    private func start(at vertex: GraphVertexItem) {
+        depth = GraphPagePresentation.startingDepth(for: vertex.label)
+        center(on: vertex.id)
     }
 
     private func center(on id: Int64) {
