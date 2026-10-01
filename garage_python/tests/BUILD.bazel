@@ -499,6 +499,7 @@ py_test(
     data = ["//data/sql:sql_schema"],
     deps = [
         ":conftest",
+        "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/embed",

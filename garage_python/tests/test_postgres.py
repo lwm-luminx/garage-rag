@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from garage_rag.config import Settings, ensure_psycopg_database_url, reset_settings, set_settings
+from garage_rag.config import Settings, ensure_psycopg_database_url, get_settings, reset_settings, set_settings
 from garage_rag.db.emb_tables import get_model, potential_fact_table_name, register_model
 from garage_rag.db.engine import reset_engine, session_scope
 from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations, sql_dir, to_psycopg_conninfo
@@ -1813,3 +1813,28 @@ class TestDistilledFacts:
         authors = find_vertices(db, "", label="Author")
         assert [v.key for v in authors] == [owner, author]
         assert authors[0].properties["is_self"] is True
+
+    def test_naming_the_owner_marks_their_author_vertex_without_a_rebuild(self, db: Session) -> None:
+        from garage_rag.attribute.resolver import ensure_self_author
+        from garage_rag.db.graph import age_available, find_vertices, rebuild_graph
+
+        if not age_available(db):
+            pytest.skip("this server has no Apache AGE")
+        db.execute(text("INSERT INTO authors (display_name) VALUES ('Bob') RETURNING id")).scalar_one()
+        ada = db.execute(text("INSERT INTO authors (display_name) VALUES ('Ada') RETURNING id")).scalar_one()
+        db.flush()
+        rebuild_graph(db)
+
+        # identity.name names an author ingest already made: that row becomes the owner's, not a new one.
+        database_url = get_settings().database_url
+        set_settings(Settings(database_url=database_url, self_name="Ada"))
+        try:
+            owner = ensure_self_author(db)
+        finally:
+            set_settings(Settings(database_url=database_url))
+        assert owner is not None and owner.id == ada
+        assert db.execute(text("SELECT count(*) FROM authors")).scalar_one() == 2
+
+        authors = find_vertices(db, "", label="Author", limit=1)
+        assert [(v.key, v.properties["is_self"]) for v in authors] == [(ada, True)]
+        assert [v.properties["is_self"] for v in find_vertices(db, "", label="Author")] == [True, False]

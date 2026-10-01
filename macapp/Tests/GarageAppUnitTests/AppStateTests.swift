@@ -20,6 +20,12 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
+    func testTheAccountNameIsRecordedOnlyWhenNoOwnerIsConfigured() {
+        XCTAssertEqual(AppState.ownerNameToRecord(configured: nil, accountName: " Ada Lovelace "), "Ada Lovelace")
+        XCTAssertNil(AppState.ownerNameToRecord(configured: "Ada", accountName: "Ada Lovelace"))
+        XCTAssertNil(AppState.ownerNameToRecord(configured: nil, accountName: "  "))
+    }
+
     func testStatusSummaryMapping() {
         let state = AppState()
 

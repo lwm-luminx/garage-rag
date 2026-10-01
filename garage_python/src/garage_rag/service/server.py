@@ -186,6 +186,19 @@ def _abort_for(context: grpc.ServicerContext, exc: Exception) -> None:
             context.abort(code, str(exc))
 
 
+def _mark_owner() -> None:
+    """Mark the owner's author row after ``identity.*`` changes, so the Graph page opens on it now
+    rather than after the next ingest. A database that is not up yet leaves it to that ingest."""
+    from garage_rag.attribute.resolver import ensure_self_author
+    from garage_rag.db.engine import session_scope
+
+    try:
+        with session_scope() as session:
+            ensure_self_author(session)
+    except Exception as exc:  # noqa: BLE001 - the setting is written; marking is a convenience
+        logger.warning("Could not mark the owner's author row: %s", exc)
+
+
 def _grpc_errors[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
     """Abort the RPC with the status code an exception from the handler implies.
 
@@ -1282,6 +1295,8 @@ class GarageRpcServicer(GarageServiceServicer):
         from garage_rag.ops.settings import set_setting
 
         written, stored = set_setting(request.name, request.value, path=Path(request.path) if request.path else None)
+        if request.name.startswith("identity."):
+            _mark_owner()
         return SetSettingResponse(name=request.name, value_json=json.dumps(stored), path=str(written))
 
     # -----------------------------------------------------------------------

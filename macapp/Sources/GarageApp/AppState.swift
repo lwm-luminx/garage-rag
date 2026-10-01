@@ -367,6 +367,29 @@ final class AppState: ObservableObject {
         helperConfigurationTask = Task { [xpcServices] in
             await xpcServices.configureHelpers(options)
         }
+        await recordOwnerNameIfMissing()
+    }
+
+    /// Fills in `identity.name` from the Mac account's full name when garage.json names no owner.
+    /// Without it no author is the owner's: attribution has no "authored" by name, and the Graph page
+    /// cannot open on the owner's own vertex. Setting it also marks the owner's existing author row.
+    func recordOwnerNameIfMissing(
+        configured: String? = GarageConfigLoader.loadIdentityName(),
+        accountName: String = NSFullUserName()
+    ) async {
+        guard let name = Self.ownerNameToRecord(configured: configured, accountName: accountName) else { return }
+        do {
+            _ = try await grpc.setSetting("identity.name", to: name)
+        } catch {
+            logger.warning("Could not record the owner's name: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// The account name to write as `identity.name`, or nil when one is configured or there is none.
+    nonisolated static func ownerNameToRecord(configured: String?, accountName: String) -> String? {
+        guard configured?.isEmpty ?? true else { return nil }
+        let name = accountName.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? nil : name
     }
 
     func startPostgres() async {
