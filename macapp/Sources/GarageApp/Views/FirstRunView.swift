@@ -404,7 +404,8 @@ struct FirstRunSelectDataPage: View {
 
     // Three columns at the assistant's width (MainWindowSizing.assistantSize), also when a mouse makes
     // the scroll bar take its ~15 pt: 920 less the sidebar and padding leaves about 620 pt.
-    private let columns = [GridItem(.adaptive(minimum: 190, maximum: 320), spacing: 12, alignment: .top)]
+    // Tiles in a row share the tallest one's height (EqualHeightGrid).
+    private var grid: EqualHeightGrid { EqualHeightGrid(minimumColumnWidth: 190, maximumColumnWidth: 320, spacing: 12) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
@@ -425,7 +426,7 @@ struct FirstRunSelectDataPage: View {
                 subtitle: "Select one or more. Locations that don't exist on this Mac, or that need Full Disk Access, are greyed out."
             )
 
-            LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+            grid {
                 ForEach(coordinator.sourceTemplates.filter { !$0.isCustom }) { template in
                     templateCard(template)
                 }
@@ -438,7 +439,7 @@ struct FirstRunSelectDataPage: View {
 
             let custom = coordinator.sourceTemplates.filter(\.isCustom)
             if !custom.isEmpty {
-                LazyVGrid(columns: columns, alignment: .leading, spacing: 12) {
+                grid {
                     ForEach(custom) { template in
                         templateCard(template)
                     }
@@ -685,7 +686,8 @@ struct FirstRunSelectDataPage: View {
             }
             .padding(12)
             .padding(.trailing, template.isCustom ? 20 : 0)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            // Fills the row's height, so tiles side by side match.
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(FirstRunStyle.cardBackground(selected: selected))
             .opacity(template.isAvailable ? 1 : 0.45)
             .contentShape(RoundedRectangle(cornerRadius: FirstRunStyle.cardCorner))
