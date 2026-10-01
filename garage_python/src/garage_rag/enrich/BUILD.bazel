@@ -8,6 +8,7 @@ py_library(
         "facts.py",
         "generation.py",
         "local_provider.py",
+        "mail_body.py",
         "metadata.py",
     ],
     imports = ["../.."],

@@ -39,6 +39,17 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertGreaterThan(Set(tints.map { "\($0)" }).count, 1)
     }
 
+    func testThePageStartsFromAFactThenADocument() {
+        let author = GraphVertexItem(id: 1, label: "Author", key: 3, title: "Ada")
+        let document = GraphVertexItem(id: 2, label: "Document", key: 7, title: "notes.md")
+        let fact = GraphVertexItem(id: 3, label: "Fact", key: 9, title: "Ada wrote the notes.")
+        let person = GraphVertexItem(id: 4, label: "Person", key: 11, title: "Ada")
+        XCTAssertEqual(GraphPagePresentation.startingVertex([author, document, fact]), fact)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([author, document]), document)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([person]), person)
+        XCTAssertNil(GraphPagePresentation.startingVertex([]))
+    }
+
     func testTheEmptyStateNamesWhatIsMissing() {
         XCTAssertEqual(GraphPagePresentation.empty(databaseRunning: false, available: false, hasSelection: false, searched: false).title, "Database Offline")
         let noGraph = GraphPagePresentation.empty(databaseRunning: true, available: false, hasSelection: false, searched: false)
@@ -73,5 +84,25 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertEqual(GraphView.nodeRadius(for: 5), 11)
         XCTAssertEqual(GraphView.nodeRadius(for: 30), 8)
         XCTAssertEqual(GraphView.nodeRadius(for: 150), 5.5)
+    }
+
+    func testThePageStartsFromTheOwnersOwnAuthorVertex() {
+        let fact = GraphVertexItem(id: 1, label: "Fact", key: 1, title: "A claim")
+        let other = GraphVertexItem(id: 2, label: "Author", key: 2, title: "Ada", propertiesJSON: #"{"is_self": false}"#)
+        let owner = GraphVertexItem(id: 3, label: "Author", key: 3, title: "Rick", propertiesJSON: #"{"author_id": 3, "is_self": true}"#)
+
+        XCTAssertTrue(GraphPagePresentation.isSelfAuthor(owner))
+        XCTAssertFalse(GraphPagePresentation.isSelfAuthor(other))
+        XCTAssertFalse(GraphPagePresentation.isSelfAuthor(fact))
+        XCTAssertEqual(GraphPagePresentation.startingVertex([fact, other, owner])?.id, 3)
+        XCTAssertEqual(GraphPagePresentation.startingVertex([other, fact])?.id, 1, "no owner: the best starting label")
+    }
+
+    func testArrowKeysWalkTheSuggestionsAndWrap() {
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(nil, by: 1, count: 3), 0)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(nil, by: -1, count: 3), 2)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(2, by: 1, count: 3), 0)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(0, by: -1, count: 3), 2)
+        XCTAssertNil(GraphPagePresentation.movedHighlight(0, by: 1, count: 0))
     }
 }

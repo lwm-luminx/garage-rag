@@ -75,10 +75,54 @@ enum GraphPagePresentation {
     static let title = "Graph"
     static let searchPlaceholder = "Find a document, author, fact or statement…"
 
+    /// The labels a page opened with nothing chosen starts from, best first: a distilled fact ties
+    /// statements to their documents, a document ties them to its authors.
+    static let startingLabels = ["Fact", "Document", "PotentialFact", "Author"]
+
+    /// Where the page centers when it opens with nothing chosen, so there is a picture before any
+    /// search: the owner's own Author vertex, else the first vertex of the best starting label,
+    /// else the first of any.
+    static func startingVertex(_ vertices: [GraphVertexItem]) -> GraphVertexItem? {
+        if let owner = vertices.first(where: isSelfAuthor) {
+            return owner
+        }
+        for label in startingLabels {
+            if let vertex = vertices.first(where: { $0.label == label }) {
+                return vertex
+            }
+        }
+        return vertices.first
+    }
+
+    /// Whether `vertex` is the owner's own Author vertex (`is_self` among its properties).
+    static func isSelfAuthor(_ vertex: GraphVertexItem) -> Bool {
+        guard vertex.label == "Author",
+              let data = vertex.propertiesJSON.data(using: .utf8),
+              let properties = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return false
+        }
+        return properties["is_self"] as? Bool == true
+    }
+
+    /// The dropdown under the search field: how many matches, after how many characters, and how
+    /// long typing must pause before the lookup runs.
+    static let suggestionLimit = 8
+    static let suggestionMinimumLength = 2
+    static let suggestionDelayNanoseconds: UInt64 = 250_000_000
+
+    /// The highlighted suggestion after an arrow key: down from nothing takes the first, up from
+    /// nothing the last, and each end wraps to the other.
+    static func movedHighlight(_ current: Int?, by step: Int, count: Int) -> Int? {
+        guard count > 0 else { return nil }
+        guard let current else { return step > 0 ? 0 : count - 1 }
+        return ((current + step) % count + count) % count
+    }
+
     /// The page's depth before anything is chosen.
     static let defaultDepth = 2
 
-    /// How many hops out the page starts when another page centers it on a vertex of `label`.
+    /// How many hops out the page starts when it centers on a new starting vertex of `label` (from
+    /// another page, a search result, or the vertex it opens on).
     /// From a claim, three hops reach the other documents that state it (the fact, its
     /// distilled fact, that fact's other statements, their documents); from a document, an author
     /// or a chunk, two hops already fan out wide.

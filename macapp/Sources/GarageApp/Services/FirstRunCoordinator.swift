@@ -461,7 +461,10 @@ final class FirstRunCoordinator: ObservableObject {
         self.defaults = defaults
         self.isSandboxed = isSandboxed
         self.persistsCompletion = persistsCompletion
+        // A reset that kept garage.json fills the new database from it without the assistant
+        // (`AppState.launch`).
         let afterDatabaseReset = arguments.contains(GarageAppLaunch.databaseResetArgument)
+            && !arguments.contains(GarageAppLaunch.keepSettingsArgument)
         isAfterDatabaseReset = afterDatabaseReset
         isActive = afterDatabaseReset || shouldPresentAtLaunch
     }
