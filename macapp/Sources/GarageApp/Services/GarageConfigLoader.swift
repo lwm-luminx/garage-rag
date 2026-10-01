@@ -574,6 +574,12 @@ public enum GarageConfigLoader {
     /// Reads `embedding.default_model` from garage.json: the model search uses when no registered
     /// model is flagged default. The first candidate file that parses wins, as for `facts`.
     public static func loadDefaultEmbeddingModel(fileURL: URL? = nil) -> String {
+        loadDeclaredDefaultEmbeddingModel(fileURL: fileURL) ?? defaultEmbeddingModel
+    }
+
+    /// `embedding.default_model` as garage.json declares it, or nil when the first file that parses
+    /// names none (or there is no file): a reset that keeps the settings registers only what is declared.
+    public static func loadDeclaredDefaultEmbeddingModel(fileURL: URL? = nil) -> String? {
         let targets = fileURL.map { [$0] } ?? candidateConfigFiles
 
         for url in targets {
@@ -583,10 +589,10 @@ public enum GarageConfigLoader {
                 continue
             }
             let model = config.embedding?.defaultModel?.trimmingCharacters(in: .whitespacesAndNewlines)
-            return (model?.isEmpty == false) ? model! : defaultEmbeddingModel
+            return (model?.isEmpty == false) ? model : nil
         }
 
-        return defaultEmbeddingModel
+        return nil
     }
 
     /// Parses sources declared in configuration files.

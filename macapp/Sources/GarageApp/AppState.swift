@@ -288,6 +288,13 @@ final class AppState: ObservableObject {
             if let parent = Self.databaseResetParent(in: arguments) {
                 await Self.waitForExit(of: parent, timeout: 30)
             }
+            // The reset kept garage.json: fill the new database from it, with no assistant.
+            if arguments.contains(GarageAppLaunch.keepSettingsArgument) {
+                launchServices(startsPostgres: false)
+                await finishDatabaseReset(startingPostgres: true, restoringSettings: true)
+                resumeMaintenanceAfterFirstRun()
+                return
+            }
             // The setup assistant's first page creates the new database and
             // registers garage.json's sources again; "Skip setup" finishes the
             // reset without it and leaves the unconfigured main window.
@@ -598,8 +605,12 @@ final class AppState: ObservableObject {
 
     /// "Reset Database": stops every service, deletes the Postgres cluster, and relaunches the app,
     /// which creates a new, empty database (`finishDatabaseReset`). Only what Garage built goes: the
-    /// sources' own files, downloaded model files, logs, garage.json and the database password stay.
-    func resetDatabaseAndRelaunch() async {
+    /// sources' own files, downloaded model files, logs and the database password stay.
+    ///
+    /// `keepingSettings` keeps garage.json: the new instance fills the new database from it, sources
+    /// and default embedding model, and skips the setup assistant. Without it, garage.json is set
+    /// aside (`setAsideConfigForReset`, renamed, never deleted) and the assistant starts from scratch.
+    func resetDatabaseAndRelaunch(keepingSettings: Bool = true) async {
         guard !isResettingDatabase else { return }
         isResettingDatabase = true
         lastCommandOutput = "Stopping Garage's services…"
@@ -637,14 +648,44 @@ final class AppState: ObservableObject {
             isResettingDatabase = false
             return
         }
+        if !keepingSettings {
+            do {
+                if let setAside = try Self.setAsideConfigForReset() {
+                    logger.info("Set garage.json aside as \(setAside.lastPathComponent, privacy: .public)")
+                }
+            } catch {
+                // The database is already gone; carry on with the settings rather than strand the reset.
+                logger.error("Could not set garage.json aside: \(error.localizedDescription, privacy: .public)")
+            }
+        }
         lastCommandOutput = "Database deleted. Relaunching Garage to create a new one…"
-        relaunchAfterDatabaseReset()
+        relaunchAfterDatabaseReset(keepingSettings: keepingSettings)
     }
 
-    private func relaunchAfterDatabaseReset() {
+    /// Renames the app's garage.json to `garage.json.before-reset-<date>` beside it, so a reset that
+    /// starts over begins with no settings and the old ones can still be brought back by hand.
+    /// Returns the new name, or nil when there was no file.
+    @discardableResult
+    nonisolated static func setAsideConfigForReset(
+        in directory: URL = Paths.garageWorkingDirectory,
+        now: Date = Date(),
+        fileManager: FileManager = .default
+    ) throws -> URL? {
+        let config = directory.appendingPathComponent("garage.json")
+        guard fileManager.fileExists(atPath: config.path) else { return nil }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        let destination = directory.appendingPathComponent("garage.json.before-reset-\(formatter.string(from: now))")
+        try fileManager.moveItem(at: config, to: destination)
+        return destination
+    }
+
+    private func relaunchAfterDatabaseReset(keepingSettings: Bool) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.createsNewApplicationInstance = true
-        let arguments = Self.relaunchArguments(parentPID: getpid(), currentArguments: GarageAppLaunch.arguments)
+        let arguments = Self.relaunchArguments(
+            parentPID: getpid(), currentArguments: GarageAppLaunch.arguments, keepingSettings: keepingSettings)
         // Ignored when this process is sandboxed (the App Store build); the new instance then
         // takes them from the handoff instead.
         configuration.arguments = arguments
@@ -663,7 +704,11 @@ final class AppState: ObservableObject {
                 GarageRelaunchHandoff.discard()
                 self.hasHandedOffToRelaunch = false
                 self.isResettingDatabase = false
-                self.firstRun.begin(afterDatabaseReset: true)
+                if keepingSettings {
+                    await self.finishDatabaseReset(startingPostgres: true, restoringSettings: true)
+                } else {
+                    self.firstRun.begin(afterDatabaseReset: true)
+                }
             }
         }
     }
@@ -685,8 +730,13 @@ final class AppState: ObservableObject {
     /// Arguments for the instance a reset launches: the reset flag with this pid, and the
     /// `--data-directory` override when this instance runs on one. LaunchServices passes neither the
     /// arguments nor the environment on, and without it the new instance would open the real folder.
-    nonisolated static func relaunchArguments(parentPID: pid_t, currentArguments: [String]) -> [String] {
+    nonisolated static func relaunchArguments(
+        parentPID: pid_t, currentArguments: [String], keepingSettings: Bool = false
+    ) -> [String] {
         var arguments = [GarageAppLaunch.databaseResetArgument, String(parentPID)]
+        if keepingSettings {
+            arguments.append(GarageAppLaunch.keepSettingsArgument)
+        }
         if let flag = currentArguments.firstIndex(of: GarageAppLaunch.dataDirectoryArgument),
            flag + 1 < currentArguments.count {
             arguments += [GarageAppLaunch.dataDirectoryArgument, currentArguments[flag + 1]]
@@ -700,7 +750,11 @@ final class AppState: ObservableObject {
     /// when the user skips the assistant before that page gets this far; that path passes
     /// `startingPostgres`, so the cluster's creation, the slowest stage, also counts as the
     /// reset in progress on the Database page.
-    func finishDatabaseReset(startingPostgres: Bool = false) async {
+    ///
+    /// `restoringSettings` is a reset that kept garage.json: it also registers the embedding model
+    /// garage.json declares as the default (`embedding.default_model`), when the catalog lists it.
+    /// Everything goes from garage.json to the database; nothing is written back to the file.
+    func finishDatabaseReset(startingPostgres: Bool = false, restoringSettings: Bool = false) async {
         isFinishingDatabaseReset = true
         defer { isFinishingDatabaseReset = false }
         if startingPostgres { await startPostgres() }
@@ -719,14 +773,23 @@ final class AppState: ObservableObject {
             await startBackend()
             try? await mcp.startIfEnabled()
             let synced = await runOperation { try await $0.syncSources().message }
+            let syncOutput = lastCommandOutput
+            var restoredModel: String?
+            if restoringSettings {
+                if let slug = GarageConfigLoader.loadDeclaredDefaultEmbeddingModel(),
+                   let preset = presetModels.first(where: { $0.slug == slug }),
+                   await registerModel(preset: preset, makeDefault: true) {
+                    restoredModel = slug
+                }
+            }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
             await fetchCorpusStats()
             lastCommandSucceeded = synced
             lastCommandOutput = synced
-                ? Self.databaseResetMessage(registeredSourceCount: registeredSources.count)
+                ? Self.databaseResetMessage(registeredSourceCount: registeredSources.count, restoredModel: restoredModel)
                 : "Database reset: a new database was created, but registering the sources from garage.json "
-                    + "failed: \(lastCommandOutput)"
+                    + "failed: \(syncOutput)"
         } catch {
             lastCommandSucceeded = false
             lastCommandOutput = "Database reset: the new database could not be set up: \(error.localizedDescription)"
@@ -747,14 +810,19 @@ final class AppState: ObservableObject {
     static let databaseResetInProgressMessage =
         "Finishing the database reset: creating the database, applying the schema and starting the services…"
 
-    nonisolated static func databaseResetMessage(registeredSourceCount: Int) -> String {
+    nonisolated static func databaseResetMessage(registeredSourceCount: Int, restoredModel: String? = nil) -> String {
         let sources = switch registeredSourceCount {
         case 0: "garage.json declares no sources, so none are registered; add them on the Sources page."
         case 1: "The 1 source in garage.json was registered again."
         default: "The \(registeredSourceCount) sources in garage.json were registered again."
         }
-        return "Database reset: a new, empty database was created. \(sources) Register your embedding models "
-            + "on the Models page, then run ingest to rebuild the index."
+        let models = if let restoredModel {
+            "Its default embedding model, \(restoredModel), was registered again; register any others "
+                + "on the Models page, then run ingest to rebuild the index."
+        } else {
+            "Register your embedding models on the Models page, then run ingest to rebuild the index."
+        }
+        return "Database reset: a new, empty database was created. \(sources) \(models)"
     }
 
     func applyMigrations() async {

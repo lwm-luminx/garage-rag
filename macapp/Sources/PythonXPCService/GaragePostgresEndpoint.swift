@@ -319,6 +319,10 @@ public enum GarageAppLaunch {
     /// one to create a new one. This instance starts nothing until `pid` has quit.
     public static let databaseResetArgument = "--after-database-reset"
 
+    /// With `--after-database-reset`: the reset kept garage.json, so this instance fills the new
+    /// database from it (sources, the default embedding model) and skips the setup assistant.
+    public static let keepSettingsArgument = "--keep-settings"
+
     /// `--data-directory <path>`: run on this data folder instead of the real one, with no migration,
     /// no link and a separate Keychain item. For UI tests, which reset the database.
     public static let dataDirectoryArgument = "--data-directory"

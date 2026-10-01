@@ -92,6 +92,22 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(dev.origin, .config)
     }
 
+    func testOnlyADeclaredDefaultEmbeddingModelIsRestored() throws {
+        let declared = FileManager.default.temporaryDirectory.appendingPathComponent("declared-\(UUID().uuidString).json")
+        let silent = FileManager.default.temporaryDirectory.appendingPathComponent("silent-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: declared)
+            try? FileManager.default.removeItem(at: silent)
+        }
+        try Data(#"{"embedding": {"default_model": "nomic-embed"}}"#.utf8).write(to: declared)
+        try Data(#"{"embedding": {}}"#.utf8).write(to: silent)
+
+        XCTAssertEqual(GarageConfigLoader.loadDeclaredDefaultEmbeddingModel(fileURL: declared), "nomic-embed")
+        XCTAssertNil(GarageConfigLoader.loadDeclaredDefaultEmbeddingModel(fileURL: silent))
+        // Search still falls back to the Python side's default.
+        XCTAssertEqual(GarageConfigLoader.loadDefaultEmbeddingModel(fileURL: silent), GarageConfigLoader.defaultEmbeddingModel)
+    }
+
     func testLoadSourcesFromNonExistentFile() {
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_file_\(UUID().uuidString).json")
         let sources = GarageConfigLoader.loadSourcesFromConfig(fileURL: fakeURL)
