@@ -51,15 +51,30 @@ def pins(name: str) -> dict[str, object]:
     }
 
 
-def download(urls: list[str]) -> bytes:
+def download(urls: list[str], sha256: str | None = None) -> bytes:
+    """The first url's body that matches sha256 (when pinned), as Bazel's http_archive takes it.
+
+    A mirror serving other bytes under the pinned name (zlib.net has done so for zlib-1.3.2) is
+    skipped like one that is down, rather than failing the build while a later url has the file.
+    """
     for url in urls:
         try:
             print(f"  GET {url}", flush=True)
             with urllib.request.urlopen(url, timeout=300) as response:
-                return response.read()
+                data = response.read()
         except OSError as error:
             print(f"  failed: {error}", flush=True)
-    raise SystemExit("every url failed")
+            continue
+        if sha256:
+            digest = hashlib.sha256(data).hexdigest()
+            if digest != sha256:
+                print(
+                    f"  sha256 {digest} does not match the pinned {sha256}", flush=True
+                )
+                continue
+            print(f"  sha256 ok ({digest})", flush=True)
+        return data
+    raise SystemExit("no url served the pinned file" if sha256 else "every url failed")
 
 
 def extract(data: bytes, dest: Path, strip_prefix: str | None) -> None:
@@ -92,14 +107,7 @@ def main() -> int:
     for name in args.names:
         pin = pins(name)
         print(f"{name}: {pin['source'].relative_to(REPO)}", flush=True)
-        data = download(pin["urls"])
-        if pin["sha256"]:
-            digest = hashlib.sha256(data).hexdigest()
-            if digest != pin["sha256"]:
-                raise SystemExit(
-                    f"{name}: sha256 {digest} does not match the pinned {pin['sha256']}"
-                )
-            print(f"  sha256 ok ({digest})", flush=True)
+        data = download(pin["urls"], pin["sha256"])
         extract(data, args.dest / name, pin["strip_prefix"])
         print(f"  -> {args.dest / name}", flush=True)
     return 0
