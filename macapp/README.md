@@ -107,8 +107,10 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   `//macapp/externals:postgres_output`), with `libpq` in `Frameworks/`. AGE's Cypher
   parser is generated with the hermetic `rules_bison`/`rules_flex` toolchains, since the
   Bison 2.3 in macOS is too old for its grammar. `PostgresService` starts the server with
-  `shared_preload_libraries=age` and `ag_catalog` last on `search_path`, so any session can
-  run Cypher and `create_graph` without `LOAD 'age'` or a `SET search_path` first.
+  every bundled module the backends load in `shared_preload_libraries` (`vector`, `pg_trgm`,
+  `age`, `plpgsql`, `dict_snowball`), so the postmaster opens each once and backends inherit it
+  through fork, and with `ag_catalog` last on `search_path`, so any session can run Cypher and
+  `create_graph` without `LOAD 'age'` or a `SET search_path` first.
 - `Resources/schema` — the SQL migrations, `Resources/postgresql.conf`, the model
   manifest and the config JSON schema.
 - `Frameworks/PythonXPCService.framework` — the shared runtime for the seven
