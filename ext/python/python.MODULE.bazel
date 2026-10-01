@@ -3,10 +3,15 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 http_archive(
     name = "python_source",
     build_file = "@//ext/python:python.BUILD.bazel",
-    # Builds _garage_git (//ext/python/garage_git) into the interpreter as a static built-in
-    # module, and links the framework with the libraries such modules need; see //ext/python.
+    # Builds _garage_git (//ext/python/garage_git) and _garage_tesseract
+    # (//ext/python/garage_tesseract) into the interpreter as static built-in modules, and links
+    # the framework with the libraries such modules need; see //ext/python. garage_tesseract.patch
+    # adds to the Setup.local garage_git.patch creates, so it applies second.
     patch_args = ["-p1"],
-    patches = ["@//ext/python:garage_git.patch"],
+    patches = [
+        "@//ext/python:garage_git.patch",
+        "@//ext/python:garage_tesseract.patch",
+    ],
     sha256 = "3b48dac8fb59f62eaa67ac83c1eb12bda1b7a08406dd286e252c11a66be27f81",
     strip_prefix = "Python-3.14.7",
     urls = ["https://www.python.org/ftp/python/3.14.7/Python-3.14.7.tar.xz"],

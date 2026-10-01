@@ -241,11 +241,12 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   budget cap is fine, not a failure.
 - **Extract** (`extract/`) — dispatch by extension with lazy imports (Markdown/`text.py`,
   PDF/`pdf.py` with `pypdf`→`pdfplumber` per-page escalation, Office/`office.py`,
-  images/`image.py` via Tesseract only, in-process through libtesseract's C API (`extract/tesseract.py`
-  over ctypes, fed pixels Pillow decoded; `PythonXPCService.framework` carries `//ext/tesseract` (over a
-  codec-less `//ext/leptonica`) in its `Frameworks` folder with `tessdata` beside it and links it, as it does
-  libpq, so `garage_rag.native` finds the loaded copy; elsewhere the linker's search applies; HEIC/HEIF is
-  decoded by macOS ImageIO, `extract/imageio.py`), mail (`.eml`/`.emlx`, `extract/mail.py`, filed as
+  images/`image.py` via Tesseract only, in-process through libtesseract's C API (`extract/tesseract.py`,
+  fed pixels Pillow decoded; in the app through `_garage_tesseract`, a built-in module of its Python with
+  a static `//ext/tesseract` over a codec-less `//ext/leptonica` linked in (`ext/python/garage_tesseract`,
+  `garage_tesseract.patch`), with `tessdata` in `PythonXPCService.framework`'s `Resources` beside
+  `site-python`; elsewhere the system libtesseract over ctypes; HEIC/HEIF is decoded by macOS ImageIO,
+  `extract/imageio.py`), mail (`.eml`/`.emlx`, `extract/mail.py`, filed as
   `communication`), code verbatim via `text.py`). Messages `chat.db` (`sqlite` sources) is not walked file
   by file: `ingest/conversations.py` stores each thread as one document with one chunk per message,
   each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for

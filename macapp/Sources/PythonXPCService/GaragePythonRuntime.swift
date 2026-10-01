@@ -87,7 +87,7 @@ public enum GaragePythonRuntimeError: Error, LocalizedError, Equatable {
 ///
 /// Responsibilities:
 /// - resolve the isolated environment (`site-python` in the loaded `PythonXPCService.framework`, which also
-///   links libpq and libtesseract, so dyld has loaded them before the interpreter starts);
+///   links libpq, so dyld has loaded it before the interpreter starts);
 /// - start the interpreter through the PyConfig API (isolated mode, explicit `home` and `sys.path`);
 /// - manage the GIL for host → Python calls so that Python threads (gRPC servers, thread pools)
 ///   keep running while Swift code is idle.
@@ -220,7 +220,7 @@ public final class GaragePythonRuntime: @unchecked Sendable {
 
     // MARK: - Framework libraries
 
-    /// Path of the loaded image that defines `symbol`: for libpq's and libtesseract's, the copy
+    /// Path of the loaded image that defines `symbol`: for libpq's, the copy
     /// `PythonXPCService.framework` links and dyld loaded with it. Nil when no loaded image defines it.
     public static func loadedImagePath(definingSymbol symbol: String) -> String? {
         let defaultHandle = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT: every loaded image

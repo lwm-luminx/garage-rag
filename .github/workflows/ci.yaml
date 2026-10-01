@@ -70,12 +70,15 @@ jobs:
         run: |
           .venv/bin/ruff check .
           .venv/bin/ruff format --check .
-      - name: Build _garage_git
-        # The app's Python has _garage_git built in; build it here as an extension module so
-        # test_git_history holds it (and pygit2, from the dev extra) to what git reports.
+      - name: Build _garage_git and _garage_tesseract
+        # The app's Python has both built in; build them here as extension modules so
+        # test_git_history holds _garage_git (and pygit2, from the dev extra) to what git
+        # reports, and test_tesseract reads through _garage_tesseract and the ctypes path alike.
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq libgit2-dev pkg-config
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgit2-dev libtesseract-dev tesseract-ocr-eng pkg-config
           ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
+          ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
       - name: pytest
         # Typer forces Rich's terminal mode (ANSI colour, boxed errors) when
         # GITHUB_ACTIONS is set, which breaks the CLI tests' output checks. Bazel's
@@ -85,7 +88,7 @@ jobs:
           # test_scanner runs git; keep the runner's global config out of it. Only
           # here: job-wide, it breaks actions/checkout's post-job git config cleanup.
           GIT_CONFIG_GLOBAL: /dev/null
-          PYTHONPATH: ${{ runner.temp }}/garage_git
+          PYTHONPATH: ${{ runner.temp }}/garage_git:${{ runner.temp }}/garage_tesseract
 
   python-package:
     runs-on: ubuntu-latest

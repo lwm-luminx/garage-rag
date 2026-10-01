@@ -121,7 +121,6 @@ macos_versioned_framework(
     additional_linker_inputs = [
         "//ext/python:python_framework",
         "//macapp/externals:libpq",
-        "//macapp/externals:libtesseract",
     ],
     bundle_id = "me.rickmark.garage-rag.PythonXPCService",
     bundle_name = "PythonXPCService",
@@ -132,13 +131,12 @@ macos_versioned_framework(
         "Python",
         "-framework",
         "SystemConfiguration",
-        # libpq and libtesseract ship in this framework's Frameworks folder and load with it, so
-        # every process that links the framework has them. Nothing here calls them (Python does,
-        # through ctypes), so -needed_library keeps the load commands the linker would drop.
+        # libpq ships in this framework's Frameworks folder and loads with it, so every process
+        # that links the framework has it. Nothing here calls it (Python does, through ctypes), so
+        # -needed_library keeps the load command the linker would drop. Tesseract is built into
+        # Python.framework (_garage_tesseract).
         "-needed_library",
         "$(location //macapp/externals:libpq)",
-        "-needed_library",
-        "$(location //macapp/externals:libtesseract)",
         "-rpath",
         "@loader_path/Frameworks",
     ],
