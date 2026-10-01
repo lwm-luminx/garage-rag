@@ -104,6 +104,20 @@ enum GraphPagePresentation {
         return properties["is_self"] as? Bool == true
     }
 
+    /// The dropdown under the search field: how many matches, after how many characters, and how
+    /// long typing must pause before the lookup runs.
+    static let suggestionLimit = 8
+    static let suggestionMinimumLength = 2
+    static let suggestionDelayNanoseconds: UInt64 = 250_000_000
+
+    /// The highlighted suggestion after an arrow key: down from nothing takes the first, up from
+    /// nothing the last, and each end wraps to the other.
+    static func movedHighlight(_ current: Int?, by step: Int, count: Int) -> Int? {
+        guard count > 0 else { return nil }
+        guard let current else { return step > 0 ? 0 : count - 1 }
+        return ((current + step) % count + count) % count
+    }
+
     /// The page's depth before anything is chosen.
     static let defaultDepth = 2
 

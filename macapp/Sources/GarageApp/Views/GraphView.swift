@@ -25,6 +25,11 @@ public struct GraphView: View {
     @State private var results: [GraphVertexItem] = []
     @State private var hasSearched = false
     @State private var isSearching = false
+    /// Matches for the text as it is typed, shown in a dropdown under the field.
+    @State private var suggestions: [GraphVertexItem] = []
+    @State private var showsSuggestions = false
+    @State private var highlightedSuggestion: Int?
+    @State private var suggestTask: Task<Void, Never>?
 
     /// The graph id of the vertex in the middle; nil before one is chosen.
     @State private var centerID: Int64?
@@ -50,6 +55,8 @@ public struct GraphView: View {
     public var body: some View {
         VStack(spacing: 0) {
             header
+                // Above what follows, so the suggestions dropdown draws over it.
+                .zIndex(1)
             if let labels, labels.available {
                 filterBar(labels)
             }
@@ -96,9 +103,25 @@ public struct GraphView: View {
                 TextField(GraphPagePresentation.searchPlaceholder, text: $searchText)
                     .textFieldStyle(.plain)
                     .accessibilityIdentifier("graph.search")
-                    .onSubmit { search() }
+                    .onSubmit {
+                        // Return takes the highlighted suggestion, else searches into the results list.
+                        if let index = highlightedSuggestion, suggestions.indices.contains(index), showsSuggestions {
+                            pick(suggestions[index])
+                        } else {
+                            hideSuggestions()
+                            search()
+                        }
+                    }
+                    .onChange(of: searchText) { _, text in suggest(text) }
+                    .onKeyPress(.downArrow) { moveHighlight(by: 1) }
+                    .onKeyPress(.upArrow) { moveHighlight(by: -1) }
+                    .onKeyPress(.escape) {
+                        guard showsSuggestions else { return .ignored }
+                        hideSuggestions()
+                        return .handled
+                    }
                 if !searchText.isEmpty {
-                    Button(action: { searchText = ""; results = []; hasSearched = false }) {
+                    Button(action: { searchText = ""; results = []; hasSearched = false; hideSuggestions() }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary)
                     }
@@ -110,6 +133,12 @@ public struct GraphView: View {
             .background(Color(nsColor: .controlBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.2), lineWidth: 1))
+            .overlay(alignment: .topLeading) {
+                if showsSuggestions, !suggestions.isEmpty {
+                    suggestionsDropdown
+                        .alignmentGuide(.top) { _ in -34 }
+                }
+            }
 
             Picker("Kind", selection: $searchLabel) {
                 Text("Any Kind").tag(CorpusTaxonomy.allSentinel)
@@ -270,6 +299,90 @@ public struct GraphView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Suggestions
+
+    private var suggestionsDropdown: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, vertex in
+                let style = GraphLabelStyle.vertex(vertex.label)
+                Button { pick(vertex) } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: style.symbol ?? "circle.fill")
+                            .foregroundStyle(style.tint)
+                            .frame(width: 16)
+                        Text(vertex.title)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                        Spacer(minLength: 8)
+                        Text(style.name)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .contentShape(Rectangle())
+                    .background(
+                        highlightedSuggestion == index ? Color.accentColor.opacity(0.2) : Color.clear,
+                        in: RoundedRectangle(cornerRadius: 4)
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { inside in if inside { highlightedSuggestion = index } }
+                .accessibilityIdentifier("graph.suggestion.\(vertex.id)")
+            }
+        }
+        .padding(4)
+        .frame(minWidth: 320, maxWidth: 480, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25), lineWidth: 1))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("graph.suggestions")
+    }
+
+    /// Looks the typed text up after a short pause, so each keystroke does not start a query.
+    private func suggest(_ text: String) {
+        suggestTask?.cancel()
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard databaseRunning, query.count >= GraphPagePresentation.suggestionMinimumLength else {
+            hideSuggestions()
+            return
+        }
+        let label = searchLabel == CorpusTaxonomy.allSentinel ? nil : searchLabel
+        suggestTask = Task {
+            try? await Task.sleep(nanoseconds: GraphPagePresentation.suggestionDelayNanoseconds)
+            guard !Task.isCancelled else { return }
+            let found = (try? await appState.findGraphVertices(
+                query: query, label: label, limit: GraphPagePresentation.suggestionLimit)) ?? []
+            await MainActor.run {
+                // Only the answer for what the field still says.
+                guard !Task.isCancelled,
+                      searchText.trimmingCharacters(in: .whitespacesAndNewlines) == query else { return }
+                suggestions = found
+                highlightedSuggestion = nil
+                showsSuggestions = !found.isEmpty
+            }
+        }
+    }
+
+    private func moveHighlight(by step: Int) -> KeyPress.Result {
+        guard showsSuggestions, !suggestions.isEmpty else { return .ignored }
+        highlightedSuggestion = GraphPagePresentation.movedHighlight(highlightedSuggestion, by: step, count: suggestions.count)
+        return .handled
+    }
+
+    private func pick(_ vertex: GraphVertexItem) {
+        hideSuggestions()
+        start(at: vertex)
+    }
+
+    private func hideSuggestions() {
+        suggestTask?.cancel()
+        suggestTask = nil
+        showsSuggestions = false
+        highlightedSuggestion = nil
     }
 
     // MARK: - Results (left)

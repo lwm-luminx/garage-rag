@@ -97,4 +97,12 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertEqual(GraphPagePresentation.startingVertex([fact, other, owner])?.id, 3)
         XCTAssertEqual(GraphPagePresentation.startingVertex([other, fact])?.id, 1, "no owner: the best starting label")
     }
+
+    func testArrowKeysWalkTheSuggestionsAndWrap() {
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(nil, by: 1, count: 3), 0)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(nil, by: -1, count: 3), 2)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(2, by: 1, count: 3), 0)
+        XCTAssertEqual(GraphPagePresentation.movedHighlight(0, by: -1, count: 3), 2)
+        XCTAssertNil(GraphPagePresentation.movedHighlight(0, by: 1, count: 0))
+    }
 }
