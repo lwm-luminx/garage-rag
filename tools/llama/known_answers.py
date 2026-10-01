@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import hashlib
 import json
 import math
 import os
@@ -105,13 +104,9 @@ def _cmake_flags(metal: bool) -> list[str]:
 
 def _fetch(name: str) -> dict[str, object]:
     pin = pins(name)
-    data = download(pin["urls"])
-    digest = hashlib.sha256(data).hexdigest()
-    if digest != pin["sha256"]:
-        raise SystemExit(
-            f"{name}: sha256 {digest} does not match the pinned {pin['sha256']}"
-        )
-    pin["data"] = data
+    if not pin["sha256"]:
+        raise SystemExit(f"{name}: no sha256 pinned")
+    pin["data"] = download(pin["urls"], pin["sha256"])
     return pin
 
 
