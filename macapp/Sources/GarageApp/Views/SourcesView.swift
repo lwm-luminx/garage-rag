@@ -716,6 +716,7 @@ struct SourcesView: View {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Source actions")
+        .accessibilityIdentifier("sources.row.\(source.slug).menu")
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .frame(width: 24)

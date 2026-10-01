@@ -133,6 +133,7 @@ public struct DocumentsView: View {
             }
             .frame(width: 130)
             .onChange(of: selectedTrustTier) { _, _ in refreshDocuments() }
+            .accessibilityIdentifier("documents.trust")
 
             Button(action: refreshDocuments) {
                 if isLoadingList {
@@ -309,6 +310,9 @@ public struct DocumentsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         } else if let detail = selectedDetail {
             documentDetailContent(detail)
+                // A new identity per document: reused, the selectable title kept the previous
+                // document's accessibility value, so UI tests read a stale title.
+                .id(detail.id)
         } else {
             VStack(spacing: 10) {
                 Spacer()
@@ -335,7 +339,11 @@ public struct DocumentsView: View {
 
                 HStack(spacing: 6) {
                     CorpusClassBadge(corpusClass: detail.corpusClass)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.class")
                     TrustTierBadge(tier: detail.trustTier)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.trust")
                     TagBadge(detail.sourceSlug)
                     if !detail.state.isEmpty {
                         StatusBadge(detail.state.uppercased(), tint: detail.state == "ok" ? .green : .red)
