@@ -194,12 +194,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          submodules: true
       - uses: astral-sh/setup-uv@v7
       - name: Swift syntax gate (tree-sitter)
         run: |
           uv venv --python 3.14 "$RUNNER_TEMP/venv"
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
+      - name: PythonKit symbol table matches the submodule
+        run: python3 tools/pythonkit/generate_symbols.py --check
 
   format:
     runs-on: ubuntu-latest
@@ -226,5 +230,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # ext/pythonkit/PythonKit, which the Apple targets compile.
+          submodules: true
       - uses: ./.github/actions/setup-aspect
       - run: aspect lint --task:name lint -- //...
