@@ -109,12 +109,21 @@ enum Paths {
     }
 
     /// Path to the models.json manifest: the one last fetched from the website (`ModelCatalog`),
-    /// else the copy in the bundle.
+    /// else the copy in the bundle. A fetched copy that lacks a group the bundled one has (the site
+    /// not yet redeployed after a release added `image_embedding`) would hide those models, so it
+    /// is used only when it covers every group of the bundled copy.
     static var modelsJSON: URL {
         let fetched = ModelCatalog.fetchedURL
-        if FileManager.default.fileExists(atPath: fetched.path) {
+        let bundled = bundledModelsJSON
+        if FileManager.default.fileExists(atPath: fetched.path),
+           ModelCatalog.covers(fetched, groupsOf: bundled) {
             return fetched
         }
+        return bundled
+    }
+
+    /// The models.json the app ships with (or the repository's, in a development run).
+    static var bundledModelsJSON: URL {
         if let resourceURL = Bundle.main.url(forResource: "models", withExtension: "json") {
             return resourceURL
         }

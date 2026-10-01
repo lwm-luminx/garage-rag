@@ -97,8 +97,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public let downloadModelId: String?
     public let downloadFile: String?
     public let sha256: String?
-    /// The files of a model downloaded as several (`image_embedding` entries), each into
-    /// `models/<slug>/<path>`; `downloadFile` is then nil.
+    /// Every file the model downloads (`download_files`). An image model's go into
+    /// `models/<slug>/<path>`; a GGUF model's one file is also `downloadFile`, kept at `models/<path>`.
     public let downloadFiles: [ModelDownloadFile]?
     /// `text` (the default) or `image`: which chunks the model embeds and which tower serves it.
     public let modality: String?
@@ -108,6 +108,13 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
     public let useCases: [String]?
     /// Marks this preset as one of the small set of recommended defaults offered when no model is registered yet.
     public let featured: Bool
+    /// The catalog's pick for its section, offered first and pre-selected (EmbeddingGemma for
+    /// embedding, Gemma 4 E4B for distillation and inference). `featured` marks the wider set shown
+    /// as RECOMMENDED.
+    public let preferred: Bool
+    /// What an embedding model can do beyond its modality (`text_to_image`, `image_to_image`,
+    /// `multilingual`, `neural_engine`, `document_pages`), shown as tags on the Models page.
+    public let capabilities: [String]?
 
     enum CodingKeys: String, CodingKey {
         case name
@@ -132,6 +139,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         case description
         case useCases = "use_cases"
         case featured
+        case preferred
+        case capabilities
     }
 
     public init(
@@ -156,7 +165,9 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         modality: String? = nil,
         description: String? = nil,
         useCases: [String]? = nil,
-        featured: Bool = false
+        featured: Bool = false,
+        preferred: Bool = false,
+        capabilities: [String]? = nil
     ) {
         self.name = name
         self.modelId = modelId
@@ -180,6 +191,8 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         self.description = description
         self.useCases = useCases
         self.featured = featured
+        self.preferred = preferred
+        self.capabilities = capabilities
     }
 
     public init(from decoder: Decoder) throws {
@@ -200,13 +213,30 @@ public struct ModelPresetEntry: Identifiable, Hashable, Sendable, Codable {
         toolCalling = try container.decodeIfPresent(Bool.self, forKey: .toolCalling) ?? false
         tags = try container.decodeIfPresent([String].self, forKey: .tags)
         downloadModelId = try container.decodeIfPresent(String.self, forKey: .downloadModelId)
-        downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
-        sha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
-        downloadFiles = try container.decodeIfPresent([ModelDownloadFile].self, forKey: .downloadFiles)
-        modality = try container.decodeIfPresent(String.self, forKey: .modality)
+        let files = try container.decodeIfPresent([ModelDownloadFile].self, forKey: .downloadFiles)
+        let decodedModality = try container.decodeIfPresent(String.self, forKey: .modality)
+        let legacyFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
+        let legacySha256 = try container.decodeIfPresent(String.self, forKey: .sha256)
+        // Every entry lists its files in `download_files`. A model the built-in engine loads is one
+        // GGUF, kept at `models/<path>` as the older `download_file` put it, so that single file is
+        // also exposed as `downloadFile` / `sha256`; an image model's package files go under
+        // `models/<slug>/` instead (`downloadFileTargets`). A catalog still in the older shape
+        // (`download_file`, `sha256`) reads the same.
+        let isImage = decodedModality == "image" || provider == "image_xpc"
+        if legacyFile == nil, !isImage, let files, files.count == 1 {
+            downloadFile = files[0].path
+            sha256 = legacySha256 ?? files[0].sha256
+        } else {
+            downloadFile = legacyFile
+            sha256 = legacySha256
+        }
+        downloadFiles = files
+        modality = decodedModality
         description = try container.decodeIfPresent(String.self, forKey: .description)
         useCases = try container.decodeIfPresent([String].self, forKey: .useCases)
         featured = try container.decodeIfPresent(Bool.self, forKey: .featured) ?? false
+        preferred = try container.decodeIfPresent(Bool.self, forKey: .preferred) ?? false
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities)
     }
 
     /// Where to read the model's license and model card, or nil when nothing names a page.
@@ -491,7 +521,7 @@ public enum GarageConfigLoader {
     }
 
     /// Defaults the Python side applies when garage.json has no `facts` section.
-    public static let defaultFactsModel = "gemma2-2b"
+    public static let defaultFactsModel = "gemma-4-e4b"
     public static let defaultFactsProvider = "llama_xpc"
 
     /// Reads the `facts` section of garage.json (`{"facts": {"model": ..., "provider": ...}}`).

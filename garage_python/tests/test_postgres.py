@@ -1646,6 +1646,54 @@ class TestDistilledFacts:
         drop_model(db, "m")
         assert not db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()
 
+    def test_the_graph_walk_measures_neighbours_against_the_center(self, db: Session) -> None:
+        """vector_closeness, which ranks a crowded vertex's neighbours: each kind's vector against the
+        center's, a document by the mean of its chunks', and nothing for an author. Needs no AGE."""
+        from garage_rag.db.emb_tables import set_default_model
+        from garage_rag.db.graph import GraphVertex, vector_closeness
+
+        model = self._setup(db)
+        set_default_model(db, model.slug)
+        doc = self._doc(db)
+        center = self._fact(db, model, doc, "The roof is slate.", self._direction(0))
+        near = self._fact(db, model, doc, "Slate covers the roof.", self._direction(10))
+        far = self._fact(db, model, doc, "The boiler is new.", self._direction(80))
+        unembedded = self._fact(db, model, doc, "The door is red.", None)
+        chunk = db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) "
+                "VALUES (:d, 0, 'x', :s, 't') RETURNING id"
+            ),
+            {"d": doc, "s": b"x"},
+        ).scalar_one()
+        _embed(db, model.table_name, chunk, self._direction(40))
+        db.flush()
+
+        def vertex(gid: int, label: str, key: int, prop: str) -> GraphVertex:
+            return GraphVertex(gid, label, key, "", {prop: key})
+
+        found = vector_closeness(
+            db,
+            vertex(1, "PotentialFact", center, "fact_id"),
+            [
+                vertex(2, "PotentialFact", near, "fact_id"),
+                vertex(3, "PotentialFact", far, "fact_id"),
+                vertex(4, "PotentialFact", unembedded, "fact_id"),
+                vertex(5, "Chunk", chunk, "chunk_id"),
+                vertex(6, "Document", doc, "document_id"),
+                vertex(7, "Author", 1, "author_id"),
+            ],
+        )
+        assert set(found) == {2, 3, 5, 6}
+        assert found[2] < found[5] < found[3]
+        # The document's only chunk is its mean.
+        assert found[6] == pytest.approx(found[5])
+        # A center with no vector ranks nothing.
+        assert (
+            vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "PotentialFact", near, "fact_id")])
+            == {}
+        )
+
     def test_the_graph_projects_documents_chunks_authors_and_both_kinds_of_fact(self, db: Session) -> None:
         from garage_rag.db.graph import age_available, rebuild_graph, use_age
 

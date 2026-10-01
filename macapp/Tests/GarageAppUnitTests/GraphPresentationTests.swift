@@ -4,6 +4,15 @@ import SwiftUI
 
 final class GraphPresentationTests: XCTestCase {
 
+    func testTheDepthStartsFurtherOutFromAClaim() {
+        XCTAssertEqual(GraphPagePresentation.defaultDepth, 2)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "PotentialFact"), 3)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Fact"), 3)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Person"), 3)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Document"), 2)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Author"), 2)
+    }
+
     func testLabelsReadAsWords() {
         XCTAssertEqual(GraphLabelStyle.humanize("HAS_CHUNK"), "Has chunk")
         XCTAssertEqual(GraphLabelStyle.humanize("PotentialFact"), "Potential fact")
@@ -54,7 +63,7 @@ final class GraphPresentationTests: XCTestCase {
     func testTheSummaryCountsAndSaysWhenItWasCut() {
         XCTAssertEqual(GraphPagePresentation.summary(vertices: 1, edges: 0, depth: 1, truncated: false), "1 vertex, 0 edges within 1 hop")
         XCTAssertEqual(GraphPagePresentation.summary(vertices: 12, edges: 11, depth: 2, truncated: false), "12 vertices, 11 edges within 2 hops")
-        XCTAssertTrue(GraphPagePresentation.summary(vertices: 150, edges: 200, depth: 3, truncated: true).hasSuffix("(cut at the limit; filter or look nearer)"))
+        XCTAssertTrue(GraphPagePresentation.summary(vertices: 150, edges: 200, depth: 3, truncated: true).hasSuffix("(some connections left out; filter or look nearer)"))
     }
 
     func testTitlesUnderVerticesAreCutOnAWordWhereOneIsNear() {

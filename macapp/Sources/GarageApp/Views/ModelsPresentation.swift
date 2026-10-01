@@ -70,6 +70,67 @@ enum ModelsPresentation {
     }
 
     /// The line under a model Llama XPC holds in memory: "Loaded", then what it is there for.
+    /// A catalog `capabilities` entry as a badge: its label and what it means.
+    struct CapabilityTag: Equatable, Identifiable {
+        let label: String
+        let help: String
+        var id: String { label }
+    }
+
+    /// The badges for a preset's `capabilities`, in catalog order. An entry this build does not know
+    /// is still shown, spelled out from its key.
+    static func capabilityTags(_ capabilities: [String]?) -> [CapabilityTag] {
+        (capabilities ?? []).map { key in
+            switch key {
+            case "text_to_image":
+                CapabilityTag(label: "TEXT → IMAGE", help: "A search phrase finds pictures: the text and image towers share one space")
+            case "image_to_image":
+                CapabilityTag(label: "SIMILAR IMAGES", help: "Pictures embed near pictures that look alike")
+            case "multilingual":
+                CapabilityTag(label: "MULTILINGUAL", help: "Its text tower was trained on many languages, so queries need not be English")
+            case "neural_engine":
+                CapabilityTag(label: "NEURAL ENGINE", help: "Runs on the Apple Neural Engine through Core ML")
+            case "document_pages":
+                CapabilityTag(label: "DOCUMENT PAGES", help: "Embeds a page of a document as an image, text and layout together, with no OCR")
+            default:
+                CapabilityTag(label: key.replacingOccurrences(of: "_", with: " ").uppercased(), help: key)
+            }
+        }
+    }
+
+    /// The model the Inference list shows as chosen: `inference.model` when set; while it is empty,
+    /// the distillation model when its preset is tagged for inference and calls tools (it answers
+    /// chat then, and can use Garage's tools); otherwise none.
+    static func selectedInferenceSlug(
+        inferenceModel: String?,
+        factsModel: String,
+        presets: [ModelPresetEntry]
+    ) -> String? {
+        if let inferenceModel, !inferenceModel.isEmpty { return inferenceModel }
+        guard let facts = presets.first(where: { $0.slug == factsModel }),
+              facts.isForInference, facts.toolCalling else { return nil }
+        return facts.slug
+    }
+
+    /// The Gemma 4 model to name as `inference.model` once it is on disk: only while nothing is
+    /// chosen for inference and the distillation model (which answers until then) calls no tools.
+    /// When the distillation model is itself Gemma 4, or any tool-calling inference model, chat
+    /// already follows it and nothing is written. The catalog's preferred Gemma 4 wins, then the
+    /// first in catalog order.
+    static func gemma4ToAdoptForInference(
+        inferenceModel: String?,
+        factsModel: String,
+        presets: [ModelPresetEntry],
+        isDownloaded: (ModelPresetEntry) -> Bool
+    ) -> ModelPresetEntry? {
+        guard inferenceModel?.isEmpty ?? true,
+              selectedInferenceSlug(inferenceModel: nil, factsModel: factsModel, presets: presets) == nil else { return nil }
+        let candidates = presets.filter {
+            $0.slug.hasPrefix("gemma-4") && $0.isForInference && $0.toolCalling && isDownloaded($0)
+        }
+        return candidates.first(where: \.preferred) ?? candidates.first
+    }
+
     static func residentModelDetail(
         isEmbeddingModel: Bool,
         isDefaultEmbeddingModel: Bool,

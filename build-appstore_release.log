@@ -1,0 +1,111 @@
+→ 🎬 Running build task
+
+→ 🔧 Setup · Running setup
+
+→ 🔨 Build · Spawning bazel build
+Computing main repo mapping: 
+Loading: 
+Loading: 0 packages loaded
+WARNING: Build option --compilation_mode has changed, discarding analysis cache (this can be expensive, see https://bazel.build/advanced/performance/iteration-speed).
+Analyzing: target //macapp:GarageStore.xcarchive (0 packages loaded, 0 targets configured)
+Analyzing: target //macapp:GarageStore.xcarchive (0 packages loaded, 0 targets configured)
+
+INFO: Analyzed target //macapp:GarageStore.xcarchive (0 packages loaded, 10173 targets configured, 183 aspect applications).
+[4,681 / 4,862] CompileRootInfoPlist macapp/Sources/PythonXPCService/PythonXPCService_framework-intermediates/Info.plist; 0s darwin-sandbox ... (14 actions, 13 running)
+[4,720 / 4,862] [Prepa] Rewriting install names for @@//ext/postgres:postgres_rpath
+ERROR: /Users/rickmark/Developer/garage/macapp/Sources/GarageApp/BUILD.bazel:71:25: Linking macapp/Sources/GarageApp/GarageApp_bin failed: (Exit 1): wrapped_clang failed: error executing ObjcLink command (from macos_application rule target //macapp/Sources/GarageApp:GarageApp) bazel-out/darwin_arm64-opt-exec-ST-04c12f93c056/bin/external/apple_support+/crosstool/wrapped_clang ... (remaining 1 argument skipped)
+
+Use --sandbox_debug to see verbose messages from the sandbox and retain the sandbox build root for debugging
+ld: warning: Could not find or use auto-linked framework 'CoreAudioTypes': framework 'CoreAudioTypes' not found
+ld: warning: Could not parse or use implicit file '/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks/SwiftUICore.framework/Versions/A/SwiftUICore.tbd': cannot link directly with 'SwiftUICore' because product being built is not an allowed client of it
+Undefined symbols for architecture arm64:
+  "PythonXPCService.GarageXPCServiceBase.(_lifecycle in _A6BE595F00868840F5BF82258CEF290F).modify : PythonXPCService.GarageXPCServiceBase.Lifecycle", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lifecycle in _A6BE595F00868840F5BF82258CEF290F).getter : PythonXPCService.GarageXPCServiceBase.Lifecycle", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lifecycle in _A6BE595F00868840F5BF82258CEF290F).setter : PythonXPCService.GarageXPCServiceBase.Lifecycle", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestRun in _A6BE595F00868840F5BF82258CEF290F).modify : Foundation.Date?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestRun in _A6BE595F00868840F5BF82258CEF290F).getter : Foundation.Date?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestRun in _A6BE595F00868840F5BF82258CEF290F).setter : Foundation.Date?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_configuration in _A6BE595F00868840F5BF82258CEF290F).modify : [Swift.String : Swift.String]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_configuration in _A6BE595F00868840F5BF82258CEF290F).getter : [Swift.String : Swift.String]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_configuration in _A6BE595F00868840F5BF82258CEF290F).setter : [Swift.String : Swift.String]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_bootstrapError in _A6BE595F00868840F5BF82258CEF290F).modify : Swift.String?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_bootstrapError in _A6BE595F00868840F5BF82258CEF290F).getter : Swift.String?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_bootstrapError in _A6BE595F00868840F5BF82258CEF290F).setter : Swift.String?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_isRunningTests in _A6BE595F00868840F5BF82258CEF290F).modify : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_isRunningTests in _A6BE595F00868840F5BF82258CEF290F).getter : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_isRunningTests in _A6BE595F00868840F5BF82258CEF290F).setter : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestResults in _A6BE595F00868840F5BF82258CEF290F).modify : [PythonXPCService_protocol.GarageXPCTestResult]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestResults in _A6BE595F00868840F5BF82258CEF290F).getter : [PythonXPCService_protocol.GarageXPCTestResult]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_lastTestResults in _A6BE595F00868840F5BF82258CEF290F).setter : [PythonXPCService_protocol.GarageXPCTestResult]", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_anonymousListener in _A6BE595F00868840F5BF82258CEF290F).modify : __C.NSXPCListener?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_anonymousListener in _A6BE595F00868840F5BF82258CEF290F).getter : __C.NSXPCListener?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_anonymousListener in _A6BE595F00868840F5BF82258CEF290F).setter : __C.NSXPCListener?", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_servicesRegistered in _A6BE595F00868840F5BF82258CEF290F).modify : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_servicesRegistered in _A6BE595F00868840F5BF82258CEF290F).getter : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(_servicesRegistered in _A6BE595F00868840F5BF82258CEF290F).setter : Swift.Bool", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+  "PythonXPCService.GarageXPCServiceBase.(registerServicesIfNeeded in _A6BE595F00868840F5BF82258CEF290F)() -> ()", referenced from:
+      full type metadata for GarageIngestXPCServiceCore.GarageIngestXPCServiceDelegate in libGarageIngestXPCServiceCore.a[2](GarageIngestXPCServiceDelegate.swift.o)
+      full type metadata for GarageXPCServiceCore.GarageXPCServiceDelegate in libGarageXPCServiceCore.a[2](GarageXPCServiceDelegate.swift.o)
+ld: symbol(s) not found for architecture arm64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)
+Error in child process '/usr/bin/xcrun'. 1
+Target //macapp:GarageStore.xcarchive failed to build
+Use --verbose_failures to see the command lines of failed build steps.
+INFO: Elapsed time: 3.986s, Critical Path: 2.84s
+INFO: 28 processes: 4763 action cache hit, 6 internal, 22 darwin-sandbox.
+ERROR: Build did NOT complete successfully
+FAILED: 
+INFO: Build Event Protocol files produced successfully.
+
+→ ❌ Failed build task (exit code 1) in 4.2s · Failed to build
+    🔧 Setup   0ms  Prepare the task environment
+    🔨 Build  4.2s  Build bazel targets (failed)
+EXIT 1

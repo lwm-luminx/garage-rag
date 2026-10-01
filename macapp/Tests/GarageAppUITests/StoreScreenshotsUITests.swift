@@ -273,7 +273,8 @@ final class StoreScreenshotsUITests: GarageUITestCase {
     private func download(_ slug: String, timeout: TimeInterval = 900) {
         let row = element(identifier: "models.row.\(slug)")
         XCTAssertTrue(row.waitForExistence(timeout: 60), "no row for \(slug)")
-        let downloadButton = row.buttons["Download"]
+        // An embedding row's Download and a Download a Model row's both carry this identifier.
+        let downloadButton = element(identifier: "models.row.\(slug).download")
         let downloaded = { row.buttons["Load"].exists || self.element(identifier: "models.row.\(slug).unload").exists }
         if downloaded() { return }
         XCTAssertTrue(downloadButton.waitForExistence(timeout: 10), "\(slug) offers no Download")

@@ -29,7 +29,7 @@ public struct GraphView: View {
     /// The graph id of the vertex in the middle; nil before one is chosen.
     @State private var centerID: Int64?
     @State private var neighborhood: GraphNeighborhood?
-    @State private var depth = 1
+    @State private var depth = GraphPagePresentation.defaultDepth
     @State private var selectedVertexID: Int64?
     @State private var hoveredVertexID: Int64?
 
@@ -298,7 +298,7 @@ public struct GraphView: View {
             } else {
                 List(selection: Binding(
                     get: { centerID },
-                    set: { id in if let id { center(on: id) } }
+                    set: { id in if let id { start(at: id) } }
                 )) {
                     ForEach(results) { vertex in
                         vertexRow(vertex)
@@ -582,6 +582,7 @@ public struct GraphView: View {
         focus = nil
         centerID = nil
         selectedVertexID = nil
+        depth = GraphPagePresentation.startingDepth(for: target.label)
         loadNeighborhood(focus: target)
     }
 
@@ -644,8 +645,8 @@ public struct GraphView: View {
                 await MainActor.run {
                     results = found
                     isSearching = false
-                    if thenCenter, centerID == nil, let start = GraphPagePresentation.startingVertex(found) {
-                        center(on: start.id)
+                    if thenCenter, centerID == nil, let first = GraphPagePresentation.startingVertex(found) {
+                        start(at: first.id)
                     }
                 }
             } catch {
@@ -655,6 +656,15 @@ public struct GraphView: View {
                 }
             }
         }
+    }
+
+    /// Centers on a vertex chosen as a new starting point (the page's opening vertex, or a search
+    /// result), at the depth that suits its kind; Center Here and the picture keep the depth.
+    private func start(at id: Int64) {
+        if let vertex = results.first(where: { $0.id == id }) {
+            depth = GraphPagePresentation.startingDepth(for: vertex.label)
+        }
+        center(on: id)
     }
 
     private func center(on id: Int64) {

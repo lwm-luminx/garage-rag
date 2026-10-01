@@ -33,6 +33,9 @@ public struct DocumentsView: View {
     @State private var detailErrorMessage: String?
     @State private var hasLoaded = false
     @State private var isGleaningFacts = false
+    /// Keeps the arrow keys on the document list once a document is chosen. Without it the sidebar
+    /// kept keyboard focus, so Down moved to the next page instead of the next document.
+    @FocusState private var isListFocused: Bool
 
     private let corpusClasses = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.corpusClasses)
     private let trustTiers = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.trustTiers)
@@ -130,6 +133,7 @@ public struct DocumentsView: View {
             }
             .frame(width: 130)
             .onChange(of: selectedTrustTier) { _, _ in refreshDocuments() }
+            .accessibilityIdentifier("documents.trust")
 
             Button(action: refreshDocuments) {
                 if isLoadingList {
@@ -224,8 +228,10 @@ public struct DocumentsView: View {
                     .tag(doc.id)
             }
             .listStyle(.inset)
+            .focused($isListFocused)
             .onChange(of: selectedDocumentID) { _, newValue in
                 if let newValue {
+                    isListFocused = true
                     loadDetail(documentID: newValue)
                 }
             }
@@ -304,6 +310,9 @@ public struct DocumentsView: View {
             .background(Color(nsColor: .windowBackgroundColor))
         } else if let detail = selectedDetail {
             documentDetailContent(detail)
+                // A new identity per document: reused, the selectable title kept the previous
+                // document's accessibility value, so UI tests read a stale title.
+                .id(detail.id)
         } else {
             VStack(spacing: 10) {
                 Spacer()
@@ -330,7 +339,11 @@ public struct DocumentsView: View {
 
                 HStack(spacing: 6) {
                     CorpusClassBadge(corpusClass: detail.corpusClass)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.class")
                     TrustTierBadge(tier: detail.trustTier)
+                        .accessibilityElement(children: .combine)
+                        .accessibilityIdentifier("documents.detail.trust")
                     TagBadge(detail.sourceSlug)
                     if !detail.state.isEmpty {
                         StatusBadge(detail.state.uppercased(), tint: detail.state == "ok" ? .green : .red)

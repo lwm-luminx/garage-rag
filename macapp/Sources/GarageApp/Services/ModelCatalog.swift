@@ -19,6 +19,23 @@ enum ModelCatalog {
     /// Where a fetched catalog is saved.
     static var fetchedURL: URL { GarageAppGroup.fetchedModelCatalog }
 
+    /// Whether the catalog at `candidate` has a non-empty list for every group that `reference`
+    /// has one for. A reference that cannot be read imposes nothing.
+    static func covers(_ candidate: URL, groupsOf reference: URL) -> Bool {
+        guard let required = nonEmptyGroups(at: reference) else { return true }
+        guard let present = nonEmptyGroups(at: candidate) else { return false }
+        return required.isSubset(of: present)
+    }
+
+    /// The top-level keys of a grouped models.json whose value is a non-empty array.
+    static func nonEmptyGroups(at url: URL) -> Set<String>? {
+        guard let data = try? Data(contentsOf: url),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return Set(object.compactMap { key, value in
+            ((value as? [Any])?.isEmpty == false) ? key : nil
+        })
+    }
+
     /// Fetches the catalog from `url` and saves it at `destination` when it is usable and differs
     /// from what is saved there. Returns whether the saved catalog changed.
     @discardableResult

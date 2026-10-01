@@ -111,6 +111,9 @@ extension ModelsView {
         return appState.embeddingPresets
             .filter { !registeredSlugs.contains($0.slug) }
             .sorted { lhs, rhs in
+                if lhs.preferred != rhs.preferred {
+                    return lhs.preferred
+                }
                 if lhs.featured != rhs.featured {
                     return lhs.featured && !rhs.featured
                 }

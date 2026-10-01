@@ -114,6 +114,7 @@ py_test(
         "//garage_python/src/garage_rag/enrich/langextract",
         "//garage_python/src/garage_rag/inference",
         "//garage_python/src/garage_rag/net",
+        "//garage_python/src/garage_rag/ops",
         "//garage_python/src/garage_rag/xpc",
         "@pypi//pytest",
     ],

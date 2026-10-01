@@ -59,15 +59,31 @@ class TestTheCommittedCatalog:
         assert len(slugs) == len(set(slugs))
 
     def test_every_inference_model_downloads_with_a_checksum(self) -> None:
-        # The app downloads huggingface.co/<download_model_id>/resolve/main/<download_file> and
-        # checks it against sha256, so an inference entry needs all three.
+        # The app downloads huggingface.co/<download_model_id>/resolve/main/<path> for each of
+        # download_files and checks it against its sha256; a GGUF model lists its one file.
         document = json.loads(MODELS_JSON.read_text())
         for entry in document["inference_models"]:
-            assert entry.get("download_model_id") and entry.get("download_file"), entry["slug"]
-            assert entry["download_file"].endswith(".gguf"), entry["slug"]
-            sha = entry.get("sha256", "")
+            files = entry.get("download_files") or []
+            assert entry.get("download_model_id") and len(files) == 1, entry["slug"]
+            assert files[0]["path"].endswith(".gguf"), entry["slug"]
+            sha = files[0].get("sha256") or ""
             assert len(sha) == 64 and all(c in "0123456789abcdef" for c in sha), entry["slug"]
             assert not entry.get("native_dims"), f"{entry['slug']} is generative, not an embedding model"
+
+    def test_every_model_lists_its_files_in_download_files(self) -> None:
+        # One shape for every section: download_files. A GGUF entry also keeps the older
+        # download_file / sha256 (the same file), which Garage 1.5 reads from the fetched catalog;
+        # drop them once 1.5 is no longer in use.
+        document = json.loads(MODELS_JSON.read_text())
+        for section in ("text_embedding", "inference_models", "image_embedding"):
+            for entry in document[section]:
+                files = entry.get("download_files") or []
+                if entry.get("download_model_id"):
+                    assert files, entry["slug"]
+                if "download_file" in entry or "sha256" in entry:
+                    assert len(files) == 1, entry["slug"]
+                    assert entry.get("download_file") == files[0]["path"], entry["slug"]
+                    assert entry.get("sha256") == files[0].get("sha256"), entry["slug"]
 
     def test_inference_models_say_what_they_are_for(self) -> None:
         # One list for chat and distillation: tags say which each model is good for.
