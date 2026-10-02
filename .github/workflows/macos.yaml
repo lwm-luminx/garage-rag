@@ -25,6 +25,7 @@ on:
       - "**/BUILD.bazel"
       - "**/*.bzl"
       - "MODULE.bazel"
+      - ".gitmodules"
       - "MODULE.bazel.lock"
       - ".bazelrc"
       - ".bazelversion"
@@ -51,6 +52,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          # ext/pythonkit/PythonKit, which the app compiles.
+          submodules: true
       - uses: ./.github/actions/setup-aspect
       # A cold build of //... runs past the hosted runner's 6h job limit, so
       # Bazel's disk and repository caches carry the work across runs.

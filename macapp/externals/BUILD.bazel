@@ -51,25 +51,9 @@ codesign(
     visibility = ["//visibility:public"],
 )
 
-# libtesseract, shipped inside PythonXPCService.framework (see python_framework_libs) and used
-# by garage_rag.extract.tesseract through ctypes. Like libpq it must carry the app's Team ID
-# for library validation. Named for its install name (@rpath/libtesseract.5.5.dylib), which is
-# what the framework's load command asks dyld for.
-codesign(
-    name = "libtesseract",
-    src = "//ext/tesseract",
-    out = "libtesseract.5.5.dylib",
-    options = ["runtime"],
-    signing_identity = select({
-        "//bazel:is_developer_id": "Developer ID Application: Richard Penwell (DWVXMLB45Y)",
-        "//bazel:is_store": STORE_IDENTITY,
-        "//conditions:default": "-",
-    }),
-    visibility = ["//visibility:public"],
-)
-
-# `PythonXPCService.framework/tessdata/eng.traineddata`, next to the framework's `Frameworks`
-# folder, where garage_rag.extract.tesseract looks for it.
+# `PythonXPCService.framework/Resources/tessdata/eng.traineddata`, beside `site-python` (the
+# interpreter's home), where garage_rag.extract.tesseract looks for it. Tesseract itself is built
+# into the app's Python (_garage_tesseract, see //ext/python).
 copy_to_directory(
     name = "tessdata_output",
     srcs = ["//ext/tesseract:tessdata"],
@@ -104,7 +88,6 @@ copy_to_directory(
     name = "python_framework_libs",
     srcs = [
         ":libpq",
-        ":libtesseract",
     ],
     out = "Frameworks",
     root_paths = ["macapp/externals"],

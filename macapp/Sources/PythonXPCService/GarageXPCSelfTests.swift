@@ -266,23 +266,26 @@ public enum GarageXPCStandardSelfTests {
         }
     }
 
-    /// Verifies the framework's libtesseract is loaded, that garage_rag uses that copy, and that its English data
-    /// is in the framework's `tessdata`.
-    public static func libtesseract() -> GarageXPCSelfTest {
-        GarageXPCSelfTest(name: "libtesseract", description: "PythonXPCService.framework's libtesseract is loaded with it and garage_rag's OCR uses it and the framework's tessdata.") {
-            guard let path = GaragePythonRuntime.loadedImagePath(definingSymbol: "TessVersion") else {
-                throw GarageXPCSelfTestFailure("libtesseract is not loaded", details: "PythonXPCService.framework should link it")
+    /// Verifies the interpreter has `_garage_tesseract` built in (Tesseract and Leptonica linked statically), that
+    /// garage_rag's OCR reads through it, and that an engine starts with the English data in the framework's `tessdata`.
+    public static func tesseract() -> GarageXPCSelfTest {
+        GarageXPCSelfTest(name: "Tesseract", description: "The embedded Python has _garage_tesseract built in, with Tesseract linked statically, garage_rag's OCR uses it, and it loads the English data in PythonXPCService.framework's tessdata.") {
+            let sys = try Python.attemptImport("sys")
+            guard Bool(sys.builtin_module_names.__contains__("_garage_tesseract")) == true else {
+                throw GarageXPCSelfTestFailure("_garage_tesseract is not built into the interpreter", details: "//ext/python should build it through garage_tesseract.patch")
             }
             let tesseract = try Python.attemptImport("garage_rag.extract.tesseract")
-            let found = String(tesseract._find_library()) ?? "None"
-            if found != path {
-                throw GarageXPCSelfTestFailure("garage_rag resolves libtesseract to a different file", details: "expected: \(path)\nfound:    \(found)")
+            let module = tesseract.builtin_module()
+            guard String(Python.getattr(module, "__name__", "")) == "_garage_tesseract" else {
+                throw GarageXPCSelfTestFailure("garage_rag reads images through something else", details: String(describing: module))
             }
-            guard let datapath = String(tesseract._datapath(path)) else {
-                throw GarageXPCSelfTestFailure("No eng.traineddata beside the framework's libtesseract", details: path)
+            guard let datapath = String(tesseract._bundled_datapath()) else {
+                throw GarageXPCSelfTestFailure("No eng.traineddata in the framework's tessdata", details: "expected beside \(String(sys.prefix) ?? "sys.prefix")")
             }
-            let version = String(tesseract.version()) ?? "unknown"
-            return ["Path: \(path)", "Version: \(version)", "tessdata: \(datapath)"].joined(separator: "\n")
+            // Starting an engine loads the language data; it is dropped again at once.
+            _ = try module.Engine.throwing.dynamicallyCall(withArguments: [datapath, tesseract.LANGUAGE, 3])
+            let version = String(module.version()) ?? "unknown"
+            return ["Version: \(version)", "tessdata: \(datapath)"].joined(separator: "\n")
         }
     }
 

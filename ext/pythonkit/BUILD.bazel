@@ -1,20 +1,45 @@
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# PythonKit is the `PythonKit` git submodule (pvieito/PythonKit, pinned to v0.5.1). Run
+# `git submodule update --init` after cloning. Its two loader files are left out:
+# PythonLibrary.swift dlopen()s the Python library and PythonLibrary+Symbols.swift dlsym()s every
+# C-API function PythonKit calls. GaragePythonLibrary.swift declares the same symbols, bound at
+# link time through GaragePythonKitSymbols, so nothing is looked up at run time.
+swift_library(
+    name = "PythonKit_swift",
+    srcs = [
+        "GaragePythonLibrary.swift",
+        "PythonKit/PythonKit/NumpyConversion.swift",
+        "PythonKit/PythonKit/Python.swift",
+    ],
+    module_name = "PythonKit",
+    visibility = ["//visibility:public"],
+    deps = [":GaragePythonKitSymbols"],
+)
+
+# The C-API functions PythonKit calls, as plain C functions over PythonKit's opaque pointer types.
+# Its own translation unit includes Python.h; the header does not, so no Swift module that
+# imports PythonKit sees two declarations of one CPython function. Undefined CPython symbols
+# resolve against Python.framework, which every binary that links PythonKit links.
+objc_library(
+    name = "GaragePythonKitSymbols",
+    srcs = ["symbols/GaragePythonKitSymbols.c"],
+    hdrs = ["symbols/GaragePythonKitSymbols.h"],
+    includes = ["symbols"],
+    module_name = "GaragePythonKitSymbols",
+    deps = ["//ext/python:python_headers"],
+)
+
 alias(
     name = "PythonKit",
-    actual = "@PythonKit//:PythonKit",
+    actual = ":PythonKit_swift",
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "pythonkit",
-    actual = ":PythonKit",
-    visibility = ["//visibility:public"],
-)
-
-# PythonKit is linked statically into PythonXPCService.framework; there is no
-# separate PythonKit.framework anymore. Kept for consumers using the old name.
-alias(
-    name = "PythonKit_swift",
-    actual = ":PythonKit",
+    actual = ":PythonKit_swift",
     visibility = ["//visibility:public"],
 )
 

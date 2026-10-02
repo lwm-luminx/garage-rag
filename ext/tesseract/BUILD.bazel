@@ -1,20 +1,21 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
-load("//bazel:foreign_cc.bzl", "extract_foreign_cc_file", "normalize_install_names")
 
-# libtesseract, loaded in-process by garage_rag.extract.tesseract through its C API
-# (capi.h), with //ext/leptonica linked in statically so the app ships one dylib that
-# depends only on system libraries.
+# Static libtesseract, linked with //ext/leptonica into the app's Python for its built-in
+# _garage_tesseract module (see //ext/python): garage_rag.extract.tesseract reads images through its
+# C API (capi.h) in-process, with no dylib loaded at run time.
 cmake(
-    name = "tesseract_build",
+    name = "tesseract",
     build_args = [
         "--",
         "-j",
     ],
     cache_entries = {
-        "BUILD_SHARED_LIBS": "ON",
+        "BUILD_SHARED_LIBS": "OFF",
         "BUILD_TESTS": "OFF",
         "BUILD_TRAINING_TOOLS": "OFF",
         "CMAKE_BUILD_TYPE": "Release",
+        # Linked into Python.framework's dylib.
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
         "DISABLE_ARCHIVE": "ON",
         "DISABLE_CURL": "ON",
         "DISABLE_TIFF": "ON",
@@ -38,27 +39,13 @@ cmake(
         "CXXFLAGS": "-DTESSERACT_DISABLE_DEBUG_FONTS -DTESSERACT_IMAGEDATA_AS_PIX",
     },
     lib_source = "@tesseract//:tesseract_source",
-    out_shared_libs = ["libtesseract.5.5.dylib"],
-    postfix_script = normalize_install_names(["libtesseract.5.5.dylib"]),
+    out_static_libs = ["libtesseract.a"],
     visibility = ["//visibility:public"],
     deps = ["//ext/leptonica"],
-)
-
-extract_foreign_cc_file(
-    name = "libtesseract_dylib",
-    out = "lib/libtesseract.5.5.dylib",
-    filename = "libtesseract.5.5.dylib",
-    target = ":tesseract_build",
 )
 
 filegroup(
     name = "tessdata",
     srcs = ["@tessdata_eng//file"],
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "tesseract",
-    actual = ":libtesseract_dylib",
     visibility = ["//visibility:public"],
 )

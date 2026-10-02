@@ -63,6 +63,19 @@ final class PostgresServiceTests: XCTestCase {
         XCTAssertEqual(PostgresService.quotedSetting("/a\"b,c"), "\"/a\"\"b,c\"")
     }
 
+    func testEveryBundledLibraryIsPreloaded() {
+        XCTAssertEqual(
+            PostgresService.sharedPreloadLibraries { _ in true },
+            ["vector", "pg_trgm", "age", "plpgsql", "dict_snowball"]
+        )
+    }
+
+    func testMissingLibrariesAreNotPreloaded() {
+        // A preload the server cannot find stops it, so an unbundled library is left out.
+        XCTAssertEqual(PostgresService.sharedPreloadLibraries { $0 != "age" }, ["vector", "pg_trgm", "plpgsql", "dict_snowball"])
+        XCTAssertEqual(PostgresService.sharedPreloadLibraries { _ in false }, [])
+    }
+
     func testSocketPathLimitIsSunPath() {
         XCTAssertEqual(GarageSockets.maxPathLength, 103)
         XCTAssertTrue(GarageSockets.fits(String(repeating: "a", count: 103)))

@@ -4,8 +4,8 @@ import PythonXPCService
 
 /// Command line smoke test for the embedded Python runtime used by the XPC services.
 ///
-/// Usage: `python_embed_smoke`. It links PythonXPCService.framework like the services, so site-python, libpq and
-/// libtesseract come from the framework it loads (or set `GARAGE_SITE_PYTHON` to another site-python directory).
+/// Usage: `python_embed_smoke`. It links PythonXPCService.framework like the services, so site-python and libpq
+/// come from the framework it loads (or set `GARAGE_SITE_PYTHON` to another site-python directory).
 /// Exits non-zero when the interpreter fails to start or any self test fails.
 let runtime = GaragePythonRuntime.shared
 
@@ -39,7 +39,7 @@ let tests: [GarageXPCSelfTest] = [
     GarageXPCStandardSelfTests.sitePackages(modules: ["grpc", "psycopg", "google.protobuf", "garage_rag"]),
     GarageXPCStandardSelfTests.libpq(runtime: runtime),
     GarageXPCStandardSelfTests.tlsTrust(runtime: runtime),
-    GarageXPCStandardSelfTests.libtesseract(),
+    GarageXPCStandardSelfTests.tesseract(),
     GarageXPCStandardSelfTests.gitHistory(),
     GarageXPCStandardSelfTests.serviceModule("garage_rag.ingest", attributes: ["ingest_xpc", "cancel_ingest"]),
     GarageXPCStandardSelfTests.serviceModule("garage_rag.service.server", attributes: ["create_grpc_server"]),

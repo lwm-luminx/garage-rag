@@ -107,8 +107,10 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   `//macapp/externals:postgres_output`), with `libpq` in `Frameworks/`. AGE's Cypher
   parser is generated with the hermetic `rules_bison`/`rules_flex` toolchains, since the
   Bison 2.3 in macOS is too old for its grammar. `PostgresService` starts the server with
-  `shared_preload_libraries=age` and `ag_catalog` last on `search_path`, so any session can
-  run Cypher and `create_graph` without `LOAD 'age'` or a `SET search_path` first.
+  every bundled module the backends load in `shared_preload_libraries` (`vector`, `pg_trgm`,
+  `age`, `plpgsql`, `dict_snowball`), so the postmaster opens each once and backends inherit it
+  through fork, and with `ag_catalog` last on `search_path`, so any session can run Cypher and
+  `create_graph` without `LOAD 'age'` or a `SET search_path` first.
 - `Resources/schema` — the SQL migrations, `Resources/postgresql.conf`, the model
   manifest and the config JSON schema.
 - `Frameworks/PythonXPCService.framework` — the shared runtime for the seven
@@ -125,13 +127,15 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   bundle (`cryptography`'s compiled-in default is Homebrew's). At start-up it also calls
   `truststore.inject_into_ssl()`, so `ssl`'s default contexts verify against the macOS
   trust store; the bundled OpenSSL ships no CA files.
-- The framework also carries `Frameworks/libpq.dylib` and `Frameworks/libtesseract.5.5.dylib`
-  (`//macapp/externals:python_framework_libs`) and links them with load commands
+- The framework also carries `Frameworks/libpq.dylib`
+  (`//macapp/externals:python_framework_libs`) and links it with a load command
   (`@rpath`, through its `@loader_path/Frameworks` rpath). Every process that links the
-  framework (the Python XPC services, `garage`, `garage-mcp`) therefore has them mapped
-  before the App Sandbox applies, where opening them later by path is denied. Python finds
-  them among the process's loaded images (`garage_rag.native`); nothing passes their paths,
-  and the services never need to know where the app bundle is.
+  framework (the Python XPC services, `garage`, `garage-mcp`) therefore has it mapped
+  before the App Sandbox applies, where opening it later by path is denied. Python finds
+  it among the process's loaded images (`garage_rag.native`); nothing passes its path,
+  and the services never need to know where the app bundle is. Tesseract and libgit2 are
+  not libraries of their own: they are linked statically into Python.framework for its
+  built-in `_garage_tesseract` and `_garage_git` modules.
 
 ## The Postgres password
 
