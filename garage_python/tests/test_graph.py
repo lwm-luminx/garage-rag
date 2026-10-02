@@ -47,8 +47,7 @@ def test_agtype_maps_parse_as_json_and_survive_numeric_suffixes():
         ("Document", {"title": "", "uri": "/a/b.md"}, "b.md"),
         ("Chunk", {"chunk_id": 3, "ord": 2}, "Chunk 2"),
         ("Author", {"display_name": "Ada"}, "Ada"),
-        ("PotentialFact", {"fact": " The roof is slate. "}, "The roof is slate."),
-        ("Fact", {"statement": "The roof is slate."}, "The roof is slate."),
+        ("Fact", {"statement": " The roof is slate. "}, "The roof is slate."),
         ("Thing", {"thing_id": 9}, "Thing"),
         ("Entity", {"name": "Zürich", "kind": "place"}, "Zürich"),
     ],
@@ -130,30 +129,29 @@ class FakeGraph:
 
 @pytest.fixture
 def graph() -> FakeGraph:
-    """Ada wrote a document of two chunks, which states two potential facts backing one distilled fact."""
+    """Ada wrote a document of two chunks, which states two facts; a second document states one of them."""
     g = FakeGraph()
     g.vertices[1] = ("Document", {"document_id": 10, "title": "House", "uri": "/h.md"})
     g.vertices[2] = ("Chunk", {"chunk_id": 20, "document_id": 10, "ord": 0})
     g.vertices[3] = ("Chunk", {"chunk_id": 21, "document_id": 10, "ord": 1})
     g.vertices[4] = ("Author", {"author_id": 30, "display_name": "Ada", "is_self": True})
-    g.vertices[5] = ("PotentialFact", {"fact_id": 40, "document_id": 10, "fact": "The roof is slate."})
-    g.vertices[6] = ("PotentialFact", {"fact_id": 41, "document_id": 10, "fact": "Slate covers the roof."})
-    g.vertices[7] = ("Fact", {"distilled_fact_id": 50, "statement": "The roof is slate."})
+    g.vertices[5] = ("Fact", {"distilled_fact_id": 50, "statement": "The roof is slate."})
+    g.vertices[6] = ("Fact", {"distilled_fact_id": 51, "statement": "The roof was replaced in 2019."})
+    g.vertices[7] = ("Document", {"document_id": 11, "title": "Survey", "uri": "/s.md"})
     g.edges[100] = ("HAS_CHUNK", 1, 2, {"ord": 0})
     g.edges[101] = ("HAS_CHUNK", 1, 3, {"ord": 1})
     g.edges[102] = ("WROTE", 4, 1, {"role": "author", "confidence": 0.9})
-    g.edges[103] = ("STATES", 1, 5, {"char_start": 0, "char_end": 18})
-    g.edges[104] = ("STATES", 1, 6, {})
-    g.edges[105] = ("SUPPORTS", 5, 7, {"similarity": 0.97})
-    g.edges[106] = ("SUPPORTS", 6, 7, {"similarity": 0.95})
+    g.edges[103] = ("STATES", 1, 5, {"char_start": 0, "char_end": 18, "similarity": 0.97, "statements": 2})
+    g.edges[104] = ("STATES", 1, 6, {"statements": 1})
+    g.edges[105] = ("STATES", 7, 5, {"char_start": 40, "char_end": 62, "statements": 1})
     return g
 
 
 def test_labels_are_counted(graph: FakeGraph):
     labels = graph_labels(graph.session())
     assert labels.available
-    assert labels.vertices == {"Author": 1, "Chunk": 2, "Document": 1, "Fact": 1, "PotentialFact": 2}
-    assert labels.edges == {"HAS_CHUNK": 2, "STATES": 2, "SUPPORTS": 2, "WROTE": 1}
+    assert labels.vertices == {"Author": 1, "Chunk": 2, "Document": 2, "Fact": 2}
+    assert labels.edges == {"HAS_CHUNK": 2, "STATES": 3, "WROTE": 1}
 
 
 def test_without_age_nothing_is_available(graph: FakeGraph):
@@ -163,17 +161,27 @@ def test_without_age_nothing_is_available(graph: FakeGraph):
 
 
 def test_a_vertex_is_found_by_label_and_relational_id(graph: FakeGraph):
-    vertex = find_vertex(graph.session(), "PotentialFact", 41)
+    vertex = find_vertex(graph.session(), "Fact", 51)
     assert vertex == GraphVertex(
         id=6,
-        label="PotentialFact",
-        key=41,
-        title="Slate covers the roof.",
-        properties={"fact_id": 41, "document_id": 10, "fact": "Slate covers the roof."},
+        label="Fact",
+        key=51,
+        title="The roof was replaced in 2019.",
+        properties={"distilled_fact_id": 51, "statement": "The roof was replaced in 2019."},
     )
-    assert find_vertex(graph.session(), "PotentialFact", 99) is None
+    assert find_vertex(graph.session(), "Fact", 99) is None
     with pytest.raises(LookupError):
         find_vertex(graph.session(), "Planet", 1)
+
+
+def test_a_fact_of_a_configured_label_is_found_as_a_fact(graph: FakeGraph):
+    graph.vertices[8] = ("Person", {"distilled_fact_id": 52, "title": "Ada Lovelace"})
+    vertex = find_vertex(graph.session(), "Fact", 52)
+    assert vertex is not None and vertex.id == 8 and vertex.label == "Person"
+    # With every class mapped there are no Fact vertices, and a distilled fact is still found.
+    for vid in (5, 6):
+        del graph.vertices[vid]
+    assert find_vertex(graph.session(), "Fact", 52) == vertex
 
 
 def test_one_hop_from_the_document(graph: FakeGraph):
@@ -184,23 +192,23 @@ def test_one_hop_from_the_document(graph: FakeGraph):
     assert not result.truncated
 
 
-def test_two_hops_reach_the_distilled_fact(graph: FakeGraph):
+def test_two_hops_reach_another_document_stating_a_fact(graph: FakeGraph):
     result = neighborhood(graph.session(), vertex_id=1, depth=2)
     assert {v.id for v in result.vertices} == {1, 2, 3, 4, 5, 6, 7}
     assert {e.id for e in result.edges} == set(graph.edges)
 
 
 def test_excluded_vertex_labels_are_neither_shown_nor_walked_through(graph: FakeGraph):
-    # Without PotentialFact vertices the distilled fact is two hops away through nothing.
-    result = neighborhood(graph.session(), vertex_id=1, depth=2, vertex_labels=["Document", "Author", "Fact"])
+    # Without Fact vertices the other document is two hops away through nothing.
+    result = neighborhood(graph.session(), vertex_id=1, depth=2, vertex_labels=["Document", "Author"])
     assert {v.id for v in result.vertices} == {1, 4}
     assert {e.id for e in result.edges} == {102}
 
 
 def test_edge_labels_filter_the_walk(graph: FakeGraph):
-    result = neighborhood(graph.session(), vertex_id=7, depth=3, edge_labels=["SUPPORTS", "STATES"])
+    result = neighborhood(graph.session(), vertex_id=7, depth=3, edge_labels=["STATES"])
     assert {v.id for v in result.vertices} == {1, 5, 6, 7}
-    assert {e.label for e in result.edges} == {"SUPPORTS", "STATES"}
+    assert {e.label for e in result.edges} == {"STATES"}
 
 
 def test_the_limit_cuts_the_walk_breadth_first_and_says_so(graph: FakeGraph):
@@ -274,10 +282,9 @@ def test_edges_rank_by_what_they_say_about_a_claim():
             edge(3, "WROTE", role="author", confidence=0.9),
             edge(4, "STATES", char_start=40),
             edge(5, "STATES", char_start=3),
-            edge(6, "SUPPORTS"),
-            edge(7, "SUPPORTS", similarity=0.8),
+            edge(6, "STATES", similarity=0.8, char_start=90),
             edge(8, "LIVES_IN"),
         ],
         key=edge_rank,
     )
-    assert [e.id for e in ranked] == [7, 6, 8, 5, 4, 3, 2, 1]
+    assert [e.id for e in ranked] == [8, 6, 5, 4, 3, 2, 1]

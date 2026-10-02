@@ -8,36 +8,39 @@ creates the extension where it is installed). Elsewhere :func:`age_available`
 is false and nothing is projected.
 
 Vertices carry the relational id and a few display properties; text, spans and
-vectors stay in the tables (and vectors in the ``emb_``/``potential_fact_emb_``/``fact_emb_`` tables):
+vectors stay in the tables (and vectors in the ``emb_``/``fact_emb_`` tables):
 
-=================  ===============================================================
-``Document``       ``document_id``, ``title``, ``uri``, ``corpus_class``, ``trust_tier``
-``Chunk``          ``chunk_id``, ``document_id``, ``ord`` (content chunks, not facts')
-``Author``         ``author_id``, ``display_name``, ``is_self``
-``PotentialFact``  ``fact_id``, ``document_id``, ``fact_class``, ``prompt_name``, ``fact``
-``Fact``           ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
-                   ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py),
-                   ``anchor_key`` (a metadata value's key, for an anchored fact)
-=================  ===============================================================
+============  ===============================================================
+``Document``  ``document_id``, ``title``, ``uri``, ``corpus_class``, ``trust_tier``
+``Chunk``     ``chunk_id``, ``document_id``, ``ord`` (content chunks, not facts')
+``Author``    ``author_id``, ``display_name``, ``is_self``
+``Fact``      ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
+              ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py),
+              ``anchor_key`` (a metadata value's key, for an anchored fact)
+============  ===============================================================
+
+The facts a document states (``facts`` rows, the potential facts) are not
+vertices: the graph shows only distilled facts, so a claim a document restates,
+or that several documents state, is one vertex. A fact not yet distilled is not
+in the graph until ``garage cluster-facts`` links it to one.
 
 Edges:
 
-=============  ==============================  ==============================================================
-``HAS_CHUNK``  Document -> Chunk               ``ord``
-``WROTE``      Author -> Document              ``role`` (author, committer, sender), ``confidence``
-``RECEIVED``   Author -> Document              ``role`` (recipient, cc), ``confidence``
-``STATES``     Document -> PotentialFact       ``char_start``, ``char_end``
-``RESTATES``   PotentialFact -> PotentialFact  ``similarity``: a restatement to its document's representative
-``SUPPORTS``   PotentialFact -> Fact           ``similarity`` (NULL for a fact alone); representatives only
-=============  ==============================  ==============================================================
+=============  ===================  ==============================================================
+``HAS_CHUNK``  Document -> Chunk    ``ord``
+``WROTE``      Author -> Document   ``role`` (author, committer, sender), ``confidence``
+``RECEIVED``   Author -> Document   ``role`` (recipient, cc), ``confidence``
+``STATES``     Document -> Fact     ``char_start``, ``char_end`` (its first statement in the document),
+                                    ``similarity`` (its closest statement's), ``statements`` (how many)
+=============  ===================  ==============================================================
 
 Configured labels (``facts.prompts[].graph``; :func:`garage_rag.config.fact_prompts.graph_schema`):
 
 * a vertex entry projects the distilled facts of its class as vertices of its
   label instead of ``Fact`` (``distilled_fact_id``, ``fact_class``, ``title``,
-  ``statement``, ``nodes``, ``anchor_key``), and their potential facts'
-  ``SUPPORTS`` edges point there;
-* an edge entry projects each potential fact of its class as an edge from the
+  ``statement``, ``nodes``, ``anchor_key``), and the ``STATES`` edges of
+  their documents point there;
+* an edge entry projects each extracted fact of its class as an edge from the
   distilled fact its ``source`` attribute names to the one its ``target``
   attribute names (``fact_id``, ``document_id``, ``predicate``, ``fact``),
   labelled by ``label_attribute`` from ``labels``, else ``label``. A name is
@@ -92,14 +95,6 @@ VERTICES: dict[str, tuple[str, str]] = {
         FROM authors a
         """,
     ),
-    "PotentialFact": (
-        "fact_id",
-        """
-        SELECT f.id, jsonb_build_object('fact_id', f.id, 'document_id', f.document_id, 'fact_class', f.fact_class,
-                                        'prompt_name', f.prompt_name, 'fact', f.fact)
-        FROM facts f
-        """,
-    ),
     "Fact": (
         "distilled_fact_id",
         """
@@ -111,6 +106,18 @@ VERTICES: dict[str, tuple[str, str]] = {
         """,
     ),
 }
+
+# Document -> distilled fact, one edge however often the document states it. {where} narrows the facts.
+_STATES = """
+        SELECT f.document_id, f.distilled_fact_id, jsonb_strip_nulls(jsonb_build_object(
+                   'char_start', (array_agg(f.char_start ORDER BY f.char_start NULLS LAST, f.id))[1],
+                   'char_end', (array_agg(f.char_end ORDER BY f.char_start NULLS LAST, f.id))[1],
+                   'similarity', max(f.distilled_similarity), 'statements', count(*)))
+        FROM facts f {join}
+        WHERE f.distilled_fact_id IS NOT NULL {where}
+        GROUP BY f.document_id, f.distilled_fact_id
+        """
+_STATES_ALL = _STATES.format(join="", where="")
 
 # label -> (from label, to label, SELECT of (from id, to id, jsonb properties))
 EDGES: dict[str, tuple[str, str, str]] = {
@@ -135,31 +142,7 @@ EDGES: dict[str, tuple[str, str, str]] = {
         FROM document_authors da WHERE da.role IN ('recipient', 'cc')
         """,
     ),
-    "STATES": (
-        "Document",
-        "PotentialFact",
-        """
-        SELECT f.document_id, f.id, jsonb_strip_nulls(jsonb_build_object('char_start', f.char_start,
-                                                                         'char_end', f.char_end))
-        FROM facts f
-        """,
-    ),
-    "RESTATES": (
-        "PotentialFact",
-        "PotentialFact",
-        """
-        SELECT f.id, f.restates_fact_id, jsonb_strip_nulls(jsonb_build_object('similarity', f.restates_similarity))
-        FROM facts f WHERE f.restates_fact_id IS NOT NULL
-        """,
-    ),
-    "SUPPORTS": (
-        "PotentialFact",
-        "Fact",
-        """
-        SELECT f.id, f.distilled_fact_id, jsonb_strip_nulls(jsonb_build_object('similarity', f.distilled_similarity))
-        FROM facts f WHERE f.distilled_fact_id IS NOT NULL AND f.restates_fact_id IS NULL
-        """,
-    ),
+    "STATES": ("Document", "Fact", _STATES_ALL),
 }
 
 
@@ -227,7 +210,7 @@ def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
                 f"SELECT x.* FROM ({e.select}) x(src, dst, p) {not_mapped.format(id='x.dst')}",
                 {"mapped": mapped},
             )
-            if e.label == "SUPPORTS"
+            if e.label == "STATES"
             else e
             for e in edges
         ]
@@ -250,15 +233,12 @@ def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
         )
         edges.append(
             EdgeSet(
-                "SUPPORTS",
-                "PotentialFact",
+                "STATES",
+                "Document",
                 vertex.label,
-                """
-                SELECT f.id, f.distilled_fact_id,
-                       jsonb_strip_nulls(jsonb_build_object('similarity', f.distilled_similarity))
-                FROM facts f JOIN distilled_facts df ON df.id = f.distilled_fact_id
-                WHERE f.restates_fact_id IS NULL AND df.fact_class = :cls
-                """,
+                _STATES.format(
+                    join="JOIN distilled_facts df ON df.id = f.distilled_fact_id", where="AND df.fact_class = :cls"
+                ),
                 {"cls": fact_class},
             )
         )
@@ -410,7 +390,6 @@ def rebuild_graph(session: Session, schema: GraphSchema | None = None) -> GraphS
 TITLE_PROPERTIES: dict[str, str] = {
     "Document": "title",
     "Author": "display_name",
-    "PotentialFact": "fact",
     "Fact": "statement",
 }
 
@@ -600,9 +579,26 @@ def graph_labels(session: Session) -> GraphLabels:
 
 
 def find_vertex(session: Session, label: str, key: int) -> GraphVertex | None:
-    """The vertex of ``label`` whose relational id is ``key`` (a document id for ``Document``, ...)."""
-    if label not in _label_names(session, "v"):
+    """The vertex of ``label`` whose relational id is ``key`` (a document id for ``Document``, ...).
+
+    ``Fact`` names any distilled fact: one of a class a prompt's ``graph`` block
+    maps to its own label is found under that label.
+    """
+    names = _label_names(session, "v")
+    if label == "Fact":
+        claims = [n for n in names if n == "Fact"] + [n for n in names if n != "Fact" and n not in VERTICES]
+        for name in claims:
+            found = _find_vertex(session, name, key)
+            if found is not None:
+                return found
+        if claims:
+            return None
+    if label not in names:
         raise LookupError(f"the graph has no {label!r} vertices")
+    return _find_vertex(session, label, key)
+
+
+def _find_vertex(session: Session, label: str, key: int) -> GraphVertex | None:
     prop = key_property(label)
     if prop is None:
         raise ValueError(f"{label!r} vertices have no relational id; look one up by graph id")
@@ -692,8 +688,8 @@ def _like_escape(value: str) -> str:
 EDGES_PER_VERTEX = 20
 
 # Edge labels by how much they say about a claim, most first; a configured relation label, not
-# listed, ranks between RESTATES and STATES.
-_EDGE_ORDER = ("SUPPORTS", "RESTATES", None, "STATES", "WROTE", "RECEIVED", "HAS_CHUNK")
+# listed, ranks first.
+_EDGE_ORDER = (None, "STATES", "WROTE", "RECEIVED", "HAS_CHUNK")
 _ROLE_ORDER = ("author", "sender", "committer", "recipient", "cc")
 
 
@@ -739,13 +735,11 @@ RRF_K = 60
 Closeness = Callable[[Session, GraphVertex, list[GraphVertex]], dict[int, float]]
 
 
-def _vector_source(vertex: GraphVertex, chunks: str, potential_facts: str, facts: str) -> str | None:
+def _vector_source(vertex: GraphVertex, chunks: str, facts: str) -> str | None:
     """A SELECT of (relational id, embedding) holding ``vertex``'s kind, or None for a kind with no vector.
 
     A document's vector is the mean of its content chunks'; an author has none.
     """
-    if vertex.label == "PotentialFact":
-        return f"SELECT fact_id, embedding FROM {potential_facts}"
     if vertex.label == "Chunk":
         return f"SELECT chunk_id, embedding FROM {chunks}"
     if vertex.label == "Document":
@@ -763,14 +757,14 @@ def vector_closeness(session: Session, center: GraphVertex, neighbours: list[Gra
 
     Empty when the center has no vector, there is no default model, or the comparison fails.
     """
-    from garage_rag.db.emb_tables import assert_safe_table, fact_table_name, get_model, potential_fact_table_name
+    from garage_rag.db.emb_tables import assert_safe_table, fact_table_name, get_model
     from garage_rag.db.registry import distance_operator
 
     try:
         with session.begin_nested():
             model = get_model(session)
             chunks = assert_safe_table(model.table_name)
-            tables = (chunks, potential_fact_table_name(chunks), fact_table_name(chunks))
+            tables = (chunks, fact_table_name(chunks))
             center_source = _vector_source(center, *tables)
             if center_source is None or not center.key:
                 return {}

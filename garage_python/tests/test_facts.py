@@ -577,7 +577,7 @@ class TestEnrichFactsRebuildsTheGraph:
 
         def rebuild_graph(s):
             rebuilds.append(s)
-            return GraphSummary(available=True, vertices={"PotentialFact": 2})
+            return GraphSummary(available=True, vertices={"Fact": 2})
 
         monkeypatch.setattr(ops_facts, "session_scope", scope)
         monkeypatch.setattr("garage_rag.enrich.facts.configured_backend", lambda model, provider: ("m", "ollama"))

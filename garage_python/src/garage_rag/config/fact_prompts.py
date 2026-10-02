@@ -47,7 +47,8 @@ VERTEX_LABEL_PATTERN = r"^[A-Z][A-Za-z0-9]{0,62}$"
 EDGE_LABEL_PATTERN = r"^[A-Z][A-Z0-9_]{0,62}$"
 ATTRIBUTE_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]{0,62}$"
 CLASS_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$"
-# The projection's own labels (garage_rag.db.graph), which configuration may not take.
+# The projection's own labels (garage_rag.db.graph), and the retired PotentialFact, RESTATES and SUPPORTS,
+# which configuration may not take.
 BUILTIN_VERTEX_LABELS = frozenset({"Document", "Chunk", "Author", "PotentialFact", "Fact"})
 BUILTIN_EDGE_LABELS = frozenset({"HAS_CHUNK", "WROTE", "RECEIVED", "STATES", "RESTATES", "SUPPORTS"})
 
@@ -188,7 +189,7 @@ class FactPrompt(BaseModel):
         default=None,
         description=(
             "How this prompt's classes appear in the graph: vertices of their own label, or edges "
-            "between other classes. Left out: its facts are PotentialFact and Fact vertices only."
+            "between other classes. Left out: its distilled facts are Fact vertices."
         ),
     )
 

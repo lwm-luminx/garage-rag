@@ -304,11 +304,12 @@ clustering model.
 Where the server has Apache AGE, the run then re-projects the tables into the
 graph `garage` (`garage graph rebuild` does only that). `enrich-facts` does the
 same once any prompt ran, since re-extraction gives a document's facts new ids. The vertices are
-`Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
-`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact),
-`RESTATES` (a restatement to its representative) and `SUPPORTS` (a
-representative to its Fact). Vertices carry the relational ids; text,
-spans and vectors stay in the tables.
+`Document`, `Chunk`, `Author` and `Fact`. The edges are `HAS_CHUNK`,
+`WROTE`/`RECEIVED` and `STATES`, one from each document to each distilled fact
+it states, however many of its potential facts state it. Potential facts are
+not vertices, so the graph, like the app, shows each claim once; a fact not yet
+distilled is not in it. Vertices carry the relational ids; text, spans and
+vectors stay in the tables.
 
 New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
 carry a `graph` block, which the projection reads (`graph_schema` in
@@ -327,7 +328,7 @@ carry a `graph` block, which the projection reads (`graph_schema` in
 A vertex entry makes the distilled facts of its class (its potential facts,
 deduplicated by the pass above: entity resolution is the same grouping) vertices
 of its label instead of `Fact`, titled by the representative's `title`
-attribute; their `SUPPORTS` edges point there. An edge entry turns each
+attribute; their documents' `STATES` edges point there. An edge entry turns each
 potential fact of its class into an edge between the distilled facts its
 `source` and `target` attributes name, resolved in the fact's own document
 first and then by statement; its label is the `label_attribute` value when
@@ -342,7 +343,7 @@ that vertex's neighbourhood a few hops out, drawn with one ring per hop
 (`GetGraphLabels`, `FindGraphVertices`, `GetGraphNeighborhood`; the same
 functions behind `garage graph labels|find|neighbors`). The reads go over AGE's
 label tables with bound parameters rather than through `cypher()`, and take
-their labels from the catalog, so a label added later (a `RESTATES` edge) shows
+their labels from the catalog, so a label added later (a configured edge) shows
 up in the page without a change to it, and a configured vertex label is
 searched by its `title` property.
 

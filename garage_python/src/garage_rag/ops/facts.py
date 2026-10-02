@@ -258,10 +258,19 @@ _FACT_JOINS = "FROM facts f JOIN documents d ON d.id = f.document_id JOIN source
 # A fact's distilled fact, for the columns list_facts adds; LEFT JOINed onto _FACT_JOINS.
 _DISTILLED_JOIN = " LEFT JOIN distilled_facts df ON df.id = f.distilled_fact_id"
 
-# With collapse, a potential fact is listed only when it stands for its distilled fact: it is the
-# representative (or, when that is gone, the lowest id), or it has none yet.
-_COLLAPSED = """(f.distilled_fact_id IS NULL OR f.id = COALESCE(df.representative_fact_id,
-    (SELECT min(f2.id) FROM facts f2 WHERE f2.distilled_fact_id = f.distilled_fact_id)))"""
+# With collapse, one fact stands for each claim among those the filters match: the facts of one
+# distilled fact, else (before distilling) a fact and the facts of its document that restate it.
+# The distilled fact's representative stands for it when it matches, else the earliest that does.
+_CLAIM = """CASE WHEN f.distilled_fact_id IS NOT NULL THEN -f.distilled_fact_id
+    ELSE COALESCE(f.restates_fact_id, f.id) END"""
+_STANDS_FOR_CLAIM = """f.id = df.representative_fact_id DESC, f.restates_fact_id IS NULL DESC, f.id"""
+
+
+def _collapsed(joins: str, clauses: list[str]) -> str:
+    """A clause keeping, of the facts ``clauses`` match, the one that stands for each claim."""
+    return f"""f.id IN (SELECT k.id FROM (
+        SELECT f.id, row_number() OVER (PARTITION BY {_CLAIM} ORDER BY {_STANDS_FOR_CLAIM}) AS n
+        {joins} {_where(clauses)}) k WHERE k.n = 1)"""
 
 
 def _where(clauses: list[str]) -> str:
@@ -325,23 +334,24 @@ def list_facts(
 
     ``query`` matches a fact's words (Postgres full-text search, stemmed) or any
     substring of it, so a partial word still finds something. Empty filters
-    match everything. ``collapse`` lists the potential facts behind one distilled
-    fact once, as its representative; ``distilled_fact_id`` lists one distilled
-    fact's potential facts.
+    match everything. ``collapse`` lists each claim once among the facts the
+    filters match: one fact for the facts behind a distilled fact (its
+    representative where that matches), or before distilling, for a fact and
+    those of its document that restate it. ``distilled_fact_id`` lists one
+    distilled fact's facts.
     """
     query = query.strip()
     base, filtered, params = _fact_filters(
         query=query, source=source, fact_class=fact_class, corpus_class=corpus_class, document_id=document_id
     )
-    extra: list[str] = []
-    if collapse:
-        extra.append(_COLLAPSED)
-    if distilled_fact_id:
-        extra.append("f.distilled_fact_id = :distilled_fact_id")
-        params["distilled_fact_id"] = distilled_fact_id
-    base = [*base, *extra]
-    filtered = [*filtered, *extra]
     joins = _FACT_JOINS + _DISTILLED_JOIN
+    if distilled_fact_id:
+        base.append("f.distilled_fact_id = :distilled_fact_id")
+        filtered.append("f.distilled_fact_id = :distilled_fact_id")
+        params["distilled_fact_id"] = distilled_fact_id
+    if collapse:
+        base = [*base, _collapsed(joins, base)]
+        filtered = [*filtered, _collapsed(joins, filtered)]
     params["ctx"] = EXCERPT_CONTEXT
 
     order = (

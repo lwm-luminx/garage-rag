@@ -1293,6 +1293,9 @@ class TestDistilledFacts:
         collapsed = list_facts(db, collapse=True)
         assert collapsed.total == 2
         assert {f.fact for f in collapsed.facts} == {"The notes were written by Ada.", "The roof is slate."}
+        # Narrowed to one document, the claim is still listed once, by that document's own statement.
+        assert [f.id for f in list_facts(db, collapse=True, document_id=doc).facts] == [written]
+        assert [f.fact for f in list_facts(db, collapse=True, query="Ada wrote").facts] == ["Ada wrote the notes."]
 
         grouped = next(f for f in page.facts if f.distilled_size == 3)
         assert list_facts(db, distilled_fact_id=grouped.distilled_fact_id).total == 3
@@ -1630,12 +1633,13 @@ class TestDistilledFacts:
         assert [(s_, t, p["fact_id"]) for s_, t, p in relation_edges["RELATED_TO"]] == [
             (distilled[jane], distilled[acme], likes)
         ]
-        supports = [(e.target, rows(e.select, e.params)) for e in edges if e.label == "SUPPORTS"]
-        assert {t: sorted(r[0] for r in found) for t, found in supports if t != "Fact"} == {
-            "Person": [jane],
-            "Organization": [acme],
+        # Each document states a distilled fact once, under the label its class maps to.
+        states = [(e.target, rows(e.select, e.params)) for e in edges if e.label == "STATES"]
+        assert {t: sorted(r[1] for r in found) for t, found in states if t != "Fact"} == {
+            "Person": [distilled[jane]],
+            "Organization": [distilled[acme]],
         }
-        assert not {jane, acme} & {r[0] for t, found in supports if t == "Fact" for r in found}
+        assert not {distilled[jane], distilled[acme]} & {r[1] for t, found in states if t == "Fact" for r in found}
         assert set(VERTICES) <= {v.label for v in vertices}
 
     def test_dropping_a_model_drops_its_distilled_fact_table(self, db: Session) -> None:
@@ -1648,25 +1652,36 @@ class TestDistilledFacts:
 
     def test_the_graph_walk_measures_neighbours_against_the_center(self, db: Session) -> None:
         """vector_closeness, which ranks a crowded vertex's neighbours: each kind's vector against the
-        center's, a document by the mean of its chunks', and nothing for an author. Needs no AGE."""
+        center's, a document by the mean of its chunks', a fact by its distilled vector, and nothing
+        for an author. Needs no AGE."""
         from garage_rag.db.emb_tables import set_default_model
         from garage_rag.db.graph import GraphVertex, vector_closeness
 
         model = self._setup(db)
         set_default_model(db, model.slug)
         doc = self._doc(db)
-        center = self._fact(db, model, doc, "The roof is slate.", self._direction(0))
-        near = self._fact(db, model, doc, "Slate covers the roof.", self._direction(10))
-        far = self._fact(db, model, doc, "The boiler is new.", self._direction(80))
-        unembedded = self._fact(db, model, doc, "The door is red.", None)
-        chunk = db.execute(
-            text(
-                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) "
-                "VALUES (:d, 0, 'x', :s, 't') RETURNING id"
-            ),
-            {"d": doc, "s": b"x"},
-        ).scalar_one()
-        _embed(db, model.table_name, chunk, self._direction(40))
+        other = self._doc(db)
+        self._fact(db, model, doc, "The roof is slate.", self._direction(5))
+        db.flush()
+        self._run(db, model)
+        distilled = db.execute(text("SELECT id FROM distilled_facts")).scalar_one()
+
+        def chunk(document_id: int, ord: int, vector: list[float] | None) -> int:
+            chunk_id = db.execute(
+                text(
+                    "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) "
+                    "VALUES (:d, :o, 'x', :s, 't') RETURNING id"
+                ),
+                {"d": document_id, "o": ord, "s": bytes([ord])},
+            ).scalar_one()
+            if vector is not None:
+                _embed(db, model.table_name, chunk_id, vector)
+            return chunk_id
+
+        center = chunk(doc, 0, self._direction(0))
+        near = chunk(other, 0, self._direction(10))
+        far = chunk(other, 1, self._direction(80))
+        unembedded = chunk(other, 2, None)
         db.flush()
 
         def vertex(gid: int, label: str, key: int, prop: str) -> GraphVertex:
@@ -1674,27 +1689,22 @@ class TestDistilledFacts:
 
         found = vector_closeness(
             db,
-            vertex(1, "PotentialFact", center, "fact_id"),
+            vertex(1, "Chunk", center, "chunk_id"),
             [
-                vertex(2, "PotentialFact", near, "fact_id"),
-                vertex(3, "PotentialFact", far, "fact_id"),
-                vertex(4, "PotentialFact", unembedded, "fact_id"),
-                vertex(5, "Chunk", chunk, "chunk_id"),
-                vertex(6, "Document", doc, "document_id"),
+                vertex(2, "Chunk", near, "chunk_id"),
+                vertex(3, "Chunk", far, "chunk_id"),
+                vertex(4, "Chunk", unembedded, "chunk_id"),
+                vertex(5, "Fact", distilled, "distilled_fact_id"),
+                vertex(6, "Document", other, "document_id"),
                 vertex(7, "Author", 1, "author_id"),
             ],
         )
         assert set(found) == {2, 3, 5, 6}
-        assert found[2] < found[5] < found[3]
-        # The document's only chunk is its mean.
-        assert found[6] == pytest.approx(found[5])
+        assert found[5] < found[2] < found[6] < found[3]
         # A center with no vector ranks nothing.
-        assert (
-            vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "PotentialFact", near, "fact_id")])
-            == {}
-        )
+        assert vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "Chunk", near, "chunk_id")]) == {}
 
-    def test_the_graph_projects_documents_chunks_authors_and_both_kinds_of_fact(self, db: Session) -> None:
+    def test_the_graph_projects_documents_chunks_authors_and_distilled_facts(self, db: Session) -> None:
         from garage_rag.db.graph import age_available, rebuild_graph, use_age
 
         if not age_available(db):
@@ -1716,16 +1726,9 @@ class TestDistilledFacts:
         self._run(db, model)
 
         summary = rebuild_graph(db)
-        assert summary.vertices == {"Document": 1, "Chunk": 1, "Author": 1, "PotentialFact": 2, "Fact": 1}
-        # The restatement backs the fact through its representative, the one SUPPORTS edge.
-        assert summary.edges == {
-            "HAS_CHUNK": 1,
-            "WROTE": 1,
-            "RECEIVED": 0,
-            "STATES": 2,
-            "RESTATES": 1,
-            "SUPPORTS": 1,
-        }
+        assert summary.vertices == {"Document": 1, "Chunk": 1, "Author": 1, "Fact": 1}
+        # The document states the claim twice and the graph shows it once: one STATES edge.
+        assert summary.edges == {"HAS_CHUNK": 1, "WROTE": 1, "RECEIVED": 0, "STATES": 1}
         # Re-projecting replaces the graph rather than adding to it.
         assert rebuild_graph(db).vertices == summary.vertices
 
@@ -1734,14 +1737,14 @@ class TestDistilledFacts:
             db.connection()
             .exec_driver_sql(
                 "SELECT name::text, statement::text FROM ag_catalog.cypher('garage', $$ "
-                "MATCH (a:Author)-[:WROTE]->(:Document)-[:STATES]->(:PotentialFact)-[:SUPPORTS]->(f:Fact) "
-                "RETURN DISTINCT a.display_name, f.statement $$) "
-                "AS (name ag_catalog.agtype, statement ag_catalog.agtype)"
+                "MATCH (a:Author)-[:WROTE]->(:Document)-[s:STATES]->(f:Fact) "
+                "RETURN a.display_name, f.statement, s.statements $$) "
+                "AS (name ag_catalog.agtype, statement ag_catalog.agtype, statements ag_catalog.agtype)"
             )
             .all()
         )
         # agtype strings cast to text with their JSON quotes in some AGE releases and without in others.
-        assert [tuple(v.strip('"') for v in r) for r in rows] == [("Ada", "The notes were written by Ada.")]
+        assert [tuple(v.strip('"') for v in r) for r in rows] == [("Ada", "The notes were written by Ada.", "2")]
 
     def test_the_graph_is_read_back_by_label_search_and_neighbourhood(self, db: Session) -> None:
         """What the app's Graph page calls: labels with counts, a title search, and a walk with filters."""
@@ -1756,49 +1759,48 @@ class TestDistilledFacts:
             text("INSERT INTO document_authors (document_id, author_id, role) VALUES (:d, :a, 'author')"),
             {"d": doc, "a": author},
         )
-        first = self._fact(db, model, doc, "Ada wrote the notes.", self._direction(0))
+        self._fact(db, model, doc, "Ada wrote the notes.", self._direction(0))
         # In another document, so the two are grouped across the corpus rather than as a restatement.
-        self._fact(db, model, self._doc(db), "The notes were written by Ada.", self._direction(5))
+        second = self._doc(db)
+        self._fact(db, model, second, "The notes were written by Ada.", self._direction(5))
         db.flush()
         self._run(db, model)
         rebuild_graph(db)
 
         labels = graph_labels(db)
         assert labels.available
-        assert labels.vertices == {"Author": 1, "Chunk": 0, "Document": 2, "Fact": 1, "PotentialFact": 2}
-        assert labels.edges["STATES"] == 2 and labels.edges["SUPPORTS"] == 2
+        assert labels.vertices == {"Author": 1, "Chunk": 0, "Document": 2, "Fact": 1}
+        assert labels.edges["STATES"] == 2
 
         found = find_vertices(db, "ada")
         distilled = db.execute(text("SELECT id FROM distilled_facts")).scalar_one()
         assert {(v.label, v.key, v.title) for v in found} == {
             ("Author", author, "Ada"),
             ("Fact", distilled, "The notes were written by Ada."),
-            ("PotentialFact", first, "Ada wrote the notes."),
-            ("PotentialFact", first + 1, "The notes were written by Ada."),
         }
         assert [v.key for v in find_vertices(db, str(doc), label="Document")] == [doc]
 
-        # From the potential fact: its document and its distilled fact, one hop each way.
-        walk = neighborhood(db, label="PotentialFact", key=first)
-        assert walk.center is not None and walk.center.key == first
-        assert sorted(v.label for v in walk.vertices) == ["Document", "Fact", "PotentialFact"]
-        assert sorted(e.label for e in walk.edges) == ["STATES", "SUPPORTS"]
-        assert "similarity" in next(e for e in walk.edges if e.label == "SUPPORTS").properties
-        # Two hops reach the author and the sibling statement; without STATES edges only the fact side is walked.
-        two = neighborhood(db, label="PotentialFact", key=first, depth=2)
-        assert sorted(v.label for v in two.vertices) == ["Author", "Document", "Fact", "PotentialFact", "PotentialFact"]
-        facts_only = neighborhood(db, label="PotentialFact", key=first, depth=2, edge_labels=["SUPPORTS"])
-        assert sorted(v.label for v in facts_only.vertices) == ["Fact", "PotentialFact", "PotentialFact"]
+        # From the fact: the two documents that state it, one hop each.
+        walk = neighborhood(db, label="Fact", key=distilled)
+        assert walk.center is not None and walk.center.key == distilled
+        assert sorted(v.label for v in walk.vertices) == ["Document", "Document", "Fact"]
+        assert sorted(e.label for e in walk.edges) == ["STATES", "STATES"]
+        assert all(e.properties["statements"] == 1 for e in walk.edges)
+        # Two hops reach the author; without WROTE edges only the documents are walked.
+        two = neighborhood(db, label="Fact", key=distilled, depth=2)
+        assert sorted(v.label for v in two.vertices) == ["Author", "Document", "Document", "Fact"]
+        states_only = neighborhood(db, label="Fact", key=distilled, depth=2, edge_labels=["STATES"])
+        assert sorted(v.label for v in states_only.vertices) == ["Document", "Document", "Fact"]
         with pytest.raises(LookupError):
             neighborhood(db, label="Document", key=doc + 1000)
 
         # What the page does: list vertices with no query, then walk from one by its graph id.
         listed = find_vertices(db, "")
-        assert {v.label for v in listed} >= {"Author", "Document", "Fact", "PotentialFact"}
-        picked = next(v for v in listed if v.label == "PotentialFact" and v.key == first)
+        assert {v.label for v in listed} >= {"Author", "Document", "Fact"}
+        picked = next(v for v in listed if v.label == "Document" and v.key == second)
         by_id = neighborhood(db, vertex_id=picked.id)
         assert by_id.center is not None and by_id.center.id == picked.id
-        assert sorted(v.label for v in by_id.vertices) == ["Document", "Fact", "PotentialFact"]
+        assert sorted(v.label for v in by_id.vertices) == ["Document", "Fact"]
 
         # The owner's own Author vertex lists first, whatever its id, so the page can open on it.
         owner = db.execute(
