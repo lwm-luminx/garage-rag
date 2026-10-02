@@ -69,6 +69,103 @@ files, which are small and whose formatting the conversion does not fix.
   embedded whole, no OCR), which is the natural next step for PDFs and slides. It needs llama.cpp
   support to land, or a Core ML conversion of a 2 B decoder, neither of which is ready.
 
+## Survey of published Core ML conversions (late September 2026)
+
+A second pass looked for more catalog entries. It covered every Hugging Face repository with a Core ML
+build of an image-text model (`siglip`, `siglip2`, `clip`, `mobileclip`, `uform`, Perception Encoder,
+nomic-embed-vision, and the `coreml` library filter under the zero-shot and feature-extraction pipeline tags).
+
+The bar is the engine as it stands (`macapp/Sources/ImageEmbedEngine`). A conversion passes only if it
+meets all of these:
+
+- Both towers are published as `.mlpackage` folders, since the downloader fetches files one by one and
+  does not unzip.
+- Each tower declares exactly one input and one output. The engine takes `.first` of Core ML's
+  unordered name-to-description dictionaries, so a second input or output is nondeterministic, not
+  merely unsupported.
+- The image input is a `[1, 3, N, N]` array or an image feature.
+- The text input is a fixed `[1, L]` array of token ids.
+- The same repository ships a `tokenizer.json` that `BPETokenizer` encodes correctly. That tokenizer
+  is SentencePiece-style BPE (the Gemma vocabulary): no pre-tokenizer it needs to honour, spaces
+  replaced by `▁`, byte fallback, and `<eos>` appended with no BOS.
+- The licence is Apache 2.0, MIT or `apple-ascl`.
+
+Where a package was published unzipped, its I/O contract below was read from its own `model.mlmodel`
+spec with `coremltools` 9.0. Otherwise it comes from the repository's `metadata.json`, file listing or
+card, and the table says when something was not inspected.
+
+### Added: SigLIP 2 Base patch16 224, CamStack build (`siglip2-base-224`)
+
+`camstack/camstack-models`, folder `clip/siglip2/`, is a conversion of `google/siglip2-base-patch16-224`
+at revision `75de2d55` (the upstream `main` today), made by the CamStack project with
+`scripts/build-siglip2-model.py`.
+
+- **Licence.** The folder's card is Apache 2.0 and lists the modifications, as Apache §4(b) requires.
+  The repository as a whole is a mirror that also holds AGPL (Ultralytics) and non-commercial
+  (InsightFace, MobileCLIP) folders under their own licences. The catalog references only the
+  `clip/siglip2/` files, and the SHA-256 pins bind it to exactly those.
+- **Contract.**
+  - Vision (`camstack-siglip2-b16-224-vision.mlpackage`, 185 MB fp16) takes an image feature
+    `image`, 224×224 RGB. The graph scales it by 1/255 and applies `2x − 1` (= `(x − 0.5) / 0.5`)
+    itself, so the engine passes the `CGImage` through Core ML's scale-fill and its own
+    mean/std are unused. It outputs `embedding` fp16 `[1, 768]`, not normalized; the engine
+    normalizes it.
+  - Text (`camstack-siglip2-b16-224-text.mlpackage`, 565 MB fp16) takes `input_ids` int32
+    `[1, 64]` and outputs `embedding` fp16 `[1, 768]`.
+- **Tokenizer.** `clip/siglip2/onnx/camstack-siglip2-b16-224-tokenizer.json` has the same vocabulary
+  and merges as the upstream Gemma tokenizer (and the one the 256 px entry downloads), with a
+  `Lowercase` normalizer prepended. Its `Split(" ")` pre-tokenizer runs after spaces have become `▁`,
+  so it never fires, and the engine's lack of pre-tokenizer support does not change the ids.
+- **Why add it.** It is a second, independent conversion with a smaller input (224 px: 196 patches
+  against 256 at 256 px), from a project that verifies cross-format cosine and tokenizer
+  ids against the reference. If the FluidInference repository ever disappears, this one keeps
+  SigLIP 2 available. It is not a quality upgrade: the 224 px checkpoint is the same model trained at a lower
+  resolution and, like every SigLIP resolution sweep, scores a little below it. The two checkpoints differ, so their vectors do not share a space. Each has its own model table.
+- **Verified on this Mac (Apple silicon, coremltools 9.0).**
+  - Every downloaded file's SHA-256 matches the pinned `lfs.oid`.
+  - The Core ML compute plan puts 302 of 304 vision ops and 278 of 281 text ops on the Neural
+    Engine. The image tower takes 4.2 ms per image on `cpuAndNeuralEngine` and 8.3 ms on
+    `cpuAndGPU`, and the two agree to cosine 0.9999.
+  - Retrieval test: six system pictures (zebra, parrot, penguin, owl, cactus, Earth) against six
+    captions, tokenized the engine's way (lowercased, `<eos>`, `<pad>` = 0 to 64). Every caption
+    ranked its own picture first.
+- **Confidence: high** for the model and its contract. The residual risk is the repository: a
+  mirror that moves (its last push was 2026-09-27), so a re-push breaks the pinned download
+  rather than silently changing the model.
+
+### Rejected, and the engine change each would need
+
+| Repository | Model | Licence | Why it does not run today | Engine change that would unlock it |
+|---|---|---|---|---|
+| `palmier-io/siglip2-base-coreml` (byte-identical copies at `asamkhya`, `kanevry`, `kuluruvineeth`, `karthikramesh`, `pilotcut`, `artin666`; a rebuild at `karaiman`) | SigLIP 2 Base 256; the archives (image 92 MB, text 259 MB) are about half the fp16 size, so the build is likely quantized (not inspected) | Apache 2.0 | Towers and tokenizer ship only as `.zip` archives | Download-then-extract: a `download_files` entry flagged as an archive, verified by SHA-256 before it is unpacked into `models/<slug>/`. This is the most attractive unlock: about 350 MB instead of 750 MB. A quantized build gives its own vectors, so it would be a separate catalog entry. |
+| `nodevorg/siglip2-base-patch16-256-coreml` | SigLIP 2 Base 256, fp16, plus an int8-embedding text tower | Apache 2.0 | Zipped packages | Same archive support |
+| `zidage/siglip2-base-coreml-macos` | the same (likely quantized) build, compiled | no licence tag | Zipped `.mlmodelc`, and no licence stated | Archive support; still blocked on licence |
+| `nufrnd/lvc-siglip2-base-coreml` | SigLIP 2 Base 256 (the same weights as FluidInference, byte for byte) | Apache 2.0 | Tokenizer is a custom `tokenizer-vocab.json` + `tokenizer-merges.bin`, not a `tokenizer.json` | A tokenizer file fetched from a second repository (`download_files` entries naming their own repo), or a loader for that format. Low value, since it duplicates the existing entry. |
+| `FinDIT-Studio/siglip2-naflex-coreml` | SigLIP 2 Base NaFlex (512 patches) | Apache 2.0 | The vision tower takes three inputs (`pixel_values` as `[1, 512, 768]` patches, host-computed `position_embeddings`, `attention_mask`); published as `.mlmodelc` | NaFlex preprocessing on the host: aspect-preserving resize to a patch budget, patchify, bilinear resize of the 16×16 position table, the mask. Also named-input binding (below). It would suit documents and screenshots, whose aspect ratio a square resize distorts. |
+| `batmac/ViT-B-16-SigLIP2-Image-CoreML`, `antonlnz/siglip2-so400m-image-coreml`, `metaclass/siglip-so400m-patch14-384-coreml` | SigLIP 2 B/16 224, SigLIP 2 So400m 384, SigLIP So400m 384 | Apache 2.0 | Image tower only (metaclass also zipped); no text tower, so no text-to-image search | None in the engine: someone has to convert the text tower. An image-only mode (`image_to_image` alone) is possible but gives up the main use. |
+| `SashimiSaketoro/PE-Core-ANE` | Meta Perception Encoder Core T/S/B/L/G, ANE-tuned | MIT (repo); upstream PE is Apache 2.0 | Image towers only | A text tower conversion, then a CLIP BPE tokenizer (PE's text side uses OpenCLIP's) |
+| `apple/coreml-mobileclip` | MobileCLIP v1 S0/S1/S2/B/B-LT | `apple-ascl` (weights under `LICENSE_weights_data`) | Text tower takes 77 CLIP BPE tokens; the repository has no tokenizer file | A CLIP byte-level BPE tokenizer: GPT-2 byte-to-unicode mapping, the CLIP regex pre-tokenizer, `</w>` word ends, `<|startoftext|>` before and `<|endoftext|>` after, zero padding to 77. Also a tokenizer from another repository (`openai/clip-vit-base-patch32`'s `tokenizer.json`, MIT). With both, this is the smallest and fastest permissive option (S0 image tower 23 MB). |
+| `damian0815/CLIP-ViT-H-14-laion2B-s32B-b79K_CoreML`, `InspiratioNULL/CLIP-VIT-B-32-DataComp.XL-CoreML`, `yurijmikhalevich/rclip-models` | OpenCLIP ViT-H/14, ViT-B/32 | MIT | CLIP BPE; rclip ships its text tower as ONNX only | CLIP BPE tokenizer (as above) |
+| `unum-cloud/uform3-image-text-english-*`, `…-multilingual-base` | UForm 3 | Apache 2.0 | Text tower takes `input_ids` and `attention_mask`; both towers output `features` and `embeddings`; `input_ids` is float32 in the non-`_neural` build; tokenizers are BERT WordPiece (English) and XLM-R Unigram (multilingual) | Named-input and named-output selection from the catalog (`image_input`, `text_input`, `text_mask_input`, `image_output`, `text_output`), an attention mask, float token ids, and WordPiece and Unigram tokenizers. The multilingual build has 256-dim embeddings and is the only small multilingual alternative. |
+| `JacobNewmes/coreml-medsiglip-448` | MedSigLIP 448 | tagged Apache 2.0, but upstream `google/medsiglip-448` is gated under the Health AI Developer Foundations terms | Licence; text tower also takes `attention_mask` | Not a licence we can accept |
+| `mlboydaisuke/SigLIP-base-patch16-224-CoreML`, `h9899/siglip-base-patch16-224-coreml`, `ronaldeddings/runback-siglip-coreml` | SigLIP (v1) B/16 224, So400m 384 | Apache 2.0 | SigLIP v1's tokenizer is SentencePiece **Unigram** (T5 style, with punctuation-stripping normalizers); mlboydaisuke ships only a vocabulary and its text input is flexible (`1…64`, default 4); h9899's text tower is loose `.mlmodelc` parts | A Unigram tokenizer (Viterbi over piece scores) and its `Precompiled` normalizer, plus reading the upper bound of a flexible text shape, since the engine reads the default shape today. SigLIP 2 supersedes all of these. |
+| MobileCLIP2 (`apple/MobileCLIP2-*`), jina-clip-v2, jina-embeddings-v4 | — | Apple ML Research licence, CC BY-NC 4.0 | Non-commercial | None; licence |
+| nomic-embed-vision v1.5, Qwen3-VL-Embedding | — | Apache 2.0 | No Core ML conversion published | A conversion; Qwen3-VL-Embedding is a 2 B decoder, not two towers |
+
+### Engine work, in order of what it unlocks
+
+1. **Archive downloads** (zip, verified before extraction). This unlocks the likely-quantized SigLIP 2
+   Base 256 build, about half the download of the featured model, from several independent re-uploads of
+   one conversion.
+2. **Named I/O and an attention mask.** Optional catalog fields naming each tower's input and
+   output features, and an optional mask input filled with 1s for tokens and 0s for padding. This
+   makes multi-output packages deterministic and opens UForm 3 and MedSigLIP-shaped conversions.
+3. **CLIP byte-level BPE, and a tokenizer from another repository.** This unlocks MobileCLIP v1
+   (`apple-ascl`) and every OpenCLIP conversion, and MobileCLIP2 if Apple ever relicenses it.
+4. **Unigram and WordPiece tokenizers.** This unlocks SigLIP v1 and UForm.
+5. **NaFlex preprocessing.** This is the document-page path: aspect-preserving SigLIP 2, with no
+   square squash.
+
 ## How it fits Garage
 
 - `embedding_models.modality` (`014_model_modality.sql`) separates text and image models; a picture

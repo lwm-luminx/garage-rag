@@ -378,6 +378,15 @@ def _adopt_name(session: Session, author: Author, name: str) -> Author:
     return named
 
 
+def _owner_seen_already(session: Session, name: str, pairs: list[tuple[str, str]]) -> Author | None:
+    """The author row already holding one of the owner's identities, else the first named as they are."""
+    for kind, value in pairs:
+        identity = session.query(AuthorIdentity).filter_by(kind=kind, value=value).one_or_none()
+        if identity is not None:
+            return identity.author
+    return session.query(Author).filter_by(display_name=name).order_by(Author.id).first()
+
+
 def ensure_self_author(session: Session) -> Author | None:
     """Create or update the row representing the corpus owner."""
     settings = get_settings()
@@ -394,10 +403,16 @@ def ensure_self_author(session: Session) -> Author | None:
         session.flush()
         return existing
 
-    author = Author(display_name=settings.self_name, is_self=True)
-    session.add(author)
+    # The owner has usually been seen already (a git commit, a mail they sent) under one of their
+    # identities or their name: that row becomes theirs rather than a second one beside it.
+    author = _owner_seen_already(session, settings.self_name, pairs)
+    if author is None:
+        author = Author(display_name=settings.self_name, is_self=True)
+        session.add(author)
+    author.is_self = True
     session.flush()
     for kind, value in pairs:
-        session.add(AuthorIdentity(author_id=author.id, kind=kind, value=value))
+        if session.query(AuthorIdentity).filter_by(kind=kind, value=value).one_or_none() is None:
+            session.add(AuthorIdentity(author_id=author.id, kind=kind, value=value))
     session.flush()
     return author

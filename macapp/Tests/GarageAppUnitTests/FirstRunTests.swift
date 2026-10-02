@@ -259,6 +259,16 @@ final class FirstRunTests: XCTestCase {
     }
 
     @MainActor
+    func testARelaunchThatKeptTheSettingsSkipsTheAssistant() {
+        let coordinator = FirstRunCoordinator(
+            defaults: makeDefaults(),
+            arguments: ["GarageApp", GarageAppLaunch.databaseResetArgument, "123", GarageAppLaunch.keepSettingsArgument]
+        )
+        XCTAssertFalse(coordinator.isActive)
+        XCTAssertFalse(coordinator.isAfterDatabaseReset)
+    }
+
+    @MainActor
     func testBeginAndFinishToggleActivityAndRememberCompletion() {
         let coordinator = FirstRunCoordinator(defaults: makeDefaults())
 

@@ -360,8 +360,11 @@ model trained to call tools, which can drive Garage's MCP tools. Reference embed
 fixed inputs are kept apart from it, keyed by slug, in
 `docs/.data/model_test_vectors.json`, so the catalog the app fetches stays small.
 
-The catalog has three sections. `text_embedding` and `inference_models` entries name
-one GGUF (`download_model_id`, `download_file`, `sha256`). `image_embedding`
+The catalog has three sections. Every entry lists what it downloads in
+`download_files` (each file's `path` in the `download_model_id` repository and its
+`sha256`). `text_embedding` and `inference_models` entries list one GGUF, which the
+app keeps at `models/<path>`; they also repeat it as `download_file` and `sha256`,
+the fields Garage 1.5 reads, until 1.5 is retired. `image_embedding`
 entries (`modality: image`, provider `image_xpc`) describe a CLIP-style model as
 Core ML packages: `image_model` and `text_model` (the `.mlpackage` folder names
 under `models/<slug>/`), `tokenizer` (a Hugging Face `tokenizer.json`),
@@ -369,7 +372,10 @@ under `models/<slug>/`), `tokenizer` (a Hugging Face `tokenizer.json`),
 tower takes), `image_mean` / `image_std` (per-channel normalization) and
 `text_lowercase`; `download_files` lists every file to fetch, each with its path
 under the repository and its `sha256` (`Manifest.json`, a small file whose
-formatting is not pinned, may carry none).
+formatting is not pinned, may carry none). `capabilities` tags what the model can do,
+shown as badges on the Models page: `text_to_image` (a phrase finds pictures),
+`image_to_image` (pictures near look-alikes), `multilingual`, `neural_engine`
+(Core ML on the ANE) and `document_pages` (a page embedded as an image, no OCR).
 
 Truncation is only sound for MRL-trained models, so `supports_mrl` is declared
 per model rather than assumed. A CHECK constraint refuses to register an

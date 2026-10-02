@@ -22,6 +22,7 @@ final class LlamaModelResolverTests: XCTestCase {
                 ["slug": "bge-m3", "name": "BGE-M3", "model_id": "BAAI/bge-m3", "model_ref": "bge-m3", "download_file": "bge-m3-Q8_0.gguf", "context_size": 8192, "native_dims": 1024],
                 ["slug": "mxbai-embed-xsmall", "name": "mxbai xsmall", "download_file": "gguf/mxbai-embed-xsmall-v1-q8_0.gguf", "context_size": 512],
                 ["slug": "renamed", "name": "Renamed", "model_ref": "renamed-ref", "download_file": "renamed.gguf"],
+                ["slug": "listed", "name": "Listed", "download_files": [["path": "listed-Q8_0.gguf", "sha256": "00"]]],
             ],
             "fact_distil": [
                 ["slug": "gemma2-2b", "name": "Gemma 2 2B", "download_file": "gemma-2-2b-it-Q4_K_M.gguf", "context_size": 8192],
@@ -55,6 +56,11 @@ final class LlamaModelResolverTests: XCTestCase {
         XCTAssertEqual(plan.config["n_ctx"] as? Int, 8192)
         XCTAssertEqual(plan.config["n_gpu_layers"] as? Int, LlamaModelLoadDefaults.gpuLayers)
         XCTAssertEqual(plan.config["threads"] as? Int, LlamaModelLoadDefaults.threads)
+    }
+
+    func testResolvesTheGGUFOfDownloadFiles() throws {
+        let path = try touch("listed-Q8_0.gguf")
+        XCTAssertEqual(try resolver.resolve(alias: "listed").path, path)
     }
 
     func testFindsADownloadFileKeptInASubfolder() throws {

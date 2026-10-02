@@ -47,6 +47,7 @@ class EnrichSummary:
     failed: int
     skipped: int = 0
     prompts: list[str] = field(default_factory=list)
+    graph: str = ""
 
     @property
     def message(self) -> str:
@@ -55,6 +56,8 @@ class EnrichSummary:
             text += f", {self.skipped} skipped"
         if self.failed:
             text += f", {self.failed} failed"
+        if self.graph:
+            text += f"; {self.graph}"
         return text
 
 
@@ -93,6 +96,11 @@ def enrich_facts(
     default to facts.model/facts.provider. One failing document is recorded and
     the run continues. Raises LookupError when there is nothing to enrich or a
     named prompt does not exist.
+
+    Re-extraction gives a document's facts new ids, so where the server has AGE
+    the graph is re-projected once any prompt ran; otherwise the Graph page
+    would look for vertices that are gone and miss the new facts until the
+    next Distill Facts.
     """
     from garage_rag.enrich import metadata
     from garage_rag.enrich.facts import configured_backend, extract_and_store_facts, is_stale
@@ -122,6 +130,7 @@ def enrich_facts(
         failed = 0
         skipped = 0
         total_facts = 0
+        replaced = False
         for index, document in enumerate(documents, start=1):
             event = EnrichEvent(index=index, total=len(documents), document_id=document.id, uri=document.uri or "")
             corpus_class = getattr(document.corpus_class, "value", document.corpus_class)
@@ -157,6 +166,7 @@ def enrich_facts(
                     session.rollback()
                     errors.append(f"{prompt.name}: {exc}" if len(applicable) > 1 else str(exc))
             total_facts += event.facts
+            replaced = replaced or bool(event.prompts)
             if errors:
                 failed += 1
                 event.error = "; ".join(errors)
@@ -175,7 +185,17 @@ def enrich_facts(
             failed=failed,
             skipped=skipped,
             prompts=[prompt.name for prompt in selected],
+            graph=_regleaned_graph(session) if replaced else "",
         )
+
+
+def _regleaned_graph(session: Session) -> str:
+    """The graph re-projected after a glean; a failure is reported, not raised, since the facts are stored."""
+    try:
+        return _rebuilt_graph(session)
+    except Exception as exc:
+        session.rollback()
+        return f"graph not rebuilt ({exc}); run Distill Facts or `garage graph rebuild`"
 
 
 # Characters of documents.content shown either side of a fact's grounded span.

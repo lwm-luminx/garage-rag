@@ -55,6 +55,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -622,7 +623,8 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
 
     ``label`` narrows to one label; an empty ``query`` lists the first vertices
     of each searchable label. Chunks have no title and are found through their
-    documents.
+    documents. The owner's own Author vertex (``is_self``) comes before other
+    authors, so the Graph page can open on it.
     """
     if not graph_exists(session):
         return []
@@ -652,18 +654,172 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
         if query and not clauses:
             continue
         where = f"WHERE {' OR '.join(clauses)}" if clauses else ""
+        order = f"{_IS_SELF} DESC, v.id" if name == "Author" else "v.id"
         rows = session.execute(
-            text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY v.id LIMIT :limit'),
+            text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY {order} LIMIT :limit'),
             {"pattern": f"%{_like_escape(query)}%", "key": key, "limit": max(1, limit - len(found))},
         )
-        found.extend(_vertex(*r) for r in rows)
+        vertices = [_vertex(*r) for r in rows]
+        if name == "Author":
+            _mark_self(session, vertices)
+        found.extend(vertices)
         if len(found) >= limit:
             break
     return found[:limit]
 
 
+# Whether an Author vertex is the owner's, read from ``authors`` rather than the projection: the
+# owner is marked when ``identity.name`` is set (``ensure_self_author``), which can be after the
+# graph was last rebuilt.
+_IS_SELF = (
+    "COALESCE((SELECT a.is_self FROM authors a WHERE a.id = CAST(CAST("
+    "ag_catalog.agtype_access_operator(v.properties, '\"author_id\"'::ag_catalog.agtype) AS text) AS bigint)), false)"
+)
+
+
+def _mark_self(session: Session, vertices: list[GraphVertex]) -> None:
+    """Set each Author vertex's ``is_self`` property to what ``authors`` says now."""
+    owners = set(session.execute(text("SELECT id FROM authors WHERE is_self")).scalars())
+    for vertex in vertices:
+        vertex.properties["is_self"] = vertex.key in owners
+
+
 def _like_escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# How many new neighbours one vertex contributes to a neighbourhood walk.
+EDGES_PER_VERTEX = 20
+
+# Edge labels by how much they say about a claim, most first; a configured relation label, not
+# listed, ranks between RESTATES and STATES.
+_EDGE_ORDER = ("SUPPORTS", "RESTATES", None, "STATES", "WROTE", "RECEIVED", "HAS_CHUNK")
+_ROLE_ORDER = ("author", "sender", "committer", "recipient", "cc")
+
+
+def _number(value: Any) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
+def edge_rank(edge: GraphEdge) -> tuple:
+    """Sort key for one vertex's edges, most germane first.
+
+    By label (``_EDGE_ORDER``), then within a label: the closest statements
+    (``similarity``), the surest attribution (``confidence``, then role), a
+    document's facts in reading order (``char_start``) and chunks by ``ord``;
+    the newest edge breaks ties.
+    """
+    label = edge.label if edge.label in _EDGE_ORDER else None
+    p = edge.properties
+    similarity = _number(p.get("similarity"))
+    confidence = _number(p.get("confidence"))
+    role = p.get("role")
+    position = _number(p.get("char_start"))
+    if position is None:
+        position = _number(p.get("ord"))
+    return (
+        _EDGE_ORDER.index(label),
+        -similarity if similarity is not None else float("inf"),
+        -confidence if confidence is not None else float("inf"),
+        _ROLE_ORDER.index(role) if role in _ROLE_ORDER else len(_ROLE_ORDER),
+        position if position is not None else float("inf"),
+        -edge.id,
+    )
+
+
+def _other_end(edge: GraphEdge, vertex_id: int) -> int:
+    return edge.target_id if edge.source_id == vertex_id else edge.source_id
+
+
+# Reciprocal Rank Fusion's k, as search uses (search/hybrid.py RRF_K).
+RRF_K = 60
+
+# Each neighbour's vector distance to the walk's center, by graph id; a neighbour with no vector
+# to compare is left out.
+Closeness = Callable[[Session, GraphVertex, list[GraphVertex]], dict[int, float]]
+
+
+def _vector_source(vertex: GraphVertex, chunks: str, potential_facts: str, facts: str) -> str | None:
+    """A SELECT of (relational id, embedding) holding ``vertex``'s kind, or None for a kind with no vector.
+
+    A document's vector is the mean of its content chunks'; an author has none.
+    """
+    if vertex.label == "PotentialFact":
+        return f"SELECT fact_id, embedding FROM {potential_facts}"
+    if vertex.label == "Chunk":
+        return f"SELECT chunk_id, embedding FROM {chunks}"
+    if vertex.label == "Document":
+        return (
+            f"SELECT c.document_id, avg(e.embedding) FROM {chunks} e JOIN chunks c ON c.id = e.chunk_id "
+            "WHERE c.fact_id IS NULL GROUP BY c.document_id"
+        )
+    if "distilled_fact_id" in vertex.properties:  # Fact, or a configured class's claim vertex
+        return f"SELECT distilled_fact_id, embedding FROM {facts}"
+    return None
+
+
+def vector_closeness(session: Session, center: GraphVertex, neighbours: list[GraphVertex]) -> dict[int, float]:
+    """Each neighbour's vector distance to the center's, under the default model (smaller is closer).
+
+    Empty when the center has no vector, there is no default model, or the comparison fails.
+    """
+    from garage_rag.db.emb_tables import assert_safe_table, fact_table_name, get_model, potential_fact_table_name
+    from garage_rag.db.registry import distance_operator
+
+    try:
+        with session.begin_nested():
+            model = get_model(session)
+            chunks = assert_safe_table(model.table_name)
+            tables = (chunks, potential_fact_table_name(chunks), fact_table_name(chunks))
+            center_source = _vector_source(center, *tables)
+            if center_source is None or not center.key:
+                return {}
+            op = "<=>" if model.index_kind == "hnsw_bq" else distance_operator(model.distance)
+            by_source: dict[str, list[GraphVertex]] = {}
+            for vertex in neighbours:
+                source = _vector_source(vertex, *tables)
+                if source and vertex.key:
+                    by_source.setdefault(source, []).append(vertex)
+            found: dict[int, float] = {}
+            for source, group in by_source.items():
+                ids = {v.key: v.id for v in group}
+                rows = session.execute(
+                    text(
+                        f"SELECT s.k, s.v {op} (SELECT r.v FROM ({center_source}) r(k, v) WHERE r.k = :center) "
+                        f"FROM ({source}) s(k, v) WHERE s.k = ANY(CAST(:keys AS bigint[]))"
+                    ),
+                    {"keys": list(ids), "center": center.key},
+                ).all()
+                found.update({ids[int(key)]: float(distance) for key, distance in rows if distance is not None})
+            return found
+    except Exception as exc:  # no model yet, a table made before 017, ...: rank without vectors
+        log.debug("graph: no vector closeness (%s)", exc)
+        return {}
+
+
+def _germane_order(
+    outward: list[GraphEdge], vertex_id: int, links: dict[int, int], closeness: dict[int, float]
+) -> list[int]:
+    """``vertex_id``'s neighbours, most related to the walk's center first.
+
+    The center is the context: Reciprocal Rank Fusion of how close a neighbour's
+    vector is to the center's (``closeness``), how many vertices already in the
+    picture it links to (``links``: what it has in common with the center's
+    surroundings) and the strength of the edge that reaches it (``edge_rank``). A
+    neighbour missing from a ranking (an author has no vector) gets no term from it.
+    """
+    by_edge = list(dict.fromkeys(_other_end(e, vertex_id) for e in sorted(outward, key=edge_rank)))
+    scores = dict.fromkeys(by_edge, 0.0)
+    rankings = [
+        [vid for _, vid in sorted((d, vid) for vid, d in closeness.items() if vid in scores)],
+        [vid for n, vid in sorted((-links.get(vid, 0), vid) for vid in by_edge) if n < -1],
+        by_edge,
+    ]
+    for ranking in rankings:
+        for rank, vid in enumerate(ranking, start=1):
+            scores[vid] += 1.0 / (RRF_K + rank)
+    position = {vid: i for i, vid in enumerate(by_edge)}
+    return sorted(by_edge, key=lambda vid: (-scores[vid], position[vid]))
 
 
 def neighborhood(
@@ -676,12 +832,19 @@ def neighborhood(
     vertex_labels: list[str] | None = None,
     edge_labels: list[str] | None = None,
     limit: int = 200,
+    edges_per_vertex: int = EDGES_PER_VERTEX,
+    closeness: Closeness | None = None,
 ) -> Neighborhood:
     """Walk ``depth`` hops out from a vertex, named by graph id or by label and relational id.
 
     ``vertex_labels`` and ``edge_labels`` keep only those labels (``None`` keeps
-    all); an excluded vertex is neither shown nor walked through. The walk stops
-    at ``limit`` vertices, breadth first, and says so with ``truncated``.
+    all); an excluded vertex is neither shown nor walked through. The center is
+    the context: each vertex reaches at most ``edges_per_vertex`` new
+    neighbours, and when it has more they are ranked by how related they are to
+    the center (``_germane_order``, with ``closeness`` defaulting to
+    ``vector_closeness``), at every hop. An edge to a vertex already in the
+    picture is always kept, so the way back to the center never goes. The walk
+    stops at ``limit`` vertices, breadth first. Either cut sets ``truncated``.
     Raises ``LookupError`` when the vertex is not in the graph.
     """
     if not graph_exists(session):
@@ -695,10 +858,11 @@ def neighborhood(
     else:
         raise ValueError("name the vertex by graph id, or by label and relational id")
     if center is None:
-        raise LookupError("that vertex is not in the graph; rebuild it with `garage graph rebuild`")
+        raise LookupError("that vertex is not in the graph yet; Distill Facts or `garage graph rebuild` projects it")
 
     depth = max(0, min(depth, 6))
     limit = max(1, limit)
+    edges_per_vertex = max(1, edges_per_vertex)
     vertices: dict[int, GraphVertex] = {center.id: center}
     edges: dict[int, GraphEdge] = {}
     frontier = [center.id]
@@ -720,15 +884,44 @@ def neighborhood(
             GraphEdge(int(eid), label_from_relation(rel), int(src), int(dst), parse_properties(props))
             for eid, rel, src, dst, props in rows
         ]
-        new_ids = sorted(({e.source_id for e in hop_edges} | {e.target_id for e in hop_edges}) - vertices.keys())
-        room = limit - len(vertices)
-        if len(new_ids) > room:
-            truncated = True
-        new_vertices = _vertices_by_id(session, new_ids, vertex_labels)
+        candidate_ids = sorted(({e.source_id for e in hop_edges} | {e.target_id for e in hop_edges}) - vertices.keys())
+        candidates = {v.id: v for v in _vertices_by_id(session, candidate_ids, vertex_labels)}
         if allowed is not None:
-            new_vertices = [v for v in new_vertices if v.label in allowed]
-        if len(new_vertices) > room:
-            new_vertices = new_vertices[:room]
+            candidates = {i: v for i, v in candidates.items() if v.label in allowed}
+        # Each vertex of the frontier reaches at most edges_per_vertex new neighbours, its most
+        # germane edges first, so a hub (an author of thousands of documents) cannot fill the picture.
+        picked: list[int] = []
+        seen: set[int] = set()
+        # How many vertices already in the picture each candidate links to: one is the edge that
+        # reaches it; more is something it shares with the center's surroundings.
+        linked: dict[int, set[int]] = {}
+        for e in hop_edges:
+            for near, far in ((e.source_id, e.target_id), (e.target_id, e.source_id)):
+                if near in vertices and far in candidates:
+                    linked.setdefault(far, set()).add(near)
+        links = {vid: len(near) for vid, near in linked.items()}
+        close: dict[int, float] | None = None
+        for vid in frontier:
+            outward = [
+                e
+                for e in hop_edges
+                if vid in (e.source_id, e.target_id)
+                and _other_end(e, vid) in candidates
+                and _other_end(e, vid) not in seen
+            ]
+            fresh = list(dict.fromkeys(_other_end(e, vid) for e in sorted(outward, key=edge_rank)))
+            if len(fresh) > edges_per_vertex:
+                truncated = True
+                if close is None:
+                    close = (closeness or vector_closeness)(session, center, list(candidates.values()))
+                fresh = _germane_order(outward, vid, links, close)[:edges_per_vertex]
+            seen.update(fresh)
+            picked.extend(fresh)
+        room = limit - len(vertices)
+        if len(picked) > room:
+            truncated = True
+            picked = picked[:room]
+        new_vertices = [candidates[i] for i in picked]
         for v in new_vertices:
             vertices[v.id] = v
         for e in hop_edges:

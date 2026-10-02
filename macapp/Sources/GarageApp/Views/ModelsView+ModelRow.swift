@@ -120,6 +120,9 @@ extension ModelsView {
 
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 10) {
+                if role == .inference {
+                    inferenceSelector(item: item)
+                }
                 ModelSymbolCircle(symbol: state.symbol, tint: state.tint, isActive: state.isActive)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -173,6 +176,34 @@ extension ModelsView {
         .accessibilityIdentifier("models.row.\(item.slug)")
     }
 
+    /// The Inference list's radio button: filled on the model chat uses.
+    func inferenceSelector(item: UnifiedModelItem) -> some View {
+        let isSelected = selectedInferenceSlug == item.slug
+        let isSetting = settingInferenceModelSlug == item.slug
+        return Button {
+            selectForInference(item)
+        } label: {
+            if isSetting {
+                ProgressView().controlSize(.mini)
+                    .frame(width: 18, height: 28)
+            } else {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                    .frame(width: 18, height: 28)
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(settingInferenceModelSlug != nil || notReady)
+        .help(isSelected
+            ? "\(item.slug) answers rag_ask and rag_generate"
+            : "Use \(item.slug) for rag_ask and rag_generate (sets inference.model in garage.json\(isModelFileDownloaded(item: item) || !item.provider.downloadsFiles ? "" : " and downloads it"))")
+        .accessibilityLabel("Use \(item.name) for inference")
+        .accessibilityValue(isSelected ? "selected" : "not selected")
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier("models.row.\(item.slug).select")
+    }
+
     /// At most three tags: what the model is for the app (default, in use), who serves it, and
     /// whether Llama XPC holds it right now.
     @ViewBuilder
@@ -187,9 +218,9 @@ extension ModelsView {
             StatusBadge("CHAT ONLY", tint: .orange)
                 .help("Tagged for inference (chat, rag_ask) but not for distilling facts")
         }
-        if role == .inference, appState.effectiveInferenceModel == item.slug {
-            StatusBadge("IN USE", tint: .green)
-                .help(appState.inferenceModel == nil ? "The distillation model, which answers chat while inference.model is empty" : "inference.model in garage.json")
+        if role == .inference, appState.inferenceModel == nil, appState.factsModel == item.slug {
+            StatusBadge("DISTILLATION", tint: .green)
+                .help("The distillation model, which answers chat while inference.model is empty")
         }
         if role == .inference, item.presetEntry?.toolCalling == true {
             StatusBadge("TOOLS", tint: .purple)
@@ -197,8 +228,15 @@ extension ModelsView {
         }
         if item.provider == .imageXPC {
             StatusBadge("IMAGES", tint: .indigo)
+            ForEach(ModelsPresentation.capabilityTags(item.presetEntry?.capabilities)) { tag in
+                StatusBadge(tag.label, tint: .indigo)
+                    .help(tag.help)
+            }
         } else if item.provider != .llamaXPC {
             StatusBadge(item.provider.displayName.uppercased(), tint: item.provider == .ollama ? .orange : .teal)
+        }
+        if role == .inference, item.provider == .llamaXPC, llama.isModelLoaded(alias: item.slug) {
+            StatusBadge("LOADED", tint: .purple)
         }
         if role == .embedding, item.provider == .llamaXPC, isModelActiveInLlama(item: item) {
             StatusBadge("LOADED", tint: .purple)
@@ -213,7 +251,9 @@ extension ModelsView {
         let isLoaded = role == .embedding ? isModelActiveInLlama(item: item) : llama.isModelLoaded(alias: item.slug)
 
         let hasDownload = item.effectiveDownloadURL != nil || !item.downloadFileTargets.isEmpty
-        if item.provider.downloadsFiles && !isDownloaded && !isDownloading && hasDownload {
+        // The Inference list is chosen from with its radio buttons, which download what they pick;
+        // Download for any other row is in its menu.
+        if role != .inference, item.provider.downloadsFiles && !isDownloaded && !isDownloading && hasDownload {
             Button("Download") {
                 downloadModelToLlamaXPC(item: item)
             }
@@ -222,6 +262,7 @@ extension ModelsView {
             .help(item.provider == .imageXPC
                 ? "Download the model's Core ML packages and tokenizer to the models folder and verify their SHA-256"
                 : "Download the model file to the models folder and verify its SHA-256")
+            .accessibilityIdentifier("models.row.\(item.slug).download")
         }
 
         // The image embedding helper loads its models on first use and keeps them resident; there
@@ -273,20 +314,7 @@ extension ModelsView {
             .disabled(isFactsModel || settingFactsModelSlug != nil || notReady)
             .help("Sets facts.model to \(item.slug) and facts.provider to \(item.provider.cliValue) in garage.json")
         case .inference:
-            let isInferenceModel = appState.inferenceModel == item.slug
-            let isSetting = settingInferenceModelSlug == item.slug
-            Button {
-                useForInference(slug: item.slug, provider: item.provider.cliValue)
-            } label: {
-                if isSetting {
-                    ProgressView().controlSize(.mini)
-                } else {
-                    Text("Use for Inference")
-                }
-            }
-            .controlSize(.small)
-            .disabled(isInferenceModel || settingInferenceModelSlug != nil || notReady)
-            .help("Sets inference.model to \(item.slug) and inference.provider to \(item.provider.cliValue) in garage.json")
+            EmptyView()
         }
 
         rowMenu(role: role, item: item, downloadedInfo: downloadedInfo)
@@ -303,6 +331,15 @@ extension ModelsView {
                 Button("Test an Embedding…") {
                     selectForTesting(item: item)
                 }
+            }
+
+            if role == .inference, item.provider.downloadsFiles, !isModelFileDownloaded(item: item),
+               !isModelDownloading(item: item),
+               item.effectiveDownloadURL != nil || !item.downloadFileTargets.isEmpty {
+                Button("Download") {
+                    downloadModelToLlamaXPC(item: item)
+                }
+                .disabled(modelDownload.isBusy)
             }
 
             if let modelCard = item.presetEntry?.modelCardURL {

@@ -8,19 +8,33 @@ enum FixtureCorpus {
         let title: String
         /// An invented word that only this file contains.
         let token: String
+        /// `corpus_class` and `trust_tier`, as the Documents page's badges show them.
+        let corpusClass: String
+        let trustTier: String
+        /// How many chunks the file makes.
+        var chunks = 1
     }
 
-    static let quillonBridge = Document(file: "quillon-bridge.md", title: "The Quillon Bridge", token: "zorvexine")
-    static let lighthouse = Document(file: "marrowgate-lighthouse.txt", title: "Marrowgate Lighthouse", token: "plimbrate")
-    static let tideTables = Document(file: "tide_tables.rs", title: "tide_tables.rs", token: "tessaroon")
-    static let lanternFestival = Document(file: "lantern-festival.eml", title: "The Brindlecombe lantern festival", token: "wendleflock")
-    static let orchard = Document(file: "ashvale-orchard.pdf", title: "The Ashvale Orchard Survey", token: "orbanquet")
-    static let glassworks = Document(file: "tavish-glassworks.docx", title: "A History of Tavish Glassworks", token: "glimmerhaft")
+    static let quillonBridge = Document(file: "quillon-bridge.md", title: "The Quillon Bridge", token: "zorvexine",
+                                        corpusClass: "Document", trustTier: "Authored", chunks: 2)
+    static let lighthouse = Document(file: "marrowgate-lighthouse.txt", title: "Marrowgate Lighthouse", token: "plimbrate",
+                                     corpusClass: "Document", trustTier: "Authored")
+    static let tideTables = Document(file: "tide_tables.rs", title: "tide_tables.rs", token: "tessaroon",
+                                     corpusClass: "Code", trustTier: "Authored")
+    static let lanternFestival = Document(file: "lantern-festival.eml", title: "The Brindlecombe lantern festival", token: "wendleflock",
+                                          corpusClass: "Communication", trustTier: "Received")
+    static let orchard = Document(file: "ashvale-orchard.pdf", title: "The Ashvale Orchard Survey", token: "orbanquet",
+                                  corpusClass: "Document", trustTier: "Reference")
+    static let glassworks = Document(file: "tavish-glassworks.docx", title: "A History of Tavish Glassworks", token: "glimmerhaft",
+                                     corpusClass: "Document", trustTier: "Reference")
 
     /// What a source added through the Sources page indexes: code is off there, so not the Rust file.
     static let indexedWithoutCode = [quillonBridge, lighthouse, lanternFestival, orchard, glassworks]
+    /// Every file: what the source menu's Ingest Including Code indexes.
+    static let indexedWithCode = indexedWithoutCode + [tideTables]
     /// Chunks of `indexedWithoutCode`: the Markdown note splits at its second heading.
     static let chunksWithoutCode = 6
+    static let chunksWithCode = 7
     static let quillonBridgeChunks = 2
 
     /// What the model UI tests' deterministic engine (`DeterministicLlamaEngine` in LlamaTestSupport)
@@ -30,6 +44,13 @@ enum FixtureCorpus {
     static let distilledFacts = 20
     static let distilledEvents = 11
     static let distilledFromMail = 3
+    static let quillonBridgeFacts = 5
+    /// What Glean Facts reads from the mail's headers with no model (`garage_rag/enrich/metadata.py`):
+    /// its sender, its one recipient and its subject, of kinds `sender`, `recipient` and `subject`.
+    static let metadataFactsFromMail = 3
+    /// Every potential fact a Glean Facts run stores: the engine's and the mail's metadata facts.
+    static let gleanedFacts = distilledFacts + metadataFactsFromMail
+    static let gleanedFromMail = distilledFromMail + metadataFactsFromMail
     /// The one sentence that carries the Markdown note's token, and so the one fact that does.
     static let zorvexineFact = "Townspeople call the middle arch the zorvexine arch, after the swallows that nest under it."
 }

@@ -379,10 +379,13 @@ enum FirstRunModelPlan {
         return provider.isEmpty ? GarageConfigLoader.defaultFactsProvider : provider
     }
 
-    /// Featured presets first, then the rest alphabetically — the order the
-    /// picker shows them in.
+    /// The catalog's preferred preset first, then featured presets, then the rest
+    /// alphabetically — the order the picker shows them in.
     static func ordered(_ presets: [ModelPresetEntry]) -> [ModelPresetEntry] {
         presets.sorted { lhs, rhs in
+            if lhs.preferred != rhs.preferred {
+                return lhs.preferred
+            }
             if lhs.featured != rhs.featured {
                 return lhs.featured && !rhs.featured
             }
@@ -390,7 +393,7 @@ enum FirstRunModelPlan {
         }
     }
 
-    /// The pre-selected embedding model: the first featured preset, else the first preset.
+    /// The pre-selected embedding model: the preferred preset, else the first featured one, else the first.
     static func defaultSelection(from presets: [ModelPresetEntry]) -> Set<String> {
         guard let first = ordered(presets).first else { return [] }
         return [first.slug]
@@ -458,7 +461,10 @@ final class FirstRunCoordinator: ObservableObject {
         self.defaults = defaults
         self.isSandboxed = isSandboxed
         self.persistsCompletion = persistsCompletion
+        // A reset that kept garage.json fills the new database from it without the assistant
+        // (`AppState.launch`).
         let afterDatabaseReset = arguments.contains(GarageAppLaunch.databaseResetArgument)
+            && !arguments.contains(GarageAppLaunch.keepSettingsArgument)
         isAfterDatabaseReset = afterDatabaseReset
         isActive = afterDatabaseReset || shouldPresentAtLaunch
     }

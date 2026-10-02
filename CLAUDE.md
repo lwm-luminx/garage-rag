@@ -286,7 +286,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   - Metadata is ground truth: `enrich-facts` writes a mail's sender/recipients/subject and a thread's
     participants as facts with no model (`enrich/metadata.py`, `extractor = 'metadata'`). Each distinct
     value is an anchored distilled fact (`anchor_key`, `018_fact_anchors.sql`) with a fixed centroid;
-    inferred facts of its class join it first, without moving it.
+    inferred facts of its class join it first, without moving it. Prompts never read those
+    header lines: a mail's model input is its body, with quoted and forwarded headers dropped too
+    (`enrich/mail_body.py`).
   - A numbers/dates/negation guard applies at both levels. The local chat model confirms each
     loose group and states it once; a tight one is kept as is.
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
@@ -300,7 +302,10 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     `FindGraphVertices`, `GetGraphNeighborhood`; `garage graph labels|find|neighbors`). Labels come
     from the catalog, so a configured label needs no change there, and its vertices are searched by
     their `title` property. The app's Graph page (`Views/GraphView.swift`, radial layout in
-    `GraphLayout.swift`) draws one vertex's neighbourhood; the Facts and Documents pages link into it
+    `GraphLayout.swift`) draws one vertex's neighbourhood, opening on the owner's own Author vertex
+    (`is_self`, which `find_vertices` lists first among authors, read from `authors` so no rebuild is needed; the app
+    fills an empty `identity.name` from the Mac account's full name, and setting it marks the owner's existing
+    author row, `ensure_self_author`); the Facts and Documents pages link into it
     with Show in Graph.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
@@ -465,6 +470,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   `.terminateLater` reply deadlocks. The new instance waits for the old one to exit, then initializes a
   new cluster, applies the schema and re-syncs the sources from `garage.json` (`finishDatabaseReset`;
   the Database page shows `isFinishingDatabaseReset` as a progress line until the outcome arrives).
+  The sheet's Keep settings (the default) relaunches with `--keep-settings`: the new instance fills the
+  database from `garage.json` (sources, the declared `embedding.default_model`), writes nothing back,
+  and skips the setup assistant. Start over renames `garage.json` to `garage.json.before-reset-<date>`
+  and relaunches into the assistant.
 - Postgres is stopped with SIGINT (fast shutdown), never SIGTERM: a smart shutdown waits on the XPC
   services' pooled connections until the grace period ends in SIGKILL, leaving no shutdown checkpoint.
 - `OperationRunner` runs app operations as gRPC calls (`GarageGRPCService+Operations.swift`) with a

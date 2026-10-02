@@ -144,7 +144,8 @@ An optional pass over stored documents, run as `garage enrich-facts` or the
 Update Everything on the Sources page, which passes `stale_only`), not part of ingest
 itself. [LangExtract](https://github.com/google/langextract) is pointed at the
 local model named by `facts.model` on `facts.provider` (default: the app's
-`gemma2-2b` alias on `llama_xpc`; `ollama` with e.g. `gemma2:2b` and `lmstudio`
+`gemma-4-e4b` alias on `llama_xpc`, Gemma 4 E4B, which also calls tools, so chat
+follows it while `inference.model` is empty; `ollama` with e.g. `gemma2:2b` and `lmstudio`
 with e.g. `google/gemma-3-4b` are the others, and `--model`/`--provider`
 override both). What it asks for comes from the prompts in `facts.prompts`
 (`config/fact_prompts.py`), each a name, a description (the instructions),
@@ -285,6 +286,14 @@ class that it is `facts.cluster_threshold` similar to and that passes the guard;
 no model is asked and nothing drifts. Metadata facts take no part in level 1 or
 in growing groups. Under other models an anchor's vector is its representative's.
 
+Because those header values are ground truth, no prompt reads them again. A
+prompt sees a mail's body only (`enrich/mail_body.py`): the header block is
+dropped, and so are the headers of mail quoted or forwarded in the body (a run of
+`From:`/`Sent:`/`To:`/`Subject:` lines, the `Original Message` and `Forwarded
+message` separators, a reply's `On ... wrote:` line). The quoted text stays. Its
+facts are mapped back onto the document's offsets, and `fact_runs` records the
+hash of the text the prompt read, so mail extracted with its headers is stale.
+
 Nothing about a potential fact changes but its links. Each distilled fact
 records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
 seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it
@@ -293,7 +302,8 @@ there, so nothing is embedded for it. A binary-quantized model cannot be the
 clustering model.
 
 Where the server has Apache AGE, the run then re-projects the tables into the
-graph `garage` (`garage graph rebuild` does only that). The vertices are
+graph `garage` (`garage graph rebuild` does only that). `enrich-facts` does the
+same once any prompt ran, since re-extraction gives a document's facts new ids. The vertices are
 `Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
 `HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact),
 `RESTATES` (a restatement to its representative) and `SUPPORTS` (a
@@ -335,6 +345,17 @@ label tables with bound parameters rather than through `cypher()`, and take
 their labels from the catalog, so a label added later (a `RESTATES` edge) shows
 up in the page without a change to it, and a configured vertex label is
 searched by its `title` property.
+
+The starting vertex is the context of the walk. Each vertex brings in at most
+20 new neighbours (`EDGES_PER_VERTEX`); when it has more, they are ranked by how
+related they are to the starting vertex, at every hop, with Reciprocal Rank
+Fusion (`k = 60`) over three rankings: how close each one's vector is to the
+start's under the default model (a document by the mean of its chunks'; an
+author has none), how many vertices already in the picture it links to, and
+the strength of the edge that reaches it (`similarity`, then `confidence`).
+An edge back to a vertex already shown is always kept. The page starts two
+hops out, and three from a fact, where the third hop reaches the other
+documents that state the same claim.
 
 ### 8. Search (`search/hybrid.py`)
 

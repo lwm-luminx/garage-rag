@@ -230,10 +230,28 @@ struct DatabaseView: View {
                 detailLabel("Server")
                 detailValue(serverLine)
             }
-            if let extensions = serverDetails?.extensions, !extensions.isEmpty {
+            if let serverDetails {
                 GridRow {
-                    detailLabel("Extensions")
-                    detailValue(extensions.map { "\($0.name) \($0.version)" }.joined(separator: ", "), monospaced: true)
+                    detailLabel("pgvector")
+                    detailValue(serverDetails.extensionVersion("vector") ?? "not installed", monospaced: true)
+                }
+                .accessibilityIdentifier("database.pgvectorVersion")
+                GridRow {
+                    detailLabel("Apache AGE")
+                    detailValue(serverDetails.extensionVersion("age") ?? "not installed", monospaced: true)
+                }
+                .accessibilityIdentifier("database.ageVersion")
+                GridRow {
+                    detailLabel("Schema")
+                    detailValue(DatabasePagePresentation.schemaLevel(serverDetails), monospaced: true)
+                }
+                .accessibilityIdentifier("database.schemaLevel")
+                let others = serverDetails.extensions.filter { $0.name != "vector" && $0.name != "age" }
+                if !others.isEmpty {
+                    GridRow {
+                        detailLabel("Extensions")
+                        detailValue(others.map { "\($0.name) \($0.version)" }.joined(separator: ", "), monospaced: true)
+                    }
                 }
             }
         }
