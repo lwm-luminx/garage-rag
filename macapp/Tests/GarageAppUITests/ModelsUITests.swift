@@ -80,6 +80,21 @@ final class ModelsUITests: GarageUITestCase {
             .matching(NSPredicate(format: "label == %@ OR value == %@", text, text)).firstMatch
     }
 
+    /// Names `slug` as inference.model in this test's garage.json, as a person editing the file
+    /// would, and has the page read it again (Refresh). The page's own control for this is the radio
+    /// button of an installed model, and this test has no model on disk.
+    private func setInferenceModel(_ slug: String) -> Bool {
+        var object = (try? Data(contentsOf: configFile))
+            .flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+        object["inference"] = ["model": slug, "provider": "llama_xpc"]
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted]),
+              (try? data.write(to: configFile)) != nil else { return false }
+        let refresh = element(identifier: "models.refresh")
+        guard waitForEnabled(refresh) else { return false }
+        click(refresh)
+        return true
+    }
+
     /// `inference.model` in this test's garage.json, or "" when it is unset.
     private func configuredInferenceModel() -> String {
         guard let data = try? Data(contentsOf: configFile),
@@ -88,8 +103,8 @@ final class ModelsUITests: GarageUITestCase {
         return inference["model"] as? String ?? ""
     }
 
-    /// With no inference model chosen, the distillation model answers chat. Use for Inference names
-    /// a model in garage.json and marks its row, and Follow Distillation clears it again.
+    /// With no inference model chosen, the distillation model answers chat. A row's radio button
+    /// names a model in garage.json and selects it, and Follow Distillation clears it again.
     func testInferenceTabChoosesAModelAndFollowsDistillationAgain() throws {
         try launchApp()
         waitForBackend()
@@ -100,8 +115,8 @@ final class ModelsUITests: GarageUITestCase {
         XCTAssertTrue(element(text: "Inference Model").waitForExistence(timeout: 10), "the Inference segment did not switch tabs")
         XCTAssertFalse(element(text: "Fact Prompts").exists, "the Distillation tab's prompts stayed on the Inference tab")
         XCTAssertTrue(
-            element(textContaining: "None is chosen, so the distillation model (gemma2-2b) answers.").waitForExistence(timeout: 15),
-            "the Inference tab does not say the distillation model answers"
+            element(textContaining: "The distillation model (gemma-4-e4b) calls tools, so it answers until you pick another.").waitForExistence(timeout: 15),
+            "the Inference tab does not say the Gemma 4 distillation model answers"
         )
         let follow = element(identifier: "models.inference.followDistillation")
         XCTAssertTrue(follow.exists, "the Inference tab has no Follow Distillation")
@@ -113,27 +128,29 @@ final class ModelsUITests: GarageUITestCase {
         XCTAssertTrue(element(identifier: "models.row.\(chosen)").exists, "the Inference tab does not list \(chosen)")
         XCTAssertTrue(badge("TOOLS", inRow: chosen).exists, "\(chosen) has no TOOLS badge")
         XCTAssertFalse(badge("TOOLS", inRow: "gemma2-2b").exists, "gemma2-2b, which calls no tools, has a TOOLS badge")
-        XCTAssertFalse(badge("IN USE", inRow: chosen).exists, "\(chosen) is in use before it was chosen")
-        // Nothing chosen: the distillation model's row is the one in use.
-        XCTAssertTrue(badge("IN USE", inRow: "gemma2-2b").exists, "the distillation model is not marked IN USE for chat")
+        XCTAssertTrue(badge("TOOLS", inRow: "gemma-4-e4b").exists, "gemma-4-e4b has no TOOLS badge")
+        // The default distillation model, Gemma 4 E4B, calls tools, so it is the selected default,
+        // listed with the installed models even before its file is on disk.
+        XCTAssertEqual(element(identifier: "models.row.gemma-4-e4b.select").value as? String, "selected", "gemma-4-e4b is not the selected default")
+        // A model not on disk is offered under Download a Model, with a Download button and no
+        // radio button; only installed models are picked from.
+        XCTAssertTrue(element(text: "Download a Model").exists, "the Inference tab has no Download a Model list")
+        XCTAssertTrue(element(identifier: "models.row.\(chosen).download").exists, "\(chosen), not on disk, offers no Download")
+        XCTAssertFalse(element(identifier: "models.row.\(chosen).select").exists, "\(chosen), not on disk, can be selected")
 
-        let use = element(identifier: "models.row.\(chosen)").buttons
-            .matching(NSPredicate(format: "label == %@ OR title == %@", "Use for Inference", "Use for Inference")).firstMatch
-        XCTAssertTrue(waitForEnabled(use), "Use for Inference stayed disabled")
-        click(use)
+        // Choosing a model names it in garage.json; the installed list then shows it, selected.
+        XCTAssertTrue(setInferenceModel(chosen), "could not set inference.model")
         XCTAssertTrue(
             element(textContaining: "In use: \(chosen).").waitForExistence(timeout: 30),
             "the summary does not name the chosen model"
         )
-        XCTAssertTrue(waitUntil(timeout: 10) { self.badge("IN USE", inRow: chosen).exists }, "the chosen row is not marked IN USE")
-        XCTAssertEqual(configuredInferenceModel(), chosen, "garage.json does not name the inference model")
-        XCTAssertFalse(badge("IN USE", inRow: "gemma2-2b").exists, "the distillation model stayed IN USE beside the chosen one")
-        XCTAssertFalse(use.isEnabled, "Use for Inference stayed enabled on the model in use")
+        let select = element(identifier: "models.row.\(chosen).select")
+        XCTAssertTrue(waitUntil(timeout: 10) { select.exists && select.value as? String == "selected" }, "the chosen model is not listed as selected")
 
         XCTAssertTrue(waitForEnabled(follow), "Follow Distillation stayed disabled with a model chosen")
         click(follow)
         XCTAssertTrue(
-            element(textContaining: "None is chosen, so the distillation model (gemma2-2b) answers.").waitForExistence(timeout: 30),
+            element(textContaining: "The distillation model (gemma-4-e4b) calls tools, so it answers until you pick another.").waitForExistence(timeout: 30),
             "Follow Distillation did not hand chat back to the distillation model"
         )
         XCTAssertTrue(waitUntil(timeout: 10) { self.configuredInferenceModel().isEmpty }, "garage.json still names \(configuredInferenceModel())")

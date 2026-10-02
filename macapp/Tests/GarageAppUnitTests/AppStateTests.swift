@@ -20,6 +20,12 @@ final class AppStateTests: XCTestCase {
     }
 
     @MainActor
+    func testTheAccountNameIsRecordedOnlyWhenNoOwnerIsConfigured() {
+        XCTAssertEqual(AppState.ownerNameToRecord(configured: nil, accountName: " Ada Lovelace "), "Ada Lovelace")
+        XCTAssertNil(AppState.ownerNameToRecord(configured: "Ada", accountName: "Ada Lovelace"))
+        XCTAssertNil(AppState.ownerNameToRecord(configured: nil, accountName: "  "))
+    }
+
     func testStatusSummaryMapping() {
         let state = AppState()
 
@@ -224,6 +230,41 @@ final class AppStateTests: XCTestCase {
             GarageAppLaunch.databaseResetArgument, "4242",
             GarageAppLaunch.dataDirectoryArgument, "/tmp/garage-ui-test",
         ])
+    }
+
+    func testRelaunchArgumentsCarryTheKeepSettingsChoice() {
+        let arguments = AppState.relaunchArguments(
+            parentPID: 4242,
+            currentArguments: ["GarageApp", GarageAppLaunch.dataDirectoryArgument, "/tmp/garage-ui-test"],
+            keepingSettings: true
+        )
+        XCTAssertEqual(arguments, [
+            GarageAppLaunch.databaseResetArgument, "4242", GarageAppLaunch.keepSettingsArgument,
+            GarageAppLaunch.dataDirectoryArgument, "/tmp/garage-ui-test",
+        ])
+        XCTAssertEqual(AppState.databaseResetParent(in: ["GarageApp"] + arguments), 4242)
+    }
+
+    func testStartingOverSetsGarageJSONAsideWithoutDeletingIt() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let config = directory.appendingPathComponent("garage.json")
+        try Data(#"{"sources": []}"#.utf8).write(to: config)
+
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let setAside = try XCTUnwrap(AppState.setAsideConfigForReset(in: directory, now: now))
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: config.path))
+        XCTAssertTrue(setAside.lastPathComponent.hasPrefix("garage.json.before-reset-"))
+        XCTAssertEqual(try String(contentsOf: setAside, encoding: .utf8), #"{"sources": []}"#)
+        XCTAssertNil(try AppState.setAsideConfigForReset(in: directory, now: now), "no garage.json, nothing to move")
+    }
+
+    func testTheResetMessageNamesARestoredDefaultModel() {
+        let message = AppState.databaseResetMessage(registeredSourceCount: 2, restoredModel: "bge-m3")
+        XCTAssertTrue(message.contains("The 2 sources in garage.json"))
+        XCTAssertTrue(message.contains("bge-m3, was registered again"))
     }
 
     func testRelaunchArgumentsDoNotForwardAnEarlierResetParent() {

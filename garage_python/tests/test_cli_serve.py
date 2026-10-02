@@ -94,7 +94,7 @@ def test_config_set_then_get(tmp_path):
     assert result.output.strip() == "true"
 
     result = runner.invoke(app, ["--config", str(cfg), "config", "get", "facts.model"])
-    assert result.output.strip() == "gemma2-2b"
+    assert result.output.strip() == "gemma-4-e4b"
 
 
 def test_config_set_creates_the_default_file_when_none_exists(tmp_path, monkeypatch):

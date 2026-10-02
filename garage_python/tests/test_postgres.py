@@ -27,7 +27,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from garage_rag.config import Settings, ensure_psycopg_database_url, reset_settings, set_settings
+from garage_rag.config import Settings, ensure_psycopg_database_url, get_settings, reset_settings, set_settings
 from garage_rag.db.emb_tables import get_model, potential_fact_table_name, register_model
 from garage_rag.db.engine import reset_engine, session_scope
 from garage_rag.db.migrate import _connect, apply_migrations, pending_migrations, sql_dir, to_psycopg_conninfo
@@ -1646,6 +1646,54 @@ class TestDistilledFacts:
         drop_model(db, "m")
         assert not db.execute(text("SELECT to_regclass('fact_emb_m') IS NOT NULL")).scalar_one()
 
+    def test_the_graph_walk_measures_neighbours_against_the_center(self, db: Session) -> None:
+        """vector_closeness, which ranks a crowded vertex's neighbours: each kind's vector against the
+        center's, a document by the mean of its chunks', and nothing for an author. Needs no AGE."""
+        from garage_rag.db.emb_tables import set_default_model
+        from garage_rag.db.graph import GraphVertex, vector_closeness
+
+        model = self._setup(db)
+        set_default_model(db, model.slug)
+        doc = self._doc(db)
+        center = self._fact(db, model, doc, "The roof is slate.", self._direction(0))
+        near = self._fact(db, model, doc, "Slate covers the roof.", self._direction(10))
+        far = self._fact(db, model, doc, "The boiler is new.", self._direction(80))
+        unembedded = self._fact(db, model, doc, "The door is red.", None)
+        chunk = db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) "
+                "VALUES (:d, 0, 'x', :s, 't') RETURNING id"
+            ),
+            {"d": doc, "s": b"x"},
+        ).scalar_one()
+        _embed(db, model.table_name, chunk, self._direction(40))
+        db.flush()
+
+        def vertex(gid: int, label: str, key: int, prop: str) -> GraphVertex:
+            return GraphVertex(gid, label, key, "", {prop: key})
+
+        found = vector_closeness(
+            db,
+            vertex(1, "PotentialFact", center, "fact_id"),
+            [
+                vertex(2, "PotentialFact", near, "fact_id"),
+                vertex(3, "PotentialFact", far, "fact_id"),
+                vertex(4, "PotentialFact", unembedded, "fact_id"),
+                vertex(5, "Chunk", chunk, "chunk_id"),
+                vertex(6, "Document", doc, "document_id"),
+                vertex(7, "Author", 1, "author_id"),
+            ],
+        )
+        assert set(found) == {2, 3, 5, 6}
+        assert found[2] < found[5] < found[3]
+        # The document's only chunk is its mean.
+        assert found[6] == pytest.approx(found[5])
+        # A center with no vector ranks nothing.
+        assert (
+            vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "PotentialFact", near, "fact_id")])
+            == {}
+        )
+
     def test_the_graph_projects_documents_chunks_authors_and_both_kinds_of_fact(self, db: Session) -> None:
         from garage_rag.db.graph import age_available, rebuild_graph, use_age
 
@@ -1743,3 +1791,50 @@ class TestDistilledFacts:
         assert sorted(v.label for v in facts_only.vertices) == ["Fact", "PotentialFact", "PotentialFact"]
         with pytest.raises(LookupError):
             neighborhood(db, label="Document", key=doc + 1000)
+
+        # What the page does: list vertices with no query, then walk from one by its graph id.
+        listed = find_vertices(db, "")
+        assert {v.label for v in listed} >= {"Author", "Document", "Fact", "PotentialFact"}
+        picked = next(v for v in listed if v.label == "PotentialFact" and v.key == first)
+        by_id = neighborhood(db, vertex_id=picked.id)
+        assert by_id.center is not None and by_id.center.id == picked.id
+        assert sorted(v.label for v in by_id.vertices) == ["Document", "Fact", "PotentialFact"]
+
+        # The owner's own Author vertex lists first, whatever its id, so the page can open on it.
+        owner = db.execute(
+            text("INSERT INTO authors (display_name, is_self) VALUES ('Owner', true) RETURNING id")
+        ).scalar_one()
+        db.execute(
+            text("INSERT INTO document_authors (document_id, author_id, role) VALUES (:d, :a, 'author')"),
+            {"d": doc, "a": owner},
+        )
+        db.flush()
+        rebuild_graph(db)
+        authors = find_vertices(db, "", label="Author")
+        assert [v.key for v in authors] == [owner, author]
+        assert authors[0].properties["is_self"] is True
+
+    def test_naming_the_owner_marks_their_author_vertex_without_a_rebuild(self, db: Session) -> None:
+        from garage_rag.attribute.resolver import ensure_self_author
+        from garage_rag.db.graph import age_available, find_vertices, rebuild_graph
+
+        if not age_available(db):
+            pytest.skip("this server has no Apache AGE")
+        db.execute(text("INSERT INTO authors (display_name) VALUES ('Bob') RETURNING id")).scalar_one()
+        ada = db.execute(text("INSERT INTO authors (display_name) VALUES ('Ada') RETURNING id")).scalar_one()
+        db.flush()
+        rebuild_graph(db)
+
+        # identity.name names an author ingest already made: that row becomes the owner's, not a new one.
+        database_url = get_settings().database_url
+        set_settings(Settings(database_url=database_url, self_name="Ada"))
+        try:
+            owner = ensure_self_author(db)
+        finally:
+            set_settings(Settings(database_url=database_url))
+        assert owner is not None and owner.id == ada
+        assert db.execute(text("SELECT count(*) FROM authors")).scalar_one() == 2
+
+        authors = find_vertices(db, "", label="Author", limit=1)
+        assert [(v.key, v.properties["is_self"]) for v in authors] == [(ada, True)]
+        assert [v.properties["is_self"] for v in find_vertices(db, "", label="Author")] == [True, False]

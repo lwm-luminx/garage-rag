@@ -78,7 +78,7 @@ public enum LlamaModelLoaderError: LocalizedError, Equatable {
 }
 
 /// Finds the GGUF and load settings for a model alias (its slug), the way the Models page does:
-/// the `models.json` catalog entry's `download_file` and `context_size`, else a file in the models
+/// the `models.json` catalog entry's GGUF (`download_files`) and `context_size`, else a file in the models
 /// folder named after the alias.
 public struct LlamaModelResolver: Sendable {
     /// One model of `models.json`, reduced to what a load needs.
@@ -97,7 +97,36 @@ public struct LlamaModelResolver: Sendable {
             case modelRef = "model_ref"
             case modelID = "model_id"
             case downloadFile = "download_file"
+            case downloadFiles = "download_files"
             case contextSize = "context_size"
+        }
+
+        private struct DownloadFile: Decodable {
+            let path: String
+        }
+
+        public init(slug: String, name: String?, modelRef: String?, modelID: String?, downloadFile: String?, contextSize: Int?) {
+            self.slug = slug
+            self.name = name
+            self.modelRef = modelRef
+            self.modelID = modelID
+            self.downloadFile = downloadFile
+            self.contextSize = contextSize
+        }
+
+        /// The GGUF is the entry's one `download_files` path ending in `.gguf`, or the older
+        /// `download_file`.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            slug = try container.decode(String.self, forKey: .slug)
+            name = try container.decodeIfPresent(String.self, forKey: .name)
+            modelRef = try container.decodeIfPresent(String.self, forKey: .modelRef)
+            modelID = try container.decodeIfPresent(String.self, forKey: .modelID)
+            contextSize = try container.decodeIfPresent(Int.self, forKey: .contextSize)
+            let files = (try? container.decodeIfPresent([DownloadFile].self, forKey: .downloadFiles)) ?? nil
+            let ggufs = (files ?? []).filter { $0.path.lowercased().hasSuffix(".gguf") }
+            downloadFile = try container.decodeIfPresent(String.self, forKey: .downloadFile)
+                ?? (ggufs.count == 1 ? ggufs[0].path : nil)
         }
     }
 

@@ -24,6 +24,7 @@ from garage_rag.db.models import CorpusClass, TrustTier
 from garage_rag.enrich import langextract as lx
 from garage_rag.enrich.facts import default_prompt, langextract_examples
 from garage_rag.enrich.local_provider import LocalLanguageModel
+from garage_rag.enrich.metadata import mail_facts
 from garage_rag.inference import ChatResult
 from garage_rag.ingest.gateway import ExistingDocStat, IngestStorageGateway, SourceContext
 from garage_rag.ingest.pipeline import ingest_source
@@ -186,9 +187,11 @@ def test_a_source_without_code_skips_the_code_file(tmp_path: Path) -> None:
 # so the prompt shape it relies on and the counts FixtureCorpus.swift promises the UI tests are
 # checked against the vendored LangExtract here, on Linux.
 
-# FixtureCorpus.swift: distilledFacts (their sum), distilledEvents, distilledFromMail, zorvexineFact.
+# FixtureCorpus.swift: distilledFacts (their sum), distilledEvents, distilledFromMail, zorvexineFact,
+# metadataFactsFromMail.
 DISTILLED = {"fact": 9, "event": 11}
 DISTILLED_FROM_MAIL = 3
+METADATA_FROM_MAIL = {"sender": 1, "recipient": 1, "subject": 1}
 QUILLON_BRIDGE_FACTS = 5
 ZORVEXINE_FACT = "Townspeople call the middle arch the zorvexine arch, after the swallows that nest under it."
 
@@ -265,3 +268,17 @@ def test_the_deterministic_engine_distils_the_counts_the_ui_tests_expect(
         for extraction in extractions:
             if extraction.extraction_class == "event":
                 assert extraction.attributes and extraction.attributes["year"] in extraction.extraction_text
+
+
+def test_glean_facts_reads_the_mails_headers_without_a_model(tmp_path: Path) -> None:
+    """Glean Facts also stores the mail's sender, recipient and subject as potential facts, so the
+    Facts page counts those beside the engine's; every other file has no metadata facts."""
+    gateway = _ingest(tmp_path, include_code=False)
+    for name, document in gateway.documents.items():
+        facts = mail_facts(document["content"], document["meta"], {}) if "email_from" in document["meta"] else []
+        if name == "lantern-festival.eml":
+            assert dict(Counter(f.fact_class for f in facts)) == METADATA_FROM_MAIL
+            for fact in facts:
+                assert fact.char_start is not None, fact
+        else:
+            assert facts == [], name

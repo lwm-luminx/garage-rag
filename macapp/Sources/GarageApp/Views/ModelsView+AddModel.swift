@@ -69,6 +69,10 @@ extension ModelsView {
                     let presetProvider = ModelProvider.from(string: preset.provider)
                     if presetProvider == .imageXPC {
                         StatusBadge("IMAGES", tint: .indigo)
+                        ForEach(ModelsPresentation.capabilityTags(preset.capabilities)) { tag in
+                            StatusBadge(tag.label, tint: .indigo)
+                                .help(tag.help)
+                        }
                     } else if presetProvider != .llamaXPC {
                         StatusBadge(presetProvider.displayName.uppercased(), tint: presetProvider == .ollama ? .orange : .teal)
                     }

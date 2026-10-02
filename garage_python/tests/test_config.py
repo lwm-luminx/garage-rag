@@ -494,7 +494,7 @@ class TestSchemaReference:
 class TestFactsSection:
     def test_defaults_point_at_the_app_engine(self) -> None:
         settings = Settings()
-        assert settings.fact_model == "gemma2-2b"
+        assert settings.fact_model == "gemma-4-e4b"
         assert settings.fact_provider == "llama_xpc"
 
     def test_file_keys(self, tmp_path: Path) -> None:
@@ -701,7 +701,7 @@ class TestSetGetHelpers:
         document = json.loads(target.read_text())
         assert document["$schema"] == SCHEMA_URL
         assert document["facts"] == {
-            "model": "gemma2-2b",
+            "model": "gemma-4-e4b",
             "provider": "ollama",
             "cluster_threshold": 0.9,
             "cluster_restate_threshold": 0.92,

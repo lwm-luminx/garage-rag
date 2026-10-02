@@ -92,6 +92,35 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(dev.origin, .config)
     }
 
+    func testOnlyADeclaredDefaultEmbeddingModelIsRestored() throws {
+        let declared = FileManager.default.temporaryDirectory.appendingPathComponent("declared-\(UUID().uuidString).json")
+        let silent = FileManager.default.temporaryDirectory.appendingPathComponent("silent-\(UUID().uuidString).json")
+        defer {
+            try? FileManager.default.removeItem(at: declared)
+            try? FileManager.default.removeItem(at: silent)
+        }
+        try Data(#"{"embedding": {"default_model": "nomic-embed"}}"#.utf8).write(to: declared)
+        try Data(#"{"embedding": {}}"#.utf8).write(to: silent)
+
+        XCTAssertEqual(GarageConfigLoader.loadDeclaredDefaultEmbeddingModel(fileURL: declared), "nomic-embed")
+        XCTAssertNil(GarageConfigLoader.loadDeclaredDefaultEmbeddingModel(fileURL: silent))
+        // Search still falls back to the Python side's default.
+        XCTAssertEqual(GarageConfigLoader.loadDefaultEmbeddingModel(fileURL: silent), GarageConfigLoader.defaultEmbeddingModel)
+    }
+
+    func testIdentityNameIsReadWhenDeclared() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let named = folder.appendingPathComponent("named.json")
+        let blank = folder.appendingPathComponent("blank.json")
+        try Data(#"{"identity": {"name": " Ada Lovelace "}}"#.utf8).write(to: named)
+        try Data(#"{"identity": {"name": ""}}"#.utf8).write(to: blank)
+
+        XCTAssertEqual(GarageConfigLoader.loadIdentityName(fileURL: named), "Ada Lovelace")
+        XCTAssertNil(GarageConfigLoader.loadIdentityName(fileURL: blank))
+    }
+
     func testLoadSourcesFromNonExistentFile() {
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_file_\(UUID().uuidString).json")
         let sources = GarageConfigLoader.loadSourcesFromConfig(fileURL: fakeURL)
@@ -189,6 +218,28 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertEqual(presets[0].sha256, "950f4a8e5e19477a6d3c26d2f162233c20002c601f75e4b002e3239997821167")
         XCTAssertEqual(presets[1].slug, "nomic-embed-text")
         XCTAssertEqual(presets[1].sha256, "3e24342164b3d94991ba9692fdc0dd08e3fd7362e0aacc396a9a5c54a544c3b7")
+    }
+
+    func testASingleDownloadFilesEntryIsTheModelsGGUF() throws {
+        let json = Data("""
+        {"text_embedding": [{"name": "BGE-M3", "slug": "bge-m3", "download_model_id": "gpustack/bge-m3-GGUF",
+          "download_files": [{"path": "bge-m3-Q8_0.gguf", "sha256": "950f"}]}],
+         "image_embedding": [{"name": "SigLIP", "slug": "siglip", "provider": "image_xpc", "modality": "image",
+          "download_model_id": "org/siglip", "download_files": [{"path": "tokenizer.json", "sha256": "ab"}]}]}
+        """.utf8)
+        let (text, image) = try JSONDecoder().decode(TwoGroups.self, from: json).pair
+        XCTAssertEqual(text.downloadFile, "bge-m3-Q8_0.gguf")
+        XCTAssertEqual(text.sha256, "950f")
+        XCTAssertEqual(text.downloadURLString, "https://huggingface.co/gpustack/bge-m3-GGUF/resolve/main/bge-m3-Q8_0.gguf")
+        // An image model's one file still goes into its own folder, not the models folder's root.
+        XCTAssertNil(image.downloadFile)
+        XCTAssertEqual(image.downloadFileTargets.map(\.filename), ["siglip/tokenizer.json"])
+    }
+
+    private struct TwoGroups: Decodable {
+        let text_embedding: [ModelPresetEntry]
+        let image_embedding: [ModelPresetEntry]
+        var pair: (ModelPresetEntry, ModelPresetEntry) { (text_embedding[0], image_embedding[0]) }
     }
 
     func testModelDownloaderEngineComputeAndVerifySHA256() throws {
@@ -454,13 +505,13 @@ final class GarageConfigLoaderTests: XCTestCase {
         let facts = GarageConfigLoader.loadFactsSettings(fileURL: tempURL)
         XCTAssertEqual(facts.model, GarageConfigLoader.defaultFactsModel)
         XCTAssertEqual(facts.provider, GarageConfigLoader.defaultFactsProvider)
-        XCTAssertEqual(facts.model, "gemma2-2b")
+        XCTAssertEqual(facts.model, "gemma-4-e4b")
         XCTAssertEqual(facts.provider, "llama_xpc")
 
         // A missing file also yields the defaults.
         let fakeURL = URL(fileURLWithPath: "/tmp/non_existent_facts_\(UUID().uuidString).json")
         let missing = GarageConfigLoader.loadFactsSettings(fileURL: fakeURL)
-        XCTAssertEqual(missing.model, "gemma2-2b")
+        XCTAssertEqual(missing.model, "gemma-4-e4b")
         XCTAssertEqual(missing.provider, "llama_xpc")
     }
 
@@ -551,7 +602,17 @@ final class GarageConfigLoaderTests: XCTestCase {
             XCTAssertTrue(mxbai.featured)
         }
         let featuredSlugs = Set(presets.filter { $0.featured }.map(\.slug))
-        XCTAssertEqual(featuredSlugs, ["bge-m3", "nomic-embed-text", "mxbai-embed-xsmall"])
+        XCTAssertEqual(featuredSlugs, ["bge-m3", "nomic-embed-text", "mxbai-embed-xsmall", "embeddinggemma"])
+        // EmbeddingGemma is the one embedding model pre-selected, and Gemma 4 E4B the distillation and
+        // chat model (it calls tools); the two are from the same family.
+        XCTAssertEqual(presets.filter(\.preferred).map(\.slug), ["embeddinggemma"])
+        XCTAssertEqual(FirstRunModelPlan.defaultSelection(from: presets), ["embeddinggemma"])
+        let gemma4 = GarageConfigLoader.loadInferencePresets(fileURL: try committedCatalogURL()).first { $0.slug == GarageConfigLoader.defaultFactsModel }
+        XCTAssertEqual(gemma4?.preferred, true)
+        XCTAssertEqual(gemma4?.toolCalling, true)
+        XCTAssertEqual(gemma4?.isForDistillation, true)
+        XCTAssertEqual(gemma4?.isForInference, true)
+        XCTAssertEqual(gemma4?.downloadFile, "gemma-4-E4B_q4_0-it.gguf")
 
         let factDistil = GarageConfigLoader.loadFactDistilPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(factDistil.contains { $0.slug == "gemma2-2b" })

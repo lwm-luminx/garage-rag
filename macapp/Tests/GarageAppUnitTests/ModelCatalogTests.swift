@@ -105,4 +105,19 @@ final class ModelCatalogTests: XCTestCase {
         }
         XCTAssertTrue(GarageConfigLoader.isUsableModelCatalog(try Data(contentsOf: url)))
     }
+
+    func testAFetchedCatalogMissingAGroupDoesNotCoverTheBundledOne() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let bundled = directory.appendingPathComponent("bundled.json")
+        let fetched = directory.appendingPathComponent("fetched.json")
+        try Data("""
+            {"text_embedding": [{"slug": "a"}], "image_embedding": [{"slug": "b"}], "inference_models": []}
+            """.utf8).write(to: bundled)
+        try Data(#"{"text_embedding": [{"slug": "a"}]}"#.utf8).write(to: fetched)
+        XCTAssertFalse(ModelCatalog.covers(fetched, groupsOf: bundled))
+
+        try Data(#"{"text_embedding": [{"slug": "a"}], "image_embedding": [{"slug": "c"}]}"#.utf8).write(to: fetched)
+        XCTAssertTrue(ModelCatalog.covers(fetched, groupsOf: bundled), "an empty bundled group asks nothing of the fetched copy")
+        XCTAssertTrue(ModelCatalog.covers(fetched, groupsOf: directory.appendingPathComponent("missing.json")))
+    }
 }

@@ -11,7 +11,17 @@ final class DatabaseResetUITests: GarageUITestCase {
         continueAfterFailure = true
     }
 
+    /// Start Over: the relaunch opens the setup assistant.
     func testResetHandsOverToTheRelaunchedInstance() throws {
+        try checkResetHandsOver(startingOver: true)
+    }
+
+    /// Keep Settings, the sheet's default: the relaunch fills the new database with no assistant.
+    func testAResetThatKeepsTheSettingsSkipsTheAssistant() throws {
+        try checkResetHandsOver(startingOver: false)
+    }
+
+    private func checkResetHandsOver(startingOver: Bool) throws {
         let app = try launchApp()
         let oldPID = try XCTUnwrap(appPID)
 
@@ -30,6 +40,13 @@ final class DatabaseResetUITests: GarageUITestCase {
         // The sheet names the folder it deletes: the test's own, never the familiar real one.
         let pathNote = app.staticTexts.matching(NSPredicate(format: "value CONTAINS %@", pgdata.path)).firstMatch
         XCTAssertTrue(pathNote.exists, "the reset sheet does not name \(pgdata.path)")
+        if startingOver {
+            // A segment of the Settings picker, which accessibility reports as a radio button.
+            let startOver = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "label == %@ OR title == %@", "Start over", "Start over")).firstMatch
+            XCTAssertTrue(startOver.waitForExistence(timeout: 5), "the reset sheet has no Start over choice")
+            startOver.click()
+        }
         let clickedAt = Date()
         confirm.click()
 
@@ -47,6 +64,10 @@ final class DatabaseResetUITests: GarageUITestCase {
         launchedPIDs.insert(newPID)
         XCTAssertTrue(Self.arguments(of: newPID).contains("--after-database-reset"), "the relaunch did not carry --after-database-reset")
         XCTAssertTrue(Self.arguments(of: newPID).contains(dataDirectory.path), "the relaunch did not carry --data-directory")
+        XCTAssertEqual(
+            Self.arguments(of: newPID).contains("--keep-settings"), !startingOver,
+            startingOver ? "Start over carried --keep-settings" : "Keep settings did not carry --keep-settings"
+        )
 
         // 3. A new cluster in the test folder, served by the new instance.
         XCTAssertTrue(
@@ -75,6 +96,40 @@ final class DatabaseResetUITests: GarageUITestCase {
         let relaunched = XCUIApplication(url: bundleURL)
         relaunched.activate()
         XCTAssertFalse(relaunched.buttons["splash.continue"].waitForExistence(timeout: 3), "the relaunched instance showed the splash")
+        if startingOver {
+            try finishThroughTheAssistant(relaunched)
+        }
+        let databaseRow = relaunched.descendants(matching: .any).matching(identifier: "sidebar.database").firstMatch
+        XCTAssertTrue(databaseRow.waitForExistence(timeout: 30), "no sidebar on the relaunched instance")
+        if !startingOver {
+            XCTAssertFalse(
+                relaunched.descendants(matching: .any).matching(identifier: "firstRun.skipSetup").firstMatch.exists,
+                "a reset that kept the settings opened the setup assistant"
+            )
+        }
+        databaseRow.click()
+        // No garage.json in the test folder, so no sources come back, and the message says so.
+        // By identifier: the message is selectable text, which accessibility need not report as a
+        // static text.
+        let message = relaunched.descendants(matching: .any).matching(identifier: "database.resetOutcome").firstMatch
+        // The second half of the reset starts only once the assistant is skipped, or at launch when the
+        // settings were kept: the cluster, the schema, then the gRPC and MCP services, and only then the
+        // report. On a Mac running the whole suite that is longer than the 30 s this once allowed. So the
+        // page must first say the reset is under way (or be done), and the report then gets as long as
+        // the services got on the first launch.
+        let progress = relaunched.descendants(matching: .any).matching(identifier: "database.resetProgress").firstMatch
+        XCTAssertTrue(
+            waitUntil(timeout: 30) { progress.exists || message.exists },
+            "the Database page shows neither the reset in progress nor its outcome"
+        )
+        XCTAssertTrue(
+            waitUntil(timeout: 120) { message.exists && self.shownText(of: message).hasPrefix("Database reset: a new") },
+            "finishDatabaseReset did not report a new database (\(message.exists ? self.shownText(of: message) : "no message"))"
+        )
+        XCTAssertTrue(shownText(of: message).contains("declares no sources"), "the message does not say that no sources came back")
+    }
+
+    private func finishThroughTheAssistant(_ relaunched: XCUIApplication) throws {
         // The relaunch opens the setup assistant, whose first page runs `finishDatabaseReset`; skipping it
         // (disabled while that page is working) lands on the main window with the reset finished.
         // A link-styled button, which accessibility reports as a link rather than a button.
@@ -88,27 +143,5 @@ final class DatabaseResetUITests: GarageUITestCase {
         )
         XCTAssertTrue(waitUntil(timeout: 60) { skip.isEnabled }, "Skip setup stayed disabled")
         skip.click()
-        let databaseRow = relaunched.descendants(matching: .any).matching(identifier: "sidebar.database").firstMatch
-        XCTAssertTrue(databaseRow.waitForExistence(timeout: 10), "no sidebar after skipping setup")
-        databaseRow.click()
-        // No garage.json in the test folder, so no sources come back, and the message says so.
-        // By identifier: the message is selectable text, which accessibility need not report as a
-        // static text.
-        let message = relaunched.descendants(matching: .any).matching(identifier: "database.resetOutcome").firstMatch
-        // Skip was enabled from the moment the assistant opened, so the second half of the reset
-        // starts only now, from scratch: the cluster, the schema, then the gRPC and MCP services,
-        // and only then the report. On a Mac running the whole suite that is longer than the 30 s
-        // this once allowed. So the page must first say the reset is under way (or be done), and
-        // the report then gets as long as the services got on the first launch.
-        let progress = relaunched.descendants(matching: .any).matching(identifier: "database.resetProgress").firstMatch
-        XCTAssertTrue(
-            waitUntil(timeout: 30) { progress.exists || message.exists },
-            "the Database page shows neither the reset in progress nor its outcome"
-        )
-        XCTAssertTrue(
-            waitUntil(timeout: 120) { message.exists && self.shownText(of: message).hasPrefix("Database reset: a new") },
-            "finishDatabaseReset did not report a new database (\(message.exists ? self.shownText(of: message) : "no message"))"
-        )
-        XCTAssertTrue(shownText(of: message).contains("declares no sources"), "the message does not say that no sources came back")
     }
 }

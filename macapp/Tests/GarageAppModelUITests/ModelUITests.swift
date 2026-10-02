@@ -4,136 +4,8 @@ import XCTest
 /// Status page count it, a search that finds each file by its token and opens the hit, fact
 /// distillation and the Facts page, the MCP Server page's Try It, and the menu bar's Ask Garage.
 ///
-/// The host is `GarageApp_uitest`, whose LlamaXPCService runs `DeterministicLlamaEngine`
-/// (`macapp/Tests/LlamaTestSupport`): hashed bag-of-words embeddings, so a query ranks the chunk
-/// that shares its word first, and one grounded fact per sentence. The test registers a Llama XPC
-/// model of the engine's width through the Models page, with a placeholder GGUF in the models
-/// folder for the app's model resolver to find (the engine never reads it), and names the same
-/// model as the facts model in the data folder's garage.json.
-final class ModelUITests: GarageUITestCase {
-
-    /// The one model: default embedding model and facts model at once, so it loads once.
-    static let model = "uitest-deterministic"
-    /// `DeterministicLlamaEngine.defaultDimensions`: the registered width must match what the
-    /// engine returns, since a prefix of these vectors can be all zeros.
-    static let dimensions = 1024
-
-    override func setUpWithError() throws {
-        try super.setUpWithError()
-        let config: [String: Any] = ["facts": ["model": Self.model, "provider": "llama_xpc"]]
-        try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted]).write(to: configFile)
-
-        let models = dataDirectory.appendingPathComponent("models", isDirectory: true)
-        try FileManager.default.createDirectory(at: models, withIntermediateDirectories: true)
-        try Data("placeholder: DeterministicLlamaEngine never reads the model file\n".utf8)
-            .write(to: models.appendingPathComponent("\(Self.model).gguf"))
-    }
-
-    // MARK: - Steps
-
-    /// Picks a tab of the Models page's segmented control (radio buttons titled by segment).
-    private func selectModelsTab(_ name: String, file: StaticString = #filePath, line: UInt = #line) {
-        let segment = element(identifier: "models.tab").radioButtons
-            .matching(NSPredicate(format: "label == %@ OR title == %@", name, name)).firstMatch
-        XCTAssertTrue(segment.waitForExistence(timeout: 10), "no \(name) segment", file: file, line: line)
-        segment.click()
-    }
-
-    /// Registers the test's Llama XPC model as the default through the custom-model form.
-    private func registerModel(file: StaticString = #filePath, line: UInt = #line) {
-        open(section: "models", file: file, line: line)
-        let manage = element(identifier: "models.overall.manageEmbedding")
-        XCTAssertTrue(manage.waitForExistence(timeout: 15), "no Manage button on the Embedding card", file: file, line: line)
-        click(manage)
-        click(element(identifier: "models.addCustom"))
-        let slug = element(identifier: "models.custom.slug")
-        XCTAssertTrue(slug.waitForExistence(timeout: 10), "Custom model… did not open the form", file: file, line: line)
-        replaceText(in: slug, with: Self.model, file: file, line: line)
-
-        click(element(identifier: "models.custom.provider"))
-        // Llama XPC, shown as the built-in engine (`ModelProvider.displayName`).
-        let llama = app.menuItems["Built-in engine"]
-        XCTAssertTrue(llama.waitForExistence(timeout: 10), "the provider picker offers no built-in engine", file: file, line: line)
-        llama.click()
-
-        replaceText(in: element(identifier: "models.custom.dims"), with: String(Self.dimensions), file: file, line: line)
-        let makeDefault = element(identifier: "models.custom.makeDefault")
-        let isOn = (makeDefault.value as? NSNumber)?.boolValue ?? ((makeDefault.value as? String) == "1")
-        if !isOn {
-            click(makeDefault)
-        }
-
-        let register = element(identifier: "models.custom.register")
-        XCTAssertTrue(waitForEnabled(register), "Register stayed disabled", file: file, line: line)
-        click(register)
-        XCTAssertTrue(
-            element(identifier: "models.row.\(Self.model)").waitForExistence(timeout: 30),
-            "the model was not listed after Register",
-            file: file,
-            line: line
-        )
-    }
-
-    private func waitForStatusFigure(_ name: String, toRead expected: String, timeout: TimeInterval,
-                                     file: StaticString = #filePath, line: UInt = #line) {
-        let figure = element(identifier: "status.figure.\(name)")
-        XCTAssertTrue(
-            waitUntil(timeout: timeout) { figure.exists && self.shownText(of: figure) == expected },
-            "the Status page's \(name) figure never read \(expected) (\(figure.exists ? shownText(of: figure) : "missing"))",
-            file: file,
-            line: line
-        )
-    }
-
-    /// Ingests the corpus, registers the model, and embeds every chunk with Embed All, checking the
-    /// Status page's Indexed figure before (0%) and after (100%).
-    private func ingestAndEmbed(file: StaticString = #filePath, line: UInt = #line) throws {
-        try launchApp()
-        waitForBackend(file: file, line: line)
-        try ingestFixtureCorpus(file: file, line: line)
-        XCTAssertEqual(shownText(of: element(identifier: "status.figure.chunks")), String(FixtureCorpus.chunksWithoutCode),
-                       "the Status page does not count the corpus's chunks", file: file, line: line)
-
-        registerModel(file: file, line: line)
-        open(section: "status", file: file, line: line)
-        waitForStatusFigure("indexed", toRead: "0%", timeout: 30, file: file, line: line)
-
-        open(section: "models", file: file, line: line)
-        selectModelsTab("Overall", file: file, line: line)
-        let embedAll = element(identifier: "models.embedAll")
-        XCTAssertTrue(waitForEnabled(embedAll), "Embed All stayed disabled with a model registered", file: file, line: line)
-        click(embedAll)
-
-        open(section: "status", file: file, line: line)
-        waitForStatusFigure("indexed", toRead: "100%", timeout: 180, file: file, line: line)
-    }
-
-    /// Replaces a plain-style field's text with `text` (empty clears it) and presses Return. Such a
-    /// field takes focus only when the click lands on its text area, so the click goes near its
-    /// leading edge.
-    private func submit(_ text: String, in identifier: String, file: StaticString = #filePath, line: UInt = #line) {
-        let field = element(identifier: identifier)
-        XCTAssertTrue(field.waitForExistence(timeout: 15), "no field \(identifier)", file: file, line: line)
-        let focused = waitUntil(timeout: 15) {
-            field.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.5)).click()
-            return waitUntil(timeout: 1) { (field.value(forKey: "hasKeyboardFocus") as? Bool) == true }
-        }
-        XCTAssertTrue(focused, "\(identifier) never took keyboard focus", file: file, line: line)
-        field.typeKey("a", modifierFlags: .command)
-        field.typeKey(.delete, modifierFlags: [])
-        field.typeText(text + "\n")
-    }
-
-    /// Picks the item of a pop-up button whose title begins with `prefix` (the Kind picker's items
-    /// carry a count, "Event (11)").
-    private func choose(_ prefix: String, in identifier: String, file: StaticString = #filePath, line: UInt = #line) {
-        let picker = element(identifier: identifier)
-        XCTAssertTrue(picker.waitForExistence(timeout: 15), "no picker \(identifier)", file: file, line: line)
-        click(picker)
-        let item = app.menuItems.matching(NSPredicate(format: "title BEGINSWITH %@", prefix)).firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 10), "\(identifier) offers nothing starting \"\(prefix)\"", file: file, line: line)
-        item.click()
-    }
+/// The host is `GarageApp_uitest`, whose engine and model `ModelUITestCase` describes.
+final class ModelUITests: ModelUITestCase {
 
     // MARK: - Embedding and search
 
@@ -196,19 +68,12 @@ final class ModelUITests: GarageUITestCase {
         try launchApp()
         waitForBackend()
         try ingestFixtureCorpus()
-
-        open(section: "models")
-        selectModelsTab("Overall")
-        let glean = element(identifier: "models.gleanFacts")
-        XCTAssertTrue(waitForEnabled(glean), "Glean Facts stayed disabled")
-        click(glean)
-        // Disabled while the run lasts; it may be over before the first look.
-        _ = waitUntil(timeout: 10) { !glean.isEnabled }
-        XCTAssertTrue(waitForEnabled(glean, timeout: 300), "the distillation run did not finish")
+        gleanFacts()
 
         open(section: "facts")
         let count = element(identifier: "facts.count")
-        let total = FixtureCorpus.distilledFacts
+        // The engine's facts and the mail's sender, recipient and subject, read from its headers.
+        let total = FixtureCorpus.gleanedFacts
         func assertCount(_ shown: Int, of all: Int, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
             let expected = "\(shown) of \(all) fact\(all == 1 ? "" : "s")"
             XCTAssertTrue(
@@ -259,7 +124,7 @@ final class ModelUITests: GarageUITestCase {
         choose("All Kinds", in: "facts.kind")
         assertCount(total, of: total, "with every kind again")
         choose("Communication", in: "facts.class")
-        assertCount(FixtureCorpus.distilledFromMail, of: FixtureCorpus.distilledFromMail, "with Class Communication")
+        assertCount(FixtureCorpus.gleanedFromMail, of: FixtureCorpus.gleanedFromMail, "with Class Communication")
         rows.firstMatch.click()
         XCTAssertTrue(
             waitUntil(timeout: 10) { self.shownText(of: element(identifier: "facts.detail.document")) == FixtureCorpus.lanternFestival.title },

@@ -273,44 +273,49 @@ struct SourcesView: View {
 
     // MARK: - Sources
 
-    /// Titled with the summary line, with the list's buttons on the box's first row rather than in a
-    /// custom label: on macOS a GroupBox's custom label is not in the accessibility tree, so Update
+    /// The summary line and the list's buttons sit on one row above the box rather than in a custom
+    /// label: on macOS a GroupBox's custom label is not in the accessibility tree, so Update
     /// Everything, Scan & Ingest All and Sync could not be reached there.
     private var sourcesSection: some View {
-        GroupBox(SourcesSummary.line(sources: appState.registeredSources.count, documents: appState.corpusStats.documentsCount)) {
-            VStack(alignment: .leading, spacing: 0) {
-                sourcesToolbar
-                    .padding(.bottom, 12)
-
-                if let removeError {
-                    Text(removeError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 10)
-                        .accessibilityIdentifier("sources.removeError")
-                }
-
-                if appState.registeredSources.isEmpty {
-                    emptyState
-                } else {
-                    ForEach(Array(appState.registeredSources.enumerated()), id: \.element.id) { index, source in
-                        if index > 0 { Divider().padding(.vertical, 10) }
-                        sourceRow(for: source)
+        VStack(alignment: .leading, spacing: 8) {
+            sourcesToolbar
+            GroupBox {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let removeError {
+                        Text(removeError)
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 10)
+                            .accessibilityIdentifier("sources.removeError")
                     }
-                }
 
-                Divider().padding(.top, 14).padding(.bottom, 8)
-                diskAccessFooter
+                    if appState.registeredSources.isEmpty {
+                        emptyState
+                    } else {
+                        ForEach(Array(appState.registeredSources.enumerated()), id: \.element.id) { index, source in
+                            if index > 0 { Divider().padding(.vertical, 10) }
+                            sourceRow(for: source)
+                        }
+                    }
+
+                    Divider().padding(.top, 14).padding(.bottom, 8)
+                    diskAccessFooter
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
         }
     }
 
     private var sourcesToolbar: some View {
         HStack(spacing: 8) {
+            Text(SourcesSummary.line(sources: appState.registeredSources.count, documents: appState.corpusStats.documentsCount))
+                .font(.headline)
+                .lineLimit(1)
+                .accessibilityIdentifier("sources.summary")
+
             Spacer()
 
             Button("Update Everything") {
@@ -530,13 +535,18 @@ struct SourcesView: View {
 
                     HStack(spacing: 8) {
                         if row.showsCancel {
-                            Button(row.cancelTitle) {
+                            Button {
                                 Task { await appState.cancel(source: source.slug) }
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.title3)
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(row.cancelDisabled ? Color.secondary : Color.red)
                             }
-                            .controlSize(.small)
-                            .tint(.red)
+                            .buttonStyle(.borderless)
                             .disabled(row.cancelDisabled)
-                            .help("Take this source out of the run; the others go on.")
+                            .help(row.cancelDisabled ? row.cancelTitle : "Cancel: take this source out of the run; the others go on.")
+                            .accessibilityLabel(row.cancelTitle)
                             .accessibilityIdentifier("sources.row.\(source.slug).cancel")
                         } else {
                             Button {
@@ -706,6 +716,7 @@ struct SourcesView: View {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("Source actions")
+        .accessibilityIdentifier("sources.row.\(source.slug).menu")
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .frame(width: 24)
@@ -1054,6 +1065,7 @@ struct SourcesView: View {
                     LogTableView(
                         lines: combinedLogs,
                         sourceName: "Ingest",
+                        hiddenColumns: [.pid, .stream, .source],
                         onClear: {
                             appState.clearLogs(for: "Ingest")
                         }

@@ -114,6 +114,7 @@ py_test(
         "//garage_python/src/garage_rag/enrich/langextract",
         "//garage_python/src/garage_rag/inference",
         "//garage_python/src/garage_rag/net",
+        "//garage_python/src/garage_rag/ops",
         "//garage_python/src/garage_rag/xpc",
         "@pypi//pytest",
     ],
@@ -498,6 +499,7 @@ py_test(
     data = ["//data/sql:sql_schema"],
     deps = [
         ":conftest",
+        "//garage_python/src/garage_rag/attribute",
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/embed",
@@ -729,6 +731,19 @@ py_test(
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
         "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_mail_body",
+    srcs = ["test_mail_body.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/db",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/enrich/langextract",
+        "//garage_python/src/garage_rag/extract",
     ],
 )
 
