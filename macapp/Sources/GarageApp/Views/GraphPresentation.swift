@@ -5,7 +5,7 @@ import SwiftUI
 
 /// How a vertex or edge label reads and looks.
 struct GraphLabelStyle: Equatable {
-    /// The label as a heading: "Potential fact", "Supports".
+    /// The label as a heading: "Fact", "Has chunk".
     let name: String
     let tint: Color
     /// The SF Symbol for the label's vertices; edges have none.
@@ -17,7 +17,6 @@ struct GraphLabelStyle: Equatable {
         case "Document": GraphLabelStyle(name: "Document", tint: .blue, symbol: "doc.text")
         case "Chunk": GraphLabelStyle(name: "Chunk", tint: .teal, symbol: "text.alignleft")
         case "Author": GraphLabelStyle(name: "Author", tint: .green, symbol: "person")
-        case "PotentialFact": GraphLabelStyle(name: "Potential fact", tint: .orange, symbol: "lightbulb")
         case "Fact": GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill")
         default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: "circle")
         }
@@ -29,9 +28,7 @@ struct GraphLabelStyle: Equatable {
         case "HAS_CHUNK": GraphLabelStyle(name: "Has chunk", tint: .teal, symbol: nil)
         case "WROTE": GraphLabelStyle(name: "Wrote", tint: .green, symbol: nil)
         case "RECEIVED": GraphLabelStyle(name: "Received", tint: .mint, symbol: nil)
-        case "STATES": GraphLabelStyle(name: "States", tint: .orange, symbol: nil)
-        case "SUPPORTS": GraphLabelStyle(name: "Supports", tint: .purple, symbol: nil)
-        case "RESTATES": GraphLabelStyle(name: "Restates", tint: .pink, symbol: nil)
+        case "STATES": GraphLabelStyle(name: "States", tint: .purple, symbol: nil)
         default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: nil)
         }
     }
@@ -49,7 +46,7 @@ struct GraphLabelStyle: Equatable {
         return configuredPalette[Int(hash % UInt32(configuredPalette.count))]
     }
 
-    /// `HAS_CHUNK` -> "Has chunk", `PotentialFact` -> "Potential fact".
+    /// `HAS_CHUNK` -> "Has chunk", `TeamMember` -> "Team member".
     static func humanize(_ label: String) -> String {
         var words: [String] = []
         for part in label.split(separator: "_") {
@@ -73,11 +70,11 @@ struct GraphLabelStyle: Equatable {
 /// What the Graph page says when it cannot draw.
 enum GraphPagePresentation {
     static let title = "Graph"
-    static let searchPlaceholder = "Find a document, author, fact or statement…"
+    static let searchPlaceholder = "Find a document, author or fact…"
 
-    /// The labels a page opened with nothing chosen starts from, best first: a distilled fact ties
-    /// statements to their documents, a document ties them to its authors.
-    static let startingLabels = ["Fact", "Document", "PotentialFact", "Author"]
+    /// The labels a page opened with nothing chosen starts from, best first: a fact ties the
+    /// documents that state it together, a document ties them to its authors.
+    static let startingLabels = ["Fact", "Document", "Author"]
 
     /// Where the page centers when it opens with nothing chosen, so there is a picture before any
     /// search: the owner's own Author vertex, else the first vertex of the best starting label,
@@ -123,9 +120,8 @@ enum GraphPagePresentation {
 
     /// How many hops out the page starts when it centers on a new starting vertex of `label` (from
     /// another page, a search result, or the vertex it opens on).
-    /// From a claim, three hops reach the other documents that state it (the fact, its
-    /// distilled fact, that fact's other statements, their documents); from a document, an author
-    /// or a chunk, two hops already fan out wide.
+    /// From a fact, three hops reach its documents, their authors and the other facts those
+    /// documents state; from a document, an author or a chunk, two hops already fan out wide.
     static func startingDepth(for label: String) -> Int {
         ["Document", "Author", "Chunk"].contains(label) ? defaultDepth : 3
     }
@@ -156,14 +152,14 @@ enum GraphPagePresentation {
             return Empty(
                 symbol: "magnifyingglass",
                 title: "Nothing Found",
-                message: "No document, author, fact or statement matched. Titles and statements are searched; a number finds a record by id."
+                message: "No document, author or fact matched. Titles and facts are searched; a number finds a record by id."
             )
         }
         if !hasSelection {
             return Empty(
                 symbol: "point.3.connected.trianglepath.dotted",
                 title: "Pick a Starting Point",
-                message: "Search for a document, author, fact or statement, then choose one to see what it is connected to."
+                message: "Search for a document, author or fact, then choose one to see what it is connected to."
             )
         }
         return Empty(

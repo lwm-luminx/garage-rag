@@ -138,8 +138,13 @@ def test_the_projection_moves_a_configured_class_out_of_fact() -> None:
     assert labels == [*VERTICES, "Person", "Organization"]
     fact = next(v for v in vertices if v.label == "Fact")
     assert fact.params == {"mapped": ["organization", "person"]}
-    supports = [(e.target, e.params.get("cls")) for e in edges if e.label == "SUPPORTS"]
-    assert supports == [("Fact", None), ("Person", "person"), ("Organization", "organization")]
+    states = [(e.source, e.target, e.params.get("cls")) for e in edges if e.label == "STATES"]
+    assert states == [
+        ("Document", "Fact", None),
+        ("Document", "Person", "person"),
+        ("Document", "Organization", "organization"),
+    ]
+    assert next(e for e in edges if e.label == "STATES").params == {"mapped": ["organization", "person"]}
     relation = [(e.label, e.source, e.target) for e in edges if e.label not in EDGES]
     assert relation == [
         ("WORKS_AT", "Person", "Organization"),

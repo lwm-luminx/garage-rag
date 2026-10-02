@@ -5,11 +5,11 @@ import proto_garage_proto_swift
 public struct GraphVertexItem: Identifiable, Hashable, Sendable {
     /// The graph id: unique across labels, and what edges refer to.
     public let id: Int64
-    /// Document, Chunk, Author, PotentialFact, Fact, ...
+    /// Document, Chunk, Author, Fact, ...
     public let label: String
-    /// The relational id (documents.id, facts.id, ...); nil for a label without one.
+    /// The relational id (documents.id, distilled_facts.id, ...); nil for a label without one.
     public let key: Int64?
-    /// What to call it: the title, name, fact or statement.
+    /// What to call it: the title, name or statement.
     public let title: String
     public let propertiesJSON: String
 
@@ -36,8 +36,8 @@ public struct GraphVertexItem: Identifiable, Hashable, Sendable {
         GraphProperty.parse(propertiesJSON)
     }
 
-    /// The document behind this vertex: itself for a Document, the stating document for a
-    /// PotentialFact or Chunk (both carry `document_id`), nothing otherwise.
+    /// The document behind this vertex: itself for a Document, the containing document for a
+    /// Chunk (it carries `document_id`), nothing otherwise.
     public var documentID: Int64? {
         if label == "Document" {
             return key
@@ -57,7 +57,7 @@ public struct GraphVertexItem: Identifiable, Hashable, Sendable {
 /// One edge between two vertices' graph ids.
 public struct GraphEdgeItem: Identifiable, Hashable, Sendable {
     public let id: Int64
-    /// HAS_CHUNK, WROTE, RECEIVED, STATES, SUPPORTS, ...
+    /// HAS_CHUNK, WROTE, RECEIVED, STATES, ...
     public let label: String
     public let sourceID: Int64
     public let targetID: Int64

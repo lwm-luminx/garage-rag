@@ -6,7 +6,6 @@ final class GraphPresentationTests: XCTestCase {
 
     func testTheDepthStartsFurtherOutFromAClaim() {
         XCTAssertEqual(GraphPagePresentation.defaultDepth, 2)
-        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "PotentialFact"), 3)
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Fact"), 3)
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Person"), 3)
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Document"), 2)
@@ -15,17 +14,15 @@ final class GraphPresentationTests: XCTestCase {
 
     func testLabelsReadAsWords() {
         XCTAssertEqual(GraphLabelStyle.humanize("HAS_CHUNK"), "Has chunk")
-        XCTAssertEqual(GraphLabelStyle.humanize("PotentialFact"), "Potential fact")
-        XCTAssertEqual(GraphLabelStyle.humanize("RESTATES"), "Restates")
+        XCTAssertEqual(GraphLabelStyle.humanize("TeamMember"), "Team member")
+        XCTAssertEqual(GraphLabelStyle.humanize("WORKS_AT"), "Works at")
         XCTAssertEqual(GraphLabelStyle.humanize("Fact"), "Fact")
         XCTAssertEqual(GraphLabelStyle.humanize("URLRef"), "Urlref")
     }
 
     func testKnownLabelsHaveTheirOwnStyleAndUnknownOnesANeutralOne() {
-        XCTAssertEqual(GraphLabelStyle.vertex("PotentialFact"), GraphLabelStyle(name: "Potential fact", tint: .orange, symbol: "lightbulb"))
-        XCTAssertEqual(GraphLabelStyle.vertex("Fact").tint, .purple)
-        XCTAssertEqual(GraphLabelStyle.edge("SUPPORTS"), GraphLabelStyle(name: "Supports", tint: .purple, symbol: nil))
-        XCTAssertEqual(GraphLabelStyle.edge("RESTATES").name, "Restates")
+        XCTAssertEqual(GraphLabelStyle.vertex("Fact"), GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill"))
+        XCTAssertEqual(GraphLabelStyle.edge("STATES"), GraphLabelStyle(name: "States", tint: .purple, symbol: nil))
         XCTAssertEqual(GraphLabelStyle.vertex("Entity"), GraphLabelStyle(name: "Entity", tint: GraphLabelStyle.configuredTint("Entity"), symbol: "circle"))
         XCTAssertEqual(GraphLabelStyle.edge("MENTIONS"), GraphLabelStyle(name: "Mentions", tint: GraphLabelStyle.configuredTint("MENTIONS"), symbol: nil))
     }

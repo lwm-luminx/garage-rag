@@ -6,8 +6,8 @@ import XCTest
 /// and the Facts and Documents pages' Show in Graph.
 ///
 /// What the counts rest on is in `FixtureCorpus` and `garage_rag/db/graph.py`: a `Document` per
-/// file, a `Chunk` per content chunk (`HAS_CHUNK`), a `PotentialFact` per gleaned fact, each
-/// `STATES`-linked from its document.
+/// file, a `Chunk` per content chunk (`HAS_CHUNK`), and a `Fact` per distilled fact, `STATES`-linked
+/// from each document that states it.
 final class GraphUITests: ModelUITestCase {
 
     private var inspectorTitle: XCUIElement { element(identifier: "graph.detail.title") }
@@ -71,19 +71,18 @@ final class GraphUITests: ModelUITestCase {
         try ingestGleanEmbedAndDistill()
         open(section: "graph")
 
-        for label in ["Document", "Chunk", "PotentialFact", "Fact"] {
+        for label in ["Document", "Chunk", "Fact"] {
             let chip = element(identifier: "graph.vertex.\(label)")
             XCTAssertTrue(chip.waitForExistence(timeout: 30), "the filter bar has no \(label) vertices")
             XCTAssertEqual(chip.value as? String, "on", "\(label) vertices start switched off")
         }
-        for label in ["HAS_CHUNK", "STATES", "SUPPORTS"] {
+        for label in ["HAS_CHUNK", "STATES"] {
             XCTAssertTrue(element(identifier: "graph.edge.\(label)").exists, "the filter bar has no \(label) edges")
         }
 
         find("", kind: "Document", expecting: "\(FixtureCorpus.indexedWithoutCode.count) matches")
         find("", kind: "Chunk", expecting: "\(FixtureCorpus.chunksWithoutCode) matches")
-        find("", kind: "Potential fact", expecting: "\(FixtureCorpus.gleanedFacts) matches")
-        find(FixtureCorpus.quillonBridge.token, kind: "Potential fact", expecting: "1 match")
+        find(FixtureCorpus.quillonBridge.token, kind: "Fact", expecting: "1 match")
         find("quillon", kind: "Document", expecting: "1 match")
 
         let results = element(identifier: "graph.results")
@@ -119,7 +118,7 @@ final class GraphUITests: ModelUITestCase {
         click(chunkChip)
         XCTAssertTrue(chunks.waitForExistence(timeout: 30), "the chunks did not come back with Chunk on")
 
-        // Three hops reach the other documents' chunks and the other statements of the same claims.
+        // Three hops reach the other documents' chunks and the other documents stating the same facts.
         increaseDepth()
         XCTAssertTrue(
             waitUntil(timeout: 30) { self.summary.exists && self.shownText(of: self.summary).hasSuffix("within 3 hops") },

@@ -293,7 +293,7 @@
                   }
                 ],
                 "default": null,
-                "description": "How this prompt's classes appear in the graph: vertices of their own label, or edges between other classes. Left out: its facts are PotentialFact and Fact vertices only."
+                "description": "How this prompt's classes appear in the graph: vertices of their own label, or edges between other classes. Left out: its distilled facts are Fact vertices."
               }
             },
             "required": [

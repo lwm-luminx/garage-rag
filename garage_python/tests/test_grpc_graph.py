@@ -13,7 +13,7 @@ from garage_rag.proto.garage_pb2 import FindGraphVerticesRequest, GraphLabelsReq
 from garage_rag.service.server import GarageRpcServicer
 
 DOC = GraphVertex(id=1, label="Document", key=10, title="House", properties={"document_id": 10, "title": "House"})
-FACT = GraphVertex(id=5, label="PotentialFact", key=40, title="The roof is slate.", properties={"fact_id": 40})
+FACT = GraphVertex(id=5, label="Fact", key=40, title="The roof is slate.", properties={"distilled_fact_id": 40})
 
 
 def test_graph_labels_are_listed_with_counts():
@@ -46,7 +46,7 @@ def test_find_vertices_passes_the_query_and_maps_the_vertices():
     assert response.available
     assert [(v.id, v.label, v.key, v.title) for v in response.vertices] == [
         (1, "Document", 10, "House"),
-        (5, "PotentialFact", 40, "The roof is slate."),
+        (5, "Fact", 40, "The roof is slate."),
     ]
     assert json.loads(response.vertices[0].properties_json) == {"document_id": 10, "title": "House"}
 
@@ -62,9 +62,7 @@ def test_neighborhood_maps_the_walk_and_its_filters():
     )
     with patch("garage_rag.ops.graph.neighborhood", return_value=result) as walk:
         response = servicer.GetGraphNeighborhood(
-            GraphNeighborhoodRequest(
-                label="Document", key=10, depth=2, vertex_labels=["Document", "PotentialFact"], limit=50
-            ),
+            GraphNeighborhoodRequest(label="Document", key=10, depth=2, vertex_labels=["Document", "Fact"], limit=50),
             MagicMock(),
         )
     walk.assert_called_once_with(
@@ -72,7 +70,7 @@ def test_neighborhood_maps_the_walk_and_its_filters():
         label="Document",
         key=10,
         depth=2,
-        vertex_labels=["Document", "PotentialFact"],
+        vertex_labels=["Document", "Fact"],
         edge_labels=None,
         limit=50,
     )

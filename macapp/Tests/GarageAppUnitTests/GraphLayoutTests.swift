@@ -7,11 +7,11 @@ final class GraphLayoutTests: XCTestCase {
         GraphVertexItem(id: id, label: label, key: id, title: title.isEmpty ? "v\(id)" : title)
     }
 
-    private func edge(_ id: Int64, _ source: Int64, _ target: Int64, _ label: String = "SUPPORTS") -> GraphEdgeItem {
+    private func edge(_ id: Int64, _ source: Int64, _ target: Int64, _ label: String = "STATES") -> GraphEdgeItem {
         GraphEdgeItem(id: id, label: label, sourceID: source, targetID: target)
     }
 
-    /// A document with two chunks and an author, and a fact two hops away through a potential fact.
+    /// A document with two chunks, an author and a fact, and another document stating the fact two hops away.
     private var sample: GraphNeighborhood {
         GraphNeighborhood(
             available: true,
@@ -21,15 +21,15 @@ final class GraphLayoutTests: XCTestCase {
                 vertex(2, "Chunk", title: "Chunk 0"),
                 vertex(3, "Chunk", title: "Chunk 1"),
                 vertex(4, "Author", title: "Ada"),
-                vertex(5, "PotentialFact", title: "The roof is slate."),
-                vertex(7, "Fact", title: "The roof is slate."),
+                vertex(5, "Fact", title: "The roof is slate."),
+                vertex(7, "Document", title: "Barn"),
             ],
             edges: [
                 edge(100, 1, 2, "HAS_CHUNK"),
                 edge(101, 1, 3, "HAS_CHUNK"),
                 edge(102, 4, 1, "WROTE"),
                 edge(103, 1, 5, "STATES"),
-                edge(105, 5, 7),
+                edge(105, 7, 5),
             ]
         )
     }
@@ -56,7 +56,7 @@ final class GraphLayoutTests: XCTestCase {
 
     func testTheFirstRingIsEvenlySpacedWithLikeLabelsTogether() {
         let layout = GraphLayout(neighborhood: sample, size: size)
-        // Sorted by label then title: Author, Chunk 0, Chunk 1, PotentialFact; a quarter turn apart from the top.
+        // Sorted by label then title: Author, Chunk 0, Chunk 1, Fact; a quarter turn apart from the top.
         let angles = [4, 2, 3, 5].map { angle(layout.positions[$0]!, from: layout.origin) }
         XCTAssertEqual(angles[0], -.pi / 2, accuracy: 0.001)
         for i in 1..<angles.count {
@@ -66,7 +66,7 @@ final class GraphLayoutTests: XCTestCase {
 
     func testASecondRingVertexSitsOnItsParentsSide() {
         let layout = GraphLayout(neighborhood: sample, size: size)
-        // The only second-ring vertex hangs off the potential fact, so it takes that angle.
+        // The only second-ring vertex hangs off the fact, so it takes that angle.
         XCTAssertEqual(
             angle(layout.positions[7]!, from: layout.origin),
             angle(layout.positions[5]!, from: layout.origin),

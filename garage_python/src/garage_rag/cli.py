@@ -963,7 +963,7 @@ app.add_typer(graph_app, name="graph")
 
 @graph_app.command("rebuild")
 def graph_rebuild() -> None:
-    """Re-project documents, chunks, authors, potential facts and distilled facts into the 'garage' graph."""
+    """Re-project documents, chunks, authors and distilled facts into the 'garage' graph."""
     from garage_rag.ops.graph import rebuild_graph
 
     summary = rebuild_graph()

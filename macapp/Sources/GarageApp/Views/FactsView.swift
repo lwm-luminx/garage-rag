@@ -3,8 +3,9 @@ import AppKit
 
 /// Browses the facts `enrich-facts` distilled out of every document: search them,
 /// filter by source, class and corpus class, and read each one in the passage it
-/// was grounded to. "Distill Facts" (`garage cluster-facts`) groups the facts that
-/// restate one claim; "Group Restatements" then lists each claim once.
+/// was grounded to. Each claim is listed once: the facts that restate it (in one
+/// document, or across documents once "Distill Facts", `garage cluster-facts`,
+/// has grouped them) show as one row, and "Show All Statements" lists them all.
 public struct FactsView: View {
     @EnvironmentObject var appState: AppState
 
@@ -24,8 +25,6 @@ public struct FactsView: View {
     @State private var selectedCorpusClass = CorpusTaxonomy.allSentinel
     /// Narrows the list to one document's facts, from "Facts from This Document".
     @State private var documentFilter: (id: Int64, title: String)?
-    /// Lists the facts that restate one claim once, as the claim's representative.
-    @State private var groupRestatements = false
     /// Narrows the list to the restatements of one claim, from "Show All Statements".
     @State private var distilledFilter: (id: Int64, statement: String)?
 
@@ -127,12 +126,6 @@ public struct FactsView: View {
             .frame(width: 130)
             .onChange(of: selectedCorpusClass) { _, _ in refreshFacts() }
             .accessibilityIdentifier("facts.class")
-
-            Toggle("Group Restatements", isOn: $groupRestatements)
-                .toggleStyle(.checkbox)
-                .onChange(of: groupRestatements) { _, _ in refreshFacts() }
-                .accessibilityIdentifier("facts.group")
-                .help("List facts that state the same claim once")
 
             Button(action: { distillFacts() }) {
                 if appState.enrichFacts.isRunning {
@@ -483,10 +476,15 @@ public struct FactsView: View {
                     Button("Reveal") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
                 }
                 Button("Show in Graph") {
-                    openGraph(GraphFocus(label: "PotentialFact", key: fact.id))
+                    if let id = fact.distilledFactID {
+                        openGraph(GraphFocus(label: "Fact", key: id))
+                    }
                 }
                 .accessibilityIdentifier("facts.detail.graph")
-                .help("Center the Graph page on this fact: its document, and the claim it supports")
+                .disabled(fact.distilledFactID == nil)
+                .help(fact.distilledFactID == nil
+                    ? "Distill Facts adds this fact to the graph"
+                    : "Center the Graph page on this fact: the documents that state it")
             }
             .controlSize(.small)
         }
@@ -661,7 +659,7 @@ public struct FactsView: View {
             documentID: documentFilter?.id,
             limit: Self.pageSize,
             offset: offset,
-            collapse: groupRestatements && distilledFilter == nil,
+            collapse: distilledFilter == nil,
             distilledFactID: distilledFilter?.id
         )
     }
