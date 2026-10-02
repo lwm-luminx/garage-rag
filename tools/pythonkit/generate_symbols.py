@@ -93,7 +93,11 @@ def generate() -> dict[Path, str]:
     source = UPSTREAM.read_text()
     head, body = source.split("// Python library symbols lazily loaded at runtime.")
     preamble = head.split("// Required Python", 1)[1]
-    entries = re.findall(r'let (\w+):(.*?)=\s*PythonLibrary\.loadSymbol\(\s*name: "(\w+)"', body, re.DOTALL)
+    entries = re.findall(
+        r'let (\w+):(.*?)=\s*PythonLibrary\.loadSymbol\(\s*name: "(\w+)"',
+        body,
+        re.DOTALL,
+    )
 
     header = [
         BANNER,
@@ -106,16 +110,26 @@ def generate() -> dict[Path, str]:
         "struct GaragePyKitOpaque;",
         "",
     ]
-    implementation = [BANNER, "#include <Python.h>", "", '#include "GaragePythonKitSymbols.h"', ""]
+    implementation = [
+        BANNER,
+        "#include <Python.h>",
+        "",
+        '#include "GaragePythonKitSymbols.h"',
+        "",
+    ]
     swift = []
     data = []
     for name, swift_type, symbol in entries:
-        swift_type = " ".join(swift_type.split()).replace("@convention(c) ( ", "@convention(c) (")
+        swift_type = " ".join(swift_type.split()).replace(
+            "@convention(c) ( ", "@convention(c) ("
+        )
         if swift_type == "PyObjectPointer":
             data.append(name)
             continue
         if swift_type in ("PyBinaryOperation", "PyUnaryOperation"):
-            arguments = ["PyObjectPointer?"] * (2 if swift_type == "PyBinaryOperation" else 1)
+            arguments = ["PyObjectPointer?"] * (
+                2 if swift_type == "PyBinaryOperation" else 1
+            )
             result = "PyObjectPointer?"
         else:
             match = re.fullmatch(r"@convention\(c\) \((.*)\) -> (.*)", swift_type)
@@ -127,19 +141,29 @@ def generate() -> dict[Path, str]:
                 result = result[1:-1]
         c_arguments = [C_TYPES[argument] for argument in arguments]
         c_result = C_TYPES[result]
-        parameters = ", ".join(f"{c_type} a{index}" for index, c_type in enumerate(c_arguments)) or "void"
-        call_arguments = [CASTS.get(c_type, "") + f"a{index}" for index, c_type in enumerate(c_arguments)]
+        parameters = (
+            ", ".join(f"{c_type} a{index}" for index, c_type in enumerate(c_arguments))
+            or "void"
+        )
+        call_arguments = [
+            CASTS.get(c_type, "") + f"a{index}"
+            for index, c_type in enumerate(c_arguments)
+        ]
         call = f"{symbol}({', '.join(call_arguments + EXTRA_ARGS.get(name, []))})"
         statement = f"{call};" if c_result == "void" else f"return {call};"
         header.append(f"{c_result} GaragePyKit_{name}({parameters});")
-        implementation.append(f"{c_result} GaragePyKit_{name}({parameters}) {{ {statement} }}")
+        implementation.append(
+            f"{c_result} GaragePyKit_{name}({parameters}) {{ {statement} }}"
+        )
         swift.append(f"let {name}: {swift_type} =\n    GaragePyKit_{name}\n")
 
     header += ["", "// Addresses of the objects PythonKit compares against."]
     implementation.append("")
     for name in data:
         header.append(f"void *_Nonnull GaragePyKit_{name}(void);")
-        implementation.append(f"void *_Nonnull GaragePyKit_{name}(void) {{ return {DATA[name]}; }}")
+        implementation.append(
+            f"void *_Nonnull GaragePyKit_{name}(void) {{ return {DATA[name]}; }}"
+        )
         swift.append(f"var {name}: PyObjectPointer {{ GaragePyKit_{name}() }}\n")
     header += ["", "#endif  // GARAGE_PYTHONKIT_SYMBOLS_H", ""]
 
@@ -169,16 +193,24 @@ def generate() -> dict[Path, str]:
     return {
         PYTHONKIT / "GaragePythonLibrary.swift": swift_file,
         PYTHONKIT / "symbols/GaragePythonKitSymbols.h": "\n".join(header),
-        PYTHONKIT / "symbols/GaragePythonKitSymbols.c": "\n".join(implementation) + "\n",
+        PYTHONKIT / "symbols/GaragePythonKitSymbols.c": "\n".join(implementation)
+        + "\n",
     }
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--check", action="store_true", help="fail when a generated file is out of date")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--check", action="store_true", help="fail when a generated file is out of date"
+    )
     arguments = parser.parse_args()
     if not UPSTREAM.is_file():
-        print(f"{UPSTREAM.relative_to(ROOT)} is missing: run `git submodule update --init`", file=sys.stderr)
+        print(
+            f"{UPSTREAM.relative_to(ROOT)} is missing: run `git submodule update --init`",
+            file=sys.stderr,
+        )
         return 1
     stale = []
     for path, text in generate().items():
@@ -189,7 +221,10 @@ def main() -> int:
         else:
             path.write_text(text)
     for path in stale:
-        print(f"{path} is out of date: run python3 tools/pythonkit/generate_symbols.py", file=sys.stderr)
+        print(
+            f"{path} is out of date: run python3 tools/pythonkit/generate_symbols.py",
+            file=sys.stderr,
+        )
     return 1 if stale else 0
 
 
