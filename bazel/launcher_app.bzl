@@ -12,7 +12,7 @@ password lives in the App Group so the launchers read it without a Keychain prom
 code, so `--deep` verification, notarization and App Store validation all walk it.
 
 The helper embeds no frameworks of its own: it links the app's `Contents/Frameworks/Python.framework` and
-`PythonXPCService.framework` (which carries site-python, libpq and libtesseract, as for the XPC services),
+`PythonXPCService.framework` (which carries site-python and libpq, as for the XPC services),
 four directories up from the helper's executable, hence the `../../../../Frameworks` rpaths.
 """
 
@@ -122,7 +122,7 @@ def garage_launcher_app(
             "-F$(location //ext/python:python_framework)/..",
             "-framework",
             "Python",
-            # Loads site-python, libpq and libtesseract with it, as in the XPC services.
+            # Loads site-python and libpq with it, as in the XPC services.
             "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
             "-framework",
             "PythonXPCService",

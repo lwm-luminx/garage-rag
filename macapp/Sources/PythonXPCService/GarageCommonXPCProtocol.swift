@@ -129,10 +129,6 @@ public struct GarageXPCPythonStatus: Codable, Equatable, Sendable {
     public var sysPath: [String]
     public var error: String?
     public var initializationMs: Double?
-    /// Bundled `libpq.dylib` loaded into the process for psycopg (nil when none was found).
-    public var libpqPath: String?
-    /// `dlopen` failure for the bundled libpq, if any.
-    public var libpqError: String?
 
     public init(
         state: String,
@@ -143,9 +139,7 @@ public struct GarageXPCPythonStatus: Codable, Equatable, Sendable {
         sitePackagesDir: String? = nil,
         sysPath: [String] = [],
         error: String? = nil,
-        initializationMs: Double? = nil,
-        libpqPath: String? = nil,
-        libpqError: String? = nil
+        initializationMs: Double? = nil
     ) {
         self.state = state
         self.version = version
@@ -156,8 +150,6 @@ public struct GarageXPCPythonStatus: Codable, Equatable, Sendable {
         self.sysPath = sysPath
         self.error = error
         self.initializationMs = initializationMs
-        self.libpqPath = libpqPath
-        self.libpqError = libpqError
     }
 }
 

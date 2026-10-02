@@ -1,0 +1,48 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+# psycopg's C implementation, built into PythonXPCService.framework with libpq linked statically.
+#
+# GaragePythonEmbed registers the two modules (GaragePsycopgCRegister) before the interpreter
+# starts, and site-packages carries the sdist's pure-Python `psycopg_c` package they live in. psycopg
+# then picks its "c" implementation itself: no libpq dylib ships and nothing reaches libpq through
+# ctypes. A venv, PyPI install or Windows keeps psycopg's own search (garage_rag.libpq).
+
+# The Cython output, with each module's init function renamed so the two can sit beside every other
+# PyInit_* in one binary (garage_psycopg_c.c refers to them by these names).
+cc_library(
+    name = "psycopg_c_modules",
+    srcs = ["@psycopg_c//:native_srcs"],
+    copts = [
+        "-DPyInit_pq=GaragePyInit_psycopg_c_pq",
+        "-DPyInit__psycopg=GaragePyInit_psycopg_c__psycopg",
+        # Generated code, built as upstream ships it.
+        "-w",
+    ],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//ext:libpq",
+        "//ext/python:python_headers",
+    ],
+)
+
+cc_library(
+    name = "psycopg_c",
+    srcs = ["garage_psycopg_c.c"],
+    hdrs = ["garage_psycopg_c.h"],
+    # Kept out of the header search path of everything that includes garage_psycopg_c.h (Swift
+    # included): the Postgres headers are only for the Cython output.
+    implementation_deps = [":psycopg_c_modules"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+    deps = ["//ext/python:python_headers"],
+)
+
+# The sdist's `psycopg_c` package, for //garage_python:site-packages.
+alias(
+    name = "python",
+    actual = "@psycopg_c//:python_srcs",
+    visibility = ["//visibility:public"],
+)
+
+# Read by garage_python/tests/test_psycopg_c.py, which holds its version to uv.lock's psycopg.
+exports_files(["psycopg_c.MODULE.bazel"])

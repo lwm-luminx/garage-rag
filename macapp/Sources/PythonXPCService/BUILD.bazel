@@ -33,6 +33,7 @@ objc_library(
     module_name = "GaragePythonEmbed",
     visibility = ["//visibility:public"],
     deps = [
+        "//ext/psycopg_c",
         "//ext/python:python_headers",
     ],
 )
@@ -107,7 +108,6 @@ apple_resource_group(
     name = "site_python_resources",
     resources = ["openssl.cnf"],
     structured_resources = [
-        "//macapp/externals:python_framework_libs",
         "//macapp/externals:site-python",
         "//macapp/externals:tessdata_output",
     ],
@@ -120,8 +120,6 @@ macos_versioned_framework(
     name = "PythonXPCService_framework",
     additional_linker_inputs = [
         "//ext/python:python_framework",
-        "//macapp/externals:libpq",
-        "//macapp/externals:libtesseract",
     ],
     bundle_id = "me.rickmark.garage-rag.PythonXPCService",
     bundle_name = "PythonXPCService",
@@ -132,15 +130,6 @@ macos_versioned_framework(
         "Python",
         "-framework",
         "SystemConfiguration",
-        # libpq and libtesseract ship in this framework's Frameworks folder and load with it, so
-        # every process that links the framework has them. Nothing here calls them (Python does,
-        # through ctypes), so -needed_library keeps the load commands the linker would drop.
-        "-needed_library",
-        "$(location //macapp/externals:libpq)",
-        "-needed_library",
-        "$(location //macapp/externals:libtesseract)",
-        "-rpath",
-        "@loader_path/Frameworks",
     ],
     minimum_os_version = "14.0",
     resources = [":site_python_resources"],

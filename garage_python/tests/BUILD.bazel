@@ -612,16 +612,6 @@ py_test(
 py_test(
     name = "test_tesseract",
     srcs = ["test_tesseract.py"],
-    # The libtesseract and language data the app bundles, so the recognition tests run
-    # against the real thing. Like the app, macOS only; elsewhere those tests skip.
-    data = [
-        "//ext/tesseract",
-        "//ext/tesseract:tessdata",
-    ],  # keep
-    env = {
-        "GARAGE_TEST_LIBTESSERACT": "$(rootpath //ext/tesseract)",
-        "GARAGE_TEST_TESSDATA_FILE": "$(rootpath //ext/tesseract:tessdata)",
-    },  # keep
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/extract",
@@ -841,5 +831,19 @@ py_test(
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/extract",
+    ],
+)
+
+py_test(
+    name = "test_psycopg_c",
+    srcs = ["test_psycopg_c.py"],
+    data = [
+        "//ext/psycopg_c:psycopg_c.MODULE.bazel",
+        "//garage_python:uv.lock",
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag",
+        "@pypi//pytest",
     ],
 )

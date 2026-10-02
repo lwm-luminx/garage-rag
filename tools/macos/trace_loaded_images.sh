@@ -19,8 +19,8 @@
 #
 # Classes: lib-dynload (stdlib extension), site-packages (third-party extension), bundled
 # (anything else inside the app), system (/usr/lib, /System). "How it loaded" is "linked" when
-# some image in the same process names it in an LC_LOAD_DYLIB command (the way libpq and
-# libtesseract are pre-bound through PythonXPCService.framework), and "dlopen" otherwise.
+# some image in the same process names it in an LC_LOAD_DYLIB command (the way Python.framework is
+# bound through PythonXPCService.framework), and "dlopen" otherwise.
 set -uo pipefail
 
 app="/Applications/GarageApp.app"

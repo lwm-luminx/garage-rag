@@ -1,0 +1,26 @@
+# psycopg-c's sdist. //ext/psycopg_c compiles the C and puts the Python in site-packages.
+
+# The Cython output of psycopg_c/pq.pyx and psycopg_c/_psycopg.pyx, and the C helper _psycopg uses.
+filegroup(
+    name = "native_srcs",
+    srcs = [
+        "psycopg_c/_psycopg.c",
+        "psycopg_c/pq.c",
+        "psycopg_c/types/numutils.c",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# The pure-Python package the built-in modules live in: psycopg imports `psycopg_c` (for its
+# version) before `psycopg_c.pq` and `psycopg_c._psycopg`, and _psycopg imports `psycopg_c._uuid`.
+filegroup(
+    name = "python_srcs",
+    srcs = [
+        "psycopg_c/__init__.py",
+        "psycopg_c/_uuid.py",
+        "psycopg_c/version.py",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["LICENSE.txt"])

@@ -186,8 +186,9 @@ done
     _extract_static_lib("libpgcommon_a", ":" + name, "libpgcommon.a", tags)
     _extract_static_lib("libpgport_a", ":" + name, "libpgport.a", tags)
 
-    # Standalone client library, carried in PythonXPCService.framework's `Frameworks/libpq.dylib`
-    # (signed by //macapp/externals:libpq), linked by the framework and used by psycopg through ctypes. The install
+    # Standalone client library for the Bazel py_tests on macOS (//tools/pytest:libpq, signed by
+    # //macapp/externals:libpq), whose interpreter has no psycopg_c built in, so psycopg reaches it
+    # through ctypes. The app ships none: it links :libpq statically (//ext/psycopg_c). The install
     # name is normalised to `@rpath/libpq.dylib` so the same binary works from any location.
     #
     # This copy is pulled straight from :postgres's raw output and only its own install name
@@ -195,7 +196,7 @@ done
     # references to the icu/zlib dylibs those binaries link against. libpq itself has
     # never linked either (they're pulled in by the backend/psql/pg_dump instead), so
     # this should stay a no-op; the check below turns a wrong assumption there into a loud build
-    # failure instead of a silent Contents/Frameworks dlopen failure at app launch.
+    # failure instead of a dlopen failure in the tests.
     native.genrule(
         name = "libpq_dylib",
         srcs = [":" + name],
@@ -222,7 +223,7 @@ while IFS= read -r dependency; do
     case "$$name" in
         libicu*.dylib|libz.*.dylib|libz.dylib)
             echo "libpq_dylib: libpq.dylib unexpectedly depends on $$name now that //{package}:{name} links icu/zlib as dylibs." >&2
-            echo "libpq_dylib: this standalone Contents/Frameworks copy does not bundle it; package $$name alongside libpq.dylib (or make this dep static again) before shipping." >&2
+            echo "libpq_dylib: this standalone copy does not bundle it; package $$name alongside libpq.dylib (or make this dep static again)." >&2
             exit 1
             ;;
     esac
@@ -253,11 +254,37 @@ done <<< "$$otool_deps"
         visibility = ["//visibility:private"],
     )
 
+    # The install tree's client headers (libpq-fe.h, pg_config.h, ...) for code built against :libpq.
+    native.filegroup(
+        name = "install_dir",
+        srcs = [":" + name],
+        output_group = "gen_dir",
+        tags = tags,
+        visibility = ["//visibility:private"],
+    )
+
+    cc_library(
+        name = "libpq_headers",
+        hdrs = [":install_dir"],
+        # Postgres appends /postgresql to includedir unless the prefix names postgres or pgsql, as
+        # rules_foreign_cc's (…/ext/postgres/postgres) does; both are listed so either layout works.
+        includes = [
+            "copy_{name}/{name}/include".format(name = name),
+            "copy_{name}/{name}/include/postgresql".format(name = name),
+        ],
+        tags = tags,
+        visibility = ["//visibility:private"],
+    )
+
+    # Static libpq, for code that links it into its own binary: psycopg's C implementation in
+    # PythonXPCService.framework (//ext/psycopg_c). Postgres builds libpq.a without the pgcommon and
+    # pgport objects it needs, so they come with it, as `pg_config --libs` lists them.
     cc_library(
         name = "libpq",
         tags = tags,
         visibility = ["//visibility:public"],
         deps = [
+            ":libpq_headers",
             ":libpgcommon_import",
             ":libpgport_import",
             ":libpq_import",

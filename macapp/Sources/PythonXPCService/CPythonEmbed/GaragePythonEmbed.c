@@ -11,6 +11,8 @@
 
 #include <Python.h>
 
+#include "garage_psycopg_c.h"
+
 #include <stdio.h>
 #include <string.h>
 
@@ -62,6 +64,13 @@ GaragePythonEmbedResult GaragePythonEmbedInitialize(const GaragePythonEmbedOptio
     if (options->home == NULL || options->home[0] == '\0') {
         _GarageCopyError(errorBuffer, errorBufferSize, "options->home must be set to the bundled python directory");
         return GaragePythonEmbedResultInvalidArgument;
+    }
+
+    // psycopg's C implementation is linked into this framework, with libpq (//ext/psycopg_c). Its
+    // modules join the built-in table here, which CPython reads when the interpreter starts.
+    if (GaragePsycopgCRegister() < 0) {
+        _GarageCopyError(errorBuffer, errorBufferSize, "could not register psycopg_c's built-in modules");
+        return GaragePythonEmbedResultConfigError;
     }
 
     PyStatus status;

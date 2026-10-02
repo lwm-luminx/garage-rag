@@ -15,9 +15,9 @@ Two more things every test needs, added here rather than per target:
   test sees `garage_rag` as a namespace package: no `__version__`, and no
   libpq set-up before psycopg is imported.
 - libpq. psycopg's pure-Python implementation needs a libpq dylib; the Bazel
-  interpreter has none. On macOS the tests get the one this repo builds for
-  the app: `garage_python/tests/conftest.py` loads it from `GARAGE_TEST_LIBPQ`,
-  as PythonXPCService.framework does in the app, and garage_rag finds it loaded.
+  interpreter has none, nor the app's built-in psycopg_c. On macOS the tests get
+  one built from the app's Postgres: `garage_python/tests/conftest.py` loads it
+  from `GARAGE_TEST_LIBPQ`, and garage_rag finds it loaded.
 """
 
 load("@aspect_rules_py//py:defs.bzl", _py_pytest_test = "py_pytest_test")

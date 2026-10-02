@@ -95,7 +95,10 @@ if [ "${#srcs[@]}" -gt 0 ]; then
             # Determine target path inside site-packages
             # If path contains 'garage_python/src/', strip prefix
             rel_path="$s"
-            if [[ "$s" == *"garage_python/src/"* ]]; then
+            if [[ "$s" == external/* ]]; then
+                # A source archive's own layout (external/<repo>/<package>/...).
+                rel_path="${s#external/*/}"
+            elif [[ "$s" == *"garage_python/src/"* ]]; then
                 rel_path="${s#*garage_python/src/}"
             elif [[ "$s" == *"src/"* ]]; then
                 rel_path="${s#*src/}"

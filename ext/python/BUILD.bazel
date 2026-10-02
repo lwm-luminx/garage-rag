@@ -13,8 +13,13 @@ configure_make(
     # _garage_git: garage_git.patch adds it to Modules/Setup.local as a static built-in module
     # (libpython, so Python.framework's own binary) and passes Setup.local's libraries to the
     # framework link. Its source is garage_git/garage_git.c, and libgit2 is linked in statically,
-    # so git history needs nothing loaded at run time. make reads these from the environment.
-    build_data = ["garage_git/garage_git.c"],
+    # so git history needs nothing loaded at run time. _garage_tesseract (garage_tesseract.patch,
+    # garage_tesseract/garage_tesseract.c) does the same for OCR with Tesseract and Leptonica,
+    # which are C++ and so bring libc++. make reads these from the environment.
+    build_data = [
+        "garage_git/garage_git.c",
+        "garage_tesseract/garage_tesseract.c",
+    ],
     configure_in_place = True,
     configure_options = [
         "--enable-framework=$$INSTALLDIR$$/",
@@ -35,6 +40,8 @@ configure_make(
         "ARFLAGS": "crs",
         "MODULE__GARAGE_GIT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/ext/python/garage_git -I$$EXT_BUILD_DEPS$$/libgit2/include",
         "MODULE__GARAGE_GIT_LDFLAGS": "$$EXT_BUILD_DEPS$$/libgit2/lib/libgit2.a -lz -liconv",
+        "MODULE__GARAGE_TESSERACT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/ext/python/garage_tesseract -I$$EXT_BUILD_DEPS$$/tesseract/include",
+        "MODULE__GARAGE_TESSERACT_LDFLAGS": "$$EXT_BUILD_DEPS$$/tesseract/lib/libtesseract.a $$EXT_BUILD_DEPS$$/leptonica/lib/libleptonica.a -lc++",
         "PYTHONAPPSDIR": "$$INSTALLDIR$$/",
     },
     lib_source = "@python_source//:python_source",
@@ -69,7 +76,9 @@ done
     deps = [
         "//ext:libzlib",
         "//ext:openssl",
+        "//ext/leptonica",
         "//ext/libgit2",
+        "//ext/tesseract",
     ],
 )
 

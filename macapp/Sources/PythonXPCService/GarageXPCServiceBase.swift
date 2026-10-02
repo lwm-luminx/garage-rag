@@ -307,9 +307,9 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
             if !requiredPythonModules.isEmpty {
                 tests.append(GarageXPCStandardSelfTests.sitePackages(modules: requiredPythonModules))
             }
-            tests.append(GarageXPCStandardSelfTests.libpq(runtime: runtime))
+            tests.append(GarageXPCStandardSelfTests.psycopg())
             tests.append(GarageXPCStandardSelfTests.tlsTrust(runtime: runtime))
-            tests.append(GarageXPCStandardSelfTests.libtesseract())
+            tests.append(GarageXPCStandardSelfTests.tesseract())
             tests.append(GarageXPCStandardSelfTests.gitHistory())
             tests.append(GarageXPCStandardSelfTests.database(urlProvider: { [weak self] in self?.databaseURL }))
             tests.append(GarageXPCStandardSelfTests.grpcConnection(addressProvider: { [weak self] in self?.grpcTarget }))

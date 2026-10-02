@@ -18,6 +18,10 @@
 # the site's social card, run by hand with the garage_python venv's Pillow, outside Bazel.
 # gazelle:exclude tools/screenshots
 
+# tools/pythonkit regenerates PythonKit's link-time symbol table (ext/pythonkit) from the submodule,
+# run by hand and checked by the swiftcheck job with the runner's Python, outside Bazel.
+# gazelle:exclude tools/pythonkit
+
 exports_files(
     [
         "README.md",

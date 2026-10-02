@@ -1,17 +1,18 @@
-"""In-process Tesseract through its C API (``capi.h``), loaded with ctypes.
+"""In-process Tesseract through its C API (``capi.h``).
 
 The CLI route (pytesseract) forks a ``tesseract`` process per image, writes the
 image to a temp file for it, and reloads the language model every time. Here the
 pixels Pillow already decoded go straight to ``TessBaseAPISetImage``, and each
 thread keeps one initialised engine, so the model loads once.
 
-In the app, ``PythonXPCService.framework`` links libtesseract, so it is already
-loaded (:func:`garage_rag.native.loaded_library`) and its English data sits in the
-framework's ``tessdata`` folder: in ``Resources`` beside the ``Frameworks`` folder that holds
-the library (the versioned layout the app ships), or beside ``Frameworks`` itself (a flat
-one). Elsewhere (a venv) the dynamic linker's search finds the library, and Tesseract's own
-default (or ``TESSDATA_PREFIX``) finds the data. On Windows the installed ``libtesseract-5.dll`` is
-also looked for in Tesseract's install folder, with the ``tessdata`` beside it.
+In the app that is ``_garage_tesseract``, a built-in module of the app's Python with
+Tesseract and Leptonica linked in statically (``//ext/python``), so nothing is loaded at
+run time; its English data sits in ``PythonXPCService.framework``'s ``Resources/tessdata``,
+beside the ``site-python`` folder that is the interpreter's home. Any other Python (a venv,
+a PyPI install) loads the system libtesseract with ctypes instead: the dynamic linker's
+search finds it, and Tesseract's own default (or ``TESSDATA_PREFIX``) finds the data. On
+Windows the installed ``libtesseract-5.dll`` is also looked for in Tesseract's install
+folder, with the ``tessdata`` beside it.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
+from types import ModuleType
 
 from PIL import Image
 
@@ -41,6 +43,27 @@ _MIN_CREDIBLE_DPI = 70
 
 class TesseractUnavailable(RuntimeError):
     """libtesseract, or its language data, could not be loaded."""
+
+
+def builtin_module() -> ModuleType | None:
+    """``_garage_tesseract`` when this Python has it built in (the app's), else None."""
+    try:
+        # Built into the app's Python.
+        # gazelle:ignore _garage_tesseract
+        import _garage_tesseract
+    except ImportError:
+        return None
+    return _garage_tesseract
+
+
+def _bundled_datapath() -> str | None:
+    """The app's ``tessdata``: beside ``site-python``, the interpreter's home, in the framework's
+    ``Resources``. None when there is none there (Tesseract's default, or ``TESSDATA_PREFIX``)."""
+    for home in (Path(sys.prefix), Path(os.__file__).parent):
+        tessdata = home.parent / "tessdata"
+        if (tessdata / f"{LANGUAGE}.traineddata").is_file():
+            return str(tessdata)
+    return None
 
 
 @dataclass(frozen=True)
@@ -166,11 +189,33 @@ def _library() -> ctypes.CDLL:
 
 
 def version() -> str:
+    module = builtin_module()
+    if module is not None:
+        return module.version()
     return _library().TessVersion().decode()
 
 
+class _BuiltinEngine:
+    """One ``_garage_tesseract.Engine``."""
+
+    def __init__(self, module: ModuleType) -> None:
+        try:
+            self.engine = module.Engine(_bundled_datapath(), LANGUAGE, _PSM_AUTO)
+        except RuntimeError as exc:
+            raise TesseractUnavailable(str(exc)) from exc
+        # tprintf goes to stderr otherwise ("Estimating resolution as ..." per image).
+        self.engine.set_variable("debug_file", "/dev/null")
+
+    def words(self, image: Image.Image) -> list[Word]:
+        bpp = len(image.getbands())
+        dpi = image.info.get("dpi")
+        resolution = int(dpi[0]) if dpi and int(dpi[0]) >= _MIN_CREDIBLE_DPI else 0
+        found = self.engine.words(image.tobytes(), image.width, image.height, bpp, image.width * bpp, resolution)
+        return [Word(text, confidence) for text, confidence in found]
+
+
 class _Engine:
-    """One initialised TessBaseAPI. Not thread-safe; see :func:`_engine`."""
+    """One initialised TessBaseAPI, through ctypes. Not thread-safe; see :func:`_engine`."""
 
     def __init__(self) -> None:
         self.lib = _library()
@@ -224,10 +269,11 @@ class _Engine:
 _local = threading.local()
 
 
-def _engine() -> _Engine:
+def _engine() -> _BuiltinEngine | _Engine:
     engine = getattr(_local, "engine", None)
     if engine is None:
-        engine = _Engine()
+        module = builtin_module()
+        engine = _BuiltinEngine(module) if module is not None else _Engine()
         _local.engine = engine
     return engine
 
