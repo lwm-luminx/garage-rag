@@ -60,6 +60,11 @@ service GarageService {
     rpc FindGraphVertices (FindGraphVerticesRequest) returns (FindGraphVerticesResponse);
     // Everything within a few hops of one vertex, under label filters.
     rpc GetGraphNeighborhood (GraphNeighborhoodRequest) returns (GraphNeighborhoodResponse);
+    // Everything linked to one document (its messages, authors, links and facts), uncapped per vertex:
+    // the Documents page's Linked view. The center is the document.
+    rpc GetDocumentLinks (DocumentLinksRequest) returns (GraphNeighborhoodResponse);
+    // One read-only openCypher query, run through AGE's cypher(): the Query page.
+    rpc RunGraphQuery (GraphQueryRequest) returns (GraphQueryResponse);
 
     // --- Schema, Stats & Settings ---
     rpc GetStats (StatsRequest) returns (StatsResponse);
@@ -171,6 +176,9 @@ message DocumentSummary {
     string state = 11;
     string ingested_at = 12;
     int32 fact_count = 13;
+    // When the element happened (garage_rag.db.recency): a thread's last message, a mail's Date,
+    // else the file's modification time, else ingested_at. Listings are newest first by it.
+    string occurred_at = 14;
 }
 
 message ListDocumentsRequest {
@@ -235,6 +243,10 @@ message DocumentDetail {
     string error = 15;
     string ingested_at = 16;
     repeated DocumentAuthorInfo authors = 17;
+    // The extracted text, what the Documents page shows; has_content is false when the document keeps none.
+    string content = 18;
+    bool has_content = 19;
+    string occurred_at = 20; // as DocumentSummary.occurred_at
 }
 
 message GetDocumentRequest {
@@ -341,16 +353,18 @@ message FactStatsResponse {
 // One vertex of the `garage` graph (garage_rag.db.graph).
 message GraphVertex {
     int64 id = 1;              // the graph id, unique across labels; what edges refer to
-    string label = 2;          // Document, Chunk, Author, PotentialFact, Fact, ...
+    string label = 2;          // Document, Message, Author, Link, Fact, ...
     int64 key = 3;             // the relational id (documents.id, facts.id, ...); 0 for a label without one
     string title = 4;          // what to call it on screen: the title, name, fact or statement
     string properties_json = 5; // every property, as a JSON object
+    // "read" from a source (Document, Message, Author, Link) or "derived" from what was read (facts).
+    string origin = 6;
 }
 
 // One edge between two vertices' graph ids.
 message GraphEdge {
     int64 id = 1;
-    string label = 2;          // HAS_CHUNK, WROTE, RECEIVED, STATES, SUPPORTS, ...
+    string label = 2;          // HAS_MESSAGE, WROTE, RECEIVED, SENT, STATES, LINKS_TO, ...
     int64 source_id = 3;
     int64 target_id = 4;
     string properties_json = 5;
@@ -381,7 +395,7 @@ message FindGraphVerticesResponse {
 }
 
 message GraphNeighborhoodRequest {
-    // The center, by graph id, or else by label and relational id (Document + documents.id, PotentialFact + facts.id, ...).
+    // The center, by graph id, or else by label and relational id (Document + documents.id, Fact + distilled_facts.id, ...).
     int64 vertex_id = 1;
     string label = 2;
     int64 key = 3;
@@ -392,6 +406,33 @@ message GraphNeighborhoodRequest {
     bool filter_vertex_labels = 7;
     bool filter_edge_labels = 8;
     int32 limit = 9;                    // stop at this many vertices; default 200
+}
+
+message DocumentLinksRequest {
+    int64 document_id = 1;
+    int32 limit = 2;           // stop at this many vertices; default 2000
+}
+
+message GraphQueryRequest {
+    string query = 1;          // openCypher ending in RETURN; RETURN * is refused (its columns are unknown)
+    int32 limit = 2;           // rows; default 500, at most 10000
+}
+
+message GraphQueryCell {
+    string text = 1;           // the value as agtype text
+    GraphVertex vertex = 2;    // set when the value is a vertex
+}
+
+message GraphQueryRow {
+    repeated GraphQueryCell cells = 1;
+}
+
+message GraphQueryResponse {
+    bool available = 1;
+    repeated string columns = 2;  // each RETURN item's alias, else its text
+    repeated GraphQueryRow rows = 3;
+    bool truncated = 4;           // more rows than the limit
+    double elapsed_ms = 5;
 }
 
 message GraphNeighborhoodResponse {

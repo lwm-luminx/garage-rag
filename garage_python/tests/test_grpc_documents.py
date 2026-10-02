@@ -32,6 +32,7 @@ def _mock_document(doc_id=1, source_slug="notes", title="Doc Title", uri="/tmp/d
     document.ingested_at = datetime(2024, 1, 1, tzinfo=UTC)
     document.source = MagicMock(slug=source_slug)
     document.authors = []
+    document.content = "hello world"
     return document
 
 
@@ -48,7 +49,10 @@ def test_grpc_list_documents_empty_filters():
         document_query = MagicMock()
         joined = document_query.join.return_value
         joined.with_entities.return_value.scalar.return_value = 1
-        joined.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [document]
+        # Listed most recent first, each document with when it happened.
+        happened = datetime(2023, 6, 1, tzinfo=UTC)
+        listed = joined.add_columns.return_value.order_by.return_value.offset.return_value.limit.return_value
+        listed.all.return_value = [(document, happened)]
         # Separate source-slug lookup query, keyed by document id.
         joined.filter.return_value.all.return_value = [(document.id, "notes")]
 
@@ -82,6 +86,7 @@ def test_grpc_list_documents_empty_filters():
     assert summary.trust_tier == "authored"
     assert summary.chunk_count == 3
     assert summary.fact_count == 5
+    assert summary.occurred_at == "2023-06-01T00:00:00+00:00"
 
 
 def test_grpc_get_document_found():
@@ -129,12 +134,15 @@ def test_grpc_get_document_found():
         mock_scope.return_value.__enter__.return_value = mock_session
         mock_session.get.side_effect = lambda model, _id: document if model is Document else source
         mock_session.query.side_effect = query_side_effect
+        mock_session.execute.return_value.scalar.return_value = datetime(2023, 6, 1, tzinfo=UTC)
 
         response = servicer.GetDocument(GetDocumentRequest(document_id=document.id), mock_context)
 
     assert response.document.id == document.id
     assert response.document.title == "Doc Title"
     assert response.document.source_slug == "notes"
+    assert (response.document.content, response.document.has_content) == ("hello world", True)
+    assert response.document.occurred_at == "2023-06-01T00:00:00+00:00"
     assert len(response.chunks) == 1
     assert response.chunks[0].text == "hello world"
     assert response.chunks[0].heading_path == "Intro"

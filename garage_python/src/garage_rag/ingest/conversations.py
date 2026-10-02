@@ -57,6 +57,7 @@ from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.messages import (
     EXTRACTOR_NAME,
     EXTRACTOR_VERSION,
+    STAMP_FORMAT,
     ChatMessage,
     Conversation,
     OrphanStats,
@@ -137,7 +138,7 @@ def _render(conversation: Conversation, *, size: int | None) -> tuple[str, list[
     chunks: list[TextChunk] = []
     owners: list[ChatMessage] = []
     for message in conversation.messages:
-        stamp = message.sent_at.strftime("%Y-%m-%d %H:%M UTC")
+        stamp = message.sent_at.strftime(STAMP_FORMAT)
         paragraph = f"[{stamp}] {_sender_label(conversation, message)}: {message.text}"
         offset += 2  # the blank line between paragraphs
         pieces = (

@@ -1559,7 +1559,7 @@ class TestDistilledFacts:
     def test_the_configured_graph_projects_classes_and_relations(self, db: Session) -> None:
         """The projection's selects over real rows (AGE itself is not needed to run them)."""
         from garage_rag.config.fact_prompts import FactPrompt, effective_prompts, graph_schema
-        from garage_rag.db.graph import EDGES, VERTICES, projection
+        from garage_rag.db.graph import EDGE_LABELS, VERTICES, projection
 
         model = self._setup(db)
         doc = self._doc(db)
@@ -1616,7 +1616,7 @@ class TestDistilledFacts:
         def rows(select: str, params: dict) -> list[tuple]:
             return [tuple(r) for r in db.execute(text(select), params).all()]
 
-        by_label = {v.label: rows(v.select, v.params) for v in vertices if v.label not in ("Document", "Chunk")}
+        by_label = {v.label: rows(v.select, v.params) for v in vertices if v.label != "Document"}
         person = by_label["Person"]
         assert [(rid, p["title"], p["statement"]) for rid, p in person] == [(distilled[jane], "Jane Doe", "Jane")]
         assert [rid for rid, _ in by_label["Organization"]] == [distilled[acme]]
@@ -1624,7 +1624,7 @@ class TestDistilledFacts:
         fact_ids = {rid for rid, _ in by_label["Fact"]}
         assert distilled[jane] not in fact_ids and distilled[acme] not in fact_ids and distilled[works] in fact_ids
 
-        relation_edges = {e.label: rows(e.select, e.params) for e in edges if e.label not in EDGES}
+        relation_edges = {e.label: rows(e.select, e.params) for e in edges if e.label not in EDGE_LABELS}
         # Resolved in the fact's document by the person's title and the organization's text, case-folded;
         # an unknown predicate takes the fallback; an end that names nothing is left out.
         assert [(s_, t, p["fact_id"], p["predicate"]) for s_, t, p in relation_edges["WORKS_AT"] if t is not None] == [
@@ -1635,12 +1635,123 @@ class TestDistilledFacts:
         ]
         # Each document states a distilled fact once, under the label its class maps to.
         states = [(e.target, rows(e.select, e.params)) for e in edges if e.label == "STATES"]
-        assert {t: sorted(r[1] for r in found) for t, found in states if t != "Fact"} == {
+        stated: dict[str, list[int]] = {}
+        for target, found in states:
+            stated.setdefault(target, []).extend(r[1] for r in found)
+        assert {t: sorted(ids) for t, ids in stated.items() if t != "Fact"} == {
             "Person": [distilled[jane]],
             "Organization": [distilled[acme]],
         }
         assert not {distilled[jane], distilled[acme]} & {r[1] for t, found in states if t == "Fact" for r in found}
         assert set(VERTICES) <= {v.label for v in vertices}
+
+    def test_threads_project_messages_links_and_dated_facts(self, db: Session) -> None:
+        """The built-in projection over a Messages thread and a page of notes, run without AGE: a long
+        message's chunks make one Message, a fact a message states hangs off that message, links are
+        found in the text, and every fact is dated by its most recent restatement."""
+        from garage_rag.config.fact_prompts import effective_prompts, graph_schema
+        from garage_rag.db.graph import projection
+
+        model = self._setup(db)
+        header = "Crew\nParticipants: Alex (+15551234567)"
+        a = "[2026-09-24 18:02 UTC] Me: see https://example.com/a."
+        b1 = "[2026-09-24 18:03 UTC] Alex: part one, [Docs](https://docs.example.com/x)"
+        b2 = "part two of the same message"
+        content = "\n\n".join([header, a, f"{b1} {b2}"])
+        thread = _document(db, self._source_id, "thread", content, corpus_class="communication")
+        db.execute(
+            text("UPDATE documents SET meta = CAST(:m AS jsonb) WHERE id = :id"),
+            {"m": json.dumps({"last_message_at": "2026-09-24T18:03:00+00:00"}), "id": thread},
+        )
+        spans = [(a, content.index(a), "sent", "me"), (b1, content.index(b1), "received", "+15551234567")]
+        spans.append((b2, content.index(b2), "received", "+15551234567"))
+        chunk_ids = [
+            db.execute(
+                text(
+                    "INSERT INTO chunks (document_id, ord, text, char_start, char_end, chunk_sha256, chunker, "
+                    "direction, sender) VALUES (:d, :o, :t, :s, :e, :h, 'messages', :dir, :who) RETURNING id"
+                ),
+                {"d": thread, "o": o, "t": t, "s": at, "e": at + len(t), "h": t.encode(), "dir": d, "who": who},
+            ).scalar_one()
+            for o, (t, at, d, who) in enumerate(spans)
+        ]
+        owner = db.execute(
+            text("INSERT INTO authors (display_name, is_self) VALUES ('Me', true) RETURNING id")
+        ).scalar()
+        alex = db.execute(text("INSERT INTO authors (display_name) VALUES ('Alex') RETURNING id")).scalar_one()
+        db.execute(
+            text("INSERT INTO author_identities (author_id, kind, value) VALUES (:a, 'phone', '+15551234567')"),
+            {"a": alex},
+        )
+        in_b = self._fact(db, model, thread, "Part two.", None)
+        db.execute(
+            text("UPDATE facts SET char_start = :s, char_end = :e WHERE id = :id"),
+            {"s": content.index(b2), "e": content.index(b2) + 4, "id": in_b},
+        )
+        unplaced = self._fact(db, model, thread, "The crew talks.", None)
+        notes = _document(db, self._source_id, "notes", 'Read <a href="test://thread">the thread</a>.')
+        db.execute(text("UPDATE documents SET mtime = '2026-09-25T09:00:00Z' WHERE id = :id"), {"id": notes})
+        restated = self._fact(db, model, notes, "The crew talks a lot.", None)
+
+        def distill(statement: str, *members: int) -> int:
+            distilled_id = db.execute(
+                text(
+                    "INSERT INTO distilled_facts (fact_class, statement, members_sha256) "
+                    "VALUES ('fact', :s, :h) RETURNING id"
+                ),
+                {"s": statement, "h": statement.encode()},
+            ).scalar_one()
+            db.execute(
+                text("UPDATE facts SET distilled_fact_id = :df WHERE id = ANY(CAST(:ids AS bigint[]))"),
+                {"df": distilled_id, "ids": list(members)},
+            )
+            return distilled_id
+
+        talks = distill("The crew talks.", unplaced, restated)
+        part_two = distill("Part two.", in_b)
+        db.flush()
+
+        vertices, edges = projection(graph_schema(effective_prompts([])))
+
+        def rows(label: str, kind: str = "v") -> list[tuple]:
+            sets = [v for v in vertices if v.label == label] if kind == "v" else [e for e in edges if e.label == label]
+            return sorted((tuple(r) for s_ in sets for r in db.execute(text(s_.select), s_.params).all()), key=repr)
+
+        messages = {rid: p for rid, p in rows("Message")}
+        # Three chunks, two messages: the continuation joins the message it continues.
+        assert set(messages) == {chunk_ids[0], chunk_ids[1]}
+        assert messages[chunk_ids[1]]["at"] == "2026-09-24T18:03:00Z"
+        assert messages[chunk_ids[1]]["text"].endswith(b2)
+        assert {p["origin"] for p in messages.values()} == {"read"}
+        assert {(s_, t) for s_, t, _ in rows("HAS_MESSAGE", "e")} == {(thread, chunk_ids[0]), (thread, chunk_ids[1])}
+        assert {(s_, t) for s_, t, _ in rows("SENT", "e")} == {(owner, chunk_ids[0]), (alex, chunk_ids[1])}
+
+        # The claim stated in the continuation is the message's; the others are their documents'.
+        states = {(s_, t) for s_, t, _ in rows("STATES", "e")}
+        assert states == {(chunk_ids[1], part_two), (thread, talks), (notes, talks)}
+
+        links = {p["href"]: p for _, p in rows("Link")}
+        assert set(links) == {"https://example.com/a", "https://docs.example.com/x", "test://thread"}
+        assert links["https://docs.example.com/x"]["text"] == "Docs"
+        assert links["https://example.com/a"]["text"] == "https://example.com/a"
+        ids = {p["href"]: rid for rid, p in rows("Link")}
+        assert {(s_, t) for s_, t, _ in rows("LINKS_TO", "e")} == {
+            (chunk_ids[0], ids["https://example.com/a"]),
+            (chunk_ids[1], ids["https://docs.example.com/x"]),
+            (notes, ids["test://thread"]),
+        }
+        # A link to a document's own path refers to it.
+        assert [(s_, t) for s_, t, _ in rows("REFERS_TO", "e")] == [(ids["test://thread"], thread)]
+
+        # A distilled fact is dated by its most recent restatement, which it names with its document.
+        facts = dict(rows("Fact"))
+        assert (facts[talks]["latest_fact_id"], facts[talks]["latest_document_id"], facts[talks]["at"]) == (
+            restated,
+            notes,
+            "2026-09-25T09:00:00Z",
+        )
+        assert (facts[part_two]["latest_fact_id"], facts[part_two]["at"]) == (in_b, "2026-09-24T18:03:00Z")
+        assert {p["origin"] for p in facts.values()} == {"derived"}
 
     def test_dropping_a_model_drops_its_distilled_fact_table(self, db: Session) -> None:
         from garage_rag.db.emb_tables import drop_model
@@ -1652,8 +1763,8 @@ class TestDistilledFacts:
 
     def test_the_graph_walk_measures_neighbours_against_the_center(self, db: Session) -> None:
         """vector_closeness, which ranks a crowded vertex's neighbours: each kind's vector against the
-        center's, a document by the mean of its chunks', a fact by its distilled vector, and nothing
-        for an author. Needs no AGE."""
+        center's, a document and a message by the mean of their chunks', a fact by its distilled vector,
+        and nothing for an author. Needs no AGE."""
         from garage_rag.db.emb_tables import set_default_model
         from garage_rag.db.graph import GraphVertex, vector_closeness
 
@@ -1667,10 +1778,11 @@ class TestDistilledFacts:
         distilled = db.execute(text("SELECT id FROM distilled_facts")).scalar_one()
 
         def chunk(document_id: int, ord: int, vector: list[float] | None) -> int:
+            """One message of its own (each starts with a stamp), so its id is the message's."""
             chunk_id = db.execute(
                 text(
-                    "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker) "
-                    "VALUES (:d, :o, 'x', :s, 't') RETURNING id"
+                    "INSERT INTO chunks (document_id, ord, text, chunk_sha256, chunker, direction, sender) "
+                    "VALUES (:d, :o, '[2026-09-24 18:02 UTC] Me: x', :s, 't', 'sent', 'me') RETURNING id"
                 ),
                 {"d": document_id, "o": ord, "s": bytes([ord])},
             ).scalar_one()
@@ -1689,11 +1801,11 @@ class TestDistilledFacts:
 
         found = vector_closeness(
             db,
-            vertex(1, "Chunk", center, "chunk_id"),
+            vertex(1, "Message", center, "message_id"),
             [
-                vertex(2, "Chunk", near, "chunk_id"),
-                vertex(3, "Chunk", far, "chunk_id"),
-                vertex(4, "Chunk", unembedded, "chunk_id"),
+                vertex(2, "Message", near, "message_id"),
+                vertex(3, "Message", far, "message_id"),
+                vertex(4, "Message", unembedded, "message_id"),
                 vertex(5, "Fact", distilled, "distilled_fact_id"),
                 vertex(6, "Document", other, "document_id"),
                 vertex(7, "Author", 1, "author_id"),
@@ -1702,9 +1814,11 @@ class TestDistilledFacts:
         assert set(found) == {2, 3, 5, 6}
         assert found[5] < found[2] < found[6] < found[3]
         # A center with no vector ranks nothing.
-        assert vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "Chunk", near, "chunk_id")]) == {}
+        assert (
+            vector_closeness(db, vertex(9, "Author", 1, "author_id"), [vertex(2, "Message", near, "message_id")]) == {}
+        )
 
-    def test_the_graph_projects_documents_chunks_authors_and_distilled_facts(self, db: Session) -> None:
+    def test_the_graph_projects_documents_authors_and_distilled_facts(self, db: Session) -> None:
         from garage_rag.db.graph import age_available, rebuild_graph, use_age
 
         if not age_available(db):
@@ -1726,9 +1840,18 @@ class TestDistilledFacts:
         self._run(db, model)
 
         summary = rebuild_graph(db)
-        assert summary.vertices == {"Document": 1, "Chunk": 1, "Author": 1, "Fact": 1}
+        # The chunk is no vertex: chunks are how text is embedded, not something the graph names.
+        assert summary.vertices == {"Document": 1, "Message": 0, "Author": 1, "Link": 0, "Fact": 1}
         # The document states the claim twice and the graph shows it once: one STATES edge.
-        assert summary.edges == {"HAS_CHUNK": 1, "WROTE": 1, "RECEIVED": 0, "STATES": 1}
+        assert summary.edges == {
+            "HAS_MESSAGE": 0,
+            "WROTE": 1,
+            "RECEIVED": 0,
+            "SENT": 0,
+            "STATES": 1,
+            "LINKS_TO": 0,
+            "REFERS_TO": 0,
+        }
         # Re-projecting replaces the graph rather than adding to it.
         assert rebuild_graph(db).vertices == summary.vertices
 
@@ -1736,7 +1859,7 @@ class TestDistilledFacts:
         rows = (
             db.connection()
             .exec_driver_sql(
-                "SELECT name::text, statement::text FROM ag_catalog.cypher('garage', $$ "
+                "SELECT name::text, statement::text, statements::text FROM ag_catalog.cypher('garage', $$ "
                 "MATCH (a:Author)-[:WROTE]->(:Document)-[s:STATES]->(f:Fact) "
                 "RETURN a.display_name, f.statement, s.statements $$) "
                 "AS (name ag_catalog.agtype, statement ag_catalog.agtype, statements ag_catalog.agtype)"
@@ -1769,7 +1892,7 @@ class TestDistilledFacts:
 
         labels = graph_labels(db)
         assert labels.available
-        assert labels.vertices == {"Author": 1, "Chunk": 0, "Document": 2, "Fact": 1}
+        assert labels.vertices == {"Author": 1, "Document": 2, "Fact": 1, "Link": 0, "Message": 0}
         assert labels.edges["STATES"] == 2
 
         found = find_vertices(db, "ada")
@@ -1815,6 +1938,53 @@ class TestDistilledFacts:
         authors = find_vertices(db, "", label="Author")
         assert [v.key for v in authors] == [owner, author]
         assert authors[0].properties["is_self"] is True
+
+    def test_a_document_lists_its_links_and_a_raw_query_reads_the_graph(self, db: Session) -> None:
+        """The Documents page's Linked view and the Query page, over real AGE."""
+        from garage_rag.db.graph import age_available, document_links, rebuild_graph, run_query
+
+        if not age_available(db):
+            pytest.skip("this server has no Apache AGE")
+        model = self._setup(db)
+        message = "[2026-09-24 18:02 UTC] Me: the roof https://example.com/roof"
+        thread = _document(db, self._source_id, "thread", f"Crew\n\n{message}", corpus_class="communication")
+        chunk = db.execute(
+            text(
+                "INSERT INTO chunks (document_id, ord, text, char_start, char_end, chunk_sha256, chunker, direction, "
+                "sender) VALUES (:d, 0, :t, 6, :e, :h, 'messages', 'sent', 'me') RETURNING id"
+            ),
+            {"d": thread, "t": message, "e": 6 + len(message), "h": b"m"},
+        ).scalar_one()
+        stated = self._fact(db, model, thread, "The roof is slate.", self._direction(0))
+        db.execute(text("UPDATE facts SET char_start = 33, char_end = 41 WHERE id = :id"), {"id": stated})
+        # Another document states the same thing; the walk stops at the shared fact.
+        other = self._doc(db)
+        self._fact(db, model, other, "Slate covers the roof.", self._direction(3))
+        db.flush()
+        self._run(db, model)
+        rebuild_graph(db)
+
+        links = document_links(db, thread)
+        assert links.center is not None and links.center.key == thread
+        distilled = db.execute(text("SELECT distilled_fact_id FROM facts WHERE id = :id"), {"id": stated}).scalar_one()
+        by_label = sorted((v.label, v.key) for v in links.vertices[1:])
+        assert ("Message", chunk) in by_label and ("Fact", distilled) in by_label
+        assert {label for label, _ in by_label} == {"Message", "Link", "Fact"}
+        # The other document stating the same claim is a stop, not walked: its own statements stay out.
+        assert other not in {key for label, key in by_label if label == "Document"}
+        assert "STATES" in {e.label for e in links.edges} and "LINKS_TO" in {e.label for e in links.edges}
+        with pytest.raises(LookupError):
+            document_links(db, thread + 1000)
+
+        result = run_query(db, "MATCH (d:Document)-[:HAS_MESSAGE]->(m:Message) RETURN d.title AS title, m;")
+        assert result.columns == ["title", "m"]
+        [[title, vertex]] = result.rows
+        assert title.text.strip('"') == "thread"
+        assert vertex.vertex is not None and (vertex.vertex.label, vertex.vertex.key) == ("Message", chunk)
+        assert run_query(db, "MATCH (n) RETURN n", limit=1).truncated
+        # Read only: a write fails rather than change the projection.
+        with pytest.raises(ValueError, match="read-only"):
+            run_query(db, "CREATE (n:Scratch {x: 1}) RETURN n")
 
     def test_naming_the_owner_marks_their_author_vertex_without_a_rebuild(self, db: Session) -> None:
         from garage_rag.attribute.resolver import ensure_self_author

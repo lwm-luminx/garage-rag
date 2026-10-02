@@ -5,20 +5,24 @@ import proto_garage_proto_swift
 public struct GraphVertexItem: Identifiable, Hashable, Sendable {
     /// The graph id: unique across labels, and what edges refer to.
     public let id: Int64
-    /// Document, Chunk, Author, Fact, ...
+    /// Document, Message, Author, Link, Fact, ...
     public let label: String
     /// The relational id (documents.id, distilled_facts.id, ...); nil for a label without one.
     public let key: Int64?
     /// What to call it: the title, name or statement.
     public let title: String
     public let propertiesJSON: String
+    /// "read" from a source (a document, a message, an author, a link) or "derived" from what was
+    /// read (distilled facts, configured classes).
+    public let origin: String
 
-    public init(id: Int64, label: String, key: Int64?, title: String, propertiesJSON: String = "") {
+    public init(id: Int64, label: String, key: Int64?, title: String, propertiesJSON: String = "", origin: String = "") {
         self.id = id
         self.label = label
         self.key = key
         self.title = title
         self.propertiesJSON = propertiesJSON
+        self.origin = origin.isEmpty ? Self.origin(of: label) : origin
     }
 
     public init(proto: Garage_GraphVertex) {
@@ -27,8 +31,33 @@ public struct GraphVertexItem: Identifiable, Hashable, Sendable {
             label: proto.label,
             key: proto.key == 0 ? nil : proto.key,
             title: proto.title,
-            propertiesJSON: proto.propertiesJson
+            propertiesJSON: proto.propertiesJson,
+            origin: proto.origin
         )
+    }
+
+    /// The labels read from a source; every other label is derived. The server says which for each
+    /// vertex; this is for one built by hand or by an older server.
+    public static let readLabels: Set<String> = ["Document", "Message", "Author", "Link"]
+
+    public static func origin(of label: String) -> String {
+        readLabels.contains(label) ? "read" : "derived"
+    }
+
+    /// Whether this vertex was read from a source rather than derived from one.
+    public var isRead: Bool { origin == "read" }
+
+    /// When the element happened (ISO 8601, UTC): a document's or message's own time, and a fact's
+    /// most recent restatement's. Nil for a vertex with none (an author, a link).
+    public var occurredAt: String? {
+        let value = properties.first { $0.key == "at" }?.value ?? ""
+        return value.isEmpty ? nil : value
+    }
+
+    /// A link's target, which a Link vertex carries.
+    public var href: String? {
+        guard label == "Link" else { return nil }
+        return properties.first { $0.key == "href" }?.value
     }
 
     /// The properties, sorted by key, values rendered as text.
@@ -37,7 +66,7 @@ public struct GraphVertexItem: Identifiable, Hashable, Sendable {
     }
 
     /// The document behind this vertex: itself for a Document, the containing document for a
-    /// Chunk (it carries `document_id`), nothing otherwise.
+    /// Message (it carries `document_id`), nothing otherwise.
     public var documentID: Int64? {
         if label == "Document" {
             return key
@@ -57,7 +86,7 @@ public struct GraphVertexItem: Identifiable, Hashable, Sendable {
 /// One edge between two vertices' graph ids.
 public struct GraphEdgeItem: Identifiable, Hashable, Sendable {
     public let id: Int64
-    /// HAS_CHUNK, WROTE, RECEIVED, STATES, ...
+    /// HAS_MESSAGE, WROTE, RECEIVED, SENT, STATES, LINKS_TO, ...
     public let label: String
     public let sourceID: Int64
     public let targetID: Int64
@@ -242,5 +271,75 @@ public struct GraphFocus: Equatable, Sendable {
     public init(label: String, key: Int64) {
         self.label = label
         self.key = key
+    }
+}
+
+/// One value of a Query page result: its agtype text, and the vertex it is when it is one.
+public struct GraphQueryCell: Hashable, Sendable {
+    public let text: String
+    public let vertex: GraphVertexItem?
+
+    public init(text: String, vertex: GraphVertexItem? = nil) {
+        self.text = text
+        self.vertex = vertex
+    }
+
+    public init(proto: Garage_GraphQueryCell) {
+        self.init(text: proto.text, vertex: proto.hasVertex ? GraphVertexItem(proto: proto.vertex) : nil)
+    }
+
+    /// The value as it reads in a table: a vertex by its title, a string without its JSON quotes.
+    public var display: String {
+        if let vertex {
+            return vertex.title
+        }
+        if text.count >= 2, text.hasPrefix("\""), text.hasSuffix("\""),
+           let data = text.data(using: .utf8),
+           let string = try? JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed]) as? String {
+            return string
+        }
+        return text
+    }
+}
+
+/// One row of a Query page result.
+public struct GraphQueryRow: Identifiable, Hashable, Sendable {
+    public let id: Int
+    public let cells: [GraphQueryCell]
+
+    public init(id: Int, cells: [GraphQueryCell]) {
+        self.id = id
+        self.cells = cells
+    }
+}
+
+/// What a raw openCypher query returned, or `available == false` where there is no graph.
+public struct GraphQueryResult: Equatable, Sendable {
+    public let available: Bool
+    public let columns: [String]
+    public let rows: [GraphQueryRow]
+    /// More rows than the limit.
+    public let truncated: Bool
+    public let elapsedMilliseconds: Double
+
+    public init(available: Bool, columns: [String] = [], rows: [GraphQueryRow] = [], truncated: Bool = false,
+                elapsedMilliseconds: Double = 0) {
+        self.available = available
+        self.columns = columns
+        self.rows = rows
+        self.truncated = truncated
+        self.elapsedMilliseconds = elapsedMilliseconds
+    }
+
+    public init(response: Garage_GraphQueryResponse) {
+        self.init(
+            available: response.available,
+            columns: response.columns,
+            rows: response.rows.enumerated().map { index, row in
+                GraphQueryRow(id: index, cells: row.cells.map { GraphQueryCell(proto: $0) })
+            },
+            truncated: response.truncated,
+            elapsedMilliseconds: response.elapsedMs
+        )
     }
 }

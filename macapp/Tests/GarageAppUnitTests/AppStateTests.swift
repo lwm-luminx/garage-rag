@@ -26,6 +26,7 @@ final class AppStateTests: XCTestCase {
         XCTAssertNil(AppState.ownerNameToRecord(configured: nil, accountName: "  "))
     }
 
+    @MainActor
     func testStatusSummaryMapping() {
         let state = AppState()
 

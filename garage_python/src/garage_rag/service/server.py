@@ -43,6 +43,7 @@ from garage_rag.proto.garage_pb2 import (
     DocumentChunkInfo,
     DocumentDetail,
     DocumentFactInfo,
+    DocumentLinksRequest,
     DocumentSummary,
     DropModelRequest,
     DropModelResponse,
@@ -72,6 +73,10 @@ from garage_rag.proto.garage_pb2 import (
     GraphLabelsResponse,
     GraphNeighborhoodRequest,
     GraphNeighborhoodResponse,
+    GraphQueryCell,
+    GraphQueryRequest,
+    GraphQueryResponse,
+    GraphQueryRow,
     GraphVertex,
     ImportSourcesToConfigRequest,
     ImportSourcesToConfigResponse,
@@ -319,12 +324,39 @@ def _config_change[**P, R](handler: Callable[P, R]) -> Callable[P, R]:
 
 def _graph_vertex(vertex: Any) -> GraphVertex:
     """A db.graph.GraphVertex as its proto."""
+    from garage_rag.db.graph import origin
+
     return GraphVertex(
         id=vertex.id,
         label=vertex.label,
         key=vertex.key,
         title=vertex.title,
         properties_json=json.dumps(vertex.properties, sort_keys=True),
+        origin=origin(vertex.label),
+    )
+
+
+def _graph_edge(edge: Any) -> GraphEdge:
+    """A db.graph.GraphEdge as its proto."""
+    return GraphEdge(
+        id=edge.id,
+        label=edge.label,
+        source_id=edge.source_id,
+        target_id=edge.target_id,
+        properties_json=json.dumps(edge.properties, sort_keys=True),
+    )
+
+
+def _neighborhood_response(result: Any) -> GraphNeighborhoodResponse:
+    """A db.graph.Neighborhood as its proto; unavailable when it has no center."""
+    if not result.available or result.center is None:
+        return GraphNeighborhoodResponse(available=False)
+    return GraphNeighborhoodResponse(
+        available=True,
+        center=_graph_vertex(result.center),
+        vertices=[_graph_vertex(v) for v in result.vertices],
+        edges=[_graph_edge(e) for e in result.edges],
+        truncated=result.truncated,
     )
 
 
@@ -445,11 +477,12 @@ class GarageRpcServicer(GarageServiceServicer):
 
     @_grpc_errors
     def ListDocuments(self, request: ListDocumentsRequest, context: grpc.ServicerContext) -> ListDocumentsResponse:
-        """List documents, optionally filtered by source/class/trust/query."""
-        from sqlalchemy import func, or_
+        """List documents, most recent first, optionally filtered by source/class/trust/query."""
+        from sqlalchemy import func, literal_column, or_
 
         from garage_rag.db.engine import session_scope
         from garage_rag.db.models import Chunk, Document, Fact, Source
+        from garage_rag.db.recency import document_time_sql
 
         with session_scope() as session:
             query = session.query(Document).join(Source, Document.source_id == Source.id)
@@ -468,9 +501,14 @@ class GarageRpcServicer(GarageServiceServicer):
 
             limit = request.limit or 100
             offset = max(request.offset, 0)
-            documents = (
-                query.order_by(Document.ingested_at.desc(), Document.id.desc()).offset(offset).limit(limit).all()
-            )
+            # Most recent first, by when each element happened rather than when it was ingested.
+            happened = literal_column(document_time_sql(Document.__tablename__))
+            rows = query.add_columns(happened).order_by(happened.desc(), Document.id.desc()).offset(offset).limit(limit)
+            documents = []
+            occurred: dict[int, str] = {}
+            for document, at in rows.all():
+                documents.append(document)
+                occurred[document.id] = at.isoformat() if at else ""
 
             doc_ids = [d.id for d in documents]
             chunk_counts: dict[int, int] = {}
@@ -479,7 +517,7 @@ class GarageRpcServicer(GarageServiceServicer):
             if doc_ids:
                 chunk_counts = dict(
                     session.query(Chunk.document_id, func.count(Chunk.id))
-                    .filter(Chunk.document_id.in_(doc_ids))
+                    .filter(Chunk.document_id.in_(doc_ids), Chunk.fact_id.is_(None))
                     .group_by(Chunk.document_id)
                     .all()
                 )
@@ -511,6 +549,7 @@ class GarageRpcServicer(GarageServiceServicer):
                     state=str(d.state),
                     ingested_at=d.ingested_at.isoformat() if d.ingested_at else "",
                     fact_count=fact_counts.get(d.id, 0),
+                    occurred_at=occurred.get(d.id, ""),
                 )
                 for d in documents
             ]
@@ -523,9 +562,12 @@ class GarageRpcServicer(GarageServiceServicer):
 
     @_grpc_errors
     def GetDocument(self, request: GetDocumentRequest, context: grpc.ServicerContext) -> GetDocumentResponse:
-        """Fetch a single document's metadata and its chunks."""
+        """Fetch a single document's metadata, text, content chunks and facts."""
+        from sqlalchemy import text
+
         from garage_rag.db.engine import session_scope
         from garage_rag.db.models import Chunk, Document, Fact, Source
+        from garage_rag.db.recency import document_time_sql
 
         with session_scope() as session:
             document = session.get(Document, request.document_id)
@@ -534,7 +576,16 @@ class GarageRpcServicer(GarageServiceServicer):
 
             source = session.get(Source, document.source_id)
 
-            chunks = session.query(Chunk).filter(Chunk.document_id == document.id).order_by(Chunk.ord.asc()).all()
+            # Content chunks only: a fact's own chunk (chunks.fact_id) is how it is embedded, not document text.
+            chunks = (
+                session.query(Chunk)
+                .filter(Chunk.document_id == document.id, Chunk.fact_id.is_(None))
+                .order_by(Chunk.ord.asc())
+                .all()
+            )
+            occurred_at = session.execute(
+                text(f"SELECT {document_time_sql('d')} FROM documents d WHERE d.id = :id"), {"id": document.id}
+            ).scalar()
 
             facts = session.query(Fact).filter(Fact.document_id == document.id).order_by(Fact.ord.asc()).all()
 
@@ -565,6 +616,9 @@ class GarageRpcServicer(GarageServiceServicer):
                 error=document.error or "",
                 ingested_at=document.ingested_at.isoformat() if document.ingested_at else "",
                 authors=authors,
+                content=document.content or "",
+                has_content=document.content is not None,
+                occurred_at=occurred_at.isoformat() if occurred_at else "",
             )
 
             proto_chunks = [
@@ -732,23 +786,40 @@ class GarageRpcServicer(GarageServiceServicer):
             edge_labels=list(request.edge_labels) if request.filter_edge_labels or request.edge_labels else None,
             limit=request.limit or 200,
         )
-        if not result.available or result.center is None:
-            return GraphNeighborhoodResponse(available=False)
-        return GraphNeighborhoodResponse(
+        return _neighborhood_response(result)
+
+    @_grpc_errors
+    def GetDocumentLinks(
+        self, request: DocumentLinksRequest, context: grpc.ServicerContext
+    ) -> GraphNeighborhoodResponse:
+        """Everything in the graph linked to one document, for the Documents page's Linked view."""
+        from garage_rag.ops.graph import document_links
+
+        return _neighborhood_response(document_links(request.document_id, limit=request.limit or 2000))
+
+    @_config_change
+    @_grpc_errors
+    def RunGraphQuery(self, request: GraphQueryRequest, context: grpc.ServicerContext) -> GraphQueryResponse:
+        """One read-only openCypher query on the graph, for the Query page."""
+        from garage_rag.ops.graph import run_query
+
+        started = time.monotonic()
+        result = run_query(request.query, limit=request.limit or 500)
+        if not result.available:
+            return GraphQueryResponse(available=False)
+        return GraphQueryResponse(
             available=True,
-            center=_graph_vertex(result.center),
-            vertices=[_graph_vertex(v) for v in result.vertices],
-            edges=[
-                GraphEdge(
-                    id=e.id,
-                    label=e.label,
-                    source_id=e.source_id,
-                    target_id=e.target_id,
-                    properties_json=json.dumps(e.properties, sort_keys=True),
+            columns=result.columns,
+            rows=[
+                GraphQueryRow(
+                    cells=[
+                        GraphQueryCell(text=c.text, vertex=_graph_vertex(c.vertex) if c.vertex else None) for c in row
+                    ]
                 )
-                for e in result.edges
+                for row in result.rows
             ],
             truncated=result.truncated,
+            elapsed_ms=(time.monotonic() - started) * 1000,
         )
 
     # -----------------------------------------------------------------------

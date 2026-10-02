@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -21,8 +21,12 @@ from garage_rag.db.graph import (
     find_vertex,
     graph_labels,
     label_from_relation,
+    most_recent_first,
     neighborhood,
     parse_properties,
+    query_cell,
+    return_columns,
+    run_query,
     vertex_title,
 )
 
@@ -45,7 +49,9 @@ def test_agtype_maps_parse_as_json_and_survive_numeric_suffixes():
     [
         ("Document", {"title": "House notes", "uri": "/a/b.md"}, "House notes"),
         ("Document", {"title": "", "uri": "/a/b.md"}, "b.md"),
-        ("Chunk", {"chunk_id": 3, "ord": 2}, "Chunk 2"),
+        ("Message", {"message_id": 3, "text": "[2026-09-24 18:02 UTC] Me: hi"}, "[2026-09-24 18:02 UTC] Me: hi"),
+        ("Link", {"link_id": -4, "href": "https://example.com", "text": "Example"}, "Example"),
+        ("Link", {"link_id": -4, "href": "https://example.com"}, "https://example.com"),
         ("Author", {"display_name": "Ada"}, "Ada"),
         ("Fact", {"statement": " The roof is slate. "}, "The roof is slate."),
         ("Thing", {"thing_id": 9}, "Thing"),
@@ -129,17 +135,17 @@ class FakeGraph:
 
 @pytest.fixture
 def graph() -> FakeGraph:
-    """Ada wrote a document of two chunks, which states two facts; a second document states one of them."""
+    """Ada wrote a thread of two messages, which states two facts; a second document states one of them."""
     g = FakeGraph()
     g.vertices[1] = ("Document", {"document_id": 10, "title": "House", "uri": "/h.md"})
-    g.vertices[2] = ("Chunk", {"chunk_id": 20, "document_id": 10, "ord": 0})
-    g.vertices[3] = ("Chunk", {"chunk_id": 21, "document_id": 10, "ord": 1})
+    g.vertices[2] = ("Message", {"message_id": 20, "document_id": 10, "ord": 0})
+    g.vertices[3] = ("Message", {"message_id": 21, "document_id": 10, "ord": 1})
     g.vertices[4] = ("Author", {"author_id": 30, "display_name": "Ada", "is_self": True})
     g.vertices[5] = ("Fact", {"distilled_fact_id": 50, "statement": "The roof is slate."})
     g.vertices[6] = ("Fact", {"distilled_fact_id": 51, "statement": "The roof was replaced in 2019."})
     g.vertices[7] = ("Document", {"document_id": 11, "title": "Survey", "uri": "/s.md"})
-    g.edges[100] = ("HAS_CHUNK", 1, 2, {"ord": 0})
-    g.edges[101] = ("HAS_CHUNK", 1, 3, {"ord": 1})
+    g.edges[100] = ("HAS_MESSAGE", 1, 2, {"ord": 0})
+    g.edges[101] = ("HAS_MESSAGE", 1, 3, {"ord": 1})
     g.edges[102] = ("WROTE", 4, 1, {"role": "author", "confidence": 0.9})
     g.edges[103] = ("STATES", 1, 5, {"char_start": 0, "char_end": 18, "similarity": 0.97, "statements": 2})
     g.edges[104] = ("STATES", 1, 6, {"statements": 1})
@@ -150,8 +156,8 @@ def graph() -> FakeGraph:
 def test_labels_are_counted(graph: FakeGraph):
     labels = graph_labels(graph.session())
     assert labels.available
-    assert labels.vertices == {"Author": 1, "Chunk": 2, "Document": 2, "Fact": 2}
-    assert labels.edges == {"HAS_CHUNK": 2, "STATES": 3, "WROTE": 1}
+    assert labels.vertices == {"Author": 1, "Document": 2, "Fact": 2, "Message": 2}
+    assert labels.edges == {"HAS_MESSAGE": 2, "STATES": 3, "WROTE": 1}
 
 
 def test_without_age_nothing_is_available(graph: FakeGraph):
@@ -277,7 +283,7 @@ def test_edges_rank_by_what_they_say_about_a_claim():
 
     ranked = sorted(
         [
-            edge(1, "HAS_CHUNK", ord=0),
+            edge(1, "HAS_MESSAGE", ord=0),
             edge(2, "WROTE", role="committer", confidence=0.9),
             edge(3, "WROTE", role="author", confidence=0.9),
             edge(4, "STATES", char_start=40),
@@ -288,3 +294,68 @@ def test_edges_rank_by_what_they_say_about_a_claim():
         key=edge_rank,
     )
     assert [e.id for e in ranked] == [8, 6, 5, 4, 3, 2, 1]
+
+
+@pytest.mark.parametrize(
+    ("query", "columns"),
+    [
+        ("MATCH (d:Document) RETURN d.title AS title, count(*) ORDER BY title LIMIT 5", ["title", "count(*)"]),
+        ("MATCH (n) RETURN DISTINCT n", ["n"]),
+        ("MATCH (n) RETURN {a: 1, b: [1, 2]} AS m, n.x", ["m", "n.x"]),
+        ("MATCH (n) WHERE n.t = 'RETURN a, b' RETURN n SKIP 1", ["n"]),
+        ("MATCH (n:Fact) RETURN n UNION MATCH (n:PotentialFact) RETURN n", ["n"]),
+        ("MATCH (n) // RETURN a, b\nRETURN n.`odd name` AS `odd name`", ["odd name"]),
+        ("MATCH (n) WITH n, [x IN range(1, 3) | x] AS xs RETURN n, xs", ["n", "xs"]),
+    ],
+)
+def test_the_columns_a_query_returns_are_named_from_its_last_return(query, columns):
+    assert return_columns(query) == columns
+
+
+@pytest.mark.parametrize("query", ["MATCH (n) RETURN *", "MATCH (n) SET n.x = 1", "MATCH (n) RETURN n, "])
+def test_a_query_whose_columns_cannot_be_known_is_refused(query):
+    with pytest.raises(ValueError):
+        return_columns(query)
+
+
+def test_a_vertex_value_is_a_cell_the_page_can_open():
+    cell = query_cell(
+        '{"id": 844424930131969, "label": "Document", "properties": {"document_id": 3, "title": "x"}}::vertex'
+    )
+    assert cell.vertex == GraphVertex(844424930131969, "Document", 3, "x", {"document_id": 3, "title": "x"})
+    assert query_cell('"plain"').vertex is None
+    assert query_cell(None).text == "null"
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "RETURN pg_catalog.pg_read_file('PG_VERSION'::text) AS v",
+        "MATCH (n) RETURN public . f(n) AS x",
+        "RETURN `pg_catalog`.pg_read_file('PG_VERSION'::text) AS v",
+        "RETURN pg_catalog.`pg_read_file`('PG_VERSION'::text) AS v",
+        "RETURN pg_catalog.query_to_xml('select 1'::text, true, true, ''::text) AS x",
+    ],
+)
+def test_a_query_cannot_call_a_postgres_function(query):
+    with pytest.raises(ValueError, match="schema-qualified"):
+        run_query(MagicMock(), query)
+
+
+def test_property_access_and_quoted_dots_are_not_function_calls():
+    session = MagicMock()
+    with patch("garage_rag.db.graph.graph_exists", return_value=False):
+        assert not run_query(session, "MATCH (n) WHERE n.title = 'a.b(c)' RETURN toLower(n.title) AS t").available
+
+
+def test_a_query_cannot_close_its_own_quote():
+    with pytest.raises(ValueError, match="garage_cypher"):
+        run_query(MagicMock(), "MATCH (n) RETURN n $garage_cypher$; DROP TABLE documents; --")
+
+
+def test_most_recent_first_puts_dated_vertices_newest_first_then_the_rest_by_id():
+    def v(gid: int, key: int, at: str | None = None) -> GraphVertex:
+        return GraphVertex(gid, "Fact", key, "", {"at": at} if at else {})
+
+    ordered = most_recent_first([v(1, 1, "2026-01-01T00:00:00Z"), v(2, 2), v(3, 3, "2026-05-01T00:00:00Z"), v(4, 4)])
+    assert [x.id for x in ordered] == [3, 1, 4, 2]

@@ -11,22 +11,22 @@ final class GraphLayoutTests: XCTestCase {
         GraphEdgeItem(id: id, label: label, sourceID: source, targetID: target)
     }
 
-    /// A document with two chunks, an author and a fact, and another document stating the fact two hops away.
+    /// A thread with two messages, an author and a fact, and another document stating the fact two hops away.
     private var sample: GraphNeighborhood {
         GraphNeighborhood(
             available: true,
             center: vertex(1, "Document", title: "House"),
             vertices: [
                 vertex(1, "Document", title: "House"),
-                vertex(2, "Chunk", title: "Chunk 0"),
-                vertex(3, "Chunk", title: "Chunk 1"),
+                vertex(2, "Message", title: "[2026-09-24 18:02 UTC] Me: hi"),
+                vertex(3, "Message", title: "[2026-09-24 18:03 UTC] Ada: hello"),
                 vertex(4, "Author", title: "Ada"),
                 vertex(5, "Fact", title: "The roof is slate."),
                 vertex(7, "Document", title: "Barn"),
             ],
             edges: [
-                edge(100, 1, 2, "HAS_CHUNK"),
-                edge(101, 1, 3, "HAS_CHUNK"),
+                edge(100, 1, 2, "HAS_MESSAGE"),
+                edge(101, 1, 3, "HAS_MESSAGE"),
                 edge(102, 4, 1, "WROTE"),
                 edge(103, 1, 5, "STATES"),
                 edge(105, 7, 5),
@@ -56,8 +56,8 @@ final class GraphLayoutTests: XCTestCase {
 
     func testTheFirstRingIsEvenlySpacedWithLikeLabelsTogether() {
         let layout = GraphLayout(neighborhood: sample, size: size)
-        // Sorted by label then title: Author, Chunk 0, Chunk 1, Fact; a quarter turn apart from the top.
-        let angles = [4, 2, 3, 5].map { angle(layout.positions[$0]!, from: layout.origin) }
+        // Sorted by label then title: Author, Fact, then the two messages; a quarter turn apart from the top.
+        let angles = [4, 5, 2, 3].map { angle(layout.positions[$0]!, from: layout.origin) }
         XCTAssertEqual(angles[0], -.pi / 2, accuracy: 0.001)
         for i in 1..<angles.count {
             XCTAssertEqual(angles[i] - angles[i - 1], .pi / 2, accuracy: 0.001)

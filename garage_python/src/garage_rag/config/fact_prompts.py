@@ -47,10 +47,12 @@ VERTEX_LABEL_PATTERN = r"^[A-Z][A-Za-z0-9]{0,62}$"
 EDGE_LABEL_PATTERN = r"^[A-Z][A-Z0-9_]{0,62}$"
 ATTRIBUTE_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]{0,62}$"
 CLASS_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}$"
-# The projection's own labels (garage_rag.db.graph), and the retired PotentialFact, RESTATES and SUPPORTS,
-# which configuration may not take.
-BUILTIN_VERTEX_LABELS = frozenset({"Document", "Chunk", "Author", "PotentialFact", "Fact"})
-BUILTIN_EDGE_LABELS = frozenset({"HAS_CHUNK", "WROTE", "RECEIVED", "STATES", "RESTATES", "SUPPORTS"})
+# The projection's own labels (garage_rag.db.graph), and the retired Chunk, HAS_CHUNK, PotentialFact,
+# RESTATES and SUPPORTS, which configuration may not take.
+BUILTIN_VERTEX_LABELS = frozenset({"Document", "Message", "Author", "Link", "Fact", "Chunk", "PotentialFact"})
+BUILTIN_EDGE_LABELS = frozenset(
+    {"HAS_MESSAGE", "WROTE", "RECEIVED", "SENT", "STATES", "LINKS_TO", "REFERS_TO", "HAS_CHUNK", "RESTATES", "SUPPORTS"}
+)
 
 
 class FactExtractionExample(BaseModel):

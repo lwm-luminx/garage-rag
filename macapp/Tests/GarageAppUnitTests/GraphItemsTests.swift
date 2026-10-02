@@ -34,10 +34,11 @@ final class GraphItemsTests: XCTestCase {
         XCTAssertNil(GraphVertexItem(proto: vertex(2, "Entity")).key)
     }
 
-    func testAChunkPointsAtItsDocumentAndAnAuthorAtNone() {
-        let chunk = GraphVertexItem(proto: vertex(5, "Chunk", key: 40, properties: #"{"chunk_id": 40, "document_id": 10}"#))
-        XCTAssertEqual(chunk.documentID, 10)
-        XCTAssertEqual(chunk.documentURI, "")
+    func testAMessagePointsAtItsThreadAndAnAuthorAtNone() {
+        let message = GraphVertexItem(proto: vertex(5, "Message", key: 40, properties: #"{"message_id": 40, "document_id": 10}"#))
+        XCTAssertEqual(message.documentID, 10)
+        XCTAssertEqual(message.documentURI, "")
+        XCTAssertTrue(message.isRead)
         let author = GraphVertexItem(proto: vertex(4, "Author", key: 30, properties: #"{"author_id": 30, "is_self": true}"#))
         XCTAssertNil(author.documentID)
         XCTAssertEqual(author.properties, [GraphProperty(key: "author_id", value: "30"), GraphProperty(key: "is_self", value: "true")])

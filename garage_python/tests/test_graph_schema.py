@@ -11,7 +11,7 @@ from garage_rag.config.fact_prompts import (
     graph_schema,
     validate_prompt_list,
 )
-from garage_rag.db.graph import EDGES, VERTICES, projection
+from garage_rag.db.graph import EDGE_LABELS, EDGES, PARAMS, VERTICES, projection
 
 EXAMPLES = [{"text": "Jane Doe works at Acme.", "extractions": [{"class": "person", "text": "Jane Doe"}]}]
 
@@ -137,15 +137,19 @@ def test_the_projection_moves_a_configured_class_out_of_fact() -> None:
     labels = [v.label for v in vertices]
     assert labels == [*VERTICES, "Person", "Organization"]
     fact = next(v for v in vertices if v.label == "Fact")
-    assert fact.params == {"mapped": ["organization", "person"]}
+    assert fact.params == {**PARAMS, "mapped": ["organization", "person"]}
     states = [(e.source, e.target, e.params.get("cls")) for e in edges if e.label == "STATES"]
+    # A claim is stated by a document, or by the message in a thread its statement came from.
     assert states == [
         ("Document", "Fact", None),
+        ("Message", "Fact", None),
         ("Document", "Person", "person"),
+        ("Message", "Person", "person"),
         ("Document", "Organization", "organization"),
+        ("Message", "Organization", "organization"),
     ]
-    assert next(e for e in edges if e.label == "STATES").params == {"mapped": ["organization", "person"]}
-    relation = [(e.label, e.source, e.target) for e in edges if e.label not in EDGES]
+    assert next(e for e in edges if e.label == "STATES").params == {**PARAMS, "mapped": ["organization", "person"]}
+    relation = [(e.label, e.source, e.target) for e in edges if e.label not in EDGE_LABELS]
     assert relation == [
         ("WORKS_AT", "Person", "Organization"),
         ("MEMBER_OF", "Person", "Organization"),
@@ -156,8 +160,9 @@ def test_the_projection_moves_a_configured_class_out_of_fact() -> None:
 def test_with_no_graph_blocks_the_projection_is_the_built_in_one() -> None:
     vertices, edges = projection(graph_schema(effective_prompts([])))
     assert [v.label for v in vertices] == list(VERTICES)
-    assert [e.label for e in edges] == list(EDGES)
-    assert all(not v.params for v in vertices) and all(not e.params for e in edges)
+    assert [(e.label, e.source, e.target) for e in edges] == [(label, s, t) for label, s, t, _ in EDGES]
+    # Built-in sets bind only the message stamp and the link patterns.
+    assert all(v.params == PARAMS for v in vertices) and all(e.params == PARAMS for e in edges)
 
 
 def test_a_configured_label_is_titled_and_keyed_like_a_distilled_fact() -> None:
@@ -165,5 +170,5 @@ def test_a_configured_label_is_titled_and_keyed_like_a_distilled_fact() -> None:
 
     assert (title_property("Person"), key_property("Person")) == ("title", "distilled_fact_id")
     assert (title_property("Author"), key_property("Author")) == ("display_name", "author_id")
-    assert title_property("Chunk") is None
+    assert title_property("Message") == title_property("Link") == "text"
     assert vertex_title("Person", {"distilled_fact_id": 4, "title": "Jane Doe", "statement": "Jane Doe"}) == "Jane Doe"

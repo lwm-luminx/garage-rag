@@ -11,6 +11,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case documents = "Documents"
     case facts = "Facts"
     case graph = "Graph"
+    case query = "Query"
     case search = "Search"
     case database = "Database"
     case logs = "Logs"
@@ -25,6 +26,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .documents: "doc.text.magnifyingglass"
         case .facts: "lightbulb"
         case .graph: "point.3.connected.trianglepath.dotted"
+        case .query: "chevron.left.forwardslash.chevron.right"
         case .models: "cpu"
         case .mcp: "server.rack"
         case .search: "magnifyingglass"
@@ -51,7 +53,7 @@ enum SidebarGroup: String, CaseIterable, Identifiable {
     var sections: [AppSection] {
         switch self {
         case .configuration: [.sources, .models, .mcp]
-        case .data: [.documents, .facts, .graph, .search]
+        case .data: [.documents, .facts, .graph, .query, .search]
         case .advanced: [.database, .logs]
         }
     }
@@ -219,6 +221,11 @@ struct ContentView: View {
                 GraphView(focus: $graphFocus, openDocument: { focus in
                     documentFocus = focus
                     selection = .documents
+                })
+            case .query:
+                QueryView(openGraph: { focus in
+                    graphFocus = focus
+                    selection = .graph
                 })
             case .models: ModelsView()
             case .mcp: MCPServerView()

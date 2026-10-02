@@ -6,8 +6,8 @@ import XCTest
 /// and the Facts and Documents pages' Show in Graph.
 ///
 /// What the counts rest on is in `FixtureCorpus` and `garage_rag/db/graph.py`: a `Document` per
-/// file, a `Chunk` per content chunk (`HAS_CHUNK`), and a `Fact` per distilled fact, `STATES`-linked
-/// from each document that states it.
+/// file and a `Fact` per distilled fact, `STATES`-linked from each document that states it (a thread's
+/// from its message; the corpus has none). Chunks are not in the graph.
 final class GraphUITests: ModelUITestCase {
 
     private var inspectorTitle: XCUIElement { element(identifier: "graph.detail.title") }
@@ -40,7 +40,7 @@ final class GraphUITests: ModelUITestCase {
         )
     }
 
-    /// The inspector's heading for the connections of one edge label: "Has chunk · 2".
+    /// The inspector's heading for the connections of one edge label: "States · 5".
     private func connections(_ edge: String, _ count: Int) -> XCUIElement {
         element(text: "\(edge) · \(count)")
     }
@@ -71,17 +71,17 @@ final class GraphUITests: ModelUITestCase {
         try ingestGleanEmbedAndDistill()
         open(section: "graph")
 
-        for label in ["Document", "Chunk", "Fact"] {
+        for label in ["Document", "Fact"] {
             let chip = element(identifier: "graph.vertex.\(label)")
             XCTAssertTrue(chip.waitForExistence(timeout: 30), "the filter bar has no \(label) vertices")
             XCTAssertEqual(chip.value as? String, "on", "\(label) vertices start switched off")
         }
-        for label in ["HAS_CHUNK", "STATES"] {
+        for label in ["STATES"] {
             XCTAssertTrue(element(identifier: "graph.edge.\(label)").exists, "the filter bar has no \(label) edges")
         }
+        XCTAssertFalse(element(identifier: "graph.vertex.Chunk").exists, "chunks are in the graph")
 
         find("", kind: "Document", expecting: "\(FixtureCorpus.indexedWithoutCode.count) matches")
-        find("", kind: "Chunk", expecting: "\(FixtureCorpus.chunksWithoutCode) matches")
         find(FixtureCorpus.quillonBridge.token, kind: "Fact", expecting: "1 match")
         find("quillon", kind: "Document", expecting: "1 match")
 
@@ -94,31 +94,27 @@ final class GraphUITests: ModelUITestCase {
         waitForInspector(FixtureCorpus.quillonBridge.title)
         XCTAssertTrue(element(identifier: "graph.canvas").exists, "no picture of the neighborhood")
 
-        // The page starts two hops out; the note's own connections are its two chunks and the five
-        // facts it states.
-        let chunks = connections("Has chunk", FixtureCorpus.quillonBridgeChunks)
+        // The page starts two hops out; the note's own connections are the five facts it states.
         let states = connections("States", FixtureCorpus.quillonBridgeFacts)
-        XCTAssertTrue(chunks.waitForExistence(timeout: 30), "the inspector does not list the note's two chunks")
-        XCTAssertTrue(states.exists, "the inspector does not list the note's five facts")
+        XCTAssertTrue(states.waitForExistence(timeout: 30), "the inspector does not list the note's five facts")
         XCTAssertTrue(shownText(of: summary).hasSuffix("within 2 hops"), "the footer: \(shownText(of: summary))")
         let twoHops = try XCTUnwrap(waitUntilValue(timeout: 10) { self.drawnVertices() }, "the footer counts no vertices")
-        XCTAssertGreaterThanOrEqual(twoHops, 1 + FixtureCorpus.quillonBridgeChunks + FixtureCorpus.quillonBridgeFacts)
+        XCTAssertGreaterThanOrEqual(twoHops, 1 + FixtureCorpus.quillonBridgeFacts)
 
-        // Chunks switched off: they leave the picture and the inspector. Only the note's own chunks are
-        // within two hops (another document's are a third hop away).
-        let chunkChip = element(identifier: "graph.vertex.Chunk")
-        click(chunkChip)
-        XCTAssertTrue(waitUntil(timeout: 10) { (chunkChip.value as? String) == "off" }, "the Chunk filter did not switch off")
-        XCTAssertTrue(waitUntil(timeout: 30) { !chunks.exists }, "the chunks stayed in the inspector with Chunk off")
+        // Facts switched off: they leave the inspector, and the documents reached only through them
+        // leave the picture too.
+        let factChip = element(identifier: "graph.vertex.Fact")
+        click(factChip)
+        XCTAssertTrue(waitUntil(timeout: 10) { (factChip.value as? String) == "off" }, "the Fact filter did not switch off")
+        XCTAssertTrue(waitUntil(timeout: 30) { !states.exists }, "the facts stayed in the inspector with Fact off")
         XCTAssertTrue(
-            waitUntil(timeout: 30) { self.drawnVertices() == twoHops - FixtureCorpus.quillonBridgeChunks },
-            "with Chunk off the footer should count \(twoHops - FixtureCorpus.quillonBridgeChunks) vertices (\(shownText(of: summary)))"
+            waitUntil(timeout: 30) { (self.drawnVertices() ?? twoHops) <= twoHops - FixtureCorpus.quillonBridgeFacts },
+            "with Fact off the footer should count fewer vertices (\(shownText(of: summary)))"
         )
-        XCTAssertTrue(states.exists, "switching chunks off hid the facts")
-        click(chunkChip)
-        XCTAssertTrue(chunks.waitForExistence(timeout: 30), "the chunks did not come back with Chunk on")
+        click(factChip)
+        XCTAssertTrue(states.waitForExistence(timeout: 30), "the facts did not come back with Fact on")
 
-        // Three hops reach the other documents' chunks and the other documents stating the same facts.
+        // Three hops reach the other documents stating the same facts.
         increaseDepth()
         XCTAssertTrue(
             waitUntil(timeout: 30) { self.summary.exists && self.shownText(of: self.summary).hasSuffix("within 3 hops") },
@@ -169,21 +165,28 @@ final class GraphUITests: ModelUITestCase {
         let center = element(identifier: "graph.detail.center")
         XCTAssertTrue(center.exists, "a vertex that is not the center has no Center Here")
         click(center)
-        XCTAssertTrue(connections("Has chunk", FixtureCorpus.quillonBridgeChunks).waitForExistence(timeout: 30),
-                      "centering on the note did not reach its chunks")
+        XCTAssertTrue(connections("States", FixtureCorpus.quillonBridgeFacts).waitForExistence(timeout: 30),
+                      "centering on the note did not reach its facts")
         XCTAssertTrue(waitUntil(timeout: 10) { !self.element(identifier: "graph.detail.center").exists },
                       "the center still offers Center Here")
 
-        // The Documents page's Show in Graph: the lighthouse, with its one chunk.
+        // The Documents page's Linked view lists what the graph links to the lighthouse: the facts it
+        // states (derived).
         open(section: "documents")
         let lighthouse = element(text: FixtureCorpus.lighthouse.title)
         XCTAssertTrue(lighthouse.waitForExistence(timeout: 30), "Documents does not list the lighthouse")
         lighthouse.click()
+        let linkedSegment = app.radioButtons["Linked"].exists ? app.radioButtons["Linked"] : app.buttons["Linked"]
+        XCTAssertTrue(linkedSegment.waitForExistence(timeout: 30), "the document's detail has no Linked view")
+        linkedSegment.click()
+        XCTAssertTrue(element(identifier: "documents.linked").waitForExistence(timeout: 30), "the Linked view lists nothing")
+        XCTAssertTrue(element(identifier: "documents.linked.Fact").exists, "the Linked view lists no facts")
+        XCTAssertTrue(element(textContaining: "Derived by Garage").exists, "the Linked view does not set derived apart")
         let documentGraph = element(identifier: "documents.detail.graph")
         XCTAssertTrue(documentGraph.waitForExistence(timeout: 30), "the document's detail has no Show in Graph")
         click(documentGraph)
         waitForInspector(FixtureCorpus.lighthouse.title)
         XCTAssertTrue(shownText(of: summary).hasSuffix("within 2 hops"), "a document does not open two hops out: \(shownText(of: summary))")
-        XCTAssertTrue(connections("Has chunk", 1).waitForExistence(timeout: 30), "the lighthouse's one chunk is not connected")
+        XCTAssertTrue(element(textContaining: "States · ").waitForExistence(timeout: 30), "the lighthouse states no facts")
     }
 }

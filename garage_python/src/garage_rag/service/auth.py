@@ -31,6 +31,9 @@ UNAUTHENTICATED_METHODS = frozenset({"EnsureLlamaModel"})
 # server can vouch for: one presenting the token, or one on the owner-only Unix socket. A
 # server on a loopback TCP port with no token (``garage grpc serve`` by hand) refuses
 # them with PERMISSION_DENIED, since any account on the machine can reach that port.
+# ``RunGraphQuery`` is among them although it writes nothing: it runs the caller's openCypher
+# with the database role, and Cypher can call a schema-qualified Postgres function, so it gets
+# the same vouching (db/graph.py refuses such calls too).
 CONFIG_CHANGING_METHODS = frozenset(
     {
         "InitDb",
@@ -43,6 +46,7 @@ CONFIG_CHANGING_METHODS = frozenset(
         "SetSetting",
         "McpInstall",
         "McpUninstall",
+        "RunGraphQuery",
     }
 )
 

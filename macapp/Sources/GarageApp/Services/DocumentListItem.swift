@@ -16,6 +16,9 @@ public struct DocumentListItem: Identifiable, Hashable, Sendable {
     public let factCount: Int
     public let state: String
     public let ingestedAt: String
+    /// When the element happened (a thread's last message, a mail's date, the file's modification
+    /// time), which the listing is sorted by, newest first.
+    public let occurredAt: String
 
     public init(summary: Garage_DocumentSummary) {
         self.id = summary.id
@@ -31,6 +34,7 @@ public struct DocumentListItem: Identifiable, Hashable, Sendable {
         self.factCount = Int(summary.factCount)
         self.state = summary.state
         self.ingestedAt = summary.ingestedAt
+        self.occurredAt = summary.occurredAt.isEmpty ? summary.ingestedAt : summary.occurredAt
     }
 
     public var displayTitle: String {
@@ -126,6 +130,11 @@ public struct DocumentDetailItem: Identifiable, Hashable, Sendable {
     public let error: String
     public let ingestedAt: String
     public let authors: [DocumentAuthorItem]
+    /// The extracted text, which the page shows; `hasContent` is false when the document keeps none.
+    public let content: String
+    public let hasContent: Bool
+    public let occurredAt: String
+    /// How the text was cut up for embedding: an implementation detail, shown only on request.
     public let chunks: [DocumentChunkItem]
     public let facts: [DocumentFactItem]
 
@@ -148,6 +157,9 @@ public struct DocumentDetailItem: Identifiable, Hashable, Sendable {
         self.error = document.error
         self.ingestedAt = document.ingestedAt
         self.authors = document.authors.map { DocumentAuthorItem(author: $0) }
+        self.content = document.content
+        self.hasContent = document.hasContent_p
+        self.occurredAt = document.occurredAt.isEmpty ? document.ingestedAt : document.occurredAt
         self.chunks = response.chunks.map { DocumentChunkItem(chunk: $0) }
         self.facts = response.facts.map { DocumentFactItem(fact: $0) }
     }

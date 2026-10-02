@@ -10,10 +10,12 @@ final class GraphPresentationTests: XCTestCase {
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Person"), 3)
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Document"), 2)
         XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Author"), 2)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Message"), 2)
+        XCTAssertEqual(GraphPagePresentation.startingDepth(for: "Link"), 2)
     }
 
     func testLabelsReadAsWords() {
-        XCTAssertEqual(GraphLabelStyle.humanize("HAS_CHUNK"), "Has chunk")
+        XCTAssertEqual(GraphLabelStyle.humanize("HAS_MESSAGE"), "Has message")
         XCTAssertEqual(GraphLabelStyle.humanize("TeamMember"), "Team member")
         XCTAssertEqual(GraphLabelStyle.humanize("WORKS_AT"), "Works at")
         XCTAssertEqual(GraphLabelStyle.humanize("Fact"), "Fact")
@@ -23,6 +25,10 @@ final class GraphPresentationTests: XCTestCase {
     func testKnownLabelsHaveTheirOwnStyleAndUnknownOnesANeutralOne() {
         XCTAssertEqual(GraphLabelStyle.vertex("Fact"), GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill"))
         XCTAssertEqual(GraphLabelStyle.edge("STATES"), GraphLabelStyle(name: "States", tint: .purple, symbol: nil))
+        XCTAssertEqual(GraphLabelStyle.vertex("Message").symbol, "bubble.left")
+        XCTAssertEqual(GraphLabelStyle.vertex("Link").symbol, "link")
+        XCTAssertEqual(GraphLabelStyle.edge("LINKS_TO").name, "Links to")
+        XCTAssertEqual(GraphLabelStyle.edge("SENT").name, "Sent")
         XCTAssertEqual(GraphLabelStyle.vertex("Entity"), GraphLabelStyle(name: "Entity", tint: GraphLabelStyle.configuredTint("Entity"), symbol: "circle"))
         XCTAssertEqual(GraphLabelStyle.edge("MENTIONS"), GraphLabelStyle(name: "Mentions", tint: GraphLabelStyle.configuredTint("MENTIONS"), symbol: nil))
     }

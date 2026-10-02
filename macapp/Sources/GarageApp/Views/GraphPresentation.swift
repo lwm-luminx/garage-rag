@@ -5,7 +5,7 @@ import SwiftUI
 
 /// How a vertex or edge label reads and looks.
 struct GraphLabelStyle: Equatable {
-    /// The label as a heading: "Fact", "Has chunk".
+    /// The label as a heading: "Fact", "Has message".
     let name: String
     let tint: Color
     /// The SF Symbol for the label's vertices; edges have none.
@@ -15,8 +15,9 @@ struct GraphLabelStyle: Equatable {
     static func vertex(_ label: String) -> GraphLabelStyle {
         switch label {
         case "Document": GraphLabelStyle(name: "Document", tint: .blue, symbol: "doc.text")
-        case "Chunk": GraphLabelStyle(name: "Chunk", tint: .teal, symbol: "text.alignleft")
+        case "Message": GraphLabelStyle(name: "Message", tint: .teal, symbol: "bubble.left")
         case "Author": GraphLabelStyle(name: "Author", tint: .green, symbol: "person")
+        case "Link": GraphLabelStyle(name: "Link", tint: .cyan, symbol: "link")
         case "Fact": GraphLabelStyle(name: "Fact", tint: .purple, symbol: "lightbulb.fill")
         default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: "circle")
         }
@@ -25,16 +26,19 @@ struct GraphLabelStyle: Equatable {
     /// The style for an edge label.
     static func edge(_ label: String) -> GraphLabelStyle {
         switch label {
-        case "HAS_CHUNK": GraphLabelStyle(name: "Has chunk", tint: .teal, symbol: nil)
+        case "HAS_MESSAGE": GraphLabelStyle(name: "Has message", tint: .teal, symbol: nil)
         case "WROTE": GraphLabelStyle(name: "Wrote", tint: .green, symbol: nil)
         case "RECEIVED": GraphLabelStyle(name: "Received", tint: .mint, symbol: nil)
+        case "SENT": GraphLabelStyle(name: "Sent", tint: .green, symbol: nil)
+        case "LINKS_TO": GraphLabelStyle(name: "Links to", tint: .cyan, symbol: nil)
+        case "REFERS_TO": GraphLabelStyle(name: "Refers to", tint: .blue, symbol: nil)
         case "STATES": GraphLabelStyle(name: "States", tint: .purple, symbol: nil)
         default: GraphLabelStyle(name: humanize(label), tint: configuredTint(label), symbol: nil)
         }
     }
 
     /// Tints for labels a fact prompt's `graph` block adds, none of them a built-in label's.
-    static let configuredPalette: [Color] = [.indigo, .cyan, .brown, .red, .yellow, .gray]
+    static let configuredPalette: [Color] = [.indigo, .brown, .red, .yellow, .gray]
 
     /// A configured label's tint: picked from its name, so it keeps its colour across launches
     /// (Swift's `hashValue` is seeded per process, so it is not used).
@@ -46,7 +50,7 @@ struct GraphLabelStyle: Equatable {
         return configuredPalette[Int(hash % UInt32(configuredPalette.count))]
     }
 
-    /// `HAS_CHUNK` -> "Has chunk", `TeamMember` -> "Team member".
+    /// `HAS_MESSAGE` -> "Has message", `TeamMember` -> "Team member".
     static func humanize(_ label: String) -> String {
         var words: [String] = []
         for part in label.split(separator: "_") {
@@ -121,9 +125,9 @@ enum GraphPagePresentation {
     /// How many hops out the page starts when it centers on a new starting vertex of `label` (from
     /// another page, a search result, or the vertex it opens on).
     /// From a fact, three hops reach its documents, their authors and the other facts those
-    /// documents state; from a document, an author or a chunk, two hops already fan out wide.
+    /// documents state; from a document, an author, a message or a link, two hops already fan out wide.
     static func startingDepth(for label: String) -> Int {
-        ["Document", "Author", "Chunk"].contains(label) ? defaultDepth : 3
+        ["Document", "Author", "Message", "Link"].contains(label) ? defaultDepth : 3
     }
 
     /// The page's empty state, from what it knows.

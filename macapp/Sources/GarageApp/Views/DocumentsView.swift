@@ -33,6 +33,14 @@ public struct DocumentsView: View {
     @State private var detailErrorMessage: String?
     @State private var hasLoaded = false
     @State private var isGleaningFacts = false
+    /// Text by default; Linked lists what the graph links to the document; Chunks only when turned on.
+    @State private var detailMode: DocumentDetailMode = .text
+    /// Chunks are how text is cut up for embedding, an implementation detail: an advanced option.
+    @AppStorage(DocumentsPresentation.showChunksKey) private var showChunks = false
+    @State private var links: GraphNeighborhood?
+    @State private var linksDocumentID: Int64?
+    @State private var isLoadingLinks = false
+    @State private var linksErrorMessage: String?
     /// Keeps the arrow keys on the document list once a document is chosen. Without it the sidebar
     /// kept keyboard focus, so Down moved to the next page instead of the next document.
     @FocusState private var isListFocused: Bool
@@ -272,9 +280,10 @@ public struct DocumentsView: View {
                         .font(.caption2.monospaced())
                         .foregroundStyle(.secondary)
                 }
-                Text("\(doc.chunkCount) chunk\(doc.chunkCount == 1 ? "" : "s")")
+                Text(DocumentsPresentation.when(doc.occurredAt))
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
+                    .help("When it happened: a thread's last message, a mail's date, else the file's modification time")
             }
         }
         .padding(.vertical, 4)
@@ -319,7 +328,7 @@ public struct DocumentsView: View {
                 Image(systemName: "doc.text")
                     .font(.system(size: 32))
                     .foregroundStyle(.secondary)
-                Text("Select a document to view its chunks")
+                Text(DocumentsPresentation.emptyDetail)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -367,19 +376,22 @@ public struct DocumentsView: View {
                 }
 
                 HStack(spacing: 12) {
+                    metaField("Date", DocumentsPresentation.when(detail.occurredAt))
                     metaField("Size", detail.formattedByteSize)
                     if !detail.lang.isEmpty { metaField("Lang", detail.lang) }
                     if !detail.mime.isEmpty { metaField("MIME", detail.mime) }
-                    if !detail.chunker.isEmpty { metaField("Chunker", detail.chunker) }
-                    metaField("Chunks", "\(detail.chunks.count)", identifier: "documents.detail.chunkCount")
                     if !detail.facts.isEmpty { metaField("Facts", "\(detail.facts.count)") }
+                    if showChunks {
+                        if !detail.chunker.isEmpty { metaField("Chunker", detail.chunker) }
+                        metaField("Chunks", "\(detail.chunks.count)", identifier: "documents.detail.chunkCount")
+                    }
                     Spacer()
                     Button("Show in Graph") {
                         openGraph(GraphFocus(label: "Document", key: detail.id))
                     }
                     .controlSize(.small)
                     .accessibilityIdentifier("documents.detail.graph")
-                    .help("Center the Graph page on this document: its chunks, authors and facts")
+                    .help("Center the Graph page on this document: its messages, authors, links and facts")
                     Button {
                         glean(detail)
                     } label: {
@@ -410,32 +422,206 @@ public struct DocumentsView: View {
 
             Divider()
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    if !detail.facts.isEmpty {
-                        Text("Facts")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                        ForEach(detail.facts) { fact in
-                            factCard(fact)
-                        }
-
-                        Divider()
-                            .padding(.vertical, 4)
-
-                        Text("Chunks")
-                            .font(.caption.bold())
-                            .foregroundStyle(.secondary)
-                    }
-
-                    ForEach(detail.chunks) { chunk in
-                        chunkCard(chunk)
+            HStack(spacing: 8) {
+                Picker("View", selection: $detailMode) {
+                    ForEach(DocumentDetailMode.available(showChunks: showChunks)) { mode in
+                        Text(mode.rawValue).tag(mode)
                     }
                 }
-                .padding(12)
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityIdentifier("documents.detail.mode")
+                Spacer()
+                Toggle("Show Chunks", isOn: $showChunks)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.small)
+                    .help("Advanced: how the text was cut into chunks for embedding")
+                    .accessibilityIdentifier("documents.detail.showChunks")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .onChange(of: showChunks) { _, on in
+                if !on, detailMode == .chunks { detailMode = .text }
+            }
+            .onChange(of: detailMode) { _, mode in
+                if mode == .linked { loadLinks(documentID: detail.id) }
+            }
+
+            Divider()
+
+            switch detailMode {
+            case .text: textView(detail)
+            case .linked: linkedView(detail)
+            case .chunks: chunksView(detail)
             }
         }
         .background(Color(nsColor: .windowBackgroundColor))
+    }
+
+    // MARK: - Text
+
+    private func textView(_ detail: DocumentDetailItem) -> some View {
+        let shown = DocumentsPresentation.displayText(
+            content: detail.content, hasContent: detail.hasContent, chunks: detail.chunks.map(\.text)
+        )
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                if !detail.facts.isEmpty {
+                    Text("Facts")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    ForEach(detail.facts) { fact in
+                        factCard(fact)
+                    }
+                    Divider()
+                        .padding(.vertical, 4)
+                }
+                HStack {
+                    Text("Text")
+                        .font(.caption.bold())
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Copy Text") {
+                        NSPasteboard.general.copy(detail.hasContent ? detail.content : detail.chunks.map(\.text).joined(separator: "\n\n"))
+                    }
+                    .controlSize(.mini)
+                }
+                if !detail.hasContent {
+                    Text(DocumentsPresentation.noContent)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Text(shown.text)
+                    .font(.body)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("documents.text")
+                if shown.total > shown.text.count {
+                    Text(DocumentsPresentation.truncatedNote(shown: shown.text.count, total: shown.total))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(12)
+        }
+    }
+
+    // MARK: - Linked
+
+    @ViewBuilder
+    private func linkedView(_ detail: DocumentDetailItem) -> some View {
+        if isLoadingLinks && links == nil {
+            VStack { Spacer(); ProgressView("Loading links…"); Spacer() }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let linksErrorMessage {
+            VStack(spacing: 8) {
+                Spacer()
+                Text(linksErrorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+                Button("Retry") { loadLinks(documentID: detail.id, force: true) }
+                    .controlSize(.small)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if let links {
+            let groups = DocumentsPresentation.linkedGroups(links)
+            if groups.isEmpty {
+                VStack {
+                    Spacer()
+                    Text(DocumentsPresentation.linkedEmpty(available: links.available))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 30)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityIdentifier("documents.linked.empty")
+            } else {
+                List {
+                    ForEach(["read", "derived"], id: \.self) { origin in
+                        let shown = groups.filter { $0.origin == origin }
+                        if !shown.isEmpty {
+                            Section(DocumentsPresentation.originHeading(origin)) {
+                                ForEach(shown) { group in
+                                    linkedGroup(group)
+                                }
+                            }
+                        }
+                    }
+                    if links.truncated {
+                        Text("More is linked than is listed here; Show in Graph walks the rest.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .listStyle(.inset)
+                .accessibilityIdentifier("documents.linked")
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func linkedGroup(_ group: LinkedGroup) -> some View {
+        let style = GraphLabelStyle.vertex(group.label)
+        DisclosureGroup {
+            ForEach(group.rows) { row in
+                linkedRow(row, style: style)
+            }
+        } label: {
+            Label("\(style.name) (\(group.rows.count))", systemImage: style.symbol ?? "circle")
+                .foregroundStyle(style.tint)
+                .font(.callout.bold())
+        }
+        .accessibilityIdentifier("documents.linked.\(group.label)")
+    }
+
+    private func linkedRow(_ row: LinkedRow, style: GraphLabelStyle) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.vertex.title)
+                    .font(.callout)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+                HStack(spacing: 6) {
+                    if !row.relations.isEmpty {
+                        Text(row.relations.joined(separator: " · "))
+                    }
+                    if let at = row.vertex.occurredAt {
+                        Text(DocumentsPresentation.when(at))
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if let href = row.vertex.href, let url = URL(string: href), url.scheme != nil {
+                Button("Open") { NSWorkspace.shared.open(url) }
+                    .controlSize(.mini)
+            }
+            if let key = row.vertex.key {
+                Button("Show in Graph") { openGraph(GraphFocus(label: row.vertex.label, key: key)) }
+                    .controlSize(.mini)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    // MARK: - Chunks (advanced)
+
+    private func chunksView(_ detail: DocumentDetailItem) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(detail.chunks) { chunk in
+                    chunkCard(chunk)
+                }
+            }
+            .padding(12)
+        }
     }
 
     private func metaField(_ label: String, _ value: String, identifier: String? = nil) -> some View {
@@ -552,9 +738,39 @@ public struct DocumentsView: View {
         }
     }
 
+    /// Loads what the graph links to the document, once per document unless `force`.
+    private func loadLinks(documentID: Int64, force: Bool = false) {
+        guard force || linksDocumentID != documentID || links == nil else { return }
+        linksDocumentID = documentID
+        isLoadingLinks = true
+        linksErrorMessage = nil
+        Task {
+            do {
+                let loaded = try await appState.documentLinks(documentID: documentID)
+                await MainActor.run {
+                    guard self.linksDocumentID == documentID else { return }
+                    self.links = loaded
+                    self.isLoadingLinks = false
+                }
+            } catch {
+                await MainActor.run {
+                    guard self.linksDocumentID == documentID else { return }
+                    self.linksErrorMessage = error.localizedDescription
+                    self.isLoadingLinks = false
+                }
+            }
+        }
+    }
+
     private func loadDetail(documentID: Int64) {
         isLoadingDetail = true
         detailErrorMessage = nil
+        links = nil
+        linksDocumentID = nil
+        linksErrorMessage = nil
+        if detailMode == .linked {
+            loadLinks(documentID: documentID)
+        }
         Task {
             do {
                 let detail = try await appState.getDocument(documentID: documentID)

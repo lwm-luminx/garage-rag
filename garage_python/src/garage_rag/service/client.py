@@ -24,6 +24,7 @@ from garage_rag.proto.garage_pb2 import (
     CheckDocumentStatResponse,
     ClusterFactsRequest,
     ClusterFactsStatus,
+    DocumentLinksRequest,
     DropModelRequest,
     DropModelResponse,
     EnrichFactsRequest,
@@ -46,6 +47,8 @@ from garage_rag.proto.garage_pb2 import (
     GraphLabelsResponse,
     GraphNeighborhoodRequest,
     GraphNeighborhoodResponse,
+    GraphQueryRequest,
+    GraphQueryResponse,
     ImportSourcesToConfigRequest,
     ImportSourcesToConfigResponse,
     InitDbRequest,
@@ -362,6 +365,12 @@ class GarageClient:
 
     def get_graph_neighborhood(self, request: GraphNeighborhoodRequest) -> GraphNeighborhoodResponse:
         return self._invoke_unary("GetGraphNeighborhood", request, GraphNeighborhoodResponse)
+
+    def get_document_links(self, request: DocumentLinksRequest) -> GraphNeighborhoodResponse:
+        return self._invoke_unary("GetDocumentLinks", request, GraphNeighborhoodResponse)
+
+    def run_graph_query(self, request: GraphQueryRequest) -> GraphQueryResponse:
+        return self._invoke_unary("RunGraphQuery", request, GraphQueryResponse)
 
     def init_db(self, schema_dir: str = "") -> InitDbResponse:
         return self._invoke_unary("InitDb", InitDbRequest(schema_dir=schema_dir), InitDbResponse)

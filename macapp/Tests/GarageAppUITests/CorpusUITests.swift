@@ -85,8 +85,7 @@ final class CorpusUITests: GarageUITestCase {
             XCTAssertTrue(trust.exists, "\(document.file) shows no trust badge")
             XCTAssertEqual(shownText(of: corpusClass), document.corpusClass, "\(document.file)'s class")
             XCTAssertEqual(shownText(of: trust), document.trustTier, "\(document.file)'s trust tier")
-            XCTAssertEqual(shownText(of: element(identifier: "documents.detail.chunkCount")), String(document.chunks),
-                           "\(document.file)'s chunk count")
+            XCTAssertTrue(element(identifier: "documents.text").exists, "\(document.file) shows no text")
         }
     }
 

@@ -440,6 +440,20 @@ def test_long_messages_are_split_but_never_merged(messages_dir: Path) -> None:
     assert chunks[0].text.startswith("[2026-09-24 12:08 UTC] friend@example.com: ")
 
 
+def test_only_a_messages_first_chunk_starts_with_its_stamp(messages_dir: Path) -> None:
+    """The graph groups a long message's chunks back into one Message by this pattern (db/graph.py)."""
+    import re
+
+    from garage_rag.extract.messages import MESSAGE_START_PATTERN
+
+    long_one = next(c for c in read_conversations(messages_dir / "chat.db") if c.guid.endswith("friend@example.com"))
+    long_one.messages[0] = replace(long_one.messages[0], text=". ".join(["a sentence of text"] * 30))
+    _, chunks = render(long_one, size=120)
+    starts = [bool(re.match(MESSAGE_START_PATTERN, c.text)) for c in chunks]
+    assert starts.count(True) == len(long_one.messages)
+    assert starts[0] and not any(starts[1 : len(chunks) - len(long_one.messages) + 1])
+
+
 def test_a_renamed_group_is_rebuilt(messages_dir: Path) -> None:
     gateway = FakeGateway(messages_dir)
     ingest_source(gateway=gateway, source_slug="apple-sms")

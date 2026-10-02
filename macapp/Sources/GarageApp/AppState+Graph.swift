@@ -32,4 +32,15 @@ extension AppState {
         )
         return GraphNeighborhood(response: response)
     }
+
+    /// Everything linked to one document: what was read (its messages, authors, links) and what was
+    /// derived from it (its facts).
+    func documentLinks(documentID: Int64) async throws -> GraphNeighborhood {
+        GraphNeighborhood(response: try await grpc.documentLinks(documentID: documentID))
+    }
+
+    /// One read-only openCypher query on the graph.
+    func runGraphQuery(_ query: String, limit: Int = 500) async throws -> GraphQueryResult {
+        GraphQueryResult(response: try await grpc.runGraphQuery(query, limit: limit))
+    }
 }

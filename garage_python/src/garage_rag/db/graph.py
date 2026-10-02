@@ -7,39 +7,68 @@ where the server has AGE (the app's bundled Postgres; ``001_extensions.sql``
 creates the extension where it is installed). Elsewhere :func:`age_available`
 is false and nothing is projected.
 
-Vertices carry the relational id and a few display properties; text, spans and
-vectors stay in the tables (and vectors in the ``emb_``/``fact_emb_`` tables):
+Chunks are not in the graph: they are how text is cut up for embedding, an
+implementation detail. What the graph shows is what a person would name: a
+document, a message in a Messages thread, who wrote it, the links in it and the
+facts it states. A fact hangs directly off the document, or off the message its
+statement's span falls in.
 
-============  ===============================================================
-``Document``  ``document_id``, ``title``, ``uri``, ``corpus_class``, ``trust_tier``
-``Chunk``     ``chunk_id``, ``document_id``, ``ord`` (content chunks, not facts')
-``Author``    ``author_id``, ``display_name``, ``is_self``
-``Fact``      ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
-              ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py),
-              ``anchor_key`` (a metadata value's key, for an anchored fact)
-============  ===============================================================
+Vertices carry the relational id and a few display properties; text, spans and
+vectors stay in the tables (and vectors in the ``emb_``/``fact_emb_`` tables).
+Every vertex says what it is in ``origin``: ``read`` from a source (``READ_LABELS``) or
+``derived`` from what was read (facts, and configured classes). ``at`` is when the element
+happened, ISO 8601 in UTC: a document's own time (:mod:`garage_rag.db.recency`), a message's
+stamp, and for a distilled fact its most recent restatement's (the message or document stating
+it), which ``latest_fact_id`` and ``latest_document_id`` name, so every fact traces back to a
+dated document:
+
+=================  ===============================================================
+``Document``       ``document_id``, ``title``, ``uri``, ``corpus_class``, ``trust_tier``, ``at``
+``Message``        ``message_id`` (its first chunk's id), ``document_id``, ``ord`` (its place in the
+                   thread), ``direction``, ``sender``, ``at``, ``text`` (the first 280 characters)
+``Author``         ``author_id``, ``display_name``, ``is_self``
+``Link``           ``link_id`` (a hash of the href), ``href``, ``text`` (its commonest anchor text, else the href)
+``Fact``           ``distilled_fact_id``, ``fact_class``, ``statement``, ``statement_generated``,
+                   ``nodes``, ``spread``, ``drift`` (how varied its group is; see enrich/clusters.py),
+                   ``anchor_key`` (a metadata value's key, for an anchored fact),
+                   ``latest_fact_id``, ``latest_document_id``, ``at``
+=================  ===============================================================
 
 The facts a document states (``facts`` rows, the potential facts) are not
 vertices: the graph shows only distilled facts, so a claim a document restates,
 or that several documents state, is one vertex. A fact not yet distilled is not
 in the graph until ``garage cluster-facts`` links it to one.
 
+A Messages thread is one document with one chunk per message, and a message
+longer than the chunk size several (ingest/conversations.py); the chunks of one
+message are grouped back into one ``Message`` by the time-and-sender stamp only
+a message's first chunk starts with (``MESSAGE_START_PATTERN``).
+
 Edges:
 
-=============  ===================  ==============================================================
-``HAS_CHUNK``  Document -> Chunk    ``ord``
-``WROTE``      Author -> Document   ``role`` (author, committer, sender), ``confidence``
-``RECEIVED``   Author -> Document   ``role`` (recipient, cc), ``confidence``
-``STATES``     Document -> Fact     ``char_start``, ``char_end`` (its first statement in the document),
-                                    ``similarity`` (its closest statement's), ``statements`` (how many)
-=============  ===================  ==============================================================
+===============  ==============================  ============================================================
+``HAS_MESSAGE``  Document -> Message             ``ord``
+``WROTE``        Author -> Document              ``role`` (author, committer, sender), ``confidence``
+``RECEIVED``     Author -> Document              ``role`` (recipient, cc), ``confidence``
+``SENT``         Author -> Message               ``direction``: the handle (or the owner, for ``me``) that wrote it
+``STATES``       Document -> Fact                ``char_start``, ``char_end`` (its first statement there),
+                                                 ``similarity`` (its closest statement's), ``statements``
+                                                 (how many); statements outside every message
+``STATES``       Message -> Fact                 the same, for statements whose span starts in that message
+``LINKS_TO``     Document/Message -> Link        ``text``: the anchor text there, when it has one
+``REFERS_TO``    Link -> Document                the link's href is that document's path
+===============  ==============================  ============================================================
+
+Links are found in the text: Markdown ``[text](href)``, HTML ``<a href>`` and
+bare ``http(s)://`` URLs, in a document's content or, for a thread, in each
+message (``LINK_PATTERNS``).
 
 Configured labels (``facts.prompts[].graph``; :func:`garage_rag.config.fact_prompts.graph_schema`):
 
 * a vertex entry projects the distilled facts of its class as vertices of its
   label instead of ``Fact`` (``distilled_fact_id``, ``fact_class``, ``title``,
-  ``statement``, ``nodes``, ``anchor_key``), and the ``STATES`` edges of
-  their documents point there;
+  ``statement``, ``nodes``, ``anchor_key``, ``latest_fact_id``, ``at``), and
+  the ``STATES`` edges of their documents and messages point there;
 * an edge entry projects each extracted fact of its class as an edge from the
   distilled fact its ``source`` attribute names to the one its ``target``
   attribute names (``fact_id``, ``document_id``, ``predicate``, ``fact``),
@@ -66,67 +95,194 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from garage_rag.config.fact_prompts import GraphSchema
+from garage_rag.db.recency import document_time_sql, iso_utc_sql
+from garage_rag.extract.messages import MESSAGE_START_PATTERN
 
 log = logging.getLogger(__name__)
 
 GRAPH = "garage"
 
-# label -> (id property, SELECT of (relational id, jsonb properties))
+# The patterns links are found by, bound as parameters (a regex's ``(?:`` would read as a bind
+# parameter in the SQL text). Postgres AREs: ``md_link`` captures (text, href), ``html_link``
+# (href, text), ``bare_link`` the URL, whose trailing punctuation is trimmed.
+LINK_PATTERNS: dict[str, str] = {
+    "md_link": r"\[([^]\n]{1,255})\]\(((?:https?|mailto|file):[^)[:space:]]+)\)",
+    "html_link": r"""<a\s[^>]*href\s*=\s*["']([^"'>]+)["'][^>]*>([^<]{0,255})</a>""",
+    "bare_link": r"""https?://[^][:space:]<>"'(){}[]+""",
+}
+
+# Every built-in set's parameters: the message stamp and the link patterns.
+PARAMS: dict[str, str] = {
+    "message_start": MESSAGE_START_PATTERN,
+    # The same stamp, capturing its date and time.
+    "message_stamp": MESSAGE_START_PATTERN.replace("^\\[", "^\\[(", 1).replace(" UTC\\]", ") UTC\\]", 1),
+    **LINK_PATTERNS,
+}
+
+# Each message chunk with the message it belongs to: ``n`` counts the message starts up to it, and
+# the message's id is the id of its first chunk.
+CHUNK_MESSAGES = """
+    SELECT s.chunk_id, s.document_id, s.ord, s.text, s.char_start, s.char_end, s.direction, s.sender, s.n,
+           min(s.chunk_id) OVER (PARTITION BY s.document_id, s.n) AS message_id
+    FROM (SELECT c.id AS chunk_id, c.document_id, c.ord, c.text, c.char_start, c.char_end, c.direction, c.sender,
+                 count(*) FILTER (WHERE c.text ~ CAST(:message_start AS text))
+                     OVER (PARTITION BY c.document_id ORDER BY c.ord) AS n
+          FROM chunks c WHERE c.direction IS NOT NULL AND c.fact_id IS NULL) s
+"""
+
+# One row per message: its text whole, its span of the document, and its stamp's time.
+MESSAGES = f"""
+    SELECT m.message_id, m.document_id, min(m.n) AS n, string_agg(m.text, ' ' ORDER BY m.ord) AS text,
+           min(m.char_start) AS char_start, max(m.char_end) AS char_end,
+           min(m.direction) AS direction, min(m.sender) AS sender,
+           min(substring(m.text FROM CAST(:message_stamp AS text))) AS stamp
+    FROM ({CHUNK_MESSAGES}) m GROUP BY m.message_id, m.document_id
+"""
+
+# The message each fact's span starts in, for the facts of a thread.
+FACT_MESSAGES = f"""
+    SELECT f.id AS fact_id, msg.message_id, msg.stamp
+    FROM facts f JOIN ({MESSAGES}) msg ON msg.document_id = f.document_id
+     AND f.char_start >= msg.char_start AND f.char_start < msg.char_end
+"""
+
+# The text links are looked for in: a thread's messages, and every other document's content.
+_LINK_SOURCES = f"""
+    SELECT 'Document' AS src_label, d.id AS src_id, d.content AS body FROM documents d
+    WHERE d.content IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM chunks c WHERE c.document_id = d.id AND c.direction IS NOT NULL)
+    UNION ALL
+    SELECT 'Message', msg.message_id, msg.text FROM ({MESSAGES}) msg
+"""
+
+# One row per (document or message, href), with the anchor text there when it has one.
+LINKS = f"""
+    SELECT s.src_label, s.src_id, l.href, max(nullif(trim(l.text), '')) AS text
+    FROM ({_LINK_SOURCES}) s CROSS JOIN LATERAL (
+        SELECT x[2] AS href, x[1] AS text FROM regexp_matches(s.body, CAST(:md_link AS text), 'g') x
+        UNION ALL
+        SELECT x[1], x[2] FROM regexp_matches(s.body, CAST(:html_link AS text), 'gi') x
+        UNION ALL
+        SELECT regexp_replace(x[1], '[.,;!?]+$', ''), NULL FROM regexp_matches(s.body, CAST(:bare_link AS text), 'g') x
+    ) l
+    WHERE l.href <> ''
+    GROUP BY s.src_label, s.src_id, l.href
+"""
+
+_LINK_ID = "hashtextextended(k.href, 0)"
+_DOCUMENT_AT = iso_utc_sql(document_time_sql("d"))
+# A message's stamp is UTC to the minute ('2026-09-24 18:03'); no ':' literal, which SQLAlchemy would bind.
+_MESSAGE_AT = iso_utc_sql("CAST(msg.stamp || ' UTC' AS timestamptz)")
+
+# When each potential fact was stated: its message's time when it is from a message, else its
+# document's (db/recency.py). Distilled facts take the time of their most recent restatement.
+FACT_TIMES = f"""
+    SELECT f.id AS fact_id, f.document_id, f.distilled_fact_id,
+           coalesce({iso_utc_sql("CAST(fm.stamp || ' UTC' AS timestamptz)")}, {_DOCUMENT_AT}) AS at
+    FROM facts f JOIN documents d ON d.id = f.document_id
+    LEFT JOIN ({FACT_MESSAGES}) fm ON fm.fact_id = f.id
+"""
+
+# Each distilled fact's most recent restatement: (distilled_fact_id, latest_fact_id, latest_document_id, at).
+LATEST_RESTATEMENTS = f"""
+    SELECT DISTINCT ON (ft.distilled_fact_id) ft.distilled_fact_id, ft.fact_id AS latest_fact_id,
+           ft.document_id AS latest_document_id, ft.at
+    FROM ({FACT_TIMES}) ft WHERE ft.distilled_fact_id IS NOT NULL
+    ORDER BY ft.distilled_fact_id, ft.at DESC NULLS LAST, ft.fact_id DESC
+"""
+
+# What a vertex is: ``read`` from a source (a document, a message, who wrote it, a link in it), or
+# ``derived`` by Garage from what it read (distilled facts, configured classes).
+READ_LABELS = frozenset({"Document", "Message", "Author", "Link"})
+
+
+def origin(label: str) -> str:
+    """``read`` or ``derived``: whether ``label``'s vertices were read from a source or derived from one."""
+    return "read" if label in READ_LABELS else "derived"
+
+
+# label -> (id property, SELECT of (relational id, jsonb properties)); every one is run with PARAMS.
 VERTICES: dict[str, tuple[str, str]] = {
     "Document": (
         "document_id",
-        """
-        SELECT d.id, jsonb_build_object('document_id', d.id, 'title', d.title, 'uri', d.uri,
-                                        'corpus_class', d.corpus_class::text, 'trust_tier', d.trust_tier::text)
+        f"""
+        SELECT d.id, jsonb_build_object('origin', 'read', 'document_id', d.id, 'title', d.title, 'uri', d.uri,
+                                        'corpus_class', d.corpus_class::text, 'trust_tier', d.trust_tier::text,
+                                        'at', {_DOCUMENT_AT})
         FROM documents d
         """,
     ),
-    "Chunk": (
-        "chunk_id",
-        """
-        SELECT c.id, jsonb_build_object('chunk_id', c.id, 'document_id', c.document_id, 'ord', c.ord)
-        FROM chunks c WHERE c.fact_id IS NULL
+    "Message": (
+        "message_id",
+        f"""
+        SELECT msg.message_id, jsonb_strip_nulls(jsonb_build_object(
+                   'origin', 'read', 'message_id', msg.message_id, 'document_id', msg.document_id, 'ord', msg.n,
+                   'direction', msg.direction, 'sender', msg.sender, 'at', {_MESSAGE_AT},
+                   'text', left(msg.text, 280)))
+        FROM ({MESSAGES}) msg
         """,
     ),
     "Author": (
         "author_id",
         """
-        SELECT a.id, jsonb_build_object('author_id', a.id, 'display_name', a.display_name, 'is_self', a.is_self)
+        SELECT a.id, jsonb_build_object('origin', 'read', 'author_id', a.id, 'display_name', a.display_name,
+                                        'is_self', a.is_self)
         FROM authors a
+        """,
+    ),
+    "Link": (
+        "link_id",
+        f"""
+        SELECT {_LINK_ID}, jsonb_build_object(
+                   'origin', 'read', 'link_id', {_LINK_ID}, 'href', k.href,
+                   'text', coalesce(mode() WITHIN GROUP (ORDER BY k.text) FILTER (WHERE k.text IS NOT NULL), k.href))
+        FROM ({LINKS}) k GROUP BY k.href
         """,
     ),
     "Fact": (
         "distilled_fact_id",
-        """
+        f"""
         SELECT df.id, jsonb_strip_nulls(jsonb_build_object(
-                   'distilled_fact_id', df.id, 'fact_class', df.fact_class, 'statement', df.statement,
-                   'statement_generated', df.statement_generated, 'nodes', df.nodes, 'spread', df.spread,
-                   'drift', df.drift, 'anchor_key', df.anchor_key))
-        FROM distilled_facts df
+                   'origin', 'derived', 'distilled_fact_id', df.id, 'fact_class', df.fact_class,
+                   'statement', df.statement, 'statement_generated', df.statement_generated, 'nodes', df.nodes,
+                   'spread', df.spread, 'drift', df.drift, 'anchor_key', df.anchor_key,
+                   'latest_fact_id', lr.latest_fact_id, 'latest_document_id', lr.latest_document_id,
+                   'at', lr.at))
+        FROM distilled_facts df LEFT JOIN ({LATEST_RESTATEMENTS}) lr ON lr.distilled_fact_id = df.id
         """,
     ),
 }
 
-# Document -> distilled fact, one edge however often the document states it. {where} narrows the facts.
-_STATES = """
-        SELECT f.document_id, f.distilled_fact_id, jsonb_strip_nulls(jsonb_build_object(
+
+def states(source: str, join: str = "", where: str = "") -> str:
+    """STATES from ``source`` (a document or message id) to each distilled fact it states, one edge
+    however often: its first statement's span, its closest statement's similarity, how many."""
+    return f"""
+        SELECT {source}, f.distilled_fact_id, jsonb_strip_nulls(jsonb_build_object(
                    'char_start', (array_agg(f.char_start ORDER BY f.char_start NULLS LAST, f.id))[1],
                    'char_end', (array_agg(f.char_end ORDER BY f.char_start NULLS LAST, f.id))[1],
                    'similarity', max(f.distilled_similarity), 'statements', count(*)))
         FROM facts f {join}
         WHERE f.distilled_fact_id IS NOT NULL {where}
-        GROUP BY f.document_id, f.distilled_fact_id
+        GROUP BY {source}, f.distilled_fact_id
         """
-_STATES_ALL = _STATES.format(join="", where="")
 
-# label -> (from label, to label, SELECT of (from id, to id, jsonb properties))
-EDGES: dict[str, tuple[str, str, str]] = {
-    "HAS_CHUNK": (
+
+# A statement outside every message is the document's; one whose span starts in a message, the message's.
+_IN_NO_MESSAGE = f"AND NOT EXISTS (SELECT 1 FROM ({FACT_MESSAGES}) fm WHERE fm.fact_id = f.id)"
+_IN_A_MESSAGE = f"JOIN ({FACT_MESSAGES}) fm ON fm.fact_id = f.id"
+
+# (label, from label, to label, SELECT of (from id, to id, jsonb properties)); every one is run with
+# PARAMS. A label may appear more than once, between different labels.
+EDGES: list[tuple[str, str, str, str]] = [
+    (
+        "HAS_MESSAGE",
         "Document",
-        "Chunk",
-        "SELECT c.document_id, c.id, jsonb_build_object('ord', c.ord) FROM chunks c WHERE c.fact_id IS NULL",
+        "Message",
+        f"SELECT msg.document_id, msg.message_id, jsonb_build_object('ord', msg.n) FROM ({MESSAGES}) msg",
     ),
-    "WROTE": (
+    (
+        "WROTE",
         "Author",
         "Document",
         """
@@ -134,7 +290,8 @@ EDGES: dict[str, tuple[str, str, str]] = {
         FROM document_authors da WHERE da.role IN ('author', 'committer', 'sender')
         """,
     ),
-    "RECEIVED": (
+    (
+        "RECEIVED",
         "Author",
         "Document",
         """
@@ -142,8 +299,52 @@ EDGES: dict[str, tuple[str, str, str]] = {
         FROM document_authors da WHERE da.role IN ('recipient', 'cc')
         """,
     ),
-    "STATES": ("Document", "Fact", _STATES_ALL),
-}
+    (
+        "SENT",
+        "Author",
+        "Message",
+        f"""
+        SELECT DISTINCT a.author_id, msg.message_id, jsonb_build_object('direction', msg.direction)
+        FROM ({MESSAGES}) msg CROSS JOIN LATERAL (
+            SELECT ai.author_id FROM author_identities ai WHERE msg.sender <> 'me' AND ai.value = msg.sender
+            UNION
+            SELECT au.id FROM authors au WHERE msg.sender = 'me' AND au.is_self
+        ) a
+        """,
+    ),
+    ("STATES", "Document", "Fact", states("f.document_id", where=_IN_NO_MESSAGE)),
+    ("STATES", "Message", "Fact", states("fm.message_id", join=_IN_A_MESSAGE)),
+    (
+        "LINKS_TO",
+        "Document",
+        "Link",
+        f"""
+        SELECT k.src_id, {_LINK_ID}, jsonb_strip_nulls(jsonb_build_object('text', k.text))
+        FROM ({LINKS}) k WHERE k.src_label = 'Document'
+        """,
+    ),
+    (
+        "LINKS_TO",
+        "Message",
+        "Link",
+        f"""
+        SELECT k.src_id, {_LINK_ID}, jsonb_strip_nulls(jsonb_build_object('text', k.text))
+        FROM ({LINKS}) k WHERE k.src_label = 'Message'
+        """,
+    ),
+    (
+        "REFERS_TO",
+        "Link",
+        "Document",
+        f"""
+        SELECT DISTINCT {_LINK_ID}, d.id, CAST('{{}}' AS jsonb)
+        FROM ({LINKS}) k
+        JOIN documents d ON d.uri = CASE WHEN k.href LIKE 'file://%' THEN substr(k.href, 8) ELSE k.href END
+        """,
+    ),
+]
+
+EDGE_LABELS: tuple[str, ...] = tuple(dict.fromkeys(label for label, *_ in EDGES))
 
 
 @dataclass(frozen=True)
@@ -186,8 +387,8 @@ def _resolve_end(attribute: str, fact_class: str, title: str) -> str:
 def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
     """The vertex and edge sets a rebuild writes: the built-in ones, then the configured ones."""
     mapped = sorted(schema.vertices)
-    vertices = [VertexSet(label, key, select) for label, (key, select) in VERTICES.items()]
-    edges = [EdgeSet(label, source, target, select) for label, (source, target, select) in EDGES.items()]
+    vertices = [VertexSet(label, key, select, dict(PARAMS)) for label, (key, select) in VERTICES.items()]
+    edges = [EdgeSet(label, source, target, select, dict(PARAMS)) for label, source, target, select in EDGES]
     if mapped:
         # A configured class's distilled facts are vertices of its label, not Fact.
         not_mapped = "JOIN distilled_facts dm ON dm.id = {id} WHERE NOT (dm.fact_class = ANY(CAST(:mapped AS text[])))"
@@ -196,7 +397,7 @@ def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
                 v.label,
                 v.key,
                 f"SELECT x.* FROM ({v.select}) x(rid, p) {not_mapped.format(id='x.rid')}",
-                {"mapped": mapped},
+                {**v.params, "mapped": mapped},
             )
             if v.label == "Fact"
             else v
@@ -208,7 +409,7 @@ def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
                 e.source,
                 e.target,
                 f"SELECT x.* FROM ({e.select}) x(src, dst, p) {not_mapped.format(id='x.dst')}",
-                {"mapped": mapped},
+                {**e.params, "mapped": mapped},
             )
             if e.label == "STATES"
             else e
@@ -220,26 +421,37 @@ def projection(schema: GraphSchema) -> tuple[list[VertexSet], list[EdgeSet]]:
             VertexSet(
                 vertex.label,
                 "distilled_fact_id",
-                """
+                f"""
                 SELECT df.id, jsonb_strip_nulls(jsonb_build_object(
-                           'distilled_fact_id', df.id, 'fact_class', df.fact_class,
+                           'origin', 'derived', 'distilled_fact_id', df.id, 'fact_class', df.fact_class,
                            'title', coalesce(nullif(rep.attributes->>CAST(:title AS text), ''), df.statement),
-                           'statement', df.statement, 'nodes', df.nodes, 'anchor_key', df.anchor_key))
+                           'statement', df.statement, 'nodes', df.nodes, 'anchor_key', df.anchor_key,
+                           'latest_fact_id', lr.latest_fact_id, 'latest_document_id', lr.latest_document_id,
+                           'at', lr.at))
                 FROM distilled_facts df LEFT JOIN facts rep ON rep.id = df.representative_fact_id
+                LEFT JOIN ({LATEST_RESTATEMENTS}) lr ON lr.distilled_fact_id = df.id
                 WHERE df.fact_class = :cls
                 """,
-                params,
+                {**PARAMS, **params},
             )
         )
+        of_class = "JOIN distilled_facts df ON df.id = f.distilled_fact_id"
         edges.append(
             EdgeSet(
                 "STATES",
                 "Document",
                 vertex.label,
-                _STATES.format(
-                    join="JOIN distilled_facts df ON df.id = f.distilled_fact_id", where="AND df.fact_class = :cls"
-                ),
-                {"cls": fact_class},
+                states("f.document_id", join=of_class, where=f"AND df.fact_class = :cls {_IN_NO_MESSAGE}"),
+                {**PARAMS, "cls": fact_class},
+            )
+        )
+        edges.append(
+            EdgeSet(
+                "STATES",
+                "Message",
+                vertex.label,
+                states("fm.message_id", join=f"{of_class} {_IN_A_MESSAGE}", where="AND df.fact_class = :cls"),
+                {**PARAMS, "cls": fact_class},
             )
         )
     for edge in schema.edges:
@@ -317,6 +529,34 @@ def use_age(session: Session) -> None:
     conn.exec_driver_sql("""SET LOCAL search_path = "$user", public, ag_catalog""")
 
 
+# The shared subqueries a rebuild computes once, as temp tables, in dependency order: every set
+# would otherwise group the messages, and scan every document's text for links, again.
+MATERIALIZED: list[tuple[str, str]] = [
+    ("graph_messages", MESSAGES),
+    ("graph_fact_messages", FACT_MESSAGES),
+    ("graph_links", LINKS),
+    ("graph_fact_times", FACT_TIMES),
+]
+
+
+def _use_materialized(select: str, tables: list[tuple[str, str]]) -> str:
+    """``select`` reading the temp ``tables`` in place of the subqueries they hold, the largest first."""
+    for name, body in reversed(tables):
+        select = select.replace(f"({body})", name)
+    return select
+
+
+def _materialize(session: Session) -> None:
+    """Compute ``MATERIALIZED`` into temp tables, dropped at commit."""
+    done: list[tuple[str, str]] = []
+    for name, body in MATERIALIZED:
+        session.execute(
+            text(f"CREATE TEMP TABLE {name} ON COMMIT DROP AS {_use_materialized(body, done)}"), dict(PARAMS)
+        )
+        session.execute(text(f"ANALYZE {name}"))
+        done.append((name, body))
+
+
 def rebuild_graph(session: Session, schema: GraphSchema | None = None) -> GraphSummary:
     """Drop and re-project the ``garage`` graph from the tables. Commits.
 
@@ -334,8 +574,10 @@ def rebuild_graph(session: Session, schema: GraphSchema | None = None) -> GraphS
 
     summary = GraphSummary(available=True)
     conn = session.connection()
+    _materialize(session)
     for vertex_set in vertex_sets:
-        label, key, select = vertex_set.label, vertex_set.key, vertex_set.select
+        label, key = vertex_set.label, vertex_set.key
+        select = _use_materialized(vertex_set.select, MATERIALIZED)
         session.execute(text("SELECT ag_catalog.create_vlabel(:g, :label)"), {"g": GRAPH, "label": label})
         inserted = conn.execute(
             text(
@@ -363,7 +605,8 @@ def rebuild_graph(session: Session, schema: GraphSchema | None = None) -> GraphS
         session.execute(text(f"CREATE UNIQUE INDEX ON graph_ids_{label.lower()} (rid)"))
 
     for edge_set in edge_sets:
-        label, source, target, select = edge_set.label, edge_set.source, edge_set.target, edge_set.select
+        label, source, target = edge_set.label, edge_set.source, edge_set.target
+        select = _use_materialized(edge_set.select, MATERIALIZED)
         if label not in summary.edges:
             session.execute(text("SELECT ag_catalog.create_elabel(:g, :label)"), {"g": GRAPH, "label": label})
             summary.edges[label] = 0
@@ -389,7 +632,9 @@ def rebuild_graph(session: Session, schema: GraphSchema | None = None) -> GraphS
 # The property a vertex is titled by, where one property reads as its name.
 TITLE_PROPERTIES: dict[str, str] = {
     "Document": "title",
+    "Message": "text",
     "Author": "display_name",
+    "Link": "text",
     "Fact": "statement",
 }
 
@@ -510,8 +755,8 @@ def vertex_title(label: str, properties: dict[str, Any]) -> str:
         uri = properties.get("uri")
         if isinstance(uri, str) and uri:
             return uri.rstrip("/").rsplit("/", 1)[-1] or uri
-    if label == "Chunk" and "ord" in properties:
-        return f"Chunk {properties['ord']}"
+    if label == "Link" and isinstance(properties.get("href"), str):
+        return properties["href"]
     for value in properties.values():
         if isinstance(value, str) and value.strip():
             return value.strip()
@@ -618,9 +863,9 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
     """Vertices whose title contains ``query`` (case-insensitively), or whose relational id is it.
 
     ``label`` narrows to one label; an empty ``query`` lists the first vertices
-    of each searchable label. Chunks have no title and are found through their
-    documents. The owner's own Author vertex (``is_self``) comes before other
-    authors, so the Graph page can open on it.
+    of each searchable label. Within a label the most recent come first
+    (:func:`recency_order`). The owner's own Author vertex (``is_self``) comes
+    before other authors, so the Graph page can open on it.
     """
     if not graph_exists(session):
         return []
@@ -650,7 +895,7 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
         if query and not clauses:
             continue
         where = f"WHERE {' OR '.join(clauses)}" if clauses else ""
-        order = f"{_IS_SELF} DESC, v.id" if name == "Author" else "v.id"
+        order = f"{_IS_SELF} DESC, {recency_order(name)}" if name == "Author" else recency_order(name)
         rows = session.execute(
             text(f'SELECT {_VERTEX_COLUMNS} FROM {GRAPH}."{name}" v {where} ORDER BY {order} LIMIT :limit'),
             {"pattern": f"%{_like_escape(query)}%", "key": key, "limit": max(1, limit - len(found))},
@@ -662,6 +907,21 @@ def find_vertices(session: Session, query: str, *, label: str = "", limit: int =
         if len(found) >= limit:
             break
     return found[:limit]
+
+
+def recency_order(label: str, alias: str = "v") -> str:
+    """An ORDER BY putting ``label``'s most recent vertices first.
+
+    By ``at`` where a vertex has it (a fact's is its most recent
+    restatement's), else by relational id (the newest row last inserted),
+    else by graph id.
+    """
+    keys = [f"ag_catalog.agtype_access_operator({alias}.properties, '\"at\"'::ag_catalog.agtype) DESC NULLS LAST"]
+    key = key_property(label)
+    if key and label != "Link":  # a link's id is a hash, in no order
+        keys.append(f"ag_catalog.agtype_access_operator({alias}.properties, '\"{key}\"'::ag_catalog.agtype) DESC")
+    keys.append(f"{alias}.id DESC")
+    return ", ".join(keys)
 
 
 # Whether an Author vertex is the owner's, read from ``authors`` rather than the projection: the
@@ -689,7 +949,16 @@ EDGES_PER_VERTEX = 20
 
 # Edge labels by how much they say about a claim, most first; a configured relation label, not
 # listed, ranks first.
-_EDGE_ORDER = (None, "STATES", "WROTE", "RECEIVED", "HAS_CHUNK")
+_EDGE_ORDER = (
+    None,
+    "STATES",
+    "WROTE",
+    "SENT",
+    "RECEIVED",
+    "HAS_MESSAGE",
+    "LINKS_TO",
+    "REFERS_TO",
+)
 _ROLE_ORDER = ("author", "sender", "committer", "recipient", "cc")
 
 
@@ -702,7 +971,7 @@ def edge_rank(edge: GraphEdge) -> tuple:
 
     By label (``_EDGE_ORDER``), then within a label: the closest statements
     (``similarity``), the surest attribution (``confidence``, then role), a
-    document's facts in reading order (``char_start``) and chunks by ``ord``;
+    document's facts in reading order (``char_start``) and messages by ``ord``;
     the newest edge breaks ties.
     """
     label = edge.label if edge.label in _EDGE_ORDER else None
@@ -738,10 +1007,21 @@ Closeness = Callable[[Session, GraphVertex, list[GraphVertex]], dict[int, float]
 def _vector_source(vertex: GraphVertex, chunks: str, facts: str) -> str | None:
     """A SELECT of (relational id, embedding) holding ``vertex``'s kind, or None for a kind with no vector.
 
-    A document's vector is the mean of its content chunks'; an author has none.
+    A document's vector is the mean of its content chunks', a message's of its own chunks'; an
+    author and a link have none.
     """
-    if vertex.label == "Chunk":
-        return f"SELECT chunk_id, embedding FROM {chunks}"
+    if vertex.label == "Message":
+        # Only the threads of the messages compared (a message's id is its first chunk's), not every
+        # message chunk in the corpus.
+        threads = CHUNK_MESSAGES.replace(
+            "WHERE c.direction IS NOT NULL AND c.fact_id IS NULL",
+            "WHERE c.direction IS NOT NULL AND c.fact_id IS NULL AND c.document_id IN "
+            "(SELECT t.document_id FROM chunks t WHERE t.id = ANY(CAST(:keys AS bigint[])) OR t.id = :center)",
+        )
+        return (
+            f"SELECT cm.message_id, avg(e.embedding) FROM {chunks} e "
+            f"JOIN ({threads}) cm ON cm.chunk_id = e.chunk_id GROUP BY cm.message_id"
+        )
     if vertex.label == "Document":
         return (
             f"SELECT c.document_id, avg(e.embedding) FROM {chunks} e JOIN chunks c ON c.id = e.chunk_id "
@@ -782,7 +1062,7 @@ def vector_closeness(session: Session, center: GraphVertex, neighbours: list[Gra
                         f"SELECT s.k, s.v {op} (SELECT r.v FROM ({center_source}) r(k, v) WHERE r.k = :center) "
                         f"FROM ({source}) s(k, v) WHERE s.k = ANY(CAST(:keys AS bigint[]))"
                     ),
-                    {"keys": list(ids), "center": center.key},
+                    {"keys": list(ids), "center": center.key, **PARAMS},
                 ).all()
                 found.update({ids[int(key)]: float(distance) for key, distance in rows if distance is not None})
             return found
@@ -928,4 +1208,267 @@ def neighborhood(
         vertices=list(vertices.values()),
         edges=list(edges.values()),
         truncated=truncated,
+    )
+
+
+# ---------------------------------------------------------------------------
+# One document's links: what the Documents page's Linked view lists
+# ---------------------------------------------------------------------------
+
+# The labels a document's walk goes on through: what belongs to the document itself. Every other
+# vertex (an author, a link, a distilled fact, another document) is where it stops, so a prolific
+# author or a common fact cannot pull in the rest of the corpus.
+DOCUMENT_PARTS = frozenset({"Message"})
+
+
+def _edges_touching(session: Session, ids: list[int]) -> list[GraphEdge]:
+    rows = session.execute(
+        text(
+            f'SELECT {_EDGE_COLUMNS} FROM {GRAPH}."_ag_label_edge" e '
+            "WHERE e.start_id = ANY(CAST(CAST(:ids AS text[]) AS ag_catalog.graphid[])) "
+            "OR e.end_id = ANY(CAST(CAST(:ids AS text[]) AS ag_catalog.graphid[])) ORDER BY e.id"
+        ),
+        {"ids": [str(i) for i in ids]},
+    ).all()
+    return [
+        GraphEdge(int(eid), label_from_relation(rel), int(src), int(dst), parse_properties(props))
+        for eid, rel, src, dst, props in rows
+    ]
+
+
+def most_recent_first(vertices: list[GraphVertex]) -> list[GraphVertex]:
+    """``vertices`` with the most recent first: by ``at`` where a vertex has it, then by relational id."""
+    by_key = sorted(vertices, key=lambda v: (v.key, v.id), reverse=True)
+    timed = sorted(
+        (v for v in by_key if isinstance(v.properties.get("at"), str)), key=lambda v: v.properties["at"], reverse=True
+    )
+    return [*timed, *(v for v in by_key if not isinstance(v.properties.get("at"), str))]
+
+
+def document_links(session: Session, document_id: int, *, limit: int = 2000) -> Neighborhood:
+    """Everything in the graph linked to one document, without limit per vertex.
+
+    The document's messages, and each author, link, distilled fact and
+    document it or they touch, but no further
+    (``DOCUMENT_PARTS``); then the relation edges projected from the
+    document's own facts (a configured edge's ``document_id``), and every edge
+    between the vertices found. Vertices come center first, then most recent
+    first (:func:`most_recent_first`). ``limit`` caps the vertices and sets
+    ``truncated``. Raises ``LookupError`` when the document is not in the graph.
+    """
+    if not graph_exists(session):
+        return Neighborhood(available=False)
+    use_age(session)
+    center = find_vertex(session, "Document", document_id)
+    if center is None:
+        raise LookupError("that document is not in the graph yet; Distill Facts or `garage graph rebuild` projects it")
+
+    vertices: dict[int, GraphVertex] = {center.id: center}
+    frontier = [center.id]
+    truncated = False
+    while frontier and not truncated:
+        hop = _edges_touching(session, frontier)
+        reached = {_other_end(e, vid) for e in hop for vid in frontier if vid in (e.source_id, e.target_id)}
+        new_ids = sorted(reached - vertices.keys())
+        if len(vertices) + len(new_ids) > limit:
+            truncated = True
+            new_ids = new_ids[: max(0, limit - len(vertices))]
+        found = _vertices_by_id(session, new_ids, None)
+        vertices.update({v.id: v for v in found})
+        frontier = [v.id for v in found if v.label in DOCUMENT_PARTS]
+
+    # Relation edges drawn from this document's statements, whose ends are distilled facts the walk may
+    # not have reached (a name resolved by a statement elsewhere).
+    own = session.execute(
+        text(
+            f'SELECT CAST(e.start_id AS text), CAST(e.end_id AS text) FROM {GRAPH}."_ag_label_edge" e '
+            "WHERE ag_catalog.agtype_access_operator(e.properties, '\"document_id\"'::ag_catalog.agtype) "
+            "= CAST(CAST(:doc AS text) AS ag_catalog.agtype)"
+        ),
+        {"doc": int(document_id)},
+    ).all()
+    ends = sorted({int(i) for row in own for i in row} - vertices.keys())
+    room = max(0, limit - len(vertices))
+    if len(ends) > room:
+        truncated = True
+        ends = ends[:room]
+    vertices.update({v.id: v for v in _vertices_by_id(session, ends, None)})
+
+    edges = {
+        e.id: e for e in _edges_touching(session, list(vertices)) if e.source_id in vertices and e.target_id in vertices
+    }
+    rest = most_recent_first([v for v in vertices.values() if v.id != center.id])
+    return Neighborhood(
+        available=True,
+        center=center,
+        vertices=[center, *rest],
+        edges=sorted(edges.values(), key=lambda e: e.id),
+        truncated=truncated,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Raw openCypher: the app's Query page
+# ---------------------------------------------------------------------------
+
+# The dollar-quote tag a query is wrapped in; a query holding it is refused, so it cannot end the
+# quote early.
+_QUOTE = "$garage_cypher$"
+
+_STRINGS_AND_COMMENTS = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|`[^`]*`|//[^\n]*|/\*.*?\*/", re.S)
+_CLAUSE_END = re.compile(r"\b(ORDER\s+BY|SKIP|LIMIT|UNION)\b", re.I)
+# An item's alias, on its masked text: ``AS`` then a name, or a backticked one (masked to blanks).
+# A schema-qualified call (``pg_catalog.pg_read_file(...)``), which AGE passes to Postgres: refused,
+# since the query runs with the database role. Cypher's own functions are unqualified.
+_QUALIFIED_CALL = re.compile(r"(\w+|`[^`]*`)\s*\.\s*(\w+|`[^`]*`)\s*\(")
+_STRINGS_AND_COMMENTS_ONLY = re.compile(r"'(?:[^'\\]|\\.)*'|\"(?:[^\"\\]|\\.)*\"|//[^\n]*|/\*.*?\*/", re.S)
+_ALIAS = re.compile(r"\sAS\s+(?:\w+\s*|\s*)$", re.I)
+
+
+def _masked(query: str) -> str:
+    """``query`` with string literals and comments blanked out, same length, so positions still match."""
+    return _STRINGS_AND_COMMENTS.sub(lambda m: " " * len(m.group(0)), query)
+
+
+def _depths(masked: str) -> list[int]:
+    """The bracket depth at each character of ``masked``."""
+    depths: list[int] = []
+    depth = 0
+    for c in masked:
+        if c in ")]}":
+            depth -= 1
+        depths.append(depth)
+        if c in "([{":
+            depth += 1
+    return depths
+
+
+def return_columns(query: str) -> list[str]:
+    """The names of the columns a Cypher query's last ``RETURN`` gives, which ``cypher()`` must be told.
+
+    An item's name is its ``AS`` alias, else its text. Raises ``ValueError`` for
+    a query with no ``RETURN`` or one returning ``*``, whose columns cannot be
+    known without running it.
+    """
+    masked = _masked(query)
+    depths = _depths(masked)
+    returns = [m for m in re.finditer(r"(?<![\w$])RETURN\b", masked, re.I) if depths[m.start()] == 0]
+    if not returns:
+        raise ValueError("the query returns nothing: end it with RETURN and the values to show")
+    start = returns[-1].end()
+    end = next(
+        (m.start() for m in _CLAUSE_END.finditer(masked, start) if depths[m.start()] == 0),
+        len(masked),
+    )
+    commas = [i for i in range(start, end) if masked[i] == "," and depths[i] == 0]
+    names: list[str] = []
+    for i, (a, b) in enumerate(zip([start, *(c + 1 for c in commas)], [*commas, end], strict=True)):
+        # Trimmed by the query's own whitespace, so a backticked name blanked in the mask stays.
+        raw = query[a:b]
+        a, b = a + len(raw) - len(raw.lstrip()), b - (len(raw) - len(raw.rstrip()))
+        if i == 0 and re.match(r"DISTINCT\b", masked[a:b], re.I):
+            a += len("DISTINCT")
+            a += len(query[a:b]) - len(query[a:b].lstrip())
+        item, masked_item = query[a:b], masked[a:b]
+        if not item:
+            raise ValueError("RETURN has an empty item")
+        if item == "*":
+            raise ValueError("RETURN * cannot be shown: name each value to return")
+        alias = _ALIAS.search(masked_item)
+        names.append(item[alias.start() + len(" AS") :].strip().strip("`") if alias else " ".join(item.split()))
+    return names
+
+
+@dataclass(frozen=True)
+class QueryCell:
+    """One value of a result row, as agtype text; ``vertex`` is set when the value is a vertex."""
+
+    text: str
+    vertex: GraphVertex | None = None
+
+
+@dataclass
+class QueryResult:
+    """A query's columns and rows; ``truncated`` says there were more than the limit."""
+
+    available: bool
+    columns: list[str] = field(default_factory=list)
+    rows: list[list[QueryCell]] = field(default_factory=list)
+    truncated: bool = False
+
+
+_VERTEX_VALUE = re.compile(r"^\s*(\{.*\})::vertex\s*$", re.S)
+
+
+def query_cell(value: str | None) -> QueryCell:
+    """A result value as a cell, with the vertex it is when it is one."""
+    if value is None:
+        return QueryCell("null")
+    match = _VERTEX_VALUE.match(value)
+    if match:
+        parsed = parse_properties(match.group(1))
+        label, properties = parsed.get("label"), parsed.get("properties")
+        if isinstance(parsed.get("id"), int) and isinstance(label, str) and isinstance(properties, dict):
+            key = properties.get(key_property(label) or "", 0)
+            return QueryCell(
+                value,
+                GraphVertex(
+                    id=parsed["id"],
+                    label=label,
+                    key=key if isinstance(key, int) and not isinstance(key, bool) else 0,
+                    title=vertex_title(label, properties),
+                    properties=properties,
+                ),
+            )
+    return QueryCell(value)
+
+
+def run_query(session: Session, query: str, *, limit: int = 500, timeout_seconds: int = 30) -> QueryResult:
+    """Run one openCypher query on the ``garage`` graph and return at most ``limit`` rows.
+
+    Read only: the transaction is set read-only before the query runs, so
+    ``CREATE``/``SET``/``DELETE`` fail rather than change the projection, and a
+    statement timeout bounds it. A schema-qualified function call is refused:
+    AGE hands it to Postgres, where ``pg_catalog.pg_read_file`` and its kin run
+    with the database role. The query is passed to ``cypher()`` in a
+    dollar quote it may not contain, and never through SQLAlchemy's parameter
+    parsing (a Cypher label reads like a ``:name`` bind parameter). Raises
+    ``ValueError`` for a query that cannot run, with the server's message.
+    """
+    from sqlalchemy.exc import DBAPIError
+
+    query = query.strip().rstrip(";").strip()
+    if not query:
+        raise ValueError("write a query first")
+    if _QUOTE in query:
+        raise ValueError(f"the query may not contain {_QUOTE}")
+    # Strings and comments blanked, backticked names kept: `pg_catalog`.f( is as qualified as pg_catalog.f(.
+    if _QUALIFIED_CALL.search(_STRINGS_AND_COMMENTS_ONLY.sub(lambda m: " " * len(m.group(0)), query)):
+        raise ValueError("the query may not call a schema-qualified function; use Cypher's own functions")
+    if not graph_exists(session):
+        return QueryResult(available=False)
+    columns = return_columns(query)
+    limit = max(1, min(int(limit), 10_000))
+    use_age(session)
+    conn = session.connection()
+    conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+    conn.exec_driver_sql(f"SET LOCAL statement_timeout = {int(timeout_seconds) * 1000}")
+    definitions = ", ".join(f"c{i} ag_catalog.agtype" for i in range(len(columns)))
+    # agtype_out, not a cast: AGE casts no vertex, edge or path to text.
+    values = ", ".join(f"ag_catalog.agtype_out(r.c{i})::text" for i in range(len(columns)))
+    sql = (
+        f"SELECT {values} FROM ag_catalog.cypher('{GRAPH}', {_QUOTE}{query}{_QUOTE}) AS r({definitions}) "
+        f"LIMIT {limit + 1}"
+    )
+    try:
+        with session.begin_nested():
+            rows = conn.exec_driver_sql(sql).all()
+    except DBAPIError as exc:
+        message = str(getattr(exc, "orig", exc)).strip().splitlines()
+        raise ValueError(message[0] if message else "the query failed") from exc
+    return QueryResult(
+        available=True,
+        columns=columns,
+        rows=[[query_cell(v) for v in row] for row in rows[:limit]],
+        truncated=len(rows) > limit,
     )

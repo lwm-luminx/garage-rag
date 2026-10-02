@@ -47,6 +47,13 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# How a message's paragraph starts in a thread's text (ingest/conversations.py): its time, then
+# its sender. The first chunk of every message starts this way and a continuation chunk of a long
+# message does not, which is how the graph groups a message's chunks back into one Message
+# (db/graph.py). The pattern is a POSIX regex, for Postgres.
+STAMP_FORMAT = "%Y-%m-%d %H:%M UTC"
+MESSAGE_START_PATTERN = r"^\[[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2} UTC\] "
+
 EXTRACTOR_NAME = "messages"
 # Bump when what is read or how it is rendered changes, so every conversation is rebuilt
 # (it is part of the chunker signature, :func:`garage_rag.ingest.conversations.signature`).

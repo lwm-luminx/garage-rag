@@ -45,8 +45,9 @@ What the tests can count on:
   Glean Facts also reads the mail's sender, recipient and subject from its headers, with no
   model (`garage_rag/enrich/metadata.py`), so the Facts page lists 23, 6 of them from the mail.
 - **Graph.** Once the facts are embedded and distilled, the Graph page holds a `Document` vertex
-  per indexed file and a `Chunk` per chunk: 5 and 6, and a `Fact` per distilled fact, `STATES`-linked
-  from each document that states it. The Markdown note has two chunks and states five facts.
+  per indexed file and a `Fact` per distilled fact, `STATES`-linked from each document that states
+  it (chunks are not in the graph, and the corpus has no Messages thread or links). The Markdown note
+  states five facts.
 
 `garage_python/tests/test_fixture_corpus.py` ingests the folder through the real pipeline (with a
 recording gateway in place of the database) and checks every row of the table above, so a change

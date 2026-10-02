@@ -963,7 +963,7 @@ app.add_typer(graph_app, name="graph")
 
 @graph_app.command("rebuild")
 def graph_rebuild() -> None:
-    """Re-project documents, chunks, authors and distilled facts into the 'garage' graph."""
+    """Re-project documents, messages, authors, links and distilled facts into the 'garage' graph."""
     from garage_rag.ops.graph import rebuild_graph
 
     summary = rebuild_graph()
@@ -1045,6 +1045,59 @@ def graph_neighbors(
         console.print(f"  {titles[edge.source_id]} -[{edge.label}]-> {titles[edge.target_id]}")
     note = f"{len(result.vertices):,} vertices, {len(result.edges):,} edges"
     console.print(f"[dim]{note}{', cut at the limit' if result.truncated else ''}[/dim]")
+
+
+@graph_app.command("links")
+def graph_links(
+    document_id: Annotated[int, typer.Argument(help="A document's id.")],
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Stop at this many vertices.")] = 2000,
+) -> None:
+    """List everything linked to one document: what was read (messages, authors, links), then what was derived."""
+    from garage_rag.db.graph import origin
+    from garage_rag.ops.graph import document_links
+
+    try:
+        result = document_links(document_id, limit=limit)
+    except LookupError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    if not result.available or result.center is None:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    console.print(f"[bold]{result.center.title}[/bold]")
+    rest = result.vertices[1:]
+    for kind in ("read", "derived"):
+        shown = [v for v in rest if origin(v.label) == kind]
+        if shown:
+            console.print(f"[dim]{kind}[/dim]")
+        for v in shown:
+            at = v.properties.get("at")
+            console.print(f"  [cyan]{v.id}[/cyan] ({v.label} {v.key}) {v.title}{f'  [dim]{at}[/dim]' if at else ''}")
+    note = f"{len(rest):,} linked vertices, {len(result.edges):,} edges"
+    console.print(f"[dim]{note}{', cut at the limit' if result.truncated else ''}[/dim]")
+
+
+@graph_app.command("query")
+def graph_query(
+    query: Annotated[str, typer.Argument(help="openCypher ending in RETURN: 'MATCH (d:Document) RETURN d.title'.")],
+    limit: Annotated[int, typer.Option("--limit", "-n", help="Show at most this many rows.")] = 100,
+) -> None:
+    """Run one read-only openCypher query on the graph and print its rows."""
+    from garage_rag.ops.graph import run_query
+
+    try:
+        result = run_query(query, limit=limit)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from None
+    if not result.available:
+        console.print("[yellow]no graph: this server has no Apache AGE, or `garage graph rebuild` has not run[/yellow]")
+        raise typer.Exit(code=1)
+    console.print("\t".join(result.columns), style="bold")
+    for row in result.rows:
+        console.print("\t".join(cell.text for cell in row), markup=False, highlight=False)
+    note = f"{len(result.rows):,} rows"
+    console.print(f"[dim]{note}{', more past the limit' if result.truncated else ''}[/dim]")
 
 
 # ---------------------------------------------------------------------------

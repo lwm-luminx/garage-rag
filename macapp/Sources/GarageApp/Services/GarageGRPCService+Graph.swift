@@ -67,6 +67,32 @@ extension GarageGRPCService {
         }
     }
 
+    /// Everything in the graph linked to one document, uncapped per vertex: the Documents page's Linked view.
+    func documentLinks(documentID: Int64, limit: Int = 2000) async throws -> Garage_GraphNeighborhoodResponse {
+        let client = try await graphClient()
+        var request = Garage_DocumentLinksRequest()
+        request.documentID = documentID
+        request.limit = Int32(limit)
+        do {
+            return try await client.getDocumentLinks(request, callOptions: Self.graphCallOptions)
+        } catch {
+            throw GarageGRPCError.rpcFailed(Self.describe(error))
+        }
+    }
+
+    /// One read-only openCypher query: the Query page.
+    func runGraphQuery(_ query: String, limit: Int = 500) async throws -> Garage_GraphQueryResponse {
+        let client = try await graphClient()
+        var request = Garage_GraphQueryRequest()
+        request.query = query
+        request.limit = Int32(limit)
+        do {
+            return try await client.runGraphQuery(request, callOptions: Self.graphCallOptions)
+        } catch {
+            throw GarageGRPCError.rpcFailed(Self.describe(error))
+        }
+    }
+
     private static var graphCallOptions: CallOptions {
         GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
     }

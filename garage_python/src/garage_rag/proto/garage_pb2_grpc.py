@@ -178,6 +178,16 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.GraphNeighborhoodRequest.SerializeToString,
                 response_deserializer=garage__pb2.GraphNeighborhoodResponse.FromString,
                 _registered_method=True)
+        self.GetDocumentLinks = channel.unary_unary(
+                '/garage.GarageService/GetDocumentLinks',
+                request_serializer=garage__pb2.DocumentLinksRequest.SerializeToString,
+                response_deserializer=garage__pb2.GraphNeighborhoodResponse.FromString,
+                _registered_method=True)
+        self.RunGraphQuery = channel.unary_unary(
+                '/garage.GarageService/RunGraphQuery',
+                request_serializer=garage__pb2.GraphQueryRequest.SerializeToString,
+                response_deserializer=garage__pb2.GraphQueryResponse.FromString,
+                _registered_method=True)
         self.GetStats = channel.unary_unary(
                 '/garage.GarageService/GetStats',
                 request_serializer=garage__pb2.StatsRequest.SerializeToString,
@@ -436,6 +446,21 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetDocumentLinks(self, request, context):
+        """Everything linked to one document (its messages, authors, links and facts), uncapped per vertex:
+        the Documents page's Linked view. The center is the document.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RunGraphQuery(self, request, context):
+        """One read-only openCypher query, run through AGE's cypher(): the Query page.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def GetStats(self, request, context):
         """--- Schema, Stats & Settings ---
         """
@@ -660,6 +685,16 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.GetGraphNeighborhood,
                     request_deserializer=garage__pb2.GraphNeighborhoodRequest.FromString,
                     response_serializer=garage__pb2.GraphNeighborhoodResponse.SerializeToString,
+            ),
+            'GetDocumentLinks': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDocumentLinks,
+                    request_deserializer=garage__pb2.DocumentLinksRequest.FromString,
+                    response_serializer=garage__pb2.GraphNeighborhoodResponse.SerializeToString,
+            ),
+            'RunGraphQuery': grpc.unary_unary_rpc_method_handler(
+                    servicer.RunGraphQuery,
+                    request_deserializer=garage__pb2.GraphQueryRequest.FromString,
+                    response_serializer=garage__pb2.GraphQueryResponse.SerializeToString,
             ),
             'GetStats': grpc.unary_unary_rpc_method_handler(
                     servicer.GetStats,
@@ -1467,6 +1502,60 @@ class GarageService:
             '/garage.GarageService/GetGraphNeighborhood',
             garage__pb2.GraphNeighborhoodRequest.SerializeToString,
             garage__pb2.GraphNeighborhoodResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDocumentLinks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/GetDocumentLinks',
+            garage__pb2.DocumentLinksRequest.SerializeToString,
+            garage__pb2.GraphNeighborhoodResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RunGraphQuery(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/RunGraphQuery',
+            garage__pb2.GraphQueryRequest.SerializeToString,
+            garage__pb2.GraphQueryResponse.FromString,
             options,
             channel_credentials,
             insecure,

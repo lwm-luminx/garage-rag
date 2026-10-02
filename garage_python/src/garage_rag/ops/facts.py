@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from garage_rag.config.fact_prompts import EffectivePrompt, select_prompts
 from garage_rag.db.engine import session_scope
 from garage_rag.db.models import CorpusClass, Document, FactRun, Source
+from garage_rag.db.recency import document_time_sql
 
 if TYPE_CHECKING:
     from garage_rag.enrich.clusters import ClusterProgress
@@ -354,10 +355,19 @@ def list_facts(
         filtered = [*filtered, _collapsed(joins, filtered)]
     params["ctx"] = EXCERPT_CONTEXT
 
+    # Most recent first, by when the document stating it happened (db/recency.py); a collapsed row
+    # stands for its distilled fact, so it goes by that fact's most recent restatement.
+    happened = document_time_sql("d")
+    if collapse:
+        happened = (
+            f"coalesce((SELECT max({document_time_sql('d2')}) FROM facts f2 "
+            "JOIN documents d2 ON d2.id = f2.document_id "
+            f"WHERE f2.distilled_fact_id = f.distilled_fact_id), {happened})"
+        )
     order = (
         "ts_rank(f.tsv, websearch_to_tsquery('english', :q)) DESC, f.id DESC"
         if query
-        else "f.created_at DESC, f.document_id DESC, f.ord ASC"
+        else f"{happened} DESC, f.document_id DESC, f.ord ASC"
     )
     params["limit"] = max(limit, 1)
     params["offset"] = max(offset, 0)

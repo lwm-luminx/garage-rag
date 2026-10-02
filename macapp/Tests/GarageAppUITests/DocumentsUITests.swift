@@ -47,7 +47,8 @@ final class DocumentsUITests: GarageUITestCase {
     }
 
     /// Selecting the Markdown note shows its title, its chunk count and both chunks' text.
-    func testOpeningADocumentShowsItsChunks() throws {
+    /// A document opens on its text; chunks, how it was cut up for embedding, show only once turned on.
+    func testOpeningADocumentShowsItsTextAndChunksOnRequest() throws {
         try launchApp()
         waitForBackend()
         try ingestFixtureCorpus()
@@ -62,15 +63,30 @@ final class DocumentsUITests: GarageUITestCase {
             waitUntil(timeout: 30) { title.exists && self.shownText(of: title) == FixtureCorpus.quillonBridge.title },
             "selecting the note did not open its detail (\(title.exists ? shownText(of: title) : "no title"))"
         )
-        let chunkCount = element(identifier: "documents.detail.chunkCount")
-        XCTAssertTrue(chunkCount.exists, "the detail does not count the chunks")
-        XCTAssertEqual(shownText(of: chunkCount), String(FixtureCorpus.quillonBridgeChunks))
+        let text = element(identifier: "documents.text")
+        XCTAssertTrue(text.waitForExistence(timeout: 10), "the detail does not show the document's text")
+        XCTAssertTrue(element(textContaining: "The Quillon Bridge opened in 1893").exists, "the text's start is not shown")
+        XCTAssertTrue(element(textContaining: "closed for repairs in 1958").exists, "the text's end is not shown")
+        XCTAssertTrue(element(textContaining: FixtureCorpus.quillonBridge.token).exists, "the note's token is not in its text")
 
+        let chunkCount = element(identifier: "documents.detail.chunkCount")
+        let showChunks = element(identifier: "documents.detail.showChunks")
+        XCTAssertTrue(showChunks.exists, "the detail has no Show Chunks option")
+        if (showChunks.value as? Int) == 1 || (showChunks.value as? String) == "1" {
+            click(showChunks)  // left on by an earlier run
+        }
+        XCTAssertTrue(waitUntil(timeout: 10) { !chunkCount.exists }, "chunks are counted without being asked for")
+
+        click(showChunks)
+        XCTAssertTrue(chunkCount.waitForExistence(timeout: 10), "Show Chunks does not count the chunks")
+        XCTAssertEqual(shownText(of: chunkCount), String(FixtureCorpus.quillonBridgeChunks))
+        let chunksSegment = app.radioButtons["Chunks"].exists ? app.radioButtons["Chunks"] : app.buttons["Chunks"]
+        XCTAssertTrue(chunksSegment.waitForExistence(timeout: 10), "Show Chunks adds no Chunks view")
+        chunksSegment.click()
         let chunks = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH %@", "documents.chunk."))
         XCTAssertTrue(waitUntil(timeout: 10) { chunks.count == FixtureCorpus.quillonBridgeChunks }, "the detail shows \(chunks.count) chunks")
-        XCTAssertTrue(element(textContaining: "The Quillon Bridge opened in 1893").exists, "the first chunk's text is not shown")
-        XCTAssertTrue(element(textContaining: "closed for repairs in 1958").exists, "the second chunk's text is not shown")
-        XCTAssertTrue(element(textContaining: FixtureCorpus.quillonBridge.token).exists, "the note's token is not in its chunks")
+        click(showChunks)
+        XCTAssertTrue(waitUntil(timeout: 10) { !chunkCount.exists && text.exists }, "turning chunks off did not return to the text")
     }
 
     /// The title filter narrows the list to what matches, and clearing it brings every document back;

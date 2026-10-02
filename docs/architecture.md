@@ -304,12 +304,23 @@ clustering model.
 Where the server has Apache AGE, the run then re-projects the tables into the
 graph `garage` (`garage graph rebuild` does only that). `enrich-facts` does the
 same once any prompt ran, since re-extraction gives a document's facts new ids. The vertices are
-`Document`, `Chunk`, `Author` and `Fact`. The edges are `HAS_CHUNK`,
-`WROTE`/`RECEIVED` and `STATES`, one from each document to each distilled fact
-it states, however many of its potential facts state it. Potential facts are
-not vertices, so the graph, like the app, shows each claim once; a fact not yet
-distilled is not in it. Vertices carry the relational ids; text, spans and
-vectors stay in the tables.
+`Document`, `Message`, `Author`, `Link` and `Fact`. Chunks are not in the graph;
+they are how text is cut up for embedding. A Messages thread's chunks are grouped
+back into one `Message` per message. The edges are `HAS_MESSAGE`,
+`WROTE`/`RECEIVED`, `SENT` (an author to a message), `LINKS_TO` (a document or
+message to a Link found in its text), `REFERS_TO` (a link to the document at its
+href) and `STATES`, one from each document, or from the message a statement's
+span starts in, to each distilled fact it states, however many of its potential
+facts state it. Potential facts are not vertices, so the graph, like the app,
+shows each claim once; a fact not yet distilled is not in it. Vertices carry the
+relational ids, `origin` (`read` from a source or `derived` by Garage) and `at`,
+when the element happened; a distilled fact's `at` is its most recent
+restatement's (`latest_fact_id`, `latest_document_id`), so every fact traces to a
+dated document. Text, spans and vectors stay in the tables.
+
+`garage graph query` and the app's Query page run one openCypher query read-only;
+`garage graph links DOC` and the Documents page's Linked view list everything the
+graph links to one document.
 
 New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
 carry a `graph` block, which the projection reads (`graph_schema` in

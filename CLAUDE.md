@@ -293,8 +293,14 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     loose group and states it once; a tight one is kept as is.
   - Each model's `fact_emb_<slug>` table (made with the model) holds distilled-fact vectors: the
     clustering model's centroid and `seed`, and under other models the mean the backfill writes.
-  - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Chunk, Author,
-    PotentialFact and Fact vertices into the graph `garage`. A prompt's `graph` block
+  - Where AGE exists, `db/graph.py` (`garage graph rebuild`) projects Document, Message, Author,
+    Link and Fact (distilled facts only) vertices into the graph `garage`. Chunks are not in it: they are how
+    text is embedded. A thread's chunks are grouped back into Messages (`MESSAGE_START_PATTERN` in
+    `extract/messages.py`), and a fact is `STATES`-linked from its document or the message its span
+    starts in, one edge per distilled fact however often it is stated. Links come from the text (Markdown, HTML, bare URLs). Every vertex carries `origin`
+    (`read` from a source, or `derived` by Garage) and, where it has one, `at`: when it happened
+    (`db/recency.py`; a distilled fact takes its most recent restatement's, named by `latest_fact_id`).
+    Listings (documents, facts, graph search, a document's links) are newest first by it. A prompt's `graph` block
     (`facts.prompts[].graph`) adds vertex labels per class and edges from relation classes, so new
     vertex and edge types are config (`graph_schema`, `projection`). The same module reads it back
     over AGE's label tables with bound parameters, never Cypher built from input: labels with counts,
@@ -306,7 +312,11 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
     (`is_self`, which `find_vertices` lists first among authors, read from `authors` so no rebuild is needed; the app
     fills an empty `identity.name` from the Mac account's full name, and setting it marks the owner's existing
     author row, `ensure_self_author`); the Facts and Documents pages link into it
-    with Show in Graph.
+    with Show in Graph. The Documents page shows a document's text (chunks only behind Show Chunks)
+    and a Linked view (`GetDocumentLinks`, `garage graph links`: the document, its messages and facts,
+    and what those touch, uncapped per vertex). The Query page runs raw openCypher (`RunGraphQuery`,
+    `garage graph query`) in a read-only transaction with a statement timeout; the query goes to
+    `cypher()` in a dollar quote it may not contain, and its columns are named from its last `RETURN`.
 - **Local inference** (`inference/`) — the one HTTP client (httpx; no `ollama`/`openai` packages)
   for LM Studio, Ollama and the app's `LlamaXPCService`: embeddings, chat and model listing on the
   OpenAI-compatible `/v1` routes (Ollama embeddings stay on `/api/embed`), plus LM Studio model
