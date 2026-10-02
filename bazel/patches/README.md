@@ -36,12 +36,11 @@ single_version_override(
 
 Tested that way on 2026-09-27: the store archive validated with App Store Connect
 (`VERIFY SUCCEEDED with no errors`), and `codesign --verify --deep --strict` and
-`garage version` from the archived app passed. One Garage-side change is needed first:
-libpq and libtesseract reach the framework through `structured_resources`
-(`//macapp/externals:python_framework_libs`), so with the patch they land in
-`Versions/A/Resources/Frameworks`, not beside the binary, and dyld does not find them through
-`@loader_path/Frameworks`. The test added `-rpath @loader_path/Resources/Frameworks`. The proper
-fix is to bundle them as code rather than as a resource.
+`garage version` from the archived app passed. That test needed one Garage-side change, since
+gone: libpq and libtesseract then reached the framework as `structured_resources`, which the patch
+puts in `Versions/A/Resources/Frameworks`, where `@loader_path/Frameworks` does not find them. Both
+are now linked statically (`//ext/psycopg_c`, `//ext/python`), so the framework loads no library
+of its own.
 
 Not done yet: rules_apple's own tests (the `test/starlark_tests` bundle-content assertions for
 macOS frameworks expect the flat layout and would need updating, plus a new test for the links),

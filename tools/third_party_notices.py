@@ -3,7 +3,7 @@
 
 The macOS app bundles a Python runtime plus every runtime package in `garage_python/uv.lock`,
 a from-source Postgres + pgvector + Apache AGE (with ICU and zlib), OpenSSL, llama.cpp, Tesseract +
-Leptonica, libgit2, PythonKit, Sparkle, the Swift gRPC/NIO/protobuf runtime pulled in by rules_swift,
+Leptonica, libgit2, psycopg-c, PythonKit, Sparkle, the Swift gRPC/NIO/protobuf runtime pulled in by rules_swift,
 and third-party code vendored into garage_python (see NOTICE). Their licenses (MIT, BSD, Apache,
 Unicode, PSF, LGPL, ...) require the license text to accompany binary redistribution, so this
 collects the actual license files from each upstream release into one text file that ships in
@@ -198,6 +198,15 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         "MIT",
         "https://github.com/langchain-ai/langchain",
         (f"{RAW}/langchain-ai/langchain/langchain-text-splitters%3D%3D1.1.2/LICENSE",),
+    ),
+    Component(
+        # psycopg's C implementation (Cython output from its sdist), compiled into
+        # PythonXPCService.framework with libpq linked statically (//ext/psycopg_c).
+        "psycopg-c",
+        "3.3.4",
+        "LGPL-3.0-only",
+        "https://psycopg.org/",
+        (f"{RAW}/psycopg/psycopg/3.3.4/psycopg_c/LICENSE.txt",),
     ),
     Component(
         "PythonKit",

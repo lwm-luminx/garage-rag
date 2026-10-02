@@ -1,10 +1,10 @@
-"""Native libraries the app's framework loads into every Python process.
+"""Native libraries already loaded into the process, for the ctypes fallbacks.
 
-``PythonXPCService.framework`` links libpq with a load command, so dyld maps it
-when a Garage service or launcher starts, before the App Sandbox applies (a
-sandboxed process may not open it by path later). Python code finds it here,
-among the images already loaded into the process, and hands that path to ctypes,
-which then gets the loaded copy rather than opening another file.
+The app's interpreter loads none: psycopg_c and libpq, Tesseract and libgit2 are linked in and
+reached through built-in modules. Outside it (the Bazel py_tests on macOS, which preload the
+signed libpq) a library may already be mapped; Python code finds it here, among the images
+loaded into the process, and hands that path to ctypes, which then gets the loaded copy rather
+than opening another file.
 """
 
 from __future__ import annotations

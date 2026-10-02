@@ -1,9 +1,10 @@
-"""Load the native libraries PythonXPCService.framework loads in the app.
+"""Load the libpq this repo builds, for psycopg's pure Python implementation.
 
-In the app, dyld has loaded libpq before Python starts, and garage_rag finds it
-among the process's images (garage_rag.native). On macOS Bazel hands the tests the
-same build through a test-only variable; loading it here, before any test imports
-garage_rag, puts it where it looks.
+The app links libpq statically with psycopg's C implementation, which the tests'
+interpreter does not have. On macOS Bazel hands the tests a dylib of the same build
+through a test-only variable; loading it here, before any test imports garage_rag,
+puts it among the process's images, where garage_rag.libpq finds it
+(garage_rag.native).
 
 At the end of every run it also writes the runtime files manifest (see
 pytest_unconfigure below).

@@ -818,3 +818,17 @@ py_test(
         "//garage_python/src/garage_rag/extract",
     ],
 )
+
+py_test(
+    name = "test_psycopg_c",
+    srcs = ["test_psycopg_c.py"],
+    data = [
+        "//ext/psycopg_c:psycopg_c.MODULE.bazel",
+        "//garage_python:uv.lock",
+    ],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag",
+        "@pypi//pytest",
+    ],
+)

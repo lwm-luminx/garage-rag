@@ -127,15 +127,12 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   bundle (`cryptography`'s compiled-in default is Homebrew's). At start-up it also calls
   `truststore.inject_into_ssl()`, so `ssl`'s default contexts verify against the macOS
   trust store; the bundled OpenSSL ships no CA files.
-- The framework also carries `Frameworks/libpq.dylib`
-  (`//macapp/externals:python_framework_libs`) and links it with a load command
-  (`@rpath`, through its `@loader_path/Frameworks` rpath). Every process that links the
-  framework (the Python XPC services, `garage`, `garage-mcp`) therefore has it mapped
-  before the App Sandbox applies, where opening it later by path is denied. Python finds
-  it among the process's loaded images (`garage_rag.native`); nothing passes its path,
-  and the services never need to know where the app bundle is. Tesseract and libgit2 are
-  not libraries of their own: they are linked statically into Python.framework for its
-  built-in `_garage_tesseract` and `_garage_git` modules.
+- The framework carries no libraries of its own to load. psycopg's C implementation
+  (`psycopg_c`, from its sdist) is compiled into it with libpq linked statically
+  (`//ext/psycopg_c`), and `GaragePythonEmbed` registers its two modules as built-ins before
+  the interpreter starts, so psycopg picks it without a dylib or ctypes. Tesseract and
+  libgit2 are linked statically into Python.framework for its built-in `_garage_tesseract`
+  and `_garage_git` modules.
 
 ## The Postgres password
 
@@ -331,10 +328,10 @@ build (`//ext/postgres`, a `rules_foreign_cc` `configure_make`) configures with
 as an arm64 binary. ICU and zlib are built as dylibs under `//ext` and shipped
 in `postgres/lib`, with `//ext/postgres:postgres_rpath` pointing the binaries at
 them via `@executable_path/../lib`. Line editing for psql comes from the macOS
-SDK's libedit (`/usr/lib/libedit.3.dylib`), not GPL-3.0 GNU Readline. The
-standalone `libpq.dylib` in `Contents/Frameworks` gets its own install name
-fixed up separately (`//ext/postgres:libpq_dylib`, signed by
-`//macapp/externals:libpq`).
+SDK's libedit (`/usr/lib/libedit.3.dylib`), not GPL-3.0 GNU Readline. The app
+links `libpq.a` into PythonXPCService.framework; the standalone `libpq.dylib`
+(`//ext/postgres:libpq_dylib`, signed by `//macapp/externals:libpq`) is only for
+the Bazel py_tests on macOS.
 
 One more non-obvious thing found along the way: this build of `postgres`
 fails to start with `FATAL: postmaster became multithreaded during startup`

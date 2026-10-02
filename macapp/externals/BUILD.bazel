@@ -63,10 +63,10 @@ copy_to_directory(
     visibility = ["//visibility:public"],
 )
 
-# PostgreSQL client library, shipped inside PythonXPCService.framework (see
-# python_framework_libs). psycopg's pure Python implementation uses it through ctypes; it must
-# carry the app's Team ID (hardened runtime / library validation rejects the Homebrew copy) and
-# the runtime option.
+# PostgreSQL client library for the Bazel py_tests on macOS (//tools/pytest:libpq): their
+# interpreter has no psycopg_c built in, so psycopg's pure Python implementation loads this through
+# ctypes. The app ships none (psycopg_c and libpq are linked into PythonXPCService.framework, see
+# //ext/psycopg_c). Signed like the app's code, as hardened runtime and library validation require.
 codesign(
     name = "libpq",
     src = "//ext:libpq_dylib",
@@ -77,20 +77,6 @@ codesign(
         "//bazel:is_store": STORE_IDENTITY,
         "//conditions:default": "-",
     }),
-    visibility = ["//visibility:public"],
-)
-
-# `PythonXPCService.framework/Frameworks/`: the libraries the framework links with load
-# commands (`@rpath`, resolved through its `@loader_path/Frameworks` rpath). dyld loads them
-# when a service or launcher starts, before the App Sandbox applies, and Python finds them among
-# the process's loaded images; nothing locates them by path.
-copy_to_directory(
-    name = "python_framework_libs",
-    srcs = [
-        ":libpq",
-    ],
-    out = "Frameworks",
-    root_paths = ["macapp/externals"],
     visibility = ["//visibility:public"],
 )
 

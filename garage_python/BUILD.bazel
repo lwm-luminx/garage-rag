@@ -32,6 +32,9 @@ python_site_packages(
     name = "site-packages-raw",
     visibility = ["//visibility:public"],
     deps = [
+        # The pure-Python package of psycopg's C implementation, whose modules are built into
+        # PythonXPCService.framework (//ext/psycopg_c).
+        "//ext/psycopg_c:python",
         "//garage_python/src:garage_rag",
     ],
 )

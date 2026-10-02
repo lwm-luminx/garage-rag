@@ -1,13 +1,15 @@
 """Point psycopg at Garage's own libpq: the one built from ``//ext/postgres``.
 
-psycopg's pure Python implementation locates libpq via ``ctypes.util.find_library``
-and falls back to ``pg_config --libdir``. Inside a hardened-runtime process that
-resolves to a Homebrew/system copy signed by a different Team ID, which dyld
-rejects ("mapping process and mapped file (non-platform) have different Team IDs").
+In the app there is nothing to do. psycopg's C implementation is built into the interpreter there
+(``psycopg_c.pq`` and ``psycopg_c._psycopg`` are built-in modules, with libpq linked statically;
+see ``//ext/psycopg_c``), psycopg picks it before any other, and :func:`configure` returns at once.
 
-In the app, the framework links libpq, so it is already loaded when Python starts
-(:func:`garage_rag.native.loaded_library`); this module makes psycopg use that copy.
-It must run before ``psycopg`` is imported (``garage_rag/__init__.py`` calls it).
+Elsewhere psycopg's pure Python implementation locates libpq via ``ctypes.util.find_library`` and
+falls back to ``pg_config --libdir``. When a process has Garage's libpq loaded already (the Bazel
+py_tests on macOS preload the signed ``//macapp/externals:libpq``; see
+:func:`garage_rag.native.loaded_library`), this module makes psycopg use that copy rather than a
+Homebrew/system one, which a hardened-runtime process would reject for its Team ID. It must run
+before ``psycopg`` is imported (``garage_rag/__init__.py`` calls it).
 
 Windows has no system libpq, and a binary wheel's bundled copy would be a second Postgres version
 beside the server's. ``GARAGE_LIBPQ`` names the ``libpq.dll`` built from ``//ext/postgres`` (the
@@ -55,13 +57,21 @@ def configured_library() -> str | None:
     return str(path.resolve())
 
 
+def builtin_psycopg_c() -> bool:
+    """Whether psycopg's C implementation is built into this interpreter, as in the app."""
+    return {"psycopg_c.pq", "psycopg_c._psycopg"} <= set(sys.builtin_module_names)
+
+
 def configure() -> str | None:
     """Install a ``ctypes.util.find_library`` shim that resolves libpq to Garage's copy.
 
-    That is the copy already loaded in the app, or on Windows the one ``GARAGE_LIBPQ`` names.
+    That is a copy already loaded in the process, or on Windows the one ``GARAGE_LIBPQ`` names.
     Idempotent; returns the path that psycopg will use (or ``None`` when there is neither, as in
-    a plain venv, where psycopg's own search applies).
+    a plain venv, where psycopg's own search applies, and in the app, where psycopg needs no
+    library to load).
     """
+    if builtin_psycopg_c():
+        return None
     path = loaded_library("pq") or configured_library()
     if not path:
         return None

@@ -86,8 +86,7 @@ public enum GaragePythonRuntimeError: Error, LocalizedError, Equatable {
 /// Owns the single embedded CPython interpreter of an XPC service.
 ///
 /// Responsibilities:
-/// - resolve the isolated environment (`site-python` in the loaded `PythonXPCService.framework`, which also
-///   links libpq, so dyld has loaded it before the interpreter starts);
+/// - resolve the isolated environment (`site-python` in the loaded `PythonXPCService.framework`);
 /// - start the interpreter through the PyConfig API (isolated mode, explicit `home` and `sys.path`);
 /// - manage the GIL for host → Python calls so that Python threads (gRPC servers, thread pools)
 ///   keep running while Swift code is idle.
@@ -218,23 +217,6 @@ public final class GaragePythonRuntime: @unchecked Sendable {
         throw GaragePythonRuntimeError.invalidEnvironment(problems)
     }
 
-    // MARK: - Framework libraries
-
-    /// Path of the loaded image that defines `symbol`: for libpq's, the copy
-    /// `PythonXPCService.framework` links and dyld loaded with it. Nil when no loaded image defines it.
-    public static func loadedImagePath(definingSymbol symbol: String) -> String? {
-        let defaultHandle = UnsafeMutableRawPointer(bitPattern: -2)  // RTLD_DEFAULT: every loaded image
-        guard let address = dlsym(defaultHandle, symbol) else { return nil }
-        var info = Dl_info()
-        guard dladdr(address, &info) != 0, let name = info.dli_fname else { return nil }
-        return String(cString: name)
-    }
-
-    /// The libpq psycopg uses: the framework's, loaded with it. Nil when it is not loaded.
-    public var libpqPath: String? {
-        Self.loadedImagePath(definingSymbol: "PQlibVersion")
-    }
-
     // MARK: - OpenSSL
 
     /// The `openssl.cnf` shipped next to `site-python` (in `PythonXPCService.framework`), or nil when there is none.
@@ -274,16 +256,6 @@ public final class GaragePythonRuntime: @unchecked Sendable {
             _os.environ.setdefault("SSL_CERT_FILE", _certifi.where())
         except Exception:
             pass
-    """
-
-    /// Python source executed right after interpreter start-up: points psycopg's libpq lookup at the copy the
-    /// framework loaded (`garage_rag.libpq.configure()`) before anything can import psycopg.
-    static let libpqBootstrapSource = """
-    try:
-        from garage_rag import libpq as _garage_libpq
-        _garage_libpq.configure()
-    except ImportError:
-        pass
     """
 
     // MARK: - Initialization
@@ -389,10 +361,7 @@ public final class GaragePythonRuntime: @unchecked Sendable {
                 if sys.stderr == Python.None {
                     sys.stderr = io.open(2, mode: "w", buffering: 1, encoding: "utf-8", errors: "replace", closefd: false)
                 }
-                // Route psycopg's libpq lookup to the framework's library.
                 let builtins = try Python.attemptImport("builtins")
-                let namespace = Python.dict()
-                _ = try builtins.exec.throwing.dynamicallyCall(withArguments: [Self.libpqBootstrapSource, namespace])
                 // Default TLS contexts verify against the system trust store.
                 _ = try builtins.exec.throwing.dynamicallyCall(withArguments: [Self.trustStoreBootstrapSource, Python.dict()])
             } catch {
@@ -575,9 +544,6 @@ public final class GaragePythonRuntime: @unchecked Sendable {
         let sysPath = _sysPath
         let initMs = _initializationMs
         stateLock.unlock()
-        let libpqPath = self.libpqPath
-        let libpqError = libpqPath == nil ? "libpq is not loaded: PythonXPCService.framework should link it" : nil
-
         var errorText: String? = nil
         if case .failed(let message) = st { errorText = message }
 
@@ -590,9 +556,7 @@ public final class GaragePythonRuntime: @unchecked Sendable {
             sitePackagesDir: env?.sitePackagesDir.path,
             sysPath: sysPath,
             error: errorText,
-            initializationMs: initMs,
-            libpqPath: libpqPath,
-            libpqError: libpqError
+            initializationMs: initMs
         )
     }
 }

@@ -226,7 +226,6 @@ public enum Launcher {
                 if isDebugging {
                     let env = ProcessInfo.processInfo.environment
                     fputs("[GARAGE_CLI] Dynamic Python: \(env["PYTHON_LIBRARY"] ?? "default")\n", stderr)
-                    fputs("[GARAGE_CLI] libpq: \(GaragePythonRuntime.shared.libpqPath ?? "not loaded")\n", stderr)
                     fputs("[GARAGE_CLI] Python sys.path: \(sys.path)\n", stderr)
                 }
 

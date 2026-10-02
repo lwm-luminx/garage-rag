@@ -207,31 +207,30 @@ public enum GarageXPCStandardSelfTests {
         }
     }
 
-    /// Verifies the framework's libpq is loaded and that psycopg binds to that exact library.
-    public static func libpq(runtime: GaragePythonRuntime = .shared) -> GarageXPCSelfTest {
-        GarageXPCSelfTest(name: "libpq", description: "PythonXPCService.framework's libpq.dylib is loaded with it and psycopg resolves its pq wrapper to it.") {
-            let status = runtime.statusSnapshot()
-            guard let path = status.libpqPath else {
-                throw GarageXPCSelfTestFailure("libpq.dylib is not loaded", details: status.libpqError ?? "unknown error")
+    /// Verifies psycopg runs on its C implementation, built into this framework with libpq linked statically.
+    public static func psycopg() -> GarageXPCSelfTest {
+        GarageXPCSelfTest(name: "psycopg", description: "psycopg_c's modules are built in, psycopg picks its C implementation, and the libpq linked with it is the one it was built against.") {
+            let sys = try Python.attemptImport("sys")
+            let builtins = Set(Array(sys.builtin_module_names).compactMap { String($0) })
+            let missing = ["psycopg_c.pq", "psycopg_c._psycopg"].filter { !builtins.contains($0) }
+            if !missing.isEmpty {
+                throw GarageXPCSelfTestFailure("psycopg_c is not built in", details: "missing: \(missing.joined(separator: ", "))")
             }
-            let ctypesUtil = try Python.attemptImport("ctypes.util")
-            let found = String(ctypesUtil.find_library("libpq.dylib")) ?? "None"
-            if found != path {
-                throw GarageXPCSelfTestFailure("ctypes.util.find_library resolves libpq to a different file", details: "expected: \(path)\nfound:    \(found)")
-            }
+            let psycopg = try Python.attemptImport("psycopg")
             let pq = try Python.attemptImport("psycopg.pq")
             let impl = String(pq.__impl__) ?? "unknown"
-            let version = String(pq.version()) ?? "unknown"
-            var lines = ["Path: \(path)", "psycopg pq implementation: \(impl)", "libpq version: \(version)"]
-            if impl == "python" {
-                let ctypesPQ = try Python.attemptImport("psycopg.pq._pq_ctypes")
-                let loaded = String(ctypesPQ.pq._name) ?? "?"
-                if loaded != path {
-                    throw GarageXPCSelfTestFailure("psycopg loaded libpq from an unexpected location", details: "expected: \(path)\nloaded:   \(loaded)")
-                }
-                lines.append("ctypes handle: \(loaded)")
+            if impl != "c" {
+                throw GarageXPCSelfTestFailure("psycopg uses its \(impl) implementation, not c", details: "")
             }
-            return lines.joined(separator: "\n")
+            let cmodule = try Python.attemptImport("psycopg._cmodule")
+            let psycopgVersion = String(psycopg.__version__) ?? "?"
+            let cVersion = String(cmodule.__version__) ?? "?"
+            let version = Int(pq.version()) ?? 0
+            let buildVersion = Int(pq.__build_version__) ?? 0
+            if version != buildVersion {
+                throw GarageXPCSelfTestFailure("libpq \(version) is not the \(buildVersion) psycopg_c was built against", details: "")
+            }
+            return ["psycopg \(psycopgVersion), psycopg_c \(cVersion)", "libpq version: \(version)"].joined(separator: "\n")
         }
     }
 

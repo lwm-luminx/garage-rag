@@ -165,6 +165,7 @@ include("//ext/llama_cpp:llama_cpp.MODULE.bazel")
 include("//ext/sparkle:sparkle.MODULE.bazel")
 include("//ext/leptonica:leptonica.MODULE.bazel")
 include("//ext/tesseract:tesseract.MODULE.bazel")
+include("//ext/psycopg_c:psycopg_c.MODULE.bazel")
 include("//ext/libgit2:libgit2.MODULE.bazel")
 include("//ext/nomic_embed:nomic_embed.MODULE.bazel")
 
