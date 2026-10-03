@@ -18,7 +18,7 @@ The Linux version is the same `garage_rag` Python package the Mac app runs insid
 
 ## Before you start
 
-- Python 3.13 or 3.14, and [uv](https://docs.astral.sh/uv/) (or `pip` and `venv`).
+- Python 3.13 or 3.14 and [uv](https://docs.astral.sh/uv/), which can fetch Python for you (or `pipx`).
 - PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) 0.7 or later. CI tests PostgreSQL 18, the version the Mac app bundles.
 - Ollama or LM Studio, on this computer or on another machine you run.
 - For OCR, optional: `libtesseract` with English language data (`tesseract-ocr` and `tesseract-ocr-eng` on Debian and Ubuntu).
@@ -38,16 +38,14 @@ pgvector is not a trusted extension, so `postgres` creates it once. Your own rol
 
 ## 2. Install Garage
 
-Garage isn't on PyPI yet, so install it from the repository:
+Garage is on [PyPI](https://pypi.org/project/garage-rag/) as `garage-rag`. Install it as a tool, which puts the `garage` and `garage-mcp` commands on your `PATH` in an environment of their own:
 
 ```bash
-git clone https://github.com/rickmark/garage-rag.git
-cd garage-rag/garage_python
-uv venv --python 3.14 .venv
-uv pip install --python .venv/bin/python .
-source .venv/bin/activate
+uv tool install --python 3.14 garage-rag
 garage version
 ```
+
+Without uv, `pipx install garage-rag` does the same. To update later, run `uv tool upgrade garage-rag`. To run the latest code from `main` instead of a release, use `uv tool install --python 3.14 "garage-rag @ git+https://github.com/rickmark/garage-rag#subdirectory=garage_python"`.
 
 ## 3. Configure and initialize
 
