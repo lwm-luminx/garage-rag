@@ -3,13 +3,16 @@
 # ext/nomic_embed/known_answers.json holds llama.cpp's vectors for a few fixed inputs, from the
 # llama.cpp source //ext/llama_cpp pins and the GGUF //ext/nomic_embed pins. This workflow
 # rebuilds llama-embedding and regenerates them:
-# - `macos (cpu)` (Apple silicon, the only CPU the app ships on) is the canonical reference; it
+# - "Reference: macOS CPU" (Apple silicon, the only CPU the app ships on) is the canonical one; it
 #   fails when the committed file no longer matches, and uploads what it produced, which is the
 #   file to commit after bumping a pin;
-# - `macos (metal)` repeats it on Metal and `linux` on x86-64, and each checks its vectors against
-#   the reference (the committed file, else the CPU job's) at the file's tolerance. Q2_K is not
-#   bit-exact across backends or ISAs (Metal measured 0.988 at worst, x86-64 about 0.99), so the
-#   tolerance is 0.98: the evidence for the self-test's, and enough to catch a broken pipeline.
+# - "Compare: macOS Metal" repeats it on Metal and "Compare: Linux x86-64 CPU" on x86-64, and
+#   each checks its vectors against the reference (the committed file, else the CPU job's) at the
+#   file's tolerance. Q2_K is not bit-exact across backends or ISAs (Metal measured 0.988 at
+#   worst, x86-64 about 0.99), so the tolerance is 0.98: the evidence for the self-test's, and
+#   enough to catch a broken pipeline.
+name: Embedding known answers
+
 on:
   push:
     paths:
@@ -28,18 +31,19 @@ concurrency:
 
 jobs:
   reference:
-    name: macos (cpu)
+    name: "Reference: macOS CPU (Apple silicon)"
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Generate on the CPU
+      - name: Build llama-embedding, embed the fixed inputs on the CPU and check them against the committed file
         run: |
           compare=""
           if [ -f ext/nomic_embed/known_answers.json ]; then
             compare="--compare ext/nomic_embed/known_answers.json"
           fi
           tools/llama/gen_known_answers.sh --work "$RUNNER_TEMP/ka" --out "$RUNNER_TEMP/known_answers.json" $compare
-      - uses: actions/upload-artifact@v4
+      - name: Upload the reference (commit it as ext/nomic_embed/known_answers.json after a pin bump)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: known-answers-macos-cpu
@@ -51,27 +55,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - name: macos (metal)
+          - name: "Compare: macOS Metal (GPU)"
             os: macos-latest
             flags: --metal
-          - name: linux
+          - name: "Compare: Linux x86-64 CPU"
             os: ubuntu-latest
             flags: ""
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/download-artifact@v4
+      - name: Download the CPU reference
+        uses: actions/download-artifact@v4
         with:
           name: known-answers-macos-cpu
           path: ${{ runner.temp }}/reference
-      - name: Generate and compare against the reference
+      - name: Embed the fixed inputs and check them against the reference at the reference's tolerance
         run: |
           reference=ext/nomic_embed/known_answers.json
           [ -f "$reference" ] || reference="$RUNNER_TEMP/reference/known_answers.json"
           tools/llama/gen_known_answers.sh ${{ matrix.flags }} --work "$RUNNER_TEMP/ka" \
             --out "$RUNNER_TEMP/known_answers.json" --compare "$reference"
-      - uses: actions/upload-artifact@v4
+      - name: Upload these vectors for inspection
+        uses: actions/upload-artifact@v4
         if: always()
         with:
           name: known-answers-${{ matrix.os == 'ubuntu-latest' && 'linux-cpu' || 'macos-metal' }}
