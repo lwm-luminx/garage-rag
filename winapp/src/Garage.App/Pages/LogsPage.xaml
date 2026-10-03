@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.LogsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:ops="using:Garage.App.Core.Operations">
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Uid="LogsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ComboBox x:Uid="LogsPage_SourceBox" x:Name="SourceBox" DisplayMemberPath="Source" SelectionChanged="OnSourceChanged" MinWidth="140" />
+            <TextBox x:Uid="LogsPage_FilterBox" x:Name="FilterBox" Grid.Column="1" TextChanged="OnFilterChanged"
+                     AutomationProperties.AutomationId="logs.filter" />
+            <ComboBox x:Uid="LogsPage_LevelBox" x:Name="LevelBox" Grid.Column="2" SelectionChanged="OnLevelChanged" MinWidth="170" />
+            <ToggleButton x:Uid="LogsPage_NewestFirstToggle" x:Name="NewestFirstToggle" Grid.Column="3" Click="OnNewestFirst" />
+        </Grid>
+
+        <ListView x:Name="Rows" Grid.Row="2" SelectionMode="Extended" AutomationProperties.AutomationId="logs.table">
+            <ListView.ItemTemplate>
+                <DataTemplate x:DataType="ops:LogLine">
+                    <Grid ColumnSpacing="12" Padding="0,2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="96" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="{x:Bind Time}" FontFamily="Consolas" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock Grid.Column="1" Text="{x:Bind LevelName}" />
+                        <TextBlock Grid.Column="2" Text="{x:Bind Source}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="3" Text="{x:Bind Text}" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </Grid>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
+
+        <!-- Status bar under the table, as on the Mac: counts, then the actions. -->
+        <Grid Grid.Row="3" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Name="CountText" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="logs.count" />
+            <Button x:Uid="LogsPage_2" Grid.Column="1" Click="OnCopy" />
+            <Button x:Uid="LogsPage_3" Grid.Column="2" Click="OnClear" />
+        </Grid>
+    </Grid>
+</Page>

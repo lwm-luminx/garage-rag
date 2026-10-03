@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.McpPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Garage.App"
+    xmlns:mcp="using:Garage.App.Core.Mcp">
+
+    <ScrollViewer>
+        <StackPanel Spacing="14" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
+            <TextBlock x:Uid="McpPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+
+            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="HeadlineCircle" Width="40" Height="40" CornerRadius="20" VerticalAlignment="Top">
+                        <FontIcon x:Name="HeadlineGlyph" FontSize="18" Foreground="{ThemeResource TintGlyphBrush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock x:Name="HeadlineTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" AutomationProperties.AutomationId="mcp.headline" />
+                        <TextBlock x:Name="HeadlineDetail" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <StackPanel x:Name="HttpPanel" Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
+                            <ToggleSwitch x:Uid="McpPage_HttpSwitch" x:Name="HttpSwitch" Toggled="OnHttpToggled"
+                                          AutomationProperties.AutomationId="mcp.http" />
+                            <TextBlock x:Name="HttpUrlText" VerticalAlignment="Center" FontFamily="Consolas" IsTextSelectionEnabled="True"
+                                       AutomationProperties.AutomationId="mcp.http.url" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2">
+                    <TextBlock x:Uid="McpPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="mcp.summary" />
+                </StackPanel>
+                <Button x:Uid="McpPage_ConnectAllButton" x:Name="ConnectAllButton" Grid.Column="1" Style="{StaticResource AccentButtonStyle}" Click="OnConnectAll"
+                        AutomationProperties.AutomationId="mcp.connectAll" />
+            </Grid>
+            <InfoBar x:Name="ResultBar" IsClosable="True" AutomationProperties.AutomationId="mcp.result" />
+
+            <ListView x:Name="RowsList" SelectionMode="None" AutomationProperties.AutomationId="mcp.list">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="mcp:McpClientRowPresentation">
+                        <Grid ColumnSpacing="14" Padding="0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="34" Height="34" CornerRadius="17" VerticalAlignment="Top" Background="{x:Bind local:Look.TintBrush(Tint)}">
+                                <FontIcon Glyph="{x:Bind local:Look.ClientGlyph(Symbol)}" FontSize="15" Foreground="{ThemeResource TintGlyphBrush}" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Spacing="2">
+                                <TextBlock Text="{x:Bind Client.Label}" FontWeight="SemiBold" />
+                                <TextBlock Text="{x:Bind Status}" Foreground="{x:Bind local:Look.TintBrush(Tint)}" TextWrapping="Wrap" />
+                                <TextBlock Text="{x:Bind Client.Path}" FontFamily="Consolas" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                                <Button Tag="{x:Bind Client.Key}" Content="{x:Bind ActionTitle}" Click="OnConnect" Visibility="{x:Bind local:Look.VisibleIf(ActionTitle)}" />
+                                <Button x:Uid="McpPage_3" Tag="{x:Bind Client.Key}" Click="OnDisconnect" Visibility="{x:Bind local:Look.VisibleWhen(Client.IsRegistered)}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock x:Uid="McpPage_4" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Name="CommandText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <TextBlock x:Uid="McpPage_5"
+                       TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

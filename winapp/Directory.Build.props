@@ -1,0 +1,18 @@
+<Project>
+  <!-- Settings every project in winapp/ shares. The Windows app is built with the .NET SDK
+       (`dotnet build winapp/Garage.slnx`), not Bazel; see winapp/README.md. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <Deterministic>true</Deterministic>
+    <IsPackable>false</IsPackable>
+    <Company>Garage</Company>
+    <Product>Garage</Product>
+  </PropertyGroup>
+</Project>

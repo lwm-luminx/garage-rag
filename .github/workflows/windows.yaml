@@ -14,6 +14,9 @@ name: Windows build
 #   externals (OpenSSL, zlib, sqlite, xz, bzip2, libffi) rather than //ext's.
 # - `garage`: garage_rag installed on the built interpreter, running
 #   test_postgres.py against the built server (psycopg loads the built libpq.dll).
+# - `winapp`: the native Windows app (winapp/), built with the .NET SDK rather than
+#   Bazel. Its tests embed the built interpreter through Garage.Python and drive
+#   garage_rag's host contracts, with garage_rag's dependencies in a venv.
 #
 # tools/windows/fetch_ext.py reads the url and sha256 out of ext/*/*.MODULE.bazel,
 # so a version bump there moves this build too. The Postgres sandbox patches and
@@ -32,6 +35,7 @@ on:
       - "data/sql/**"
       - "garage_python/**"
       - "tools/windows/**"
+      - "winapp/**"
       - ".github/workflows/windows.yaml"
   workflow_dispatch:
 
@@ -290,3 +294,52 @@ jobs:
         run: |
           & "$env:RUNNER_TEMP\pgsql\bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -m fast -w stop
           Get-Content "$env:RUNNER_TEMP\postgres.log"
+
+  winapp:
+    needs: [postgres, python]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-windows-x64
+          path: ${{ runner.temp }}\python
+      # PostgresSupervisor's tests run the app's own cluster from this build.
+      - uses: actions/download-artifact@v4
+        with:
+          name: postgres-windows-x64
+          path: ${{ runner.temp }}\pgsql
+      - name: garage_rag dependencies
+        working-directory: garage_python
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          uv venv --python "$env:RUNNER_TEMP\python\python.exe" .venv
+          uv pip install --python .venv -e .
+      - name: Build and test
+        working-directory: winapp
+        env:
+          GARAGE_TEST_PYTHON_HOME: ${{ runner.temp }}\python
+          GARAGE_TEST_PYTHON_SITE_PACKAGES: ${{ github.workspace }}\garage_python\.venv\Lib\site-packages
+          GARAGE_TEST_REQUIRE_PYTHON: "1"
+          GARAGE_TEST_POSTGRES_HOME: ${{ runner.temp }}\pgsql
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet test --solution Garage.slnx -c Release
+      # The FlaUI tests drive the built app against a fake backend (windows-ui.md §5). They need an
+      # interactive desktop, which hosted runners do not promise, so a failure here is reported
+      # without failing the job until they have proven steady (or move to a self-hosted runner).
+      - name: UI tests
+        working-directory: winapp
+        continue-on-error: true
+        env:
+          GARAGE_UI_TESTS: "1"
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet test --project tests/Garage.App.UITests/Garage.App.UITests.csproj -c Release --no-build

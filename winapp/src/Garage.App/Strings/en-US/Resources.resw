@@ -1,0 +1,657 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's own wording (windows-ui.md U5): the XAML pages' strings, found through x:Uid, and the
+     ones code-behind looks up with Strings.Get. Core's presentation wording stays in C#, kept in step
+     with the Mac's by its tests (windows-ui.md §6, decision 5). -->
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <resheader name="reader">
+    <value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <resheader name="writer">
+    <value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value>
+  </resheader>
+  <data name="DatabasePage_1.Text" xml:space="preserve">
+    <value>Database</value>
+  </data>
+  <data name="DatabasePage_2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="DatabasePage_2.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Refresh (F5)</value>
+  </data>
+  <data name="DatabasePage_3.Text" xml:space="preserve">
+    <value>Reset Database…</value>
+  </data>
+  <data name="DatabasePage_4.Text" xml:space="preserve">
+    <value>Schema</value>
+  </data>
+  <data name="DatabasePage_5.Text" xml:space="preserve">
+    <value>Backups</value>
+  </data>
+  <data name="DatabasePage_6.Text" xml:space="preserve">
+    <value>Back Up saves the whole database as one file (a PostgreSQL custom-format dump). Restore replaces the database with a backup; your original files are not touched.</value>
+  </data>
+  <data name="DatabasePage_7.Text" xml:space="preserve">
+    <value>Contents</value>
+  </data>
+  <data name="DatabasePage_BackupButton.Content" xml:space="preserve">
+    <value>Back Up…</value>
+  </data>
+  <data name="DatabasePage_EmptyNote.Text" xml:space="preserve">
+    <value>The database is empty: add a source and ingest it.</value>
+  </data>
+  <data name="DatabasePage_ErrorBar.Title" xml:space="preserve">
+    <value>Couldn't read the database</value>
+  </data>
+  <data name="DatabasePage_ResetButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Delete the database and start over with an empty one</value>
+  </data>
+  <data name="DatabasePage_RestoreButton.Content" xml:space="preserve">
+    <value>Restore…</value>
+  </data>
+  <data name="DatabasePage_ServerBar.Title" xml:space="preserve">
+    <value>Server</value>
+  </data>
+  <data name="DocumentsPage_1.Text" xml:space="preserve">
+    <value>Documents</value>
+  </data>
+  <data name="DocumentsPage_2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="DocumentsPage_2.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Refresh (F5)</value>
+  </data>
+  <data name="DocumentsPage_ClassBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Class</value>
+  </data>
+  <data name="DocumentsPage_FilterBox.PlaceholderText" xml:space="preserve">
+    <value>Filter by title or URI…</value>
+  </data>
+  <data name="DocumentsPage_Placeholder.Text" xml:space="preserve">
+    <value>Select a document to view its chunks</value>
+  </data>
+  <data name="DocumentsPage_SourceBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="DocumentsPage_TrustBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Trust</value>
+  </data>
+  <data name="FactsPage_1.Text" xml:space="preserve">
+    <value>Facts</value>
+  </data>
+  <data name="FactsPage_2.Text" xml:space="preserve">
+    <value>Grounding</value>
+  </data>
+  <data name="FactsPage_3.Text" xml:space="preserve">
+    <value>Attributes</value>
+  </data>
+  <data name="FactsPage_4.Text" xml:space="preserve">
+    <value>: </value>
+  </data>
+  <data name="FactsPage_5.Text" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="FactsPage_ClassBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Class</value>
+  </data>
+  <data name="FactsPage_GleanButton.Content" xml:space="preserve">
+    <value>Glean Facts</value>
+  </data>
+  <data name="FactsPage_GleanButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Distill facts from documents that changed since their last run</value>
+  </data>
+  <data name="FactsPage_KindBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Kind</value>
+  </data>
+  <data name="FactsPage_LoadMoreButton.Content" xml:space="preserve">
+    <value>Load More</value>
+  </data>
+  <data name="FactsPage_SearchBox.PlaceholderText" xml:space="preserve">
+    <value>Search facts…</value>
+  </data>
+  <data name="FactsPage_SourceBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="FactsPage_StopGleanButton.Content" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="FirstRunView_1.Text" xml:space="preserve">
+    <value>Welcome to Garage</value>
+  </data>
+  <data name="FirstRunView_BackButton.Content" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="FirstRunView_RetryButton.Content" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="FirstRunView_SkipButton.Content" xml:space="preserve">
+    <value>I'll Decide Later</value>
+  </data>
+  <data name="FirstRunView_SkipButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Close the assistant; everything it sets up is also on the Sources, Models and MCP Server pages</value>
+  </data>
+  <data name="LogsPage_1.Text" xml:space="preserve">
+    <value>Logs</value>
+  </data>
+  <data name="LogsPage_2.Content" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="LogsPage_3.Content" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="LogsPage_FilterBox.PlaceholderText" xml:space="preserve">
+    <value>Filter logs (text, source, level)…</value>
+  </data>
+  <data name="LogsPage_LevelBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Level</value>
+  </data>
+  <data name="LogsPage_NewestFirstToggle.Content" xml:space="preserve">
+    <value>Newest first</value>
+  </data>
+  <data name="LogsPage_SourceBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Log</value>
+  </data>
+  <data name="MainWindow_1.Text" xml:space="preserve">
+    <value>Garage</value>
+  </data>
+  <data name="McpPage_1.Text" xml:space="preserve">
+    <value>MCP Server</value>
+  </data>
+  <data name="McpPage_2.Text" xml:space="preserve">
+    <value>Assistants</value>
+  </data>
+  <data name="McpPage_3.Content" xml:space="preserve">
+    <value>Disconnect</value>
+  </data>
+  <data name="McpPage_4.Text" xml:space="preserve">
+    <value>Registered command</value>
+  </data>
+  <data name="McpPage_5.Text" xml:space="preserve">
+    <value>Restart an assistant after connecting it; each starts its own Garage over stdio.</value>
+  </data>
+  <data name="McpPage_ConnectAllButton.Content" xml:space="preserve">
+    <value>Connect All</value>
+  </data>
+  <data name="McpPage_HttpSwitch.OffContent" xml:space="preserve">
+    <value>HTTP off</value>
+  </data>
+  <data name="McpPage_HttpSwitch.OnContent" xml:space="preserve">
+    <value>Serving over HTTP</value>
+  </data>
+  <data name="McpPage_HttpSwitch.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Serve MCP over HTTP</value>
+  </data>
+  <data name="McpPage_HttpSwitch.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Only for an assistant that needs an address; the others start Garage themselves over stdio</value>
+  </data>
+  <data name="ModelsPage_1.Text" xml:space="preserve">
+    <value>Models</value>
+  </data>
+  <data name="ModelsPage_10.Content" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="ModelsPage_11.Text" xml:space="preserve">
+    <value>Local models (the built-in engine's downloads and loaded models) arrive with Garage's llama service.</value>
+  </data>
+  <data name="ModelsPage_2.Text" xml:space="preserve">
+    <value>Register Model</value>
+  </data>
+  <data name="ModelsPage_3.Text" xml:space="preserve">
+    <value>Text Embedding Models</value>
+  </data>
+  <data name="ModelsPage_4.Text" xml:space="preserve">
+    <value>DEFAULT</value>
+  </data>
+  <data name="ModelsPage_5.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Embed</value>
+  </data>
+  <data name="ModelsPage_5.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Embed the chunks this model has no vector for</value>
+  </data>
+  <data name="ModelsPage_6.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Make Default</value>
+  </data>
+  <data name="ModelsPage_6.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Make this the model search uses</value>
+  </data>
+  <data name="ModelsPage_7.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Drop</value>
+  </data>
+  <data name="ModelsPage_7.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Deregister and drop its vectors</value>
+  </data>
+  <data name="ModelsPage_8.Text" xml:space="preserve">
+    <value>Distillation Model</value>
+  </data>
+  <data name="ModelsPage_9.Text" xml:space="preserve">
+    <value>The model that distills documents into facts and answers Ask Garage when no answer model is set.</value>
+  </data>
+  <data name="ModelsPage_CancelEmbedButton.Content" xml:space="preserve">
+    <value>Stop Embedding</value>
+  </data>
+  <data name="ModelsPage_EmbedAllButton.Content" xml:space="preserve">
+    <value>Embed All</value>
+  </data>
+  <data name="ModelsPage_FactsModelBox.Header" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="ModelsPage_FactsModelBox.PlaceholderText" xml:space="preserve">
+    <value>gemma2:2b</value>
+  </data>
+  <data name="ModelsPage_FactsProviderBox.Header" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="SearchPage_1.Text" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="SearchPage_2.Content" xml:space="preserve">
+    <value>Reset Filters</value>
+  </data>
+  <data name="SearchPage_3.Text" xml:space="preserve">
+    <value>Heading</value>
+  </data>
+  <data name="SearchPage_4.Text" xml:space="preserve">
+    <value>Authors</value>
+  </data>
+  <data name="SearchPage_5.Text" xml:space="preserve">
+    <value>URI</value>
+  </data>
+  <data name="SearchPage_6.Content" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="SearchPage_7.Text" xml:space="preserve">
+    <value>Snippet Preview</value>
+  </data>
+  <data name="SearchPage_8.Text" xml:space="preserve">
+    <value>Full Content</value>
+  </data>
+  <data name="SearchPage_9.Content" xml:space="preserve">
+    <value>Copy All</value>
+  </data>
+  <data name="SearchPage_ClassBox.Header" xml:space="preserve">
+    <value>Class</value>
+  </data>
+  <data name="SearchPage_FiltersToggle.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Filters</value>
+  </data>
+  <data name="SearchPage_FiltersToggle.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Filters</value>
+  </data>
+  <data name="SearchPage_LimitBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Limit</value>
+  </data>
+  <data name="SearchPage_ModeBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Mode</value>
+  </data>
+  <data name="SearchPage_QueryBox.PlaceholderText" xml:space="preserve">
+    <value>Search corpus (e.g., 'system architecture', 'API design')…</value>
+  </data>
+  <data name="SearchPage_RetryButton.Content" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="SearchPage_SearchButton.Content" xml:space="preserve">
+    <value>Search</value>
+  </data>
+  <data name="SearchPage_SourceBox.Header" xml:space="preserve">
+    <value>Source</value>
+  </data>
+  <data name="SearchPage_TrustBox.Header" xml:space="preserve">
+    <value>Trust</value>
+  </data>
+  <data name="SettingsPage_1.Text" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="SettingsPage_10.Content" xml:space="preserve">
+    <value>Third-party notices</value>
+  </data>
+  <data name="SettingsPage_11.Content" xml:space="preserve">
+    <value>garagerag.app</value>
+  </data>
+  <data name="SettingsPage_12.Content" xml:space="preserve">
+    <value>Troubleshooting</value>
+  </data>
+  <data name="SettingsPage_13.Text" xml:space="preserve">
+    <value>Backend</value>
+  </data>
+  <data name="SettingsPage_2.Text" xml:space="preserve">
+    <value>Models and servers</value>
+  </data>
+  <data name="SettingsPage_3.Text" xml:space="preserve">
+    <value>Saved to Garage's configuration (garage.json). Each value is checked before it is written.</value>
+  </data>
+  <data name="SettingsPage_4.Content" xml:space="preserve">
+    <value>Revert</value>
+  </data>
+  <data name="SettingsPage_5.Text" xml:space="preserve">
+    <value>App</value>
+  </data>
+  <data name="SettingsPage_6.Text" xml:space="preserve">
+    <value>It starts in the notification area, ready to search, with Automatic Updates on their schedule.</value>
+  </data>
+  <data name="SettingsPage_7.Text" xml:space="preserve">
+    <value>Tip jar</value>
+  </data>
+  <data name="SettingsPage_8.Text" xml:space="preserve">
+    <value>If Garage saves you time, you can leave a tip. It unlocks nothing; every feature is free.</value>
+  </data>
+  <data name="SettingsPage_9.Text" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="SettingsPage_ChannelBox.Header" xml:space="preserve">
+    <value>Updates</value>
+  </data>
+  <data name="SettingsPage_SaveButton.Content" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SettingsPage_StartupSwitch.Header" xml:space="preserve">
+    <value>Start Garage when you sign in to Windows</value>
+  </data>
+  <data name="SettingsPage_settings_reportBug.Content" xml:space="preserve">
+    <value>Report a Bug…</value>
+  </data>
+  <data name="SettingsPage_settings_setupAssistant.Content" xml:space="preserve">
+    <value>Setup Assistant…</value>
+  </data>
+  <data name="SettingsPage_settings_setupAssistant.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Walk through picking sources, models and assistants again</value>
+  </data>
+  <data name="SourcesPage_1.Text" xml:space="preserve">
+    <value>Sources</value>
+  </data>
+  <data name="SourcesPage_2.Text" xml:space="preserve">
+    <value>Add Source</value>
+  </data>
+  <data name="SourcesPage_3.Text" xml:space="preserve">
+    <value>Update Everything</value>
+  </data>
+  <data name="SourcesPage_4.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Scan and Ingest</value>
+  </data>
+  <data name="SourcesPage_4.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Scan &amp; Ingest: count what it holds, then read what is new</value>
+  </data>
+  <data name="SourcesPage_5.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="SourcesPage_6.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Scan</value>
+  </data>
+  <data name="SourcesPage_6.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Scan: count what it holds</value>
+  </data>
+  <data name="SourcesPage_7.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="SourcesPage_7.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Remove this source and its documents</value>
+  </data>
+  <data name="SourcesPage_ScanAllButton.Content" xml:space="preserve">
+    <value>Scan All</value>
+  </data>
+  <data name="SourcesPage_ScanAllButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Count what every source holds, without reading it</value>
+  </data>
+  <data name="SourcesPage_StopButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop every scan and read, and the queue</value>
+  </data>
+  <data name="SourcesPage_StopText.Text" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="SourcesPage_SyncButton.Content" xml:space="preserve">
+    <value>Sync with garage.json</value>
+  </data>
+  <data name="StatusPage_1.Text" xml:space="preserve">
+    <value>Status</value>
+  </data>
+  <data name="StatusPage_2.Text" xml:space="preserve">
+    <value>Library</value>
+  </data>
+  <data name="StatusPage_3.Text" xml:space="preserve">
+    <value>Update Everything</value>
+  </data>
+  <data name="StatusPage_4.Text" xml:space="preserve">
+    <value>Automatic Updates</value>
+  </data>
+  <data name="StatusPage_5.Text" xml:space="preserve">
+    <value>Each run scans and reads every source, then embeds the new chunks with every registered model. Otherwise the first run starts after the chosen interval.</value>
+  </data>
+  <data name="StatusPage_6.Text" xml:space="preserve">
+    <value>Services</value>
+  </data>
+  <data name="StatusPage_AddSourceButton.Content" xml:space="preserve">
+    <value>Add a Source…</value>
+  </data>
+  <data name="StatusPage_AtLaunchBox.Content" xml:space="preserve">
+    <value>Also run when Garage starts</value>
+  </data>
+  <data name="StatusPage_AtLaunchBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run once after launch, as soon as Garage's services are up, instead of waiting a whole interval for the first run.</value>
+  </data>
+  <data name="StatusPage_AutomaticSwitch.Header" xml:space="preserve">
+    <value>Keep every source up to date</value>
+  </data>
+  <data name="StatusPage_DevBackendNote.Text" xml:space="preserve">
+    <value>Connected to a development backend (garage serve started by hand): ingest and the service rows need Garage's own services, which start when the app runs without --dev-backend or GARAGE_GRPC_PORT.</value>
+  </data>
+  <data name="StatusPage_IntervalBox.Header" xml:space="preserve">
+    <value>Every</value>
+  </data>
+  <data name="StatusPage_RefreshButton.Content" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="StatusPage_StopButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="StatusPage_StopButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop the run after its current step</value>
+  </data>
+  <data name="StatusPage_StopText.Text" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="StatusPage_UpdateEverythingButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Update Everything</value>
+  </data>
+  <data name="StatusPage_UpdateEverythingButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Update Everything: scan and read every source, index the new chunks with every model, then glean facts from the new documents</value>
+  </data>
+  <data name="StatusPage_status_services_refresh.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh Services</value>
+  </data>
+  <data name="StatusPage_status_services_refresh.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Check every service again</value>
+  </data>
+  <data name="StatusPage_status_services_testAll.Content" xml:space="preserve">
+    <value>Test All</value>
+  </data>
+  <data name="StatusPage_status_services_testAll.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run every service's self tests</value>
+  </data>
+  <data name="TrayFlyout_1.Text" xml:space="preserve">
+    <value>Garage</value>
+  </data>
+  <data name="TrayFlyout_2.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Close the answer</value>
+  </data>
+  <data name="TrayFlyout_2.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Close the answer</value>
+  </data>
+  <data name="TrayFlyout_3.Text" xml:space="preserve">
+    <value>Garage is reading your corpus…</value>
+  </data>
+  <data name="TrayFlyout_IngestButton.Content" xml:space="preserve">
+    <value>Ingest Now</value>
+  </data>
+  <data name="TrayFlyout_QueryBox.PlaceholderText" xml:space="preserve">
+    <value>Search or ask Garage</value>
+  </data>
+  <data name="TrayFlyout_QueryBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search or ask Garage</value>
+  </data>
+  <data name="TrayFlyout_QueryBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Enter shows every result on the Search page; Shift+Enter asks Garage</value>
+  </data>
+  <data name="TrayFlyout_StopButton.Content" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="TrayFlyout_menubar_openGarage.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Open Garage</value>
+  </data>
+  <data name="TrayFlyout_menubar_openGarage.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open Garage</value>
+  </data>
+  <data name="TrayFlyout_menubar_quit.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Quit Garage</value>
+  </data>
+  <data name="TrayFlyout_menubar_quit.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Quit Garage</value>
+  </data>
+  <data name="Code_BugReportDialog_Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="Code_BugReportDialog_Copied" xml:space="preserve">
+    <value>Copied.</value>
+  </data>
+  <data name="Code_BugReportDialog_CopyReport" xml:space="preserve">
+    <value>Copy Report</value>
+  </data>
+  <data name="Code_BugReportDialog_IncludeDiagnosticsVersionsCountsAndService" xml:space="preserve">
+    <value>Include diagnostics (versions, counts and service states; no file names)</value>
+  </data>
+  <data name="Code_BugReportDialog_IncludeRecentLogLinesTheyCan" xml:space="preserve">
+    <value>Include recent log lines (they can name files; read them first)</value>
+  </data>
+  <data name="Code_BugReportDialog_OpenIssueOnGitHub" xml:space="preserve">
+    <value>Open Issue on GitHub</value>
+  </data>
+  <data name="Code_BugReportDialog_PreviewWhatIsCopiedSavedOr" xml:space="preserve">
+    <value>Preview (what is copied, saved or sent to GitHub)</value>
+  </data>
+  <data name="Code_BugReportDialog_ReportABug" xml:space="preserve">
+    <value>Report a Bug</value>
+  </data>
+  <data name="Code_BugReportDialog_Save" xml:space="preserve">
+    <value>Save…</value>
+  </data>
+  <data name="Code_BugReportDialog_YourHomeFolderUserNameE" xml:space="preserve">
+    <value>Your home folder, user name, e-mail addresses and secrets are redacted automatically. Security problems go privately to security@rickmark.com, never to the public tracker.</value>
+  </data>
+  <data name="Code_DatabasePage_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Code_DatabasePage_GarageDeletesItsDatabaseAndStarts" xml:space="preserve">
+    <value>Garage deletes its database and starts over with an empty one. Your original files are not touched.</value>
+  </data>
+  <data name="Code_DatabasePage_ReplaceDatabase" xml:space="preserve">
+    <value>Replace Database</value>
+  </data>
+  <data name="Code_DatabasePage_ReplaceTheDatabaseWithThisBackup" xml:space="preserve">
+    <value>Replace the database with this backup?</value>
+  </data>
+  <data name="Code_DatabasePage_ResetAndRelaunch" xml:space="preserve">
+    <value>Reset and Relaunch</value>
+  </data>
+  <data name="Code_DatabasePage_ResetTheGarageDatabase" xml:space="preserve">
+    <value>Reset the Garage database?</value>
+  </data>
+  <data name="Code_FirstRunView_AddFolder" xml:space="preserve">
+    <value>Add Folder…</value>
+  </data>
+  <data name="Code_FirstRunView_ConnectSelected" xml:space="preserve">
+    <value>Connect Selected</value>
+  </data>
+  <data name="Code_FirstRunView_Model" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="Code_FirstRunView_RunModelsWith" xml:space="preserve">
+    <value>Run models with</value>
+  </data>
+  <data name="Code_MainWindow_Garage" xml:space="preserve">
+    <value>Garage</value>
+  </data>
+  <data name="Code_ModelsPage_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Code_ModelsPage_Dimensions0FromTheModelCatalog" xml:space="preserve">
+    <value>Dimensions (0: from the model catalog)</value>
+  </data>
+  <data name="Code_ModelsPage_Drop" xml:space="preserve">
+    <value>Drop</value>
+  </data>
+  <data name="Code_ModelsPage_MakeItTheDefaultForSearch" xml:space="preserve">
+    <value>Make it the default for search</value>
+  </data>
+  <data name="Code_ModelsPage_ModelNameOnTheServerIf" xml:space="preserve">
+    <value>Model name on the server (if different)</value>
+  </data>
+  <data name="Code_ModelsPage_Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Code_ModelsPage_Provider" xml:space="preserve">
+    <value>Provider</value>
+  </data>
+  <data name="Code_ModelsPage_Register" xml:space="preserve">
+    <value>Register</value>
+  </data>
+  <data name="Code_ModelsPage_RegisterModel" xml:space="preserve">
+    <value>Register Model</value>
+  </data>
+  <data name="Code_ModelsPage_ThisDeregistersTheModelAndDeletes" xml:space="preserve">
+    <value>This deregisters the model and deletes every vector it made. Search needs a default model; registering it again means embedding everything again.</value>
+  </data>
+  <data name="Code_SourcesPage_Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="Code_SourcesPage_AddSource" xml:space="preserve">
+    <value>Add Source</value>
+  </data>
+  <data name="Code_SourcesPage_Browse" xml:space="preserve">
+    <value>Browse…</value>
+  </data>
+  <data name="Code_SourcesPage_Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Code_SourcesPage_Class" xml:space="preserve">
+    <value>Class</value>
+  </data>
+  <data name="Code_SourcesPage_ClassSaysWhatItIsTrust" xml:space="preserve">
+    <value>Class says what it is; trust, how far it's yours (authored), collected (reference) or sent to you (received). Communications never leave this PC.</value>
+  </data>
+  <data name="Code_SourcesPage_Folder" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="Code_SourcesPage_Name" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Code_SourcesPage_Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="Code_SourcesPage_Trust" xml:space="preserve">
+    <value>Trust</value>
+  </data>
+  <data name="Code_StatusPage_RunThisServiceSSelfTests" xml:space="preserve">
+    <value>Run this service's self tests</value>
+  </data>
+  <data name="Code_StatusPage_StopTheProcessAndStartIt" xml:space="preserve">
+    <value>Stop the process and start it again</value>
+  </data>
+  <data name="Code_StatusPage_TestRunsTheServiceSSelf" xml:space="preserve">
+    <value>Test runs the service's self tests and lists them here.</value>
+  </data>
+  <data name="Code_TrayFlyoutWindow_GarageSearch" xml:space="preserve">
+    <value>Garage Search</value>
+  </data>
+  <data name="SourcesPage_AddButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Add Source</value>
+  </data>
+  <data name="SourcesPage_UpdateEverythingButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Update Everything</value>
+  </data>
+  <data name="ModelsPage_RegisterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Register Model</value>
+  </data>
+</root>

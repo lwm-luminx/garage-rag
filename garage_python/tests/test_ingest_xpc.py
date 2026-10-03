@@ -213,6 +213,14 @@ def test_set_c_log_callback():
     assert sys.stdout is orig_stdout
 
 
+def test_a_redirected_stream_is_not_a_terminal():
+    """uvicorn's default log config asks the streams it writes to whether they are terminals; the MCP
+    service's server fails to start when that question raises."""
+    from garage_rag.ingest import StreamToLog
+
+    assert StreamToLog(20, None).isatty() is False
+
+
 def test_ingest_xpc_with_grpc_options():
     mock_counters = IngestCounters()
     mock_counters.seen = 1

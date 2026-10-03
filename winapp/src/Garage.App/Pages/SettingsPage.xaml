@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <ScrollViewer>
+        <StackPanel Spacing="12" MaxWidth="820" HorizontalAlignment="Left" Padding="0,0,16,0">
+            <TextBlock x:Uid="SettingsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+
+            <TextBlock x:Uid="SettingsPage_2" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
+            <TextBlock x:Uid="SettingsPage_3"
+                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel x:Name="FieldsPanel" Spacing="14" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Uid="SettingsPage_SaveButton" x:Name="SaveButton" Style="{StaticResource AccentButtonStyle}" Click="OnSave" AutomationProperties.AutomationId="settings.save" />
+                <Button x:Uid="SettingsPage_4" Click="OnRevert" />
+            </StackPanel>
+            <InfoBar x:Name="ResultBar" IsClosable="True" AutomationProperties.AutomationId="settings.result" />
+
+            <TextBlock x:Uid="SettingsPage_5" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" Margin="0,12,0,0" />
+            <ToggleSwitch x:Uid="SettingsPage_StartupSwitch" x:Name="StartupSwitch" Toggled="OnStartupToggled"
+                          AutomationProperties.AutomationId="settings.launchAtStartup" />
+            <TextBlock x:Uid="SettingsPage_6"
+                       TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <ComboBox x:Uid="SettingsPage_ChannelBox" x:Name="ChannelBox" MinWidth="200" SelectionChanged="OnChannelChanged"
+                      AutomationProperties.AutomationId="settings.updateChannel" />
+            <TextBlock x:Name="ChannelText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <InfoBar x:Name="OptionsBar" Severity="Warning" IsClosable="True" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Uid="SettingsPage_settings_setupAssistant" Click="OnSetupAssistant" AutomationProperties.AutomationId="settings.setupAssistant" />
+                <Button x:Uid="SettingsPage_settings_reportBug" Click="OnReportBug" AutomationProperties.AutomationId="settings.reportBug" />
+            </StackPanel>
+
+            <StackPanel x:Name="TipJarPanel" Spacing="8" Visibility="Collapsed" AutomationProperties.AutomationId="settings.tipJar">
+                <TextBlock x:Uid="SettingsPage_7" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" Margin="0,12,0,0" />
+                <TextBlock x:Uid="SettingsPage_8"
+                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <StackPanel x:Name="TipButtons" Orientation="Horizontal" Spacing="8" />
+                <TextBlock x:Name="TipNote" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+            </StackPanel>
+
+            <TextBlock x:Uid="SettingsPage_9" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" Margin="0,12,0,0" />
+            <TextBlock x:Name="AboutText" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="settings.about" />
+            <StackPanel Orientation="Horizontal" Spacing="16">
+                <HyperlinkButton x:Uid="SettingsPage_10" Click="OnNotices" Padding="0" />
+                <HyperlinkButton x:Uid="SettingsPage_11" NavigateUri="https://garagerag.app" Padding="0" />
+                <HyperlinkButton x:Uid="SettingsPage_12" NavigateUri="https://garagerag.app/support/troubleshooting.html" Padding="0" />
+            </StackPanel>
+
+            <TextBlock x:Uid="SettingsPage_13" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" Margin="0,12,0,0" />
+            <TextBlock x:Name="BackendDescription" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+            <TextBlock TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                Garage starts its own services. For development it can instead connect to a
+                <Run FontFamily="Consolas">garage serve</Run> you start yourself: launch with --dev-backend, or set
+                GARAGE_GRPC_PORT (with GARAGE_GRPC_HOST and GARAGE_GRPC_TOKEN, the same token the server has).
+            </TextBlock>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

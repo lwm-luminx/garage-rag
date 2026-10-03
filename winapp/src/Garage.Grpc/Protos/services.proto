@@ -1,0 +1,125 @@
+// The control plane between Garage.App and its service processes: the Windows counterpart of
+// GarageCommonXPCServiceProtocol and GarageIngestXPCServiceProtocol (macapp/Sources/PythonXPCService,
+// macapp/Sources/IngestClient). It runs over named pipes owned by the signed-in user, never over TCP
+// (docs/plans/windows.md §2.1). Only winapp/ uses it, so it lives here rather than in proto/.
+syntax = "proto3";
+
+package garage.services;
+
+option csharp_namespace = "Garage.Grpc.Services";
+
+// What every service answers.
+service ServiceControl {
+  // Cheap liveness check; the reply carries the round trip's other half.
+  rpc Ping(PingRequest) returns (PingReply);
+  // The service's state and its last self-test results, without running them.
+  rpc GetServiceStatus(ServiceStatusRequest) returns (ServiceStatusReport);
+  // Runs the self tests now and returns the report.
+  rpc RunSelfTests(RunSelfTestsRequest) returns (ServiceStatusReport);
+  // The newest log entries the service keeps (a ring buffer).
+  rpc FetchLogs(FetchLogsRequest) returns (FetchLogsReply);
+  // Every log entry from now on (the reverse GarageXPCLogReceiverProtocol of the Mac).
+  rpc SubscribeToLogStream(LogStreamRequest) returns (stream LogEntry);
+  // Asks the service to stop. The app's Job Object ends it anyway when the app exits.
+  rpc Shutdown(ShutdownRequest) returns (ShutdownReply);
+}
+
+message PingRequest {}
+
+message PingReply {
+  string service_id = 1;
+  int32 pid = 2;
+}
+
+message ServiceStatusRequest {}
+
+message RunSelfTestsRequest {}
+
+message ServiceStatusReport {
+  string service_id = 1;
+  string display_name = 2;
+  int32 pid = 3;
+  // "starting", "running", "failed".
+  string state = 4;
+  // Why the service failed, when it has.
+  string error = 5;
+  string python_version = 6;
+  double uptime_seconds = 7;
+  repeated SelfTestResult tests = 8;
+}
+
+message SelfTestResult {
+  string name = 1;
+  string description = 2;
+  // "passed", "failed", "skipped".
+  string status = 3;
+  double duration_ms = 4;
+  string summary = 5;
+  string details = 6;
+}
+
+message FetchLogsRequest {
+  int32 limit = 1;
+}
+
+message FetchLogsReply {
+  repeated LogEntry entries = 1;
+}
+
+message LogStreamRequest {}
+
+message LogEntry {
+  // Unix time in milliseconds.
+  int64 time_ms = 1;
+  // Python's logging levels: 10 debug, 20 info, 30 warning, 40 error, 50 critical.
+  int32 level = 2;
+  string source = 3;
+  string message = 4;
+}
+
+message ShutdownRequest {}
+
+message ShutdownReply {}
+
+// Garage.Ingest: runs garage_rag.ingest in its own process, persisting through GarageService.
+service IngestControl {
+  // Ingests one source, or every enabled source for "*", streaming garage_rag.ingest's progress.
+  // Cancelling the call stops the ingest at its next item, as CancelIngest does.
+  rpc IngestSource(IngestSourceRequest) returns (stream IngestProgress);
+  // Stops the ingest in progress, if any.
+  rpc CancelIngest(CancelIngestRequest) returns (CancelIngestReply);
+}
+
+message IngestSourceRequest {
+  string source = 1;
+  bool include_code = 2;
+  bool force = 3;
+  // 0: no limit.
+  int32 limit = 4;
+}
+
+// garage_rag.ingest.IngestProgress, field for field.
+message IngestProgress {
+  string source = 1;
+  string phase = 2;
+  int64 seen = 3;
+  int64 total_items = 4;
+  int64 indexed = 5;
+  int64 skipped = 6;
+  int64 failed = 7;
+  int64 placeholders = 8;
+  int64 rejected = 9;
+  int64 chunks_written = 10;
+  string item_type = 11;
+  double progress = 12;
+  string message = 13;
+  string error = 14;
+  string current_item = 15;
+}
+
+message CancelIngestRequest {}
+
+message CancelIngestReply {
+  // Whether an ingest was running to cancel.
+  bool was_running = 1;
+}

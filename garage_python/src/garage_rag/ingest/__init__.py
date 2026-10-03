@@ -61,6 +61,10 @@ class StreamToLog:
             with contextlib.suppress(Exception):
                 self.original_stream.write(buf)
 
+    def isatty(self) -> bool:
+        """Never a terminal: libraries that colour their output (uvicorn's log formatter) ask."""
+        return False
+
     def flush(self) -> None:
         if self._buf.strip() and _global_c_log_callback is not None:
             try:

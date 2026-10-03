@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.SearchPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:search="using:Garage.App.Core.Search">
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock x:Uid="SearchPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+
+        <!-- Query row: the Mac's search controls header. -->
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Uid="SearchPage_QueryBox" x:Name="QueryBox"
+                     KeyDown="OnQueryKeyDown" AutomationProperties.AutomationId="search.query" />
+            <ComboBox x:Uid="SearchPage_ModeBox" x:Name="ModeBox" Grid.Column="1" DisplayMemberPath="Title" SelectionChanged="OnModeChanged"
+                      MinWidth="150" />
+            <NumberBox x:Uid="SearchPage_LimitBox" x:Name="LimitBox" Grid.Column="2" Header="" Minimum="1" Maximum="100" SpinButtonPlacementMode="Compact"
+                       ValueChanged="OnLimitChanged" MinWidth="110" />
+            <ToggleButton x:Uid="SearchPage_FiltersToggle" x:Name="FiltersToggle" Grid.Column="3">
+                <FontIcon Glyph="&#xE71C;" FontSize="14" />
+            </ToggleButton>
+            <Button x:Uid="SearchPage_SearchButton" x:Name="SearchButton" Grid.Column="4" Style="{StaticResource AccentButtonStyle}"
+                    Click="OnSearch" AutomationProperties.AutomationId="search.run" />
+        </Grid>
+
+        <!-- Filters row: the Mac's advanced filters bar. -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8"
+                    Visibility="{x:Bind FiltersToggle.IsChecked, Mode=OneWay, Converter={StaticResource BoolToVisibility}}">
+            <ComboBox x:Uid="SearchPage_ClassBox" x:Name="ClassBox" SelectionChanged="OnFilterChanged" MinWidth="150" />
+            <ComboBox x:Uid="SearchPage_TrustBox" x:Name="TrustBox" SelectionChanged="OnFilterChanged" MinWidth="150" />
+            <ComboBox x:Uid="SearchPage_SourceBox" x:Name="SourceBox" SelectionChanged="OnFilterChanged" MinWidth="150" />
+            <Button x:Uid="SearchPage_2" Click="OnResetFilters" VerticalAlignment="Bottom" />
+        </StackPanel>
+
+        <!-- Results | inspector -->
+        <Grid Grid.Row="3" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+
+            <ListView x:Name="ResultsList" SelectionMode="Single" SelectionChanged="OnResultSelected"
+                      AutomationProperties.AutomationId="search.results">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="search:SearchResultItem">
+                        <StackPanel Padding="0,8" Spacing="2">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBlock Text="{x:Bind Rank}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Text="{x:Bind Snippet}" MaxLines="2" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Text="{x:Bind MatchedBy}" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <StackPanel x:Name="EmptyPanel" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420">
+                <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
+                <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button x:Uid="SearchPage_RetryButton" x:Name="RetryButton" Click="OnSearch" HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Column="1" x:Name="Inspector">
+                <StackPanel Spacing="12" Padding="0,0,12,0">
+                    <TextBlock x:Name="HitTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="HitScore" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <TextBlock x:Name="HitTags" Style="{StaticResource CaptionTextBlockStyle}" />
+                    <StackPanel x:Name="HeadingPanel" Spacing="2">
+                        <TextBlock x:Uid="SearchPage_3" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="HitHeading" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                    <StackPanel x:Name="AuthorsPanel" Spacing="2">
+                        <TextBlock x:Uid="SearchPage_4" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="HitAuthors" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Uid="SearchPage_5" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                            <HyperlinkButton x:Uid="SearchPage_6" Click="OnCopyUri" Padding="4,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="HitUri" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontFamily="Consolas" />
+                    </StackPanel>
+                    <StackPanel x:Name="SnippetPanel" Spacing="2">
+                        <TextBlock x:Uid="SearchPage_7" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="HitSnippet" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                    <StackPanel Spacing="2">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Uid="SearchPage_8" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                            <HyperlinkButton x:Uid="SearchPage_9" Click="OnCopyContent" Padding="4,0" />
+                        </StackPanel>
+                        <TextBlock x:Name="HitContent" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+
+        <TextBlock Grid.Row="4" x:Name="StatusBar" Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="search.status" />
+    </Grid>
+</Page>

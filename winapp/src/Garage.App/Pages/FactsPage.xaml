@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.FactsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:facts="using:Garage.App.Core.Facts">
+
+    <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock x:Uid="FactsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+            <StackPanel Grid.Column="1" x:Name="GleanPanel" Spacing="2" VerticalAlignment="Center" Margin="12,0">
+                <TextBlock x:Name="GleanText" AutomationProperties.AutomationId="facts.glean" />
+                <ProgressBar x:Name="GleanBar" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                <Button x:Uid="FactsPage_GleanButton" x:Name="GleanButton" Style="{StaticResource AccentButtonStyle}" Click="OnGlean"
+                       
+                        AutomationProperties.AutomationId="facts.gleanButton" />
+                <Button x:Uid="FactsPage_StopGleanButton" x:Name="StopGleanButton" Click="OnStopGlean" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Uid="FactsPage_SearchBox" x:Name="SearchBox" KeyDown="OnSearchKeyDown" AutomationProperties.AutomationId="facts.search" />
+            <ComboBox x:Uid="FactsPage_SourceBox" x:Name="SourceBox" Grid.Column="1" SelectionChanged="OnFilterChanged" MinWidth="140" />
+            <ComboBox x:Uid="FactsPage_KindBox" x:Name="KindBox" Grid.Column="2" SelectionChanged="OnFilterChanged" MinWidth="160" />
+            <ComboBox x:Uid="FactsPage_ClassBox" x:Name="ClassBox" Grid.Column="3" SelectionChanged="OnFilterChanged" MinWidth="140" />
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="2*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <ListView x:Name="FactsList" SelectionMode="Single" SelectionChanged="OnFactSelected" AutomationProperties.AutomationId="facts.list">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="facts:FactListItem">
+                        <StackPanel Padding="0,6" Spacing="2">
+                            <TextBlock Text="{x:Bind Fact}" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                <Run Text="{x:Bind FactClass}" /> · <Run Text="{x:Bind DocumentDisplayTitle}" />
+                            </TextBlock>
+                        </StackPanel>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <StackPanel x:Name="EmptyPanel" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="380">
+                <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
+                <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
+                <TextBlock x:Name="CountText" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="facts.count" />
+                <Button x:Uid="FactsPage_LoadMoreButton" x:Name="LoadMoreButton" Click="OnLoadMore" />
+            </StackPanel>
+
+            <ScrollViewer Grid.Column="1" Grid.RowSpan="2" x:Name="Inspector">
+                <StackPanel Spacing="12" Padding="0,0,12,0">
+                    <TextBlock x:Name="FactText" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock x:Name="FactMeta" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel x:Name="GroundingPanel" Spacing="4">
+                        <TextBlock x:Uid="FactsPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <RichTextBlock x:Name="GroundingText" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <StackPanel x:Name="AttributesPanel" Spacing="4">
+                        <TextBlock x:Uid="FactsPage_3" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <ItemsControl x:Name="AttributesList">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="facts:FactField">
+                                    <TextBlock TextWrapping="Wrap" IsTextSelectionEnabled="True">
+                                        <Run Text="{x:Bind Key}" FontWeight="SemiBold" /><Run x:Uid="FactsPage_4" /><Run Text="{x:Bind Value}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock x:Uid="FactsPage_5" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="DocumentTitle" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DocumentUri" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Page>
