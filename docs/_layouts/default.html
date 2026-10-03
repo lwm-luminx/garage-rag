@@ -21,6 +21,7 @@
   {% comment %}Description (page.description, else site.description), canonical URL, Open Graph, X/Twitter card and JSON-LD; the title above is our own.{% endcomment %}
   {% seo title=false %}
   {% if page.testflight_page and site.testflight_url == "" %}<meta name="robots" content="noindex">{% endif %}
+  {% if page.windows_page and site.windows_alpha_url == "" %}<meta name="robots" content="noindex">{% endif %}
   {% if page.structured_data %}<script type="application/ld+json">{{ page.structured_data | jsonify }}</script>{% endif %}
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
   <link rel="apple-touch-icon" href="{{ '/assets/logo.png' | relative_url }}">
@@ -39,6 +40,7 @@
         <a href="{{ '/#download' | relative_url }}" class="nav-link">Download</a>
         <a href="{{ '/support/' | relative_url }}" class="nav-link {% if in_support %}active{% endif %}">Support</a>
         <a href="{{ '/about.html' | relative_url }}" class="nav-link {% if page.url == '/about.html' %}active{% endif %}">About</a>
+        <a href="{{ '/contributing.html' | relative_url }}" class="nav-link {% if page.url == '/contributing.html' %}active{% endif %}">Contribute</a>
         <a href="https://github.com/rickmark/garage-rag" class="nav-link" target="_blank" rel="noopener">GitHub ↗</a>
       </nav>
     </div>
@@ -68,7 +70,7 @@
       <div>
         <strong>Garage</strong> — Local-First Personal RAG & Knowledge Indexing.
         <br>
-        <small>Designed for macOS with PostgreSQL, pgvector, and Model Context Protocol (MCP).</small>
+        <small>Built on PostgreSQL, pgvector and the Model Context Protocol (MCP). For macOS, with <a href="{{ '/windows.html' | relative_url }}">Windows in alpha</a> and <a href="{{ '/linux.html' | relative_url }}">Linux</a> from the command line. Free and <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">open source</a>.</small>
       </div>
       <div class="footer-links">
         <a href="{{ '/' | relative_url }}">Home</a>
@@ -79,6 +81,7 @@
         <a href="{{ '/support/faq.html' | relative_url }}">FAQ</a>
         <a href="{{ '/support/privacy-policy.html' | relative_url }}">Privacy Policy</a>
         <a href="{{ '/support/contact.html' | relative_url }}">Contact & Issues</a>
+        <a href="{{ '/contributing.html' | relative_url }}">Contribute</a>
         <a href="{{ '/about.html' | relative_url }}">About the Creator</a>
         <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">GitHub</a>
       </div>

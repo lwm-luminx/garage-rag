@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Privacy and macOS Permissions
-description: How Garage keeps your data on your Mac, with one egress choke point, a destination allowlist, messages that never leave the machine, and the macOS permissions it asks for.
+description: How Garage keeps your data on your computer, with one egress choke point, a destination allowlist, messages that never leave the machine, and the macOS permissions it asks for.
 ---
 
 # Privacy and macOS permissions
@@ -12,18 +12,18 @@ Garage sends content only to approved destinations: this machine, and the Ollama
 or LM Studio server you configure. Communications never leave this machine.
 There is no cloud AI client in the codebase.
 
-Garage never uploads your files or its index. What leaves your Mac depends on
+Garage never uploads your files or its index. What leaves your computer depends on
 which AI you connect:
 
 - **A cloud assistant over MCP** (Claude, ChatGPT and the like), the usual
-  setup. The assistant's app queries Garage's MCP server on this Mac and
+  setup. The assistant's app queries Garage's MCP server on this computer and
   receives only the relevant parts of the corpus: the excerpts its searches
   return and the documents it opens, never the whole index. Garage uploads
   nothing, but the assistant sends those parts to its provider's servers with
   your conversation, Messages and Mail excerpts included if you indexed them; see
   [What connected agents receive](#what-connected-agents-receive).
-- **Fully private, on your Mac.** With the built-in llama.cpp engine, or LM
-  Studio or Ollama on this Mac, and an agent that runs its model locally,
+- **Fully private, on your computer.** With the built-in llama.cpp engine on a
+  Mac, or LM Studio or Ollama on this computer, and an agent that runs its model locally,
   nothing leaves the machine.
 - **Your own server on your network.** With `embedding.ollama_host` or
   `embedding.lmstudio_host` set to another machine, documents and code go to
@@ -76,7 +76,7 @@ has them loads with a warning).
   `::1`): the app's own `LlamaXPCService` on `embedding.llama_host` (default
   `http://127.0.0.1:8790`, and required to be loopback; in the app it is reached
   on its socket or over NSXPC instead, see "Garage's own endpoints" below), and
-  Ollama or LM Studio running on this Mac;
+  Ollama or LM Studio running on this computer;
 - **the configured model servers** — exactly the origins (scheme, host and port)
   of `embedding.ollama_host` and `embedding.lmstudio_host`, which may be another
   machine.
@@ -172,7 +172,7 @@ instead, the app asks once for access to Contacts (`NSContactsUsageDescription`,
 and the `com.apple.security.personal-information.addressbook` entitlement in both
 builds) before its first ingest. The app, not the ingest service, reads the names
 (`ContactNamesService`) and hands them to each ingest. They label the Messages
-threads, sender lines and authors they match, stay in the corpus on this Mac, and
+threads, sender lines and authors they match, stay in the corpus on this computer, and
 never go to a model server beyond what communications already allow (layer 4).
 Declining leaves every handle as it is. `defaults write me.rickmark.garage-rag
 garage.contactNames.disabled -bool YES` turns the lookup off without revoking
