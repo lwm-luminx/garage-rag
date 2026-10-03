@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The setup assistant (the Mac's FirstRunView): it replaces the pages until it is finished or
+     skipped. A step header, the step's page, and the buttons that move between them. -->
+<UserControl
+    x:Class="Garage.App.FirstRun.FirstRunView"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid Padding="40,16,40,24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Spacing="12">
+            <TextBlock x:Uid="FirstRunView_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+            <StackPanel x:Name="StepsPanel" Orientation="Horizontal" Spacing="20" AutomationProperties.AutomationId="firstRun.steps" />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <StackPanel MaxWidth="760" HorizontalAlignment="Left" Spacing="12" Padding="0,0,16,0">
+                <TextBlock x:Name="StepTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2"
+                           AutomationProperties.AutomationId="firstRun.title" />
+                <TextBlock x:Name="StepIntro" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <StackPanel x:Name="PagePanel" Spacing="8" />
+                <StackPanel x:Name="ProgressPanel" Orientation="Horizontal" Spacing="8">
+                    <ProgressRing IsActive="True" Width="16" Height="16" />
+                    <TextBlock x:Name="ProgressText" AutomationProperties.LiveSetting="Polite" />
+                </StackPanel>
+                <InfoBar x:Name="ErrorBar" Severity="Error" IsClosable="False" AutomationProperties.AutomationId="firstRun.error" />
+                <TextBlock x:Name="SummaryText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                           AutomationProperties.AutomationId="firstRun.summary" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Grid Grid.Row="2">
+            <Button x:Uid="FirstRunView_SkipButton" x:Name="SkipButton" Click="OnSkip" AutomationProperties.AutomationId="firstRun.skip" />
+            <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Right">
+                <Button x:Uid="FirstRunView_BackButton" x:Name="BackButton" Click="OnBack" AutomationProperties.AutomationId="firstRun.back" />
+                <Button x:Uid="FirstRunView_RetryButton" x:Name="RetryButton" Click="OnRetry" AutomationProperties.AutomationId="firstRun.retry" />
+                <Button x:Name="ContinueButton" Style="{StaticResource AccentButtonStyle}" Click="OnContinue" AutomationProperties.AutomationId="firstRun.continue" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

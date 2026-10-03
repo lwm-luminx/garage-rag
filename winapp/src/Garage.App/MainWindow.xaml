@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Garage.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Custom title bar: the window extends into it (Mica shows through). -->
+        <Grid x:Name="AppTitleBar" Height="40" Padding="16,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <FontIcon Glyph="&#xE8F1;" FontSize="16" />
+                <TextBlock x:Uid="MainWindow_1" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <NavigationView
+            x:Name="Nav"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            OpenPaneLength="220"
+            SelectionChanged="OnSelectionChanged">
+            <Frame x:Name="ContentFrame" Padding="32,16,32,24" />
+        </NavigationView>
+
+        <!-- The setup assistant replaces the pages while it runs (the Mac's FirstRunView). -->
+        <ContentControl x:Name="FirstRunHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                        Visibility="Collapsed" IsTabStop="False" />
+    </Grid>
+</Window>

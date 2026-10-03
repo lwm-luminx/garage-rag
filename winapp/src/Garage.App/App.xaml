@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Application
+    x:Class="Garage.App.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Garage.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <!-- The glyph on a tinted status circle: white on the tint, and the highlight's own text
+                 colour in high contrast, where Look.TintBrush draws circles in the highlight colour. -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="TintGlyphBrush" Color="White" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TintGlyphBrush" Color="White" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="HighContrast">
+                    <SolidColorBrush x:Key="TintGlyphBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

@@ -67,7 +67,8 @@ For detailed architectural and design specifications, see:
 │   └── src/garage_rag/       # Core RAG, extraction, embedding, database, and search modules
 ├── macapp/                   # Native macOS SwiftUI application (GarageApp), its XPC services and launchers
 ├── proto/garage.proto        # gRPC contract between the app and the Python GarageService
-└── tools/                    # Tooling, linters, formatters, and Bazel environment helpers
+├── tools/                    # Tooling, linters, formatters, and Bazel environment helpers
+└── winapp/                   # Native Windows app in development (.NET 10, built with the .NET SDK, not Bazel)
 ```
 
 ---
@@ -79,7 +80,8 @@ Garage runs three ways:
 - **The macOS app** (`GarageApp`) bundles Postgres, pgvector, llama.cpp and Tesseract, so it needs
   nothing else installed. See the [User Guide](docs/support/guide.md).
 - **The `garage` CLI on Windows**, with Postgres in Docker, Ollama for models, and Tesseract for OCR.
-  See [Quickstart: Windows](#quickstart-windows) below.
+  See [Quickstart: Windows](#quickstart-windows) below. A native Windows app is in development in
+  `winapp/` ([plan](docs/plans/windows.md)).
 - **The `garage` CLI on macOS or Linux**, against your own Postgres and model server. See
   [Quickstart: macOS and Linux](#quickstart-macos-and-linux).
 
@@ -264,6 +266,9 @@ Install the CLI with `uv sync` in `garage_python/` on a Mac. On Linux, use
 ## Development & Build Commands
 
 This monorepo uses [Aspect CLI](https://aspect.build) / Bazel for hermetic builds, testing, formatting, and linting.
+
+The Windows app in `winapp/` is the exception: it builds with `dotnet build winapp/Garage.slnx`. See
+[winapp/README.md](winapp/README.md).
 
 ### Building Targets
 

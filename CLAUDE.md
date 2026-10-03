@@ -153,6 +153,56 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 
+### Windows app (`winapp/`, not Bazel)
+
+The native Windows app ([docs/plans/windows.md](docs/plans/windows.md)) is the one part of the repo
+Bazel does not build. It is a .NET 10 SDK solution: `winapp/Garage.slnx`, with packages pinned in
+`Directory.Packages.props`, the SDK in `global.json`, and no `BUILD` files. So far it holds:
+
+- **`Garage.Python`:** the owned CPython bridge (the PythonKit + `GaragePythonEmbed.c`
+  counterpart). It calls `python314.dll` directly through PEP 741's `PyInitConfig`, with no C shim.
+- **`Garage.Services`:** `Garage.Services.exe`, one Garage service per process (`--service core`
+  runs `create_grpc_server`, `--service ingest` runs `garage_rag.ingest`, `--service mcp` the MCP HTTP
+  server while the MCP page's switch is on), each embedding CPython and
+  answering the app over `services.proto` on a named pipe. The app's `ServiceManager` starts them in
+  a kill-on-close Job Object.
+- **The UI through phase U5** ([docs/plans/windows-ui.md](docs/plans/windows-ui.md)):
+  - `Garage.Grpc`: the client generated from `proto/garage.proto`, with the token interceptor, and
+    `services.proto` with its named-pipe channel;
+  - `Garage.App.Core`: state, view models, presentation values and the pipeline
+    (`LibraryCoordinator`), with no UI dependency, and unit-tested;
+  - `Garage.App`: the WinUI 3 shell, the setup assistant, the notification-area flyout (quick
+    search, Ask Garage over MCP), the bug report and the jump list; its wording is in
+    `Strings/en-US/Resources.resw` (`x:Uid`, `Strings.Get`);
+  - `tests/Garage.App.UITests`: FlaUI tests of the built app against a fake backend, run with
+    `GARAGE_UI_TESTS=1` in an interactive session (never with Garage running).
+
+  Keep every decision in Core, and port the Mac's `*Presentation` types and their test cases
+  there. Keep `AppSection` in the Mac's order, which a test holds. The app runs its own services by
+  default (`ServiceHostBackend`, data in `%LOCALAPPDATA%\Garage`); `--dev-backend` or
+  `GARAGE_GRPC_PORT` connects to a `garage serve` started by hand instead (`DevBackend`).
+
+```bash
+cd winapp
+dotnet build Garage.slnx
+GARAGE_TEST_PYTHON_HOME=C:/Python314 GARAGE_TEST_PYTHON_SITE_PACKAGES=<venv>/Lib/site-packages \
+  dotnet test --solution Garage.slnx
+dotnet format Garage.slnx --verify-no-changes
+```
+
+- **What the tests need.** They embed a real CPython 3.14. Without `GARAGE_TEST_PYTHON_HOME` they
+  ask the `py` launcher, and skip when neither finds one.
+- **`garage_rag` tests.** These drive the real host contracts (`inference.bridge.install`,
+  `xpc.host.install_model_loader`) and `create_grpc_server`, and need a site-packages holding
+  `garage_rag`'s dependencies. `garage_python/src` from the checkout goes on `sys.path` after it.
+- **Postgres tests.** `GARAGE_TEST_POSTGRES_HOME` names a Windows build of `//ext/postgres` (the
+  `postgres-windows-x64` artifact); the `PostgresSupervisor` tests run their own clusters from it.
+  `GARAGE_TEST_DATABASE_URL` enables the end-to-end ingest test, as for `test_postgres.py`.
+- **CI.** The `winapp` job in `windows.yaml` runs them against the CPython and Postgres that
+  workflow builds, with `GARAGE_TEST_REQUIRE_PYTHON=1` so skips fail.
+- **Warnings are errors,** including the recommended analyzers. `winapp/README.md` has the bridge's
+  design.
+
 ### Swift app dev loop
 
 The app is built by Bazel only; there is no SwiftPM manifest. Every Swift module depends on

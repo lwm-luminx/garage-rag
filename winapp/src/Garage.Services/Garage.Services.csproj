@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Garage's service processes (docs/plans/windows.md §2.1): one executable, started once per
+       service by the app's ServiceManager (service core, service ingest), each in its own
+       process as each XPC service is on the Mac. Each embeds CPython through Garage.Python and
+       answers the app over gRPC on a named pipe only the signed-in user can open. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Garage.Services</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Generated gRPC code carries no XML docs. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Grpc.AspNetCore.Server" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garage.Grpc\Garage.Grpc.csproj" />
+    <ProjectReference Include="..\Garage.Python\Garage.Python.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garage.Services.Tests" />
+  </ItemGroup>
+
+</Project>

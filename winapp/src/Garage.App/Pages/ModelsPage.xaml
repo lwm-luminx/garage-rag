@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="Garage.App.Pages.ModelsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="using:Garage.App"
+    xmlns:models="using:Garage.App.Core.Models">
+
+    <ScrollViewer>
+        <StackPanel Spacing="14" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
+            <TextBlock x:Uid="ModelsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+
+            <!-- The Overall tab's Embedding card. -->
+            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border x:Name="HeadlineCircle" Width="40" Height="40" CornerRadius="20" VerticalAlignment="Top">
+                        <FontIcon x:Name="HeadlineGlyph" FontSize="18" Foreground="{ThemeResource TintGlyphBrush}" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="4">
+                        <TextBlock x:Name="HeadlineTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" AutomationProperties.AutomationId="models.headline" />
+                        <TextBlock x:Name="HeadlineDetail" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <ProgressBar x:Name="HeadlineProgress" Margin="0,4,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button x:Uid="ModelsPage_RegisterButton" x:Name="RegisterButton" Click="OnRegister" AutomationProperties.AutomationId="models.register">
+                    <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="ModelsPage_2" /></StackPanel>
+                </Button>
+                <Button x:Uid="ModelsPage_EmbedAllButton" x:Name="EmbedAllButton" Style="{StaticResource AccentButtonStyle}" Click="OnEmbedAll" AutomationProperties.AutomationId="models.embedAll" />
+                <Button x:Uid="ModelsPage_CancelEmbedButton" x:Name="CancelEmbedButton" Click="OnCancelEmbed" />
+            </StackPanel>
+            <StackPanel x:Name="BackfillPanel" Spacing="4">
+                <TextBlock x:Name="BackfillText" AutomationProperties.AutomationId="models.backfill" />
+                <ProgressBar x:Name="BackfillBar" />
+            </StackPanel>
+            <InfoBar x:Name="ResultBar" IsClosable="True" AutomationProperties.AutomationId="models.result" />
+
+            <TextBlock x:Uid="ModelsPage_3" Style="{StaticResource BodyStrongTextBlockStyle}" />
+            <TextBlock x:Name="SummaryText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="models.summary" />
+            <ListView x:Name="ModelsList" SelectionMode="None" AutomationProperties.AutomationId="models.list">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="models:ModelItem">
+                        <Grid ColumnSpacing="12" Padding="0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="3">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{x:Bind Slug}" FontWeight="SemiBold" />
+                                    <Border Padding="6,1" CornerRadius="4" BorderThickness="1" BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                            Visibility="{x:Bind local:Look.VisibleWhen(IsDefault)}">
+                                        <TextBlock x:Uid="ModelsPage_4" FontSize="10" Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
+                                    </Border>
+                                </StackPanel>
+                                <TextBlock Text="{x:Bind Detail}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <ProgressBar Value="{x:Bind local:Look.Percent(Fraction)}" />
+                                <TextBlock Text="{x:Bind Progress}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
+                                <Button x:Uid="ModelsPage_5" Tag="{x:Bind Slug}" Click="OnEmbedOne">
+                                    <FontIcon Glyph="&#xE768;" FontSize="14" />
+                                </Button>
+                                <Button x:Uid="ModelsPage_6" Tag="{x:Bind Slug}" Click="OnMakeDefault">
+                                    <FontIcon Glyph="&#xE734;" FontSize="14" />
+                                </Button>
+                                <Button x:Uid="ModelsPage_7" Tag="{x:Bind Slug}" Click="OnDrop">
+                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <TextBlock x:Uid="ModelsPage_8" Style="{StaticResource BodyStrongTextBlockStyle}" Margin="0,8,0,0" />
+            <TextBlock x:Uid="ModelsPage_9"
+                       TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ComboBox x:Uid="ModelsPage_FactsProviderBox" x:Name="FactsProviderBox" MinWidth="170" />
+                <TextBox x:Uid="ModelsPage_FactsModelBox" x:Name="FactsModelBox" MinWidth="240" />
+                <Button x:Uid="ModelsPage_10" Click="OnSaveFacts" VerticalAlignment="Bottom" />
+            </StackPanel>
+            <TextBlock x:Uid="ModelsPage_11"
+                       TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

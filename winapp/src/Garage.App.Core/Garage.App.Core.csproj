@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Everything the Windows UI decides, with no UI framework: app state, view models,
+       presentation values and the backend connection. The WinUI project only binds to it, so all
+       of it runs in plain `dotnet test` (docs/plans/windows-ui.md §2.1). -->
+  <PropertyGroup>
+    <RootNamespace>Garage.App.Core</RootNamespace>
+    <!-- LibraryImport (the Job Object) generates unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garage.Grpc\Garage.Grpc.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garage.App.Core.Tests" />
+    <InternalsVisibleTo Include="Garage.Services.Tests" />
+  </ItemGroup>
+
+</Project>

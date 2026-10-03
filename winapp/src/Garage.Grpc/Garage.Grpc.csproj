@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The GarageService client, generated from the same proto/garage.proto the macOS app and the
+       Python server use, plus the per-launch token the server expects (service/auth.py). -->
+  <PropertyGroup>
+    <RootNamespace>Garage.Grpc</RootNamespace>
+    <!-- Generated protobuf code carries no XML docs. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\..\proto\garage.proto" GrpcServices="Client" Link="Protos\garage.proto" />
+    <!-- The control plane between the app and its service processes; both ends live in winapp/. -->
+    <Protobuf Include="Protos\services.proto" GrpcServices="Both" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garage.App.Core.Tests" />
+  </ItemGroup>
+
+</Project>

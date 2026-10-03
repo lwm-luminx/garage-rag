@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The notification-area flyout (the Mac's menu-bar popover). Top to bottom: a header with Open and
+     Quit, quick search with Ask Garage, one row for the services, and what the pipeline is doing with
+     Ingest Now or Stop. Everything else is in the window, one click away on any row. -->
+<UserControl
+    x:Class="Garage.App.Tray.TrayFlyout"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <StackPanel x:Name="Root" Spacing="10" Padding="12" Width="440">
+        <!-- Header -->
+        <Grid>
+            <TextBlock x:Uid="TrayFlyout_1" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2">
+                <Button x:Uid="TrayFlyout_menubar_openGarage" Click="OnOpen" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                        AutomationProperties.AutomationId="menubar.openGarage">
+                    <FontIcon Glyph="&#xE737;" FontSize="14" />
+                </Button>
+                <Button x:Uid="TrayFlyout_menubar_quit" Click="OnQuit" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
+                        AutomationProperties.AutomationId="menubar.quit">
+                    <FontIcon Glyph="&#xE7E8;" FontSize="14" />
+                </Button>
+            </StackPanel>
+        </Grid>
+
+        <!-- Quick search, and Ask Garage -->
+        <TextBox x:Uid="TrayFlyout_QueryBox" x:Name="QueryBox" TextChanged="OnQueryChanged" KeyDown="OnQueryKeyDown"
+                 AutomationProperties.AutomationId="menubar.search" />
+
+        <Border x:Name="AnswerCard" Padding="10" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" AutomationProperties.AutomationId="menubar.answer">
+            <StackPanel Spacing="6">
+                <Grid>
+                    <TextBlock x:Name="AskedText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextTrimming="CharacterEllipsis" Margin="0,0,28,0" />
+                    <Button x:Uid="TrayFlyout_2" Click="OnClearAnswer" HorizontalAlignment="Right" Style="{StaticResource SubtleButtonStyle}" Padding="4">
+                        <FontIcon Glyph="&#xE711;" FontSize="10" />
+                    </Button>
+                </Grid>
+                <StackPanel x:Name="AskingPanel" Orientation="Horizontal" Spacing="8">
+                    <ProgressRing IsActive="True" Width="16" Height="16" />
+                    <TextBlock x:Uid="TrayFlyout_3" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <TextBlock x:Name="AnswerText" TextWrapping="Wrap" IsTextSelectionEnabled="True" MaxHeight="260"
+                           AutomationProperties.AutomationId="menubar.answer.text" />
+                <TextBlock x:Name="AskErrorText" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                           AutomationProperties.AutomationId="menubar.answer.error" />
+                <TextBlock x:Name="FootnoteText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                           AutomationProperties.AutomationId="menubar.answer.footnote" />
+                <StackPanel x:Name="CitationsPanel" Spacing="2" />
+            </StackPanel>
+        </Border>
+
+        <Border x:Name="ResultsCard" Padding="4" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" AutomationProperties.AutomationId="menubar.search.results">
+            <StackPanel x:Name="ResultsPanel" />
+        </Border>
+        <TextBlock x:Name="SearchNote" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                   TextWrapping="Wrap" Margin="4,0" />
+
+        <!-- Services: "All systems go", or the worst problem; opens Status. -->
+        <Button x:Name="ServicesRow" Click="OnShowStatus" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,8"
+                AutomationProperties.AutomationId="menubar.services">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border x:Name="SummaryCircle" Width="24" Height="24" CornerRadius="12" VerticalAlignment="Center">
+                    <FontIcon x:Name="SummaryGlyph" FontSize="12" Foreground="{ThemeResource TintGlyphBrush}" />
+                </Border>
+                <StackPanel Grid.Column="1">
+                    <TextBlock x:Name="SummaryTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                    <TextBlock x:Name="SummaryDetail" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+        </Button>
+
+        <!-- Activity -->
+        <Border x:Name="ActivityCard" Padding="10" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" AutomationProperties.AutomationId="menubar.activity">
+            <StackPanel Spacing="6">
+                <Grid>
+                    <HyperlinkButton x:Name="StatusLink" Click="OnShowStatus" Padding="0" AutomationProperties.AutomationId="menubar.status">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Ellipse x:Name="ActivityDot" Width="8" Height="8" VerticalAlignment="Center" />
+                            <TextBlock x:Name="ActivityTitle" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
+                            <TextBlock x:Name="ActivityPercent" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </HyperlinkButton>
+                    <Button x:Uid="TrayFlyout_IngestButton" x:Name="IngestButton" Click="OnIngest" HorizontalAlignment="Right"
+                            AutomationProperties.AutomationId="menubar.ingest" />
+                    <Button x:Uid="TrayFlyout_StopButton" x:Name="StopButton" Click="OnStop" HorizontalAlignment="Right"
+                            AutomationProperties.AutomationId="menubar.cancel" />
+                </Grid>
+                <ProgressBar x:Name="ActivityBar" Maximum="1" />
+                <TextBlock x:Name="ActivityDetail" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="ActivityItem" FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+                <TextBlock x:Name="StageTrail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <StackPanel x:Name="AttentionPanel" Spacing="2" />
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

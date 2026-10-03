@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Garage.App.Core/Garage.App.Core.csproj" />
+    <Project Path="src/Garage.App/Garage.App.csproj">
+      <Platform Project="x64" />
+    </Project>
+    <Project Path="src/Garage.Grpc/Garage.Grpc.csproj" />
+    <Project Path="src/Garage.Python/Garage.Python.csproj" />
+    <Project Path="src/Garage.Services/Garage.Services.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Garage.App.Core.Tests/Garage.App.Core.Tests.csproj" />
+    <Project Path="tests/Garage.App.UITests/Garage.App.UITests.csproj" />
+    <Project Path="tests/Garage.Python.Tests/Garage.Python.Tests.csproj" />
+    <Project Path="tests/Garage.Services.Tests/Garage.Services.Tests.csproj" />
+  </Folder>
+</Solution>

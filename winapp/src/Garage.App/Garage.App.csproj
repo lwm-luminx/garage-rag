@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The Windows app: WinUI 3 on the Windows App SDK. Unpackaged and self-contained while it is
+       developed (docs/plans/windows-ui.md §6, decision 2); MSIX packaging comes with windows.md §6.
+       Every decision lives in Garage.App.Core; this project binds to it. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>Garage.App</RootNamespace>
+    <AssemblyName>Garage</AssemblyName>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- LibraryImport (the tray flyout's placement) generates unsafe marshalling code. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Program.cs owns Main: single-instance redirection must run before XAML starts. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
+    <!-- XAML-generated code carries no XML docs. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" />
+    <PackageReference Include="H.NotifyIcon.WinUI" />
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Garage.App.Core\Garage.App.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Shipped beside the app: the model catalog the setup assistant offers (found the way
+       garage_rag.db.catalog finds it), and the notices Settings opens. -->
+  <ItemGroup>
+    <Content Include="..\..\..\data\models\models.json" Link="data\models\models.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\data\notices\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

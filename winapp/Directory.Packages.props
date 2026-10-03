@@ -1,0 +1,24 @@
+<Project>
+  <!-- Central package management: versions live here, projects name packages only. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Garage.Grpc: the GarageService client generated from proto/garage.proto -->
+    <PackageVersion Include="Google.Protobuf" Version="3.36.2" />
+    <PackageVersion Include="Grpc.Net.Client" Version="2.84.0" />
+    <PackageVersion Include="Grpc.Tools" Version="2.84.0" />
+    <!-- Garage.Services: the control plane's server, on Kestrel's named-pipe transport -->
+    <PackageVersion Include="Grpc.AspNetCore.Server" Version="2.84.0" />
+    <!-- Garage.App.Core: view models and app state -->
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Garage.App: WinUI 3 and the notification-area icon -->
+    <PackageVersion Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
+    <PackageVersion Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <PackageVersion Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <!-- tests -->
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <!-- Garage.App.UITests: UI Automation (windows-ui.md §5) -->
+    <PackageVersion Include="FlaUI.UIA3" Version="5.0.0" />
+  </ItemGroup>
+</Project>

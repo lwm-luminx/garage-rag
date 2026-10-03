@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Embeds CPython and bridges to it the way PythonKit does for the Mac app's XPC services:
+       an isolated interpreter (PEP 741's PyInitConfig), GIL scopes, and a dynamic PythonObject.
+       Talks to pythonXY.dll directly through source-generated P/Invoke; no C shim. -->
+  <PropertyGroup>
+    <RootNamespace>Garage.Python</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garage.Python.Tests" />
+  </ItemGroup>
+
+</Project>
