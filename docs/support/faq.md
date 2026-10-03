@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Frequently Asked Questions (FAQ)
-description: Answers to common questions about Garage, the local RAG app for macOS, covering privacy, supported files, models, performance and MCP clients such as Claude.
+description: Answers to common questions about Garage, the local RAG app for macOS, Windows and Linux, covering privacy, supported files, models, performance and MCP clients such as Claude.
 redirect_from:
   - /faq.html
 ---
@@ -18,7 +18,7 @@ redirect_from:
 <details open>
   <summary>What is Garage?</summary>
   <div class="faq-content">
-    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for macOS. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code.</p>
+    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for your computer: a native Mac app, a <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a>, and a command line for <a href="{{ '/linux.html' | relative_url }}">Linux</a>. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code.</p>
   </div>
 </details>
 
@@ -43,18 +43,18 @@ redirect_from:
 <details>
   <summary>Does my data ever leave my Mac?</summary>
   <div class="faq-content">
-    <p><strong>Your files and the index never do.</strong> What leaves your Mac depends only on which AI you connect:</p>
+    <p><strong>Your files and the index never do.</strong> What leaves your computer depends only on which AI you connect:</p>
     <ul>
       <li><strong>Claude, ChatGPT and other cloud assistants</strong> (what most people use): the assistant's app queries Garage over MCP and gets only the relevant parts of your collection, the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant sends those parts to its provider's servers with your conversation, including excerpts from Messages and Mail if you have indexed them, and handled under the provider's terms.</li>
-      <li><strong>Fully private, on your Mac:</strong> with the built-in llama.cpp engine, or LM Studio or Ollama on this Mac, and an agent that runs its model locally, nothing leaves the machine.</li>
-      <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this Mac even then.</li>
+      <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp engine on a Mac, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
+      <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this computer even then.</li>
     </ul>
     <p>Garage itself sends nothing to the cloud, and that is enforced by tests rather than by convention:</p>
     <ul>
       <li><strong>No cloud AI client:</strong> An automated scan of every source file fails the build if any module imports a cloud AI SDK, and the dependency lockfile must contain none.</li>
-      <li><strong>One egress choke point, one allowlist:</strong> Every outbound connection is built by a single tested module, and goes only to this Mac or to the Ollama / LM Studio server you configure. Anything else is refused.</li>
-      <li><strong>Local OCR:</strong> Text in images is recognized with Tesseract on your Mac. There is no cloud fallback.</li>
-      <li><strong>Communications stay local:</strong> Content classified as <code>communication</code> (e.g., Messages, Mail) is never sent to a server that is not on this Mac, even one you configured.</li>
+      <li><strong>One egress choke point, one allowlist:</strong> Every outbound connection is built by a single tested module, and goes only to this computer or to the Ollama / LM Studio server you configure. Anything else is refused.</li>
+      <li><strong>Local OCR:</strong> Text in images is recognized with Tesseract on your computer. There is no cloud fallback.</li>
+      <li><strong>Communications stay local:</strong> Content classified as <code>communication</code> (e.g., Messages, Mail) is never sent to a server that is not on this computer, even one you configured.</li>
     </ul>
   </div>
 </details>

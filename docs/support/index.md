@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Support Center
-description: Help for Garage, the local RAG app for macOS, with the user guide, troubleshooting, FAQ, privacy policy and how to reach the maintainer.
+description: Help for Garage, the local RAG app for macOS, Windows and Linux, with the user guide, troubleshooting, FAQ, privacy policy and how to reach the maintainer.
 ---
 
 <div class="hero">
@@ -67,7 +67,7 @@ description: Help for Garage, the local RAG app for macOS, with the user guide, 
   <div class="card">
     <span class="card-icon">🛡️</span>
     <h3>Privacy & Egress Guarantees</h3>
-    <p>No cloud AI client, one egress choke point with a destination allowlist, and messages that Garage itself never sends off your Mac.</p>
+    <p>No cloud AI client, one egress choke point with a destination allowlist, and messages that Garage itself never sends off your computer.</p>
     <a href="{{ '/support/privacy-policy.html' | relative_url }}" class="card-link">Read Privacy Policy →</a>
   </div>
 

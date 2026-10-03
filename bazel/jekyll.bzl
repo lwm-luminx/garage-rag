@@ -1,5 +1,11 @@
 """Rules for building and serving Jekyll static websites with Bazel."""
 
+def _rlocation_path(ctx, file):
+    """The path of `file` in a runfiles tree: an external repository's files sit beside the main one's."""
+    if file.short_path.startswith("../"):
+        return file.short_path[len("../"):]
+    return ctx.workspace_name + "/" + file.short_path
+
 def _jekyll_site_impl(ctx):
     out_dir = ctx.actions.declare_directory(ctx.label.name)
 
@@ -15,8 +21,6 @@ def _jekyll_site_impl(ctx):
     src_dir = ctx.attr.source_dir if ctx.attr.source_dir else ctx.label.package
     if not src_dir:
         src_dir = "."
-
-    config_path = ctx.file.config.path if ctx.file.config else (src_dir + "/_config.yml")
 
     # Build action
     args = ctx.actions.args()
@@ -48,47 +52,71 @@ def _jekyll_site_impl(ctx):
         command = 'set -euo pipefail\njekyll="$1"; out="$2"; shift 2\n"$jekyll" "$@"' + copy_commands,
     )
 
-    # Generate an executable runner script for `bazel run`
+    # Generate an executable runner script for `bazel run`: `jekyll serve` over the workspace's sources
+    # (so edits show up live), opened in the browser.
     executable = ctx.actions.declare_file(ctx.label.name + "_runner.sh")
-    rlocation_jekyll = ctx.workspace_name + "/" + ctx.executable.jekyll.short_path
 
     runner_template = """#!/usr/bin/env bash
 set -euo pipefail
 
-JEKYLL_BIN=""
-if [ -n "${RUNFILES_DIR:-}" ] && [ -x "${RUNFILES_DIR}/__RLOCATION__" ]; then
-    JEKYLL_BIN="${RUNFILES_DIR}/__RLOCATION__"
-elif [ -n "${RUNFILES_MANIFEST_FILE:-}" ]; then
-    JEKYLL_BIN="$(grep -m 1 "^__RLOCATION__ " "${RUNFILES_MANIFEST_FILE}" 2>/dev/null | cut -d' ' -f2- || true)"
-fi
-
-if [ -z "$JEKYLL_BIN" ] || [ ! -x "$JEKYLL_BIN" ]; then
-    if [ -x "${0}.runfiles/__RLOCATION__" ]; then
-        JEKYLL_BIN="${0}.runfiles/__RLOCATION__"
-    elif [ -x "__SHORT_PATH__" ]; then
-        JEKYLL_BIN="__SHORT_PATH__"
+# The rules_ruby launcher behind jekyll finds Ruby, the Gemfile and the gems through RUNFILES_DIR,
+# falling back to its own "$0.runfiles", which doesn't exist when it is reached through ours. `bazel
+# run` sets neither variable, so find this runner's runfiles and hand them down.
+if [[ -z "${RUNFILES_DIR:-}" && -z "${RUNFILES_MANIFEST_FILE:-}" ]]; then
+    if [[ -d "$0.runfiles" ]]; then
+        RUNFILES_DIR="$0.runfiles"
+    elif [[ -f "$0.runfiles_manifest" ]]; then
+        RUNFILES_MANIFEST_FILE="$0.runfiles_manifest"
+    elif [[ -f "$0.runfiles/MANIFEST" ]]; then
+        RUNFILES_MANIFEST_FILE="$0.runfiles/MANIFEST"
     fi
 fi
 
-if [ -z "$JEKYLL_BIN" ] || [ ! -x "$JEKYLL_BIN" ]; then
-    echo "Error: Could not locate Jekyll executable (__SHORT_PATH__)" >&2
+JEKYLL_BIN=""
+if [[ -n "${RUNFILES_DIR:-}" ]]; then
+    RUNFILES_DIR="$(cd "$RUNFILES_DIR" && pwd)"
+    export RUNFILES_DIR
+    JEKYLL_BIN="$RUNFILES_DIR/__RLOCATION__"
+elif [[ -n "${RUNFILES_MANIFEST_FILE:-}" ]]; then
+    export RUNFILES_MANIFEST_FILE
+    JEKYLL_BIN="$(grep -m 1 "^__RLOCATION__ " "$RUNFILES_MANIFEST_FILE" | cut -d' ' -f2- || true)"
+fi
+if [[ -z "$JEKYLL_BIN" || ! -x "$JEKYLL_BIN" ]]; then
+    echo "Error: could not find jekyll (__RLOCATION__) in the runfiles; run this with bazel run" >&2
     exit 1
 fi
 
-SRC_DIR="${BUILD_WORKSPACE_DIRECTORY:-.}/__SRC_DIR__"
-WORKSPACE_DIR="${BUILD_WORKSPACE_DIRECTORY:-.}"
+if [[ -z "${BUILD_WORKSPACE_DIRECTORY:-}" ]]; then
+    echo "Error: serve the site with bazel run, which serves the workspace's own sources" >&2
+    exit 1
+fi
+SRC_DIR="$BUILD_WORKSPACE_DIRECTORY/__SRC_DIR__"
+WORKSPACE_DIR="$BUILD_WORKSPACE_DIRECTORY"
 
 # Files kept outside the site's sources (site_files) go where the built site has them; each such
 # path is in the site's .gitignore.
 __SITE_FILE_COPIES__
-exec "$JEKYLL_BIN" serve --source "$SRC_DIR" "$@"
+
+# Build into a temporary folder, not _site in the sources or the read-only runfiles tree, and keep no
+# .jekyll-cache beside the sources.
+DEST_DIR="$(mktemp -d "${TMPDIR:-/tmp}/jekyll-__NAME__.XXXXXX")"
+trap 'rm -rf "$DEST_DIR"' EXIT
+
+"$JEKYLL_BIN" serve --source "$SRC_DIR" --destination "$DEST_DIR" --disable-disk-cache \\
+    --livereload --open-url "$@"
 """
     serve_copies = "\n".join([
         'mkdir -p "$(dirname "$SRC_DIR/{dest}")" && cp "$WORKSPACE_DIR/{src}" "$SRC_DIR/{dest}"'.format(src = f.short_path, dest = site_path)
         for target, site_path in site_files
         for f in target.files.to_list()
     ])
-    runner_content = runner_template.replace("__RLOCATION__", rlocation_jekyll).replace("__SHORT_PATH__", ctx.executable.jekyll.short_path).replace("__SRC_DIR__", src_dir).replace("__SITE_FILE_COPIES__", serve_copies)
+    runner_content = (
+        runner_template
+            .replace("__RLOCATION__", _rlocation_path(ctx, ctx.executable.jekyll))
+            .replace("__SRC_DIR__", src_dir)
+            .replace("__NAME__", ctx.label.name)
+            .replace("__SITE_FILE_COPIES__", serve_copies)
+    )
 
     ctx.actions.write(
         output = executable,
@@ -96,19 +124,25 @@ exec "$JEKYLL_BIN" serve --source "$SRC_DIR" "$@"
         is_executable = True,
     )
 
-    runfiles = ctx.runfiles(files = inputs + [executable]).merge(ctx.attr.jekyll[DefaultInfo].default_runfiles)
+    # The built site rides in the runfiles, so building the target still builds (and checks) it.
+    runfiles = ctx.runfiles(files = inputs + [executable, out_dir]).merge(ctx.attr.jekyll[DefaultInfo].default_runfiles)
 
     return [
+        # The runner is the only default output: `aspect run` executes a target's default output rather
+        # than its DefaultInfo executable, and with the site directory there it ran a file from inside it.
         DefaultInfo(
-            files = depset([out_dir]),
+            files = depset([executable]),
             executable = executable,
             runfiles = runfiles,
         ),
+        # The built site itself: `bazel build //docs:site --output_groups=site`.
+        OutputGroupInfo(site = depset([out_dir])),
     ]
 
 jekyll_site = rule(
     implementation = _jekyll_site_impl,
-    doc = "Builds a Jekyll website into a static output directory.",
+    doc = "Builds a Jekyll website into a static output directory. `bazel run` serves the workspace's " +
+          "sources with live reload and opens the site in the browser; extra arguments go to `jekyll serve`.",
     executable = True,
     attrs = {
         "srcs": attr.label_list(
