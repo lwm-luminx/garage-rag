@@ -84,6 +84,12 @@ For detailed architectural and design specifications, see:
 
 ### Python CLI Quickstart
 
+Install the `garage` and `garage-mcp` commands from [PyPI](https://pypi.org/project/garage-rag/):
+
+```bash
+uv tool install --python 3.14 garage-rag   # or: pipx install garage-rag
+```
+
 1. **Initialize configuration**:
    ```bash
    garage config init          # ./garage.json

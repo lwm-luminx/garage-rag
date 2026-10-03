@@ -215,7 +215,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
 
 ## Also a command line and a Python package
 
-The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the `garage_rag` Python package, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
+The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package on PyPI, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
 
 <h2 id="open-source">Open source, on GitHub</h2>
 
