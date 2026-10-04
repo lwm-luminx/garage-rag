@@ -364,14 +364,81 @@ rpc GetMemory    (GetMemoryRequest)    returns (GetMemoryResponse);
 folder needs no new RPC. `GarageClient` gets one method per RPC; the checked-in `garage_pb2*.py`
 are regenerated.
 
-In the app: a **Memories** page under Data, after Search (`AppSection.memories`, symbol
-`brain.head.profile`; `AppSectionTests` counts ten), with a source picker (all, or one memory
-source), the list (title, first line, tags, source, updated; a document icon on file-backed ones),
-a search field over `ListMemories.query`, an Add/Edit sheet (title, text, tags, store) and Delete
-with confirmation; Edit and Delete are disabled on a file-backed memory with a "Reveal in Finder"
-in their place. `GarageGRPCService+Memories.swift` and `AppState` wrappers follow `listDocuments`.
-The Sources page's Add sheet offers the memory folder presets. The MCP page's "Try it" list and
-`MCPServerPresentation` name the new tools and the writes switch.
+`GarageGRPCService+Memories.swift` gets one method per RPC in the `call(timeout:)` shape of
+`GarageGRPCService+Operations.swift`, and `AppState` wrappers (`listMemories`, `getMemory`,
+`addMemory`, `updateMemory`, `deleteMemory`) map the responses to `MemoryListItem` /
+`MemoryDetailItem` values in `Services/MemoryListItem.swift`, as `DocumentListItem` does for
+documents. The Sources page's Add sheet offers the memory folder presets, and the MCP page's "Try
+it" list and `MCPServerPresentation` name the new tools and the writes switch.
+
+## The Memories page (app)
+
+A new sidebar tab for the rows this design adds: see them, add them, edit them, delete them, across
+every memory source. It sits in the **Data** group after Search (`SidebarGroup.data` becomes
+`[.documents, .facts, .search, .memories]`; `AppSection.memories = "Memories"`, symbol
+`brain.head.profile`; `AppSectionTests` counts ten and keeps the order). It is built like the
+Documents page (`Views/DocumentsView.swift`): a filter header, a divider, and a list beside a detail
+pane, all state in the view, data through `AppState`.
+
+**Filter header.** A Source picker (All memories, then each `kind = memory` source by slug, stores
+first), a Tag picker filled from the tags on the current page, a search field bound to
+`ListMemories.query` (lexical, on title and text; the Search page is where semantic recall lives),
+and an **Add Memory** button. The header shows the total ("128 memories in 3 sources") from
+`total_count`.
+
+**List.** `List(selection:)` of `MemoryListItem` rows ordered by `updated_at`, newest first, paged
+by `limit`/`offset` with a "Load more" footer like Documents. A row shows the title (or the first
+line of the text when there is none), the first line of text under it, the tags as capsules, the
+source slug, and a relative time. A file-backed memory carries a document symbol and its path
+in place of the source slug; a memory with vectors pending under a model carries a small
+"embedding…" badge from `pending_models`, so the user can see that search will not find it
+semantically until the next backfill.
+
+**Detail pane.** For the selected memory: title, the text in full, tags, source, origin ("Stored
+by Claude Desktop", "From ~/.claude/CLAUDE.md"), class and trust, created and updated, chunks and
+which models hold vectors for it. Two modes:
+
+- *View*: the text as read-only, with **Edit**, **Delete**, **Open in Documents** (hands a
+  `DocumentFocus` to the Documents page, which already shows the chunks and facts) and **Search
+  for this** (runs the first line on the Search page) in the toolbar.
+- *Edit*: the title and tags become fields and the text a `TextEditor`, with **Save** and
+  **Cancel**. Save calls `UpdateMemory` with only what changed and shows the result's
+  `embedded_models` / `pending_models` in the footer for a moment. A text longer than
+  `MEMORY_MAX_CHARS` disables Save with the count shown.
+
+On a file-backed memory Edit and Delete are replaced by **Reveal in Finder** and the line "This
+memory is a file. Edit it on disk; the next ingest of *claude-memory* picks the change up," and a
+**Re-ingest source** button that queues that one source through `AppState.ingestQueue`.
+
+**Add sheet** (`MemoryEditorSheet`, shared with Edit): a store picker (every memory source whose
+root is `memory://`, `default` preselected), title, tags (a token field), text, class
+(document / communication, document preselected) and trust (authored / reference, authored
+preselected) behind a disclosure, since most memories take the defaults. Save calls `AddMemory`;
+the new row is selected on return. Paste into the text field is the way to store a clipping.
+
+**Delete** asks once ("Forget this memory? Its text, chunks and vectors are removed. This cannot be
+undone.") through the same confirmation style as Remove Source, then calls `DeleteMemory` and
+selects the next row. Multiple selection deletes one by one with one confirmation naming the count.
+
+**Empty states.** With no memories: "Nothing remembered yet", a line on how an assistant stores
+one (`rag_remember`, and that stdio clients can write by default) and the Add button. With a
+filter that matches nothing: "No memories match", with a Clear filters button. While the backend
+is not up: the same waiting view the other data pages show.
+
+**Wording** lives in `Views/MemoriesPresentation.swift` as plain values (`MemoriesPresentation`:
+the header count line, the origin line, the file-backed notice, the delete confirmation, the
+embedding badge text, the empty states), with a `MemoriesPresentationTests` unit test, as
+`DatabasePresentation` and `SourcesPresentation` have. `SectionViewHostingTests` hosts the new
+section like the others.
+
+**Cross-links.** A Search hit whose `memory_id` is set gets a "Memory" badge and an "Open in
+Memories" action (a `MemoryFocus`, the twin of `DocumentFocus`). A document in a memory source gets
+the same badge on the Documents page. The Status page's corpus line counts memories where it
+counts documents and facts.
+
+**Model UI tests.** `GarageAppModelUITests` runs against `MockLlamaXPCService`'s deterministic
+engine, so a test can add a memory on the page, see its embedding badge clear, find it on the
+Search page, edit it, and delete it, end to end without a real model.
 
 ## CLI
 
@@ -438,8 +505,10 @@ models embedded it and which are pending.
   `CONFIG_CHANGING_METHODS`.
 - `test_cli_commands.py`: the `memory` sub-app. `test_config.py`: `mcp.writes` validates and is
   documented; `kind: memory` with a folder or `memory://` root loads.
-- Swift: `AppSectionTests` for the new section; a `MemoriesPresentation` test for the wording;
-  `SourcePresets` for the memory folder presets.
+- Swift: `AppSectionTests` for the new section and the Data group's order;
+  `MemoriesPresentationTests` for the wording; `SectionViewHostingTests` hosts the page;
+  `SourcePresets` for the memory folder presets; a `GarageAppModelUITests` case that adds, finds,
+  edits and deletes a memory against the deterministic engine.
 
 ## Docs to update
 
@@ -460,7 +529,8 @@ gate, `ops/memory.py`, `ingest/memory_files.py`).
 2. Memory folders: `ingest/memory_files.py`, the pipeline dispatch, scan, `config.patterns`, the
    presets, tests.
 3. gRPC RPCs, `GarageClient`, regenerated stubs.
-4. The Memories page, the source presets in the Sources sheet, and the MCP page switch.
+4. The Memories page (list, detail, add/edit sheet, delete, file-backed handling, cross-links),
+   the source presets in the Sources sheet, and the MCP page switch.
 
 ## Decisions to confirm
 
