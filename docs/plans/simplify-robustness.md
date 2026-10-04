@@ -434,43 +434,71 @@ without an index) until it is built, and `GetStats` reports it.
 ### 3.8 Messages as rows, keyed to their chunks (`018_messages.sql`)
 
 The question "what did this person write, and how" needs each message as a row with its author,
-its time and its vectors. The fact link (`007`) already shows the shape: a side table whose rows
-own a chunk, so the ordinary backfill embeds them and search finds them with no special path.
+its time and its chunks. A message is the unit of authorship; a chunk is the unit of embedding;
+one message has one or many chunks (a text has one, a long mail has several), so the link runs
+from chunk to message, as `chunks.fact_id` (`007`) runs from chunk to fact. Threads are a relation
+between messages, since mail threads are trees and span files, while a Messages thread is one file.
 
 ```sql
 CREATE TABLE messages (
     id            bigserial   PRIMARY KEY,
-    document_id   bigint      NOT NULL REFERENCES documents(id) ON DELETE CASCADE,  -- the thread, or the mail
-    chunk_id      bigint      NOT NULL REFERENCES chunks(id)    ON DELETE CASCADE,  -- its text and vectors
-    author_id     bigint      REFERENCES authors(id) ON DELETE SET NULL,            -- resolved sender
+    document_id   bigint      NOT NULL REFERENCES documents(id) ON DELETE CASCADE, -- the thread file, or the .eml
+    author_id     bigint      REFERENCES authors(id) ON DELETE SET NULL,           -- resolved sender
     direction     text        NOT NULL CHECK (direction IN ('sent', 'received')),
-    sender        text,                       -- the raw handle, as chunks.sender today
+    sender        text,                       -- the raw handle or address
     sent_at       timestamptz NOT NULL,
     external_id   text,                       -- chat.db guid, mail Message-ID
+    in_reply_to   text,                       -- mail: the parent's Message-ID, as written
+    thread_key    text        NOT NULL,       -- chat: the chat guid; mail: the root Message-ID
+    subject       text,
     meta          jsonb       NOT NULL DEFAULT '{}'::jsonb,
-    CONSTRAINT messages_chunk_unique UNIQUE (chunk_id),
     CONSTRAINT messages_external_unique UNIQUE (document_id, external_id)
 );
 CREATE INDEX messages_author_sent ON messages (author_id, sent_at DESC);
-CREATE INDEX messages_document    ON messages (document_id, sent_at);
+CREATE INDEX messages_thread      ON messages (thread_key, sent_at);
+CREATE INDEX messages_external    ON messages (external_id);
+
+ALTER TABLE chunks ADD COLUMN message_id bigint REFERENCES messages(id) ON DELETE CASCADE;
+CREATE INDEX chunks_message ON chunks (message_id) WHERE message_id IS NOT NULL;
 ```
 
-- One row per message from any communication source: a Messages thread writes one per chunk (a
-  long message split by `chunk_prose` gives several chunks and one `messages` row on the first;
-  `chunk_id` is the row's embedding), a mail file writes one for its document.
+- **Messages threads.** One `documents` row per thread as today; one `messages` row per message
+  with `thread_key = chat guid`; each message chunk carries `message_id`. A message long enough to
+  split still has one row and several chunks.
+- **Mail.** One `documents` row per `.eml` (as today) and one `messages` row for it, with
+  `external_id = Message-ID`, `in_reply_to` from the header, and `thread_key` from the first
+  `References` entry or, failing that, its own Message-ID. The body's chunks all carry its
+  `message_id`. The thread is then `WHERE thread_key = ?` ordered by `sent_at`, and the tree is a
+  self-join of `in_reply_to` on `external_id`, resolved at query time so ingest order does not
+  matter and a parent that was never ingested is just a missing row. A subject-based fallback for
+  mailers that drop `References` is a `meta` note, not a column, until it is needed.
+- **Quoted text.** A reply carries the earlier messages quoted below it; those words are not the
+  sender's and must not count toward their tone. The mail extractor (§2.2) splits the new text from
+  the quoted tail (`>` prefixes, `On … wrote:` lines, Outlook's `From:` block). The new text's
+  chunks get `message_id`; the quoted chunks stay searchable but carry no `message_id`,
+  `direction` or `sender`, so per-author queries never see them and `rag_search`'s direction filter
+  keeps to words people actually wrote. `documents.content` keeps the whole mail for
+  `rag_get_document`.
+- **No duplicate uniqueness on `Message-ID`.** The same mail is often in two mailboxes (Sent and a
+  folder, or two accounts), which is two documents; `(document_id, external_id)` is unique,
+  `external_id` alone is only indexed.
 - `author_id` is the resolved sender, through the same `author_identities` lookup attribution uses
   for `document_authors` (`phone`/`email` → author, create on miss, `is_self` for the owner). That
-  is what makes "every message from X" one index scan, whatever handle X used in which app, and
-  what lets tone be studied per person rather than per phone number.
+  is what makes "every message from X" one index scan whatever handle X used in which app, and what
+  lets tone be studied per person rather than per address. Recipients stay on `document_authors`
+  (`sender`/`recipient`/`cc` roles) as today; a per-message recipient table is not needed while a
+  mail is a document.
 - `chunks.direction` and `chunks.sender` stay for the search filter (both engines filter on them in
-  `WHERE`, which is why `014` made them columns); the migration back-fills `messages` from them
-  plus the rendered timestamp line, and the conversation ingest writes both from then on.
-- The queries this enables, each a join on `messages` with no text parsing: messages by author in a
-  date range, with text (`chunks.text`) and vectors (`emb_* ON chunk_id`) for clustering by tone;
-  a per-person summary in `rag_list_authors`; the v1.5 memory and triples work gets a grounded
-  per-message anchor instead of a document-level one.
+  `WHERE`, which is why `014` made them columns); the migration back-fills `messages` from them and
+  the rendered timestamp line for chats, and from the headers in `documents.content` for mail, then
+  sets `chunks.message_id`.
+- The queries this enables, each a join with no text parsing: messages by author in a date range,
+  with text (`chunks.text`) and vectors (`emb_* ON chunk_id`) for clustering by tone; a mail thread
+  in order, across files; a per-person summary in `rag_list_authors`; the v1.5 memory and triples
+  work gets a per-message anchor instead of a document-level one.
 - Order within §3: `messages` lands after the outcomes change (§3.3) so it is written by the one
-  pipeline (§2.4) and not by the `sqlite` side branch.
+  pipeline (§2.4) and not by the `sqlite` side branch; the quoted-text split in the mail extractor
+  lands with it, since the rows are wrong without it.
 
 **Order:** migrations-apply-once (3.2, no schema change, unblocks safe edits) → drop unused (3.1)
 → outcomes (3.3, with the gateway oneof from §1.3 so the wire change and the table change are one
@@ -537,7 +565,7 @@ other.
 | 17 | Delegation: scanned PDF pages and embedded images to `image/*` (§2.2) | fixture PDF with one scanned page; budget setting documented and in the schema |
 | 18 | `tsv` configuration per chunk kind; drop `documents.lang` (§3.5) | `test_postgres.py` keyword search over an identifier |
 | 19 | Producers: Messages through the one pipeline (§2.4) | `test_messages.py`, `test_fake_messages.py` |
-| 20 | `messages` rebuilt as chunk-linked rows with author and time; back-fill; `rag_list_authors` per-person counts (§3.8) | `test_postgres.py` back-fill over fixture threads; `test_messages.py` asserts one row per message with the resolved author |
+| 20 | `messages` rebuilt with `chunks.message_id`, author, time and thread key; mail quoted-text split; back-fill; `rag_list_authors` per-person counts (§3.8) | `test_postgres.py` back-fill over fixture threads and mail; `test_messages.py` one row per message with the resolved author; `test_mail_extract.py` a reply's quoted chunks carry no `message_id` and a three-mail thread orders by `thread_key` |
 | 21 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
 | 22 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
 
