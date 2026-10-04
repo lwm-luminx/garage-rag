@@ -101,6 +101,14 @@ It runs when `GARAGE_TEST_DATABASE_URL` names a server and skips when the variab
 creates a throwaway `garage_test_*` database, applies `data/sql` to it and drops it; nothing else on
 the server is touched. Put new tests that need real SQL there, and keep logic tests on mocks.
 
+`garage_python/tests/test_e2e_cli.py` is the end-to-end test, gated on the same variable. It runs the
+real `garage` and `garage-mcp` as child processes, each with its own config, over the UI tests'
+fixture corpus (`macapp/Tests/Fixtures/corpus`): `init-db`, `register-model`, `add-source`, `scan`,
+`ingest` (twice), `backfill`, `search` in each mode, then `rag_stats`/`rag_search`/`rag_get_document`
+over stdio. Embeddings come from a fake Ollama on loopback that returns hashed bag-of-words vectors, so
+a file's token searched alone ranks that file first. Assertions read the throwaway `garage_e2e_*`
+database directly rather than parsing Rich tables.
+
 - **Development Macs** run Homebrew PostgreSQL 18 with pgvector as a service. Use that server for
   every test except end-to-end app testing:
 
@@ -115,6 +123,13 @@ the server is touched. Put new tests that need real SQL there, and keep logic te
 - **Bazel** passes the variable through (`test --test_env=GARAGE_TEST_DATABASE_URL` in `.bazelrc`),
   so `aspect test //garage_python/tests:test_postgres` uses the same server as the venv's `pytest`.
 - **Web sessions** get a server from the start hook (below).
+- **The devcontainer** (`.devcontainer/`, built for the host's architecture) installs PostgreSQL 18 and
+  pgvector from PGDG, starts the cluster on each container start (`start-postgres.sh`) with a
+  `garage_dev` superuser, and sets `GARAGE_TEST_DATABASE_URL` to it. `post-create.sh` builds the Linux
+  venv in a Docker volume mounted over `garage_python/.venv`, so a Mac's own venv is never overwritten,
+  plus `_garage_git`/`_garage_tesseract` as CI does. From the host, `tools/e2e/devcontainer.sh` brings
+  the container up and runs `test_e2e_cli.py` and `test_postgres.py` in it (other pytest arguments
+  replace those; `GARAGE_E2E_REBUILD=1` rebuilds the image). It needs Docker and the devcontainer CLI.
 - **CI** runs them in the Linux `python` job (`.github/workflows/ci.yaml`) against a
   `pgvector/pgvector` service container. The macOS Bazel job has no server, so they skip there.
 - **Never point it at the app's own cluster.** The vendored Postgres (`//ext/postgres`, port 14824,

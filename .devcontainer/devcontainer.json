@@ -1,10 +1,22 @@
 {
   "$schema": "https://raw.githubusercontent.com/devcontainers/spec/main/schemas/devContainer.schema.json",
-  "name": "Dev image with direnv and Bazel",
+  "name": "Dev image with direnv, Bazel and Postgres",
   "build": {
     "dockerfile": "Dockerfile"
   },
-  "postCreateCommand": "direnv allow; bazel run tools:bazel_env || true",
+  // The Linux venv lives in a volume over garage_python/.venv, so it never replaces the
+  // host's (macOS) venv through the bind mount.
+  "mounts": [
+    "source=garage-devcontainer-venv,target=${containerWorkspaceFolder}/garage_python/.venv,type=volume"
+  ],
+  "postCreateCommand": ".devcontainer/post-create.sh",
+  "postStartCommand": ".devcontainer/start-postgres.sh",
+  "remoteEnv": {
+    // A superuser on the container's own cluster: test_postgres.py and test_e2e_cli.py
+    // create and drop their own databases on it.
+    "GARAGE_TEST_DATABASE_URL": "postgresql://garage_dev:garage_dev@localhost:5432/postgres",
+    "PATH": "${containerWorkspaceFolder}/garage_python/.venv/bin:${containerEnv:PATH}"
+  },
   "runArgs": [
     "--init",
     "--ulimit", "nofile=65536:65536"
