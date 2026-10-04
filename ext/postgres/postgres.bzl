@@ -136,8 +136,10 @@ def postgres_targets(name, lib_source, tags = []):
             "libecpg.a",
             "libpq.a",
             "libpgport.a",
+            "libpgport_shlib.a",
             "libpgtypes.a",
             "libpgcommon.a",
+            "libpgcommon_shlib.a",
         ],
         postfix_script = """
 for f in $$INSTALLDIR/bin/*; do
@@ -183,8 +185,12 @@ done
     )
 
     _extract_static_lib("libpq_a", ":" + name, "libpq.a", tags)
-    _extract_static_lib("libpgcommon_a", ":" + name, "libpgcommon.a", tags)
-    _extract_static_lib("libpgport_a", ":" + name, "libpgport.a", tags)
+
+    # The _shlib variants are the ones libpq links (src/interfaces/libpq/Makefile): the frontend
+    # libpgcommon.a renames its encoding functions pg_char_to_encoding_private and so on, which
+    # leaves libpq.a's references to pg_char_to_encoding and pg_encoding_to_char undefined.
+    _extract_static_lib("libpgcommon_shlib_a", ":" + name, "libpgcommon_shlib.a", tags)
+    _extract_static_lib("libpgport_shlib_a", ":" + name, "libpgport_shlib.a", tags)
 
     # Standalone client library for the Bazel py_tests on macOS (//tools/pytest:libpq, signed by
     # //macapp/externals:libpq), whose interpreter has no psycopg_c built in, so psycopg reaches it
@@ -242,14 +248,14 @@ done <<< "$$otool_deps"
 
     cc_import(
         name = "libpgcommon_import",
-        static_library = ":libpgcommon_a",
+        static_library = ":libpgcommon_shlib_a",
         tags = tags,
         visibility = ["//visibility:private"],
     )
 
     cc_import(
         name = "libpgport_import",
-        static_library = ":libpgport_a",
+        static_library = ":libpgport_shlib_a",
         tags = tags,
         visibility = ["//visibility:private"],
     )
@@ -278,7 +284,7 @@ done <<< "$$otool_deps"
 
     # Static libpq, for code that links it into its own binary: psycopg's C implementation in
     # PythonXPCService.framework (//ext/psycopg_c). Postgres builds libpq.a without the pgcommon and
-    # pgport objects it needs, so they come with it, as `pg_config --libs` lists them.
+    # pgport objects it needs, so they come with it: the _shlib variants libpq's own link uses.
     cc_library(
         name = "libpq",
         tags = tags,

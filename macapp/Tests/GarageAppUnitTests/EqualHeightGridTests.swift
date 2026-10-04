@@ -11,7 +11,8 @@ final class EqualHeightGridTests: XCTestCase {
     }
 
     func testColumnsShareTheWidthUpToTheirMaximum() {
-        XCTAssertEqual(EqualHeightGrid.columnWidth(width: 620, count: 3, spacing: 12, maximum: 320), 196, accuracy: 0.001)
+        // Three columns share what the two gaps leave: (620 - 2 × 12) / 3.
+        XCTAssertEqual(EqualHeightGrid.columnWidth(width: 620, count: 3, spacing: 12, maximum: 320), 596.0 / 3, accuracy: 0.001)
         XCTAssertEqual(EqualHeightGrid.columnWidth(width: 2000, count: 1, spacing: 12, maximum: 320), 320)
     }
 

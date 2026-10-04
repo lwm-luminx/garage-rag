@@ -279,7 +279,7 @@ public enum GarageXPCStandardSelfTests {
                 throw GarageXPCSelfTestFailure("garage_rag reads images through something else", details: String(describing: module))
             }
             guard let datapath = String(tesseract._bundled_datapath()) else {
-                throw GarageXPCSelfTestFailure("No eng.traineddata in the framework's tessdata", details: "expected beside \(String(sys.prefix) ?? "sys.prefix")")
+                throw GarageXPCSelfTestFailure("No eng.traineddata in the framework's tessdata", details: "expected beside \(String(sys[dynamicMember: "prefix"]) ?? "sys.prefix")")
             }
             // Starting an engine loads the language data; it is dropped again at once.
             _ = try module.Engine.throwing.dynamicallyCall(withArguments: [datapath, tesseract.LANGUAGE, 3])
