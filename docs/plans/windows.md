@@ -542,16 +542,22 @@ Users install that build themselves, and Garage neither ships nor modifies it.
 
 ## 6. Build and distribution
 
-- **Build system — decision needed.** Bazel has weak support for WinUI 3 and MSIX. Recommendation:
-  - **decided:** `winapp/` builds with the .NET 10 SDK (`dotnet build winapp/Garage.slnx`), with no
-    Bazel rules and no `BUILD` files under it; the `winapp` job in `windows.yaml` builds and tests
-    it against the CPython that workflow builds;
+- **Build system — decided.** Bazel has weak support for WinUI 3 and MSIX, so:
+  - `winapp/` is a .NET 10 SDK solution (`dotnet build winapp/Garage.slnx`) whose csproj files are
+    the source of truth; the `winapp` job in `windows.yaml` builds and tests it, the WinUI app and
+    its UI tests included, against the CPython and Postgres that workflow builds;
+  - Bazel builds every project but `Garage.App` and `Garage.App.UITests` as well, through
+    rules_dotnet (`winapp.MODULE.bazel`, one `BUILD.bazel` per project mirroring its csproj, held
+    together by `//winapp/bazel:csproj_sync_test`), on macOS and Linux; CI's `winapp-bazel` job runs
+    `bazel test //winapp/...` on Linux. WinUI's XAML compiler, MSIX packaging and FlaUI stay with
+    MSBuild on Windows (winapp/README.md, "Bazel");
   - native dependencies come from `windows.yaml`'s MSVC builds, pinned by `ext/*/*.MODULE.bazel`
     through `tools/windows/fetch_ext.py`, which already happens for Postgres and CPython;
   - extend it to llama.cpp (Vulkan + CPU), Tesseract and Leptonica (codec-less, with MSVC; §5.5),
     OpenSSL and AGE;
   - `site-packages` comes from `uv pip install --target` against the locked Windows environment.
-  - This departs from CLAUDE.md's "one Bazel monorepo"; CLAUDE.md says so under "Windows app".
+  - The WinUI app is the one part of the monorepo Bazel does not build; CLAUDE.md says so under
+    "Windows app".
 - **Notices.** Add the Windows natives and the NuGet packages (Windows App SDK, CommunityToolkit,
   H.NotifyIcon, Grpc.*) to `tools/third_party_notices.py` `NATIVE_COMPONENTS`, and ship
   `THIRD_PARTY_NOTICES.txt` in the package. The Windows-only Python packages from the lockfile
@@ -615,7 +621,8 @@ Users install that build themselves, and Garage neither ships nor modifies it.
 Decided:
 
 1. **The Python bridge:** an owned layer, `Garage.Python` (§2.3), built and tested.
-2. **The build system:** the .NET 10 SDK for `winapp/`, outside Bazel (§6).
+2. **The build system:** the .NET 10 SDK for `winapp/`, with Bazel (rules_dotnet) building every
+   project but the WinUI app and its UI tests (§6).
 
 Still open:
 

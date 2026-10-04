@@ -141,7 +141,8 @@ database directly rather than parsing Rich tables.
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: the `python` job (ruff and the whole venv pytest suite, with a Postgres service),
     `python-freethreaded` (the same suite on free-threaded CPython 3.14t, informational until the
-    app ships on it), `swiftcheck`, `format`, `gazelle` and `buildifier`.
+    app ships on it), `swiftcheck`, `format`, `gazelle`, `buildifier`, and `winapp-bazel`
+    (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
   - On macOS: `lint`, which analyzes Apple targets.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
