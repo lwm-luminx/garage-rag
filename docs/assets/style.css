@@ -310,6 +310,48 @@ a:hover {
   gap: 0.25rem;
 }
 
+/* Engineering plans: status badges on the index cards and the meta line above a plan */
+.plan-status {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background-color: var(--card-bg);
+  color: var(--text-secondary);
+}
+.plans-grid .card .plan-status {
+  align-self: flex-start;
+  margin-bottom: 0.75rem;
+}
+.plan-status-active,
+.plan-status-proposed {
+  border-color: var(--callout-info-border);
+  background-color: var(--callout-info-bg);
+  color: var(--text-primary);
+}
+.plan-status-landed {
+  border-color: var(--callout-success-border);
+  background-color: var(--callout-success-bg);
+  color: var(--text-primary);
+}
+.plan-status-deferred {
+  border-color: var(--callout-warn-border);
+  background-color: var(--callout-warn-bg);
+  color: var(--text-primary);
+}
+.prose .plan-meta {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+.plan-meta-sep {
+  margin: 0 0.15rem;
+}
+
 /* Typography & Prose */
 .prose {
   line-height: 1.7;
