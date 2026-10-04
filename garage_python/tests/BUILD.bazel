@@ -737,3 +737,13 @@ py_test(
         "//garage_python/src/garage_rag/extract",
     ],
 )
+
+py_test(
+    name = "test_extract_dispatch",
+    srcs = ["test_extract_dispatch.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/extract",
+        "@pypi//pytest",
+    ],
+)

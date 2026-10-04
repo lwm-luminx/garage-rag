@@ -804,6 +804,26 @@ def test_unmaterialized_placeholder_writes_no_document(tmp_path: Path):
     gateway.replace_document.assert_not_called()
 
 
+def test_a_placeholder_found_at_extraction_is_a_placeholder_not_a_failure(tmp_path: Path):
+    """extract() checks for a cloud stub itself; that PlaceholderFile must not reach
+    the per-candidate error handler, which would count the file as an ingest error."""
+    stub = tmp_path / "online-only.pdf"
+    stub.write_bytes(b"%PDF-1.4 dataless stand-in")
+    candidate = _candidate(stub)
+    with patch("garage_rag.ingest.pipeline.extract", side_effect=PlaceholderFile(stub, "iCloud Drive")):
+        gateway, counters = _ingest_one(tmp_path, candidate, ExistingDocStat(exists=False))
+
+    assert counters.placeholders == 1
+    assert counters.failed == 0
+    assert counters.errors == []
+    gateway.record_placeholder.assert_called_once_with(
+        9, "src", str(stub), candidate.mtime.timestamp(), stub.stem, "not materialized"
+    )
+    gateway.record_extract_failed.assert_not_called()
+    gateway.record_no_text.assert_not_called()
+    gateway.replace_document.assert_not_called()
+
+
 def test_a_read_the_kernel_refused_is_a_placeholder_not_a_failure(tmp_path: Path):
     import errno
 
