@@ -85,7 +85,11 @@ What exists and shapes the design. Each item is one thing the plan changes.
 
 - `conversations` and `messages` (`005_conversations.sql`) are never read or written; the only
   reference is a row count in `schema_summary`. Their design (one other participant, a synthesized
-  document) does not match how threads are stored.
+  document) does not match how threads are stored. The need behind them is real, though: pulling
+  every message one person sent, to read their tone, is a per-message question, and today the
+  per-message facts the readers have in hand (`ChatMessage.sent_at`, `guid`, the sender handle,
+  `extract/messages.py:79-96`; a mail's `Date` and `From`) survive only as rendered text inside the
+  chunk. `chunks.direction`/`sender` (`014`) carry the handle but no time and no `authors` link.
 - `ingest_state` has four values; only `ok` and `extract_failed` are written. `author_identities.kind`
   allows `imessage_handle` and `handle`, which nothing writes.
 - A document whose re-extraction fails flips to `extract_failed` and keeps its chunks
@@ -327,8 +331,8 @@ Migrations keep the repo's rules: idempotent, re-applicable, `data/sql` is truth
 
 ### 3.1 Drop what nothing writes (`015_drop_unused.sql`)
 
-- `DROP TABLE conversations, messages` and their models. If the v1.5 memory/triples work needs a
-  message-level store it will be designed for how threads are actually stored.
+- `DROP TABLE conversations` and its model: a thread is the document that holds it. `messages` is
+  rebuilt rather than dropped, in the shape §3.8 describes, since nothing reads the current one.
 - `ingest_state`: remove `embed_partial` and `placeholder`. Postgres cannot drop enum values, so
   recreate the type: add `ingest_state_v2 ('ok', 'extract_failed')`, alter the column with a
   `USING`, drop the old type, rename. Or, with §3.3, drop `documents.state` entirely.
@@ -427,10 +431,51 @@ without an index) until it is built, and `GetStats` reports it.
 - `ingest_outcomes`: `CHECK (outcome <> 'failed' OR error IS NOT NULL)`.
 - `embedding_models`: `CHECK (index_kind <> 'hnsw_bq' OR storage_kind = 'vector')`.
 
+### 3.8 Messages as rows, keyed to their chunks (`018_messages.sql`)
+
+The question "what did this person write, and how" needs each message as a row with its author,
+its time and its vectors. The fact link (`007`) already shows the shape: a side table whose rows
+own a chunk, so the ordinary backfill embeds them and search finds them with no special path.
+
+```sql
+CREATE TABLE messages (
+    id            bigserial   PRIMARY KEY,
+    document_id   bigint      NOT NULL REFERENCES documents(id) ON DELETE CASCADE,  -- the thread, or the mail
+    chunk_id      bigint      NOT NULL REFERENCES chunks(id)    ON DELETE CASCADE,  -- its text and vectors
+    author_id     bigint      REFERENCES authors(id) ON DELETE SET NULL,            -- resolved sender
+    direction     text        NOT NULL CHECK (direction IN ('sent', 'received')),
+    sender        text,                       -- the raw handle, as chunks.sender today
+    sent_at       timestamptz NOT NULL,
+    external_id   text,                       -- chat.db guid, mail Message-ID
+    meta          jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT messages_chunk_unique UNIQUE (chunk_id),
+    CONSTRAINT messages_external_unique UNIQUE (document_id, external_id)
+);
+CREATE INDEX messages_author_sent ON messages (author_id, sent_at DESC);
+CREATE INDEX messages_document    ON messages (document_id, sent_at);
+```
+
+- One row per message from any communication source: a Messages thread writes one per chunk (a
+  long message split by `chunk_prose` gives several chunks and one `messages` row on the first;
+  `chunk_id` is the row's embedding), a mail file writes one for its document.
+- `author_id` is the resolved sender, through the same `author_identities` lookup attribution uses
+  for `document_authors` (`phone`/`email` → author, create on miss, `is_self` for the owner). That
+  is what makes "every message from X" one index scan, whatever handle X used in which app, and
+  what lets tone be studied per person rather than per phone number.
+- `chunks.direction` and `chunks.sender` stay for the search filter (both engines filter on them in
+  `WHERE`, which is why `014` made them columns); the migration back-fills `messages` from them
+  plus the rendered timestamp line, and the conversation ingest writes both from then on.
+- The queries this enables, each a join on `messages` with no text parsing: messages by author in a
+  date range, with text (`chunks.text`) and vectors (`emb_* ON chunk_id`) for clustering by tone;
+  a per-person summary in `rag_list_authors`; the v1.5 memory and triples work gets a grounded
+  per-message anchor instead of a document-level one.
+- Order within §3: `messages` lands after the outcomes change (§3.3) so it is written by the one
+  pipeline (§2.4) and not by the `sqlite` side branch.
+
 **Order:** migrations-apply-once (3.2, no schema change, unblocks safe edits) → drop unused (3.1)
 → outcomes (3.3, with the gateway oneof from §1.3 so the wire change and the table change are one
 PR) → last-seen (3.4) → tsv config and `lang` (3.5) → session roles and index-after-backfill (3.6)
-→ constraints (3.7, last, once the code guarantees them).
+→ messages (3.8) → constraints (3.7, last, once the code guarantees them).
 
 ---
 
@@ -482,7 +527,7 @@ other.
 | 7 | `identify()` + `documents.mime` populated (§2.1) | `test_fixture_corpus.py` asserts a mime per document |
 | 8 | Extractor registry, derived revision, one name, migration rewriting old names (§2.2) | `test_image_extract.py`, `test_mail_extract.py`, `test_postgres.py` for the rename |
 | 9 | One error hierarchy; one `except` in the pipeline (§2.2) | pipeline tests over a mocked gateway |
-| 10 | Drop unused tables, enum values, indexes (§3.1) | `test_postgres.py` migration re-apply |
+| 10 | Drop `conversations`, unused enum values and indexes (§3.1) | `test_postgres.py` migration re-apply |
 | 11 | `PersistDocument` oneof + `ingest_outcomes` as the one outcome record, `documents.state` dropped (§1.3, §3.3) | `test_ingest_gateway.py`, `test_postgres.py`, `test_grpc_serialization.py` |
 | 12 | `ingest_seen` → `run_id` on outcomes; prune `ingest_runs` (§3.4) | reconcile tests, `test_postgres.py` |
 | 13 | Proto enums and `Phase`; ingest progress in proto; Swift switches on them (§1.3) | enum-parity test; Swift presentation tests |
@@ -492,10 +537,11 @@ other.
 | 17 | Delegation: scanned PDF pages and embedded images to `image/*` (§2.2) | fixture PDF with one scanned page; budget setting documented and in the schema |
 | 18 | `tsv` configuration per chunk kind; drop `documents.lang` (§3.5) | `test_postgres.py` keyword search over an identifier |
 | 19 | Producers: Messages through the one pipeline (§2.4) | `test_messages.py`, `test_fake_messages.py` |
-| 20 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
-| 21 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
+| 20 | `messages` rebuilt as chunk-linked rows with author and time; back-fill; `rag_list_authors` per-person counts (§3.8) | `test_postgres.py` back-fill over fixture threads; `test_messages.py` asserts one row per message with the resolved author |
+| 21 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
+| 22 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
 
 Groups: {1, 2, 3} → {4, 5, 6, 7} → {8, 9, 10} → {11, 12, 13} → {14, 15, 16} → {17, 18, 19} →
-{20, 21}. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
+{20} → {21, 22}. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
 `net/` keeps `test_egress_block.py` and `test_embed_egress.py` green, and the deletion of the
 worker embed path (§1.2) removes one caller from `CALLERS` rather than adding one.
