@@ -246,13 +246,18 @@ class MediaType:
 def identify(path: Path, *, size: int) -> MediaType | None
 ```
 
-- Suffix and known-name lookup first (free, no I/O), from one table that maps suffix → media type.
-  On macOS, `UTType(filenameExtension:)`/`UTType(contentsOf:)` is reachable from Python through the
-  same ctypes pattern as `extract/imageio.py`; off macOS the table and `mimetypes` stand in. A
-  magic-byte check only for the ambiguous cases (a `.msg` is OLE, a `.doc` may be RTF, an `.xml` may
-  be an Atom feed), with the first 4 KiB read once.
-- `is_indexable(path)` becomes `identify(path) is not None and registry.handles(media_type)`. The
-  walker keeps its "no I/O before pruning" property because identification by suffix needs none.
+- Two phases, because the walker must not read. `identify_by_name(path)` is suffix and known-name
+  lookup only (free, no I/O), from one table that maps suffix → media type; it is what the walker
+  and the scanner call, and an ambiguous suffix (a `.msg` is OLE, a `.doc` may be RTF, an `.xml`
+  may be an Atom feed) returns a provisional type that counts as indexable. `identify(path)` runs
+  in the extract step, after pruning, the size check and the budgeted `ensure_local`, and may read
+  the first 4 KiB once to settle an ambiguous case; a cloud stub is therefore never downloaded by
+  identification, and a dataless read is never attempted on the walker's thread (`walker.py:246-268`,
+  `materialize.py`). On macOS, `UTType(filenameExtension:)` and, in the second phase,
+  `UTType(contentsOf:)` are reachable from Python through the same ctypes pattern as
+  `extract/imageio.py`; off macOS the table and `mimetypes` stand in.
+- `is_indexable(path)` becomes `identify_by_name(path) is not None and registry.handles(it)`. The
+  walker keeps its "no I/O before pruning" property by construction.
 - `documents.mime` gets the identified type. That column finally means something: it drives the
   Documents page's icon, `rag_get_document`'s hint to the client, and per-type stats.
 
@@ -335,8 +340,11 @@ Migrations keep the repo's rules: idempotent, re-applicable, `data/sql` is truth
 
 ### 3.1 Drop what nothing writes (`015_drop_unused.sql`)
 
-- `DROP TABLE conversations` and its model: a thread is the document that holds it. `messages` is
-  rebuilt rather than dropped, in the shape §3.8 describes, since nothing reads the current one.
+- `DROP TABLE messages, conversations` (in that order: `messages.conversation_id` references
+  `conversations`, `005_conversations.sql:48`, so the parent cannot go first) and both models. A
+  thread is the document that holds it, and nothing reads or writes either table, so both are
+  empty on every install. §3.8 creates a new `messages` with a different shape; dropping the old
+  one here keeps that migration a plain `CREATE TABLE`.
 - `ingest_state`: remove `embed_partial` and `placeholder`. Postgres cannot drop enum values, so
   recreate the type: add `ingest_state_v2 ('ok', 'extract_failed')`, alter the column with a
   `USING`, drop the old type, rename. Or, with §3.3, drop `documents.state` entirely.
@@ -377,15 +385,28 @@ for a document that exists, `ingest_outcomes` for one that does not, and nowhere
   outcome beside the document by joining on (source_id, uri). A document whose file is gone is still
   reconcile's job, not an outcome.
 - `check_stat` reads one row from each table and `_is_settled` becomes "the outcome row's stat
-  matches and its revision is current". The pipeline's step 1 and step 3 skip rules collapse to one.
+  matches and its revision is current", for every outcome but `placeholder`. A placeholder is a
+  file whose bytes were not fetched, often because that run's materialization budget was spent;
+  its stat does not change when the budget is renewed, so it is never settled and is offered to
+  `ensure_local` on every run (cheap: no read happens unless the budget allows one). The pipeline's
+  step 1 and step 3 skip rules collapse to one. Test: a run with an exhausted budget followed by a
+  run with a renewed one indexes the file.
 
 ### 3.4 Bound the bookkeeping (`017_last_seen.sql`)
 
-- Replace `ingest_seen` with `ingest_outcomes.run_id`: "seen in run R" is "outcome row's run_id =
-  R", which §3.3 writes anyway. Reconcile deletes documents whose outcome row's `run_id` is older
-  than the source's last completed run, under the same completed-run guard as today
-  (`ingest/reconcile.py`). One fewer table, no per-run row fan-out, and the walk's
-  `record_seen` becomes an `UPDATE … SET run_id` on a row that exists.
+- Replace `ingest_seen` with `ingest_outcomes.last_seen_run_id`: "seen in run R" is "the row's
+  last-seen run is R or later", which §3.3 writes anyway. Reconcile deletes documents whose row's
+  last-seen run is older than the source's last *completed* run, under the same completed-run
+  guard as today (`ingest/reconcile.py`). One fewer table, no per-run row fan-out, and the walk's
+  `record_seen` becomes an update on a row that exists.
+- Runs can overlap: `begin_session` only inserts an `ingest_runs` row (`gateway.py:220-240`), so a
+  scheduled maintenance ingest and a manual one can walk the same source at once. Every outcome
+  write therefore sets `last_seen_run_id = GREATEST(last_seen_run_id, :run_id)`, never a plain
+  assignment, so an older run finishing late cannot move a marker backwards and make reconcile
+  delete a document both runs saw. Test: two interleaved runs over the fixture corpus, the older
+  one recording last, leave every document with the newer run's id and reconcile deletes nothing.
+  This depends on §3.3 having a row for every indexed URI (today success deletes the outcome row),
+  so it lands after it.
 - Keep the last N `ingest_runs` per source (N = 20, a setting) and delete older ones in
   `finalize_session`. `fact_runs` is per (document, prompt) and already bounded.
 - `scan_details` stays on `sources`; it is one row per source.
@@ -395,8 +416,15 @@ for a document that exists, `ingest_outcomes` for one that does not, and nowhere
 - `chunks.tsv` uses the `simple` configuration for `code` chunks and `english` for the rest:
   `to_tsvector(CASE WHEN chunker LIKE 'code%' THEN 'simple' ELSE 'english' END::regconfig, text)`
   is immutable enough for a generated column when written with the literal regconfig casts. Stemming
-  identifiers (`parser` → `pars`) hurts code recall and helps nothing. `documents.lang` is either
-  used to pick the configuration or dropped; the plan drops it until an extractor sets it.
+  identifiers (`parser` → `pars`) hurts code recall and helps nothing. The query side changes in the
+  same step, since `tsquery_expr` builds every query with `english` (`search/hybrid.py:115-117`)
+  and an `english` query for `run` would no longer match a `simple` vector holding `running`. The
+  FTS CTE binds both queries and matches each chunk with its own configuration:
+  `(c.chunker LIKE 'code%' AND c.tsv @@ :q_simple) OR (c.chunker NOT LIKE 'code%' AND c.tsv @@ :q_english)`,
+  ranked by `ts_rank_cd` against the matching query. Test in `test_postgres.py`: a prose chunk with
+  `running` and a code chunk with `running` are both found by `run` in prose and `running` in code,
+  and `run` does not match the code chunk. `documents.lang` is either used to pick the configuration
+  or dropped; the plan drops it until an extractor sets it.
 - `facts.tsv` serves only `ListFacts`; keep it, it is small.
 - The `hnsw_bq` first stage (`hybrid.py:229-259`) and `index_kind = 'none'` are reachable only for
   models wider than 4000 dims without MRL; `models.json` has none. Leave the code, add a
@@ -450,15 +478,15 @@ CREATE TABLE messages (
     author_id     bigint      REFERENCES authors(id) ON DELETE SET NULL,           -- resolved sender
     direction     text        NOT NULL CHECK (direction IN ('sent', 'received')),
     sender        text,                       -- the raw handle or address
-    sent_at       timestamptz NOT NULL,
+    sent_at       timestamptz,                -- NULL when the source has no usable time (a mail with no Date)
     external_id   text,                       -- chat.db guid, mail Message-ID
     in_reply_to   text,                       -- mail: the parent's Message-ID, as written
-    thread_key    text        NOT NULL,       -- chat: the chat guid; mail: the root Message-ID
+    thread_key    text        NOT NULL,       -- chat: the chat guid; mail: the root Message-ID, else 'doc:<document_id>'
     subject       text,
     meta          jsonb       NOT NULL DEFAULT '{}'::jsonb,
     CONSTRAINT messages_external_unique UNIQUE (document_id, external_id)
 );
-CREATE INDEX messages_author_sent ON messages (author_id, sent_at DESC);
+CREATE INDEX messages_author_sent ON messages (author_id, sent_at DESC NULLS LAST);
 CREATE INDEX messages_thread      ON messages (thread_key, sent_at);
 CREATE INDEX messages_external    ON messages (external_id);
 
@@ -471,11 +499,15 @@ CREATE INDEX chunks_message ON chunks (message_id) WHERE message_id IS NOT NULL;
   split still has one row and several chunks.
 - **Mail.** One `documents` row per `.eml` (as today) and one `messages` row for it, with
   `external_id = Message-ID`, `in_reply_to` from the header, and `thread_key` from the first
-  `References` entry or, failing that, its own Message-ID. The body's chunks all carry its
-  `message_id`. The thread is then `WHERE thread_key = ?` ordered by `sent_at`, and the tree is a
-  self-join of `in_reply_to` on `external_id`, resolved at query time so ingest order does not
-  matter and a parent that was never ingested is just a missing row. A subject-based fallback for
-  mailers that drop `References` is a `meta` note, not a column, until it is needed.
+  `References` entry, else its own Message-ID, else `doc:<document_id>` so a message with no
+  identifiers is its own thread rather than grouped with every other such message. A mail with no
+  parseable `Date` (which the extractor already accepts, `test_mail_extract.py:122-133`) gets
+  `sent_at = NULL`, never an invented time; per-author queries order with `NULLS LAST`. The body's
+  chunks all carry its `message_id`. The thread is then `WHERE thread_key = ?` ordered by
+  `sent_at`, and the tree is a self-join of `in_reply_to` on `external_id`, resolved at query time
+  so ingest order does not matter and a parent that was never ingested is just a missing row. A
+  subject-based fallback for mailers that drop `References` is a `meta` note, not a column, until
+  it is needed.
 - **Quoted text.** A reply carries the earlier messages quoted below it; those words are not the
   sender's and must not count toward their tone. The mail extractor (§2.2) splits the new text from
   the quoted tail (`>` prefixes, `On … wrote:` lines, Outlook's `From:` block). The new text's
@@ -493,9 +525,15 @@ CREATE INDEX chunks_message ON chunks (message_id) WHERE message_id IS NOT NULL;
   (`sender`/`recipient`/`cc` roles) as today; a per-message recipient table is not needed while a
   mail is a document.
 - `chunks.direction` and `chunks.sender` stay for the search filter (both engines filter on them in
-  `WHERE`, which is why `014` made them columns); the migration back-fills `messages` from them and
-  the rendered timestamp line for chats, and from the headers in `documents.content` for mail, then
-  sets `chunks.message_id`.
+  `WHERE`, which is why `014` made them columns). The migration back-fills what is stored: for
+  chats, one row per message chunk from `direction`/`sender` and the rendered timestamp line; for
+  mail, one row per document from `meta.message_id` and `meta.email_date` (`extract/mail.py:159-168`
+  keeps those two and nothing else: `References` and `In-Reply-To` are not in `meta` or in the
+  rendered header, so `in_reply_to` and `thread_key` cannot be recovered from the database). The
+  back-filled mail rows get `thread_key = Message-ID` and `in_reply_to = NULL`; the mail extractor's
+  `VERSION` is bumped in the same step so every `.eml` still on disk re-extracts on the next ingest
+  with the headers, the quoted-text split and the real thread key, and a mail whose file is gone
+  keeps its back-filled row. Then `chunks.message_id` is set.
 - The queries this enables, each a join with no text parsing: messages by author in a date range,
   with text (`chunks.text`) and vectors (`emb_* ON chunk_id`) for clustering by tone; a mail thread
   in order, across files; a per-person summary in `rag_list_authors`; the v1.5 memory and triples
@@ -531,10 +569,15 @@ CREATE TABLE document_versions (
     external_id       text,                                 -- provider revision id, git commit, ...
     observed_at       timestamptz NOT NULL DEFAULT now(),
     meta              jsonb       NOT NULL DEFAULT '{}'::jsonb,
-    CONSTRAINT document_versions_no_unique UNIQUE (document_id, version_no),
-    CONSTRAINT document_versions_sha_unique UNIQUE (document_id, content_sha256)
+    CONSTRAINT document_versions_no_unique UNIQUE (document_id, version_no)
 );
+CREATE INDEX document_versions_sha ON document_versions (document_id, content_sha256);
 ```
+
+- Uniqueness is on `(document_id, version_no)` only. A revert (A → B → A) is a real third version
+  whose hash repeats the first; a unique on the hash would reject the insert and, inside
+  `replace_document`'s transaction, roll back the head update with it. The hash index serves
+  "has this document ever held this text". Test: the A → B → A sequence yields three versions.
 
 - `documents` stays the head: its columns are the current version, and `chunks`, `facts` and
   `messages` hang off the head only. Search and backfill never see old versions, so embedding cost
@@ -576,6 +619,18 @@ ALTER TABLE messages ADD COLUMN resolved boolean;      -- comments only; NULL fo
   be shown beside the chunk it is about, as facts are.
 - A comment on a version that is no longer the head keeps `anchor.version_no` so the Documents
   page can show it against the right text.
+- **A comment is a communication whatever its document is.** Every off-box check keys on the
+  parent document's `corpus_class` today: backfill's pending query (`embed/ollama.py:103-111`),
+  `rag_ask`'s result check (`mcp_server/agent.py:456-466`), fact extraction. A comment on a
+  `document` or `code` document is someone's message to the owner, and under those rules its chunk
+  would be eligible for an off-box provider. The content rule therefore becomes "a chunk is a
+  communication when its document is, or when it carries a `message_id`", applied in one place
+  (`egress.allows_communications` gains the chunk predicate, and `pending_chunks_sql`, the search
+  filter the agent uses, and `enrich/facts.py` take it from there rather than each writing
+  `d.corpus_class = 'communication'`). `test_embed_egress.py` and `test_egress_block.py` get a mixed
+  case: a `document`-class fixture with two comments, an off-box model, and the assertion that the
+  body chunks are posted and the comment chunks withheld, for backfill, `rag_ask` and facts. This
+  step does not land without those tests.
 
 **Shares.** Who a document went to, or came from, and by what channel. This is the relation that
 turns a `received` trust tier from a path rule into evidence, and answers "what have I sent X" and
@@ -592,7 +647,11 @@ CREATE TABLE document_shares (
     external_id   text,                                                      -- share link id, provider share id
     shared_at     timestamptz,
     meta          jsonb       NOT NULL DEFAULT '{}'::jsonb,
-    CONSTRAINT document_shares_unique UNIQUE (document_id, channel, external_id, author_id)
+    -- One row per share event. NULLS NOT DISTINCT (Postgres 15+; the bundled server is 18, CI runs
+    -- pg18) so a download or AirDrop with no provider id and no resolved person still collapses to
+    -- one row on every rescan, while two mails carrying the same file stay two rows (message_id).
+    CONSTRAINT document_shares_unique
+        UNIQUE NULLS NOT DISTINCT (document_id, channel, message_id, external_id, author_id)
 );
 CREATE INDEX document_shares_author ON document_shares (author_id, shared_at DESC);
 CREATE INDEX document_shares_message ON document_shares (message_id);
@@ -676,7 +735,7 @@ other.
 | 7 | `identify()` + `documents.mime` populated (§2.1) | `test_fixture_corpus.py` asserts a mime per document |
 | 8 | Extractor registry, derived revision, one name, migration rewriting old names (§2.2) | `test_image_extract.py`, `test_mail_extract.py`, `test_postgres.py` for the rename |
 | 9 | One error hierarchy; one `except` in the pipeline (§2.2) | pipeline tests over a mocked gateway |
-| 10 | Drop `conversations`, unused enum values and indexes (§3.1) | `test_postgres.py` migration re-apply |
+| 10 | Drop the old `messages` and `conversations`, unused enum values and indexes (§3.1) | `test_postgres.py` migration re-apply |
 | 11 | `PersistDocument` oneof + `ingest_outcomes` as the one outcome record, `documents.state` dropped (§1.3, §3.3) | `test_ingest_gateway.py`, `test_postgres.py`, `test_grpc_serialization.py` |
 | 12 | `ingest_seen` → `run_id` on outcomes; prune `ingest_runs` (§3.4) | reconcile tests, `test_postgres.py` |
 | 13 | Proto enums and `Phase`; ingest progress in proto; Swift switches on them (§1.3) | enum-parity test; Swift presentation tests |
@@ -693,7 +752,9 @@ other.
 | 24 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
 | 25 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
 
-Groups: {1, 2, 3} → {4, 5, 6, 7} → {8, 9, 10} → {11, 12, 13} → {14, 15, 16} → {17, 18, 19} →
-{20, 21} → {22, 23} → {24, 25}. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
+Groups: {1, 2, 3} → {4, 5, 6, 7} → {8, 9, 10} → {11, 13} → {12, 14, 15, 16} → {17, 18, 19} →
+{20, 21} → {22, 23} → {24, 25}. Step 12 follows 11 because it updates the outcome row that 11
+starts keeping for indexed files; today success deletes that row, so landing 12 first would make
+`record_seen` update nothing. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
 `net/` keeps `test_egress_block.py` and `test_embed_egress.py` green, and the deletion of the
 worker embed path (§1.2) removes one caller from `CALLERS` rather than adding one.
