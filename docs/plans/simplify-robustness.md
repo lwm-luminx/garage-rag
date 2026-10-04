@@ -276,6 +276,10 @@ def extractor_revision(media: MediaType) -> str   # f"{e.name}:{e.version}", der
   `extractor_revision`, and `_indexed_by_a_retired_extractor` (`pipeline.py:154`) becomes a
   comparison of `documents.extractor || ':' || extractor_version` against the registry instead of a
   per-suffix special case.
+- `ExtractResult` gains structured side outputs beside `text`: `comments` (author, time, body,
+  anchor, parent) and `attachments` (name, media type, bytes hash), which §3.9 persists as
+  `messages` rows and `document_shares`. An extractor that has none leaves them empty; the
+  pipeline never parses them out of the text.
 - `ExtractContext` carries settings (`max_file_bytes`, `ocr_min_chars`) and a `delegate(media_type,
   path_or_bytes)` callback, so an extractor can hand a sub-document to another: the PDF extractor
   rasterizes a page it found empty and delegates it as `image/png`; the DOCX extractor delegates
@@ -500,10 +504,127 @@ CREATE INDEX chunks_message ON chunks (message_id) WHERE message_id IS NOT NULL;
   pipeline (§2.4) and not by the `sqlite` side branch; the quoted-text split in the mail extractor
   lands with it, since the rows are wrong without it.
 
+### 3.9 Versions, comments and shares (`019_versions.sql`, `020_shares.sql`)
+
+Three more things a document is besides its current text. Each is a side table keyed to
+`documents`, `messages` or `authors`, with a chunk link only where its text should be searchable,
+so they add to §3.3 and §3.8 without reshaping them. Each is built when a source produces it; the
+tables are designed now so the ones that land first do not have to move.
+
+**Versions.** Today `replace_document` overwrites: the previous text is gone, `ingested_at` is the
+only history, and chunk reuse by hash (`gateway.py:619-633`) is the one version-aware thing, since
+an unchanged chunk keeps its `id` and vectors.
+
+```sql
+CREATE TABLE document_versions (
+    id                bigserial   PRIMARY KEY,
+    document_id       bigint      NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    version_no        int         NOT NULL,                 -- 1.. per document, head is max
+    content_sha256    bytea       NOT NULL,
+    source_sha256     bytea,
+    byte_size         bigint,
+    mtime             timestamptz,
+    content           text        NOT NULL,                 -- TOAST-compressed by Postgres
+    extractor         text        NOT NULL,
+    extractor_version text        NOT NULL,
+    author_id         bigint      REFERENCES authors(id) ON DELETE SET NULL,   -- who made this version, when known
+    external_id       text,                                 -- provider revision id, git commit, ...
+    observed_at       timestamptz NOT NULL DEFAULT now(),
+    meta              jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT document_versions_no_unique UNIQUE (document_id, version_no),
+    CONSTRAINT document_versions_sha_unique UNIQUE (document_id, content_sha256)
+);
+```
+
+- `documents` stays the head: its columns are the current version, and `chunks`, `facts` and
+  `messages` hang off the head only. Search and backfill never see old versions, so embedding cost
+  is unchanged. `rag_get_document(version=)` and a Documents-page history read `document_versions`;
+  a diff between two versions is computed, not stored.
+- A version is written when `replace_document` sees a new `content_sha256` for an existing
+  document (`version_no + 1`, the old head copied first on the migration that adds the table). That
+  is the only version signal today: ingest observed a change. Others plug in through `external_id`
+  and `author_id` when a source has them: a cloud provider's revision list, git for a tracked file
+  (the commit, with the committer as `author_id`, which §0's attribution already resolves), Office
+  tracked changes (a `.docx` with revision marks yields the accepted text as head and the authors of
+  the marks in `meta`), an edited iMessage (`chat.db` keeps edit history; it goes in
+  `messages.meta.edits`, not here, since a message is not a document).
+- Retention is a setting (`ingest.keep_versions`, default 10 per document, 0 keeps none), applied
+  in `replace_document`; a `document_versions` row is never written for `code` documents by
+  default, since git is the better history and the corpus-wide churn would dwarf everything else.
+
+**Comments.** A comment is a message about a document, anchored to part of it: it has an author,
+a time, a body, a parent and a resolution. Rather than a third table of authored text, it is a
+`messages` row with `kind = 'comment'` and an anchor, so "everything X wrote" stays one query
+across texts, mail and comments, and the chunk link gives it search and vectors for free.
+
+```sql
+ALTER TABLE messages ADD COLUMN kind text NOT NULL DEFAULT 'message'
+    CHECK (kind IN ('message', 'comment', 'reaction'));
+ALTER TABLE messages ADD COLUMN anchor jsonb;          -- {"page": 3}, {"paragraph": 12, "quote": "..."}, {"cell": "B7"}, {"char_start":..,"char_end":..}
+ALTER TABLE messages ADD COLUMN resolved boolean;      -- comments only; NULL for messages
+-- in_reply_to / thread_key already give replies and the comment thread; document_id is the commented document.
+```
+
+- Local sources that carry them, and which extractor reports them (an `ExtractResult.comments`
+  list, §2.2, persisted by `replace_document` beside the chunks): `.docx` comments and tracked
+  changes (`word/comments.xml`, `w:ins`/`w:del` with `w:author`/`w:date`), `.pptx` comments,
+  `.xlsx` cell notes (author in the note), PDF annotations (`/Annots` with `/T`, `/Contents`,
+  `/M`), Messages tapbacks (`associated_message_type`, `kind = 'reaction'`, one row, no chunk), and
+  mail, where a reply already is the comment (`in_reply_to`).
+- Anchoring is `jsonb` because every format anchors differently and nothing filters on it; when
+  the anchor can be mapped to the head's text, `char_start`/`char_end` are added so a comment can
+  be shown beside the chunk it is about, as facts are.
+- A comment on a version that is no longer the head keeps `anchor.version_no` so the Documents
+  page can show it against the right text.
+
+**Shares.** Who a document went to, or came from, and by what channel. This is the relation that
+turns a `received` trust tier from a path rule into evidence, and answers "what have I sent X" and
+"what did X send me".
+
+```sql
+CREATE TABLE document_shares (
+    id            bigserial   PRIMARY KEY,
+    document_id   bigint      NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    direction     text        NOT NULL CHECK (direction IN ('sent', 'received', 'shared')),  -- shared: a live shared folder or link
+    author_id     bigint      REFERENCES authors(id) ON DELETE SET NULL,     -- the counterparty
+    channel       text        NOT NULL CHECK (channel IN ('mail', 'messages', 'airdrop', 'download', 'dropbox', 'icloud', 'drive', 'link')),
+    message_id    bigint      REFERENCES messages(id) ON DELETE SET NULL,    -- the mail or text that carried it
+    external_id   text,                                                      -- share link id, provider share id
+    shared_at     timestamptz,
+    meta          jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT document_shares_unique UNIQUE (document_id, channel, external_id, author_id)
+);
+CREATE INDEX document_shares_author ON document_shares (author_id, shared_at DESC);
+CREATE INDEX document_shares_message ON document_shares (message_id);
+```
+
+- Local signals, in the order they are cheap to get: a mail attachment (the carrying message is
+  the `messages` row; the attachment's bytes are hashed and matched to an existing document by
+  `source_sha256`, or ingested as `mail:<Message-ID>/<part>` when nothing else holds them); a
+  Messages attachment (`chat.db`'s `attachment` table and `~/Library/Messages/Attachments`, same
+  matching); the `com.apple.metadata:kMDItemWhereFroms` xattr, which records the URL a download came
+  from and, for AirDrop and Mail saves, the sender (`channel = 'download' | 'airdrop'`, the
+  counterparty resolved through `author_identities` when it is an address); a Dropbox or iCloud
+  shared folder or a Drive file with collaborators, where the client exposes it locally
+  (`direction = 'shared'`, re-observed on each scan so a revoked share goes).
+- Attribution reads it: a document whose only share row is `received` from X with no other
+  evidence gets `trust_tier = received` and X as a `sender` on `document_authors`, with
+  `evidence = 'share:mail:<Message-ID>'`, which is the diagnosable form `docs/attribution.md`
+  wants.
+- Shares are relations between people and documents, and threads are relations between
+  messages; both are what Apache AGE in the bundled Postgres is for. These tables stay the
+  relational truth, and a graph view is projected from them when a query needs a traversal, never
+  the other way round.
+
+**Order within §3:** versions can land any time after §3.3 (it only touches `replace_document`);
+comments need §3.8 and the extractor side-outputs of §2.2; shares need §3.8 for `message_id` and
+the attachment matching in the mail and Messages readers.
+
 **Order:** migrations-apply-once (3.2, no schema change, unblocks safe edits) → drop unused (3.1)
 → outcomes (3.3, with the gateway oneof from §1.3 so the wire change and the table change are one
 PR) → last-seen (3.4) → tsv config and `lang` (3.5) → session roles and index-after-backfill (3.6)
-→ messages (3.8) → constraints (3.7, last, once the code guarantees them).
+→ messages (3.8) → versions, comments, shares (3.9) → constraints (3.7, last, once the code
+guarantees them).
 
 ---
 
@@ -566,10 +687,13 @@ other.
 | 18 | `tsv` configuration per chunk kind; drop `documents.lang` (§3.5) | `test_postgres.py` keyword search over an identifier |
 | 19 | Producers: Messages through the one pipeline (§2.4) | `test_messages.py`, `test_fake_messages.py` |
 | 20 | `messages` rebuilt with `chunks.message_id`, author, time and thread key; mail quoted-text split; back-fill; `rag_list_authors` per-person counts (§3.8) | `test_postgres.py` back-fill over fixture threads and mail; `test_messages.py` one row per message with the resolved author; `test_mail_extract.py` a reply's quoted chunks carry no `message_id` and a three-mail thread orders by `thread_key` |
-| 21 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
-| 22 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
+| 21 | `document_versions` written by `replace_document`, retention setting, `rag_get_document(version=)` (§3.9) | `test_ingest_gateway.py` two replaces give two versions and head unchanged chunks keep ids; `test_postgres.py` migration copies the head |
+| 22 | Comments as `messages` rows with `kind`/`anchor`; `.docx`/`.pdf`/`.xlsx` extractors report them; tapbacks as reactions (§3.9, §2.2) | fixture docx with two comments and a tracked change; `test_messages.py` a tapback is one row and no chunk |
+| 23 | `document_shares` from mail and Messages attachments and `kMDItemWhereFroms`; attribution evidence `share:…` (§3.9) | `test_mail_extract.py` an attachment matches a fixture document by hash; `test_attribution.py` a received share sets `received` with evidence |
+| 24 | Constraints (§3.7); `ListCatalog` and Swift config through `GetSetting` (§4) | `test_postgres.py`; Swift tests |
+| 25 | `HelperConfiguration` as one struct; server stops `chdir` (§1.5) | Swift tests; `test_grpc_server.py` |
 
 Groups: {1, 2, 3} → {4, 5, 6, 7} → {8, 9, 10} → {11, 12, 13} → {14, 15, 16} → {17, 18, 19} →
-{20} → {21, 22}. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
+{20, 21} → {22, 23} → {24, 25}. Nothing here changes the egress guard; every step that touches `embed/`, `enrich/` or
 `net/` keeps `test_egress_block.py` and `test_embed_egress.py` green, and the deletion of the
 worker embed path (§1.2) removes one caller from `CALLERS` rather than adding one.
