@@ -2,6 +2,13 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@protobuf//bazel:py_proto_library.bzl", "py_proto_library")
 load("@rules_swift//proto:proto.bzl", "swift_proto_library")
 
+# The Windows app's C# is generated from the file itself (//winapp/bazel:proto.bzl), with the
+# protoc Grpc.Tools ships, as its .NET SDK build does.
+exports_files(
+    ["garage.proto"],
+    visibility = ["//winapp:__subpackages__"],
+)
+
 proto_library(
     name = "garage_proto",
     srcs = ["garage.proto"],

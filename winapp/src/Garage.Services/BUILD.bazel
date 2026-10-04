@@ -1,0 +1,19 @@
+load("//winapp/bazel:defs.bzl", "garage_csharp_binary")
+
+# Mirrors Garage.Services.csproj: net10.0-windows, with the ASP.NET Core shared framework
+# (<FrameworkReference Include="Microsoft.AspNetCore.App" />, project_sdk = "web").
+garage_csharp_binary(
+    name = "Garage.Services",
+    allow_unsafe_blocks = True,
+    internals_visible_to = ["Garage.Services.Tests"],
+    # Generated gRPC code carries no XML docs.
+    nowarn = ["CS1591"],
+    project_sdk = "web",
+    visibility = ["//winapp:__subpackages__"],
+    windows = True,
+    deps = [
+        "//winapp/src/Garage.Grpc",
+        "//winapp/src/Garage.Python",
+        "@winapp_nuget//grpc.aspnetcore.server",
+    ],
+)

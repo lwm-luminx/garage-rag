@@ -1,0 +1,21 @@
+load("//winapp/bazel:defs.bzl", "garage_xunit_test")
+
+# Mirrors Garage.Services.Tests.csproj (net10.0-windows): runs on Windows only; elsewhere
+# :Garage.Services.Tests_compile compiles it.
+garage_xunit_test(
+    name = "Garage.Services.Tests",
+    nowarn = [
+        "CA1707",
+        "CA1515",
+        "CA1861",
+        "CA2007",
+    ],
+    # Garage.Services' <FrameworkReference Include="Microsoft.AspNetCore.App" /> reaches this
+    # project through its ProjectReference, as MSBuild passes framework references on.
+    project_sdk = "web",
+    windows = True,
+    deps = [
+        "//winapp/src/Garage.App.Core",
+        "//winapp/src/Garage.Services",
+    ],
+)

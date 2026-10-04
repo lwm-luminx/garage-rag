@@ -8,9 +8,10 @@ Documents, Facts, Database, Logs), the operations pages (Sources, Models, MCP Se
 ingest, Update Everything and Automatic Updates through Garage's own services, the setup assistant,
 the notification-area flyout with quick search and Ask Garage, the bug report and the jump list.
 
-Unlike the rest of the repo, `winapp/` is **not built by Bazel**. It is a plain .NET SDK solution
-(`Garage.slnx`), with package versions pinned centrally in `Directory.Packages.props` and the SDK
-pinned in `global.json`. Bazel does not see it: there are no `BUILD` files under it.
+`winapp/` is a .NET SDK solution (`Garage.slnx`), with package versions pinned centrally in
+`Directory.Packages.props` and the SDK pinned in `global.json`. The csproj files are the source of
+truth: Visual Studio, `dotnet build` and the Windows CI job use them. Bazel builds every project but
+the WinUI app and its UI tests too, on macOS and Linux; see [Bazel](#bazel).
 
 ## Layout
 
@@ -110,6 +111,52 @@ job's `python` step builds from `ext/python`'s pins.
 
 `dotnet format Garage.slnx --verify-no-changes` checks style. The build treats warnings, including
 the recommended analyzers, as errors.
+
+## Bazel
+
+```bash
+aspect build //winapp/...          # macOS or Linux (plain bazel works too)
+aspect test //winapp/...
+```
+
+Bazel builds `Garage.Python`, `Garage.Grpc`, `Garage.App.Core`, `Garage.Services` and their test
+projects with [rules_dotnet](https://github.com/bazel-contrib/rules_dotnet), on the .NET SDK 10.0.400
+(`winapp.MODULE.bazel`). `Garage.App` and `Garage.App.UITests` stay `dotnet`-only: WinUI's XAML
+compiler and FlaUI run only on Windows, inside MSBuild.
+
+- **Each project's `BUILD.bazel` mirrors its csproj** through the macros in `bazel/defs.bzl`, which
+  compile with the `csc` options the SDK uses (net10.0, C# `latest`, nullable, warning level 10,
+  warnings as errors) and add what the SDK generates: the implicit `global using`s, AssemblyInfo
+  (version 1.0.0.0) and, for tests, xunit.v3's entry point (`bazel/*.cs`).
+- **`//winapp/bazel:csproj_sync_test`** fails when a csproj and its `BUILD.bazel` part: references,
+  `NoWarn`, `AllowUnsafeBlocks`, `InternalsVisibleTo`, net10.0-windows, the ASP.NET Core framework,
+  each `<Protobuf>` item, and the props `defs.bzl` assumes. A new project in `Garage.slnx` needs a
+  `BUILD.bazel` (or a place in `NOT_BAZEL`, `bazel/projects.py`).
+- **NuGet:** `nuget.bzl` pins every package the Bazel-built projects restore, with the sha512 of the
+  `.nupkg` nuget.org serves. After changing `Directory.Packages.props` or a `PackageReference`, run
+  `python3 winapp/bazel/repin.py` (it runs `dotnet restore` and reads each `project.assets.json`); the
+  sync test fails until then.
+- **gRPC:** `bazel/proto.bzl` runs the `protoc` and `grpc_csharp_plugin` from the pinned Grpc.Tools
+  package with MSBuild's options, so the generated C# is byte-for-byte what `dotnet build` generates.
+- **net10.0-windows** projects compile as net10.0 with the SDK's Windows platform attributes.
+  `Garage.Services.Tests` calls Windows APIs, so its test runs only on Windows; elsewhere
+  `:Garage.Services.Tests_compile` compiles the same sources. `Garage.App.Core.Tests` runs anywhere,
+  skipping the tests that need Windows path rules.
+- **Not carried over:** the SDK's own analyzers (NetAnalyzers and the code-style rules that
+  `AnalysisLevel` and `EnforceCodeStyleInBuild` enable). Analyzers from the targeting pack and from
+  NuGet packages (LibraryImport, CommunityToolkit.Mvvm's generators, xunit.analyzers) do run. `dotnet
+  build` stays the analyzer gate.
+- **rules_dotnet patch** (`bazel/rules_dotnet_roslyn_analyzers.patch`): rules_dotnet takes a single
+  analyzer from packages that ship them per Roslyn version, which drops CommunityToolkit.Mvvm's
+  source generator; the patch picks the highest `roslyn<X.Y>` folder the compiler supports, as NuGet
+  does.
+
+Bazel on Windows is untried: `proto.bzl` generates through a shell action, and Windows CI builds
+with `dotnet` only.
+
+CI: the `winapp-bazel` job in `ci.yaml` runs `bazel test //winapp/...` on Linux on every push. The
+macOS Bazel job's `aspect test //...` runs the tests too, but with `--build_tests_only`, so only the
+Linux job compiles `Garage.Services` and `:Garage.Services.Tests_compile`.
 
 
 ### UI tests

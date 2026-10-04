@@ -440,6 +440,7 @@ public sealed class TrayTests
     [Fact]
     public void Citation_file_path_expands_the_home_folder()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows paths: System.IO.Path follows the host's rules");
         Assert.Equal(@"C:\Users\me\docs\guide.md", new AskAnswer.Citation(1, 1, null, "~/docs/guide.md", "", "document").FilePath(@"C:\Users\me"));
         Assert.Null(new AskAnswer.Citation(2, 2, null, "imessage:chat123", "", "communication").FilePath(@"C:\Users\me"));
     }

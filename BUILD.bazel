@@ -22,7 +22,9 @@
 # run by hand and checked by the swiftcheck job with the runner's Python, outside Bazel.
 # gazelle:exclude tools/pythonkit
 
-# winapp is the .NET solution for the Windows app, built with `dotnet` outside Bazel.
+# winapp is the .NET solution for the Windows app. Its BUILD files mirror the csproj files by hand
+# (//winapp/bazel:csproj_sync_test holds them together), and its Python is that test's and
+# repin.py's, so gazelle leaves the folder alone.
 # gazelle:exclude winapp
 
 exports_files(

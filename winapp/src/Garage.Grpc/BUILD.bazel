@@ -1,0 +1,41 @@
+load("//winapp/bazel:defs.bzl", "garage_csharp_library")
+load("//winapp/bazel:proto.bzl", "csharp_proto_srcs")
+
+# Mirrors Garage.Grpc.csproj.
+
+# <Protobuf Include="..\..\..\proto\garage.proto" GrpcServices="Client" />
+csharp_proto_srcs(
+    name = "garage_proto_cs",
+    src = "//proto:garage.proto",
+    grpc_services = "Client",
+)
+
+# <Protobuf Include="Protos\services.proto" GrpcServices="Both" />
+csharp_proto_srcs(
+    name = "services_proto_cs",
+    src = "Protos/services.proto",
+    grpc_services = "Both",
+    proto_root = ".",
+)
+
+garage_csharp_library(
+    name = "Garage.Grpc",
+    srcs = glob(
+        ["**/*.cs"],
+        exclude = [
+            "bin/**",
+            "obj/**",
+        ],
+    ) + [
+        ":garage_proto_cs",
+        ":services_proto_cs",
+    ],
+    internals_visible_to = ["Garage.App.Core.Tests"],
+    # Generated protobuf code carries no XML docs.
+    nowarn = ["CS1591"],
+    visibility = ["//winapp:__subpackages__"],
+    deps = [
+        "@winapp_nuget//google.protobuf",
+        "@winapp_nuget//grpc.net.client",
+    ],
+)

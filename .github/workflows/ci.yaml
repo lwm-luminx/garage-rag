@@ -222,6 +222,37 @@ jobs:
       - uses: ./.github/actions/setup-aspect
       - run: aspect gazelle --task:name gazelle
 
+  # The Bazel build of winapp/ (winapp/README.md, "Bazel"): every project but the WinUI app and
+  # its FlaUI tests, compiled and tested on Linux, plus the check that each BUILD.bazel still
+  # mirrors its csproj. Plain `bazel`, not `aspect`: Aspect adds --config=ci on CI, whose macOS
+  # platform has no Linux execution platform, where .bazelrc's build:linux targets the host.
+  winapp-bazel:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Restore Bazel caches
+        id: bazel-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cache/bazel-disk
+            ~/.cache/bazel-repo
+          key: bazel-winapp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-winapp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
+      - name: bazel test //winapp/...
+        run: >-
+          bazel test //winapp/... --test_output=errors
+          --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo"
+      - name: Save Bazel caches
+        if: always() && steps.bazel-cache.outputs.cache-primary-key != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/bazel-disk
+            ~/.cache/bazel-repo
+          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+
   buildifier:
     runs-on: ubuntu-latest
     steps:

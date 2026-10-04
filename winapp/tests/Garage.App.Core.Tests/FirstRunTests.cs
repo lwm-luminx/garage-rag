@@ -111,6 +111,7 @@ public sealed class FirstRunTests
     [Fact]
     public void Built_in_templates_resolve_availability_on_this_pc()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows paths: System.IO.Path follows the host's rules");
         HashSet<string> present = [@"C:\Users\tester\Documents", @"C:\Users\tester\OneDrive", @"C:\Users\tester\source\repos"];
         IReadOnlyList<FirstRunSourceTemplate> templates = FirstRunSourceTemplate.BuiltIn(TestFolders, present.Contains);
         Assert.All(templates, t => Assert.False(t.IsCustom));
@@ -169,6 +170,7 @@ public sealed class FirstRunTests
     [Fact]
     public void Custom_template_uses_the_folder_and_avoids_taken_slugs()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows paths: System.IO.Path follows the host's rules");
         FirstRunSourceTemplate template = FirstRunSourceTemplate.Custom(@"E:\Archive\Old Notes", new HashSet<string> { "old-notes" }, @"C:\Users\tester");
         Assert.True(template.IsCustom);
         Assert.True(template.IsAvailable);
@@ -319,6 +321,7 @@ public sealed class FirstRunTests
     [Fact]
     public void Source_selection_ignores_unavailable_templates_and_dedupes_custom_folders()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows paths: System.IO.Path follows the host's rules");
         FirstRunCoordinator coordinator = Coordinator();
         var available = new FirstRunSourceTemplate("documents", "Documents", "", SourceSymbol.Documents, "documents", @"C:\Docs", "filesystem", "document", "authored", true, false);
         var missing = new FirstRunSourceTemplate("dropbox", "Dropbox", "", SourceSymbol.Cloud, "dropbox", @"C:\Dropbox", "filesystem", "document", "authored", false, false);
@@ -445,6 +448,7 @@ public sealed class FirstRunTests
     [Fact]
     public async Task The_assistant_walks_from_services_to_assistants()
     {
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Windows paths: System.IO.Path follows the host's rules");
         Walk walk = Setup();
         FirstRunCoordinator coordinator = walk.Coordinator;
         coordinator.Begin();

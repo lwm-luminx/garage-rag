@@ -17,6 +17,11 @@ common --@aspect_rules_py//py/private/interpreter:python_version=3.14
 common --@aspect_rules_py//py/private/interpreter:freethreaded=true
 common --@rules_python//python/config_settings:py_freethreaded=yes
 
+# winapp/: a C# target sees its dependencies' dependencies, as NuGet and MSBuild let a project use
+# every package and project it reaches transitively; the BUILD files mirror the csproj files'
+# direct references only.
+common --@rules_dotnet//dotnet/settings:strict_deps=false
+
 
 
 
@@ -73,6 +78,15 @@ build:appstore --platforms=//bazel:store
 # action, so it shares nothing with the fastbuild configs above.
 build:appstore_release --config=appstore --compilation_mode=opt
 build:store --platforms=//bazel:store
+
+# On a Linux host (the devcontainer, CI's Linux jobs) build for that host: the macOS platforms above
+# have no matching execution platform there, so no test could run. The macOS-only targets are not
+# buildable on Linux either way; winapp/ and the Python targets are. --enable_platform_specific_config
+# applies `build:linux` only when Bazel runs on Linux. It is repeated here as a `build` option, after
+# the --platforms above: the presets' `common` copy expands before every `build` line, so the
+# local_signed default would win again.
+build --enable_platform_specific_config
+build:linux --platforms=@platforms//host
 
 # Build against the bundled PostgreSQL 19 beta instead of 18 (see //ext:postgres_version).
 common:pg19 --//ext:postgres_version=19

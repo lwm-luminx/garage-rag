@@ -1,0 +1,69 @@
+load("@aspect_rules_py//py:defs.bzl", "py_library", "py_test")
+load(":proto.bzl", "grpc_tools_platform")
+
+# Sources the .NET SDK generates for every winapp project, checked in for the Bazel builds
+# (see defs.bzl). No csproj globs this folder.
+exports_files(
+    [
+        "GlobalUsings.cs",
+        "XunitEntryPoint.cs",
+        "rules_dotnet_roslyn_analyzers.patch",
+        "XunitGlobalUsings.cs",
+    ],
+    visibility = ["//winapp:__subpackages__"],
+)
+
+# Grpc.Tools' folder for the machine that runs protoc: proto.bzl reads this target in the exec
+# configuration, so the select below sees the exec platform.
+grpc_tools_platform(
+    name = "grpc_tools_platform",
+    dir = select({
+        ":linux_arm64": "linux_arm64",
+        ":linux_x86_64": "linux_x64",
+        ":macos": "macosx_universal",
+    }),
+)
+
+config_setting(
+    name = "linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+config_setting(
+    name = "macos",
+    constraint_values = ["@platforms//os:macos"],
+)
+
+py_library(
+    name = "projects",
+    srcs = ["projects.py"],
+)
+
+# Offline: fails when a csproj and its BUILD.bazel, or Directory.Packages.props and nuget.bzl, part.
+py_test(
+    name = "csproj_sync_test",
+    srcs = ["csproj_sync_test.py"],
+    data = [
+        "//proto:garage.proto",
+        "//winapp:solution_files",
+        "//winapp/src/Garage.App.Core:csproj_sync",
+        "//winapp/src/Garage.Grpc:csproj_sync",
+        "//winapp/src/Garage.Python:csproj_sync",
+        "//winapp/src/Garage.Services:csproj_sync",
+        "//winapp/tests/Garage.App.Core.Tests:csproj_sync",
+        "//winapp/tests/Garage.Python.Tests:csproj_sync",
+        "//winapp/tests/Garage.Services.Tests:csproj_sync",
+    ],
+    deps = [":projects"],
+)

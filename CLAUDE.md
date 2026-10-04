@@ -168,11 +168,11 @@ database directly rather than parsing Rich tables.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
 
-### Windows app (`winapp/`, not Bazel)
+### Windows app (`winapp/`)
 
-The native Windows app ([docs/plans/windows.md](docs/plans/windows.md)) is the one part of the repo
-Bazel does not build. It is a .NET 10 SDK solution: `winapp/Garage.slnx`, with packages pinned in
-`Directory.Packages.props`, the SDK in `global.json`, and no `BUILD` files. So far it holds:
+The native Windows app ([docs/plans/windows.md](docs/plans/windows.md)) is a .NET 10 SDK solution:
+`winapp/Garage.slnx`, with packages pinned in `Directory.Packages.props` and the SDK in `global.json`.
+The csproj files are the source of truth, and Bazel builds it too (below). So far it holds:
 
 - **`Garage.Python`:** the owned CPython bridge (the PythonKit + `GaragePythonEmbed.c`
   counterpart). It calls `python314.dll` directly through PEP 741's `PyInitConfig`, with no C shim.
@@ -196,6 +196,22 @@ Bazel does not build. It is a .NET 10 SDK solution: `winapp/Garage.slnx`, with p
   there. Keep `AppSection` in the Mac's order, which a test holds. The app runs its own services by
   default (`ServiceHostBackend`, data in `%LOCALAPPDATA%\Garage`); `--dev-backend` or
   `GARAGE_GRPC_PORT` connects to a `garage serve` started by hand instead (`DevBackend`).
+
+- **Bazel** (`winapp/README.md`, "Bazel") builds every project but `Garage.App` and
+  `Garage.App.UITests` through rules_dotnet, on macOS and Linux too: `aspect test //winapp/...`.
+  - Each project's `BUILD.bazel` mirrors its csproj through `winapp/bazel/defs.bzl`, and
+    `//winapp/bazel:csproj_sync_test` fails when they part. Change the csproj, then the BUILD file.
+  - After changing a package version or reference, run `python3 winapp/bazel/repin.py`, which
+    regenerates `winapp/nuget.bzl` from `dotnet restore`'s output.
+  - `bazel/proto.bzl` runs Grpc.Tools' own protoc, so the generated C# matches `dotnet build`'s.
+  - A net10.0-windows test project runs only on Windows; elsewhere its `_compile` target builds it.
+  - Bazel runs the targeting pack's and NuGet packages' analyzers, not the SDK's NetAnalyzers or
+    code-style rules, so `dotnet build` stays the analyzer gate.
+  - rules_dotnet is patched (`winapp/bazel/rules_dotnet_roslyn_analyzers.patch`) to take each
+    package's analyzers from the right `roslyn<X.Y>` folder.
+  - On Linux, `.bazelrc`'s `build:linux` targets the host platform, since the macOS default platform
+    has no Linux execution platform. The `winapp-bazel` CI job runs plain `bazel test //winapp/...`,
+    because Aspect adds `--config=ci` (a macOS platform) on CI.
 
 ```bash
 cd winapp

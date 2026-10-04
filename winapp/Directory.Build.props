@@ -1,6 +1,7 @@
 <Project>
-  <!-- Settings every project in winapp/ shares. The Windows app is built with the .NET SDK
-       (`dotnet build winapp/Garage.slnx`), not Bazel; see winapp/README.md. -->
+  <!-- Settings every project in winapp/ shares (`dotnet build winapp/Garage.slnx`). The Bazel build
+       compiles with the same settings (bazel/defs.bzl); //winapp/bazel:csproj_sync_test fails if
+       they part. See winapp/README.md, "Bazel". -->
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>

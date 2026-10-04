@@ -1,0 +1,26 @@
+# The .NET toolchain and NuGet packages for winapp/ (see winapp/README.md, "Bazel").
+#
+# The SDK is the one the .NET SDK build resolves global.json to on a current machine (10.0.400,
+# runtime 10.0.11), so `aspect build //winapp/...` and `dotnet build` compile with the same Roslyn.
+bazel_dep(name = "rules_dotnet", version = "0.22.2")
+
+# rules_dotnet takes one analyzer from a package that ships them per Roslyn version
+# (analyzers/dotnet/roslyn<X.Y>/), and not the source generator CommunityToolkit.Mvvm's view models
+# need. The patch picks every analyzer in the highest folder the compiler supports, as NuGet does.
+single_version_override(
+    module_name = "rules_dotnet",
+    patch_strip = 1,
+    patches = ["//winapp/bazel:rules_dotnet_roslyn_analyzers.patch"],
+)
+
+dotnet = use_extension("@rules_dotnet//dotnet:extensions.bzl", "dotnet")
+dotnet.toolchain(dotnet_version = "10.0.400")
+use_repo(dotnet, "dotnet_toolchains")
+
+register_toolchains("@dotnet_toolchains//:all")
+
+# Every package the Bazel-built projects restore, with its sha512, generated from
+# `dotnet restore`'s project.assets.json by winapp/bazel/repin.py: Directory.Packages.props
+# stays the only place a version is written.
+winapp_nuget = use_extension("//winapp:nuget_extension.bzl", "winapp_nuget")
+use_repo(winapp_nuget, "winapp_nuget")

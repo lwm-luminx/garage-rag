@@ -1,0 +1,14 @@
+load("//winapp/bazel:defs.bzl", "garage_xunit_test")
+
+# Mirrors Garage.Python.Tests.csproj. Without GARAGE_TEST_PYTHON_HOME (or the py launcher) every
+# test skips, as under `dotnet test`.
+garage_xunit_test(
+    name = "Garage.Python.Tests",
+    allow_unsafe_blocks = True,
+    nowarn = [
+        "CA1707",
+        "CA1515",
+        "CA1861",
+    ],
+    deps = ["//winapp/src/Garage.Python"],
+)

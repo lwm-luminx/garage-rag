@@ -167,5 +167,6 @@ include("//ext/leptonica:leptonica.MODULE.bazel")
 include("//ext/tesseract:tesseract.MODULE.bazel")
 include("//ext/libgit2:libgit2.MODULE.bazel")
 include("//ext/nomic_embed:nomic_embed.MODULE.bazel")
+include("//winapp:winapp.MODULE.bazel")
 
 bazel_dep(name = "protobuf", version = "36.2")
