@@ -1,64 +1,245 @@
 /* Garage Support Site Stylesheet */
+/* IBM Plex Sans and IBM Plex Mono (SIL OFL 1.1, assets/fonts/OFL.txt), self-hosted: the brand face on every platform. */
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-400-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-400-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-500-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-600-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('fonts/IBMPlexMono-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: italic;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Var-Italic-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: italic;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Var-Italic-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Var-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-style: normal;
+  font-weight: 100 700;
+  font-display: swap;
+  src: url('fonts/IBMPlexSans-Var-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/*
+ * Colours, type and shape come from the Garage design system
+ * (https://claude.ai/artifact/YAi54vyk54KAm8pmiYVGWW): Garage violet, sampled from the app icon.
+ * The design-system tokens are set first; the site's own variable names below are aliases of them.
+ * `.edition-enterprise` re-scopes the brand layer to Garage | Enterprise (deeper plum-indigo on slate).
+ */
 :root {
-  --bg-primary: #ffffff;
-  --bg-secondary: #f6f8fa;
-  --bg-tertiary: #eaeef2;
-  --text-primary: #1f2328;
-  --text-secondary: #656d76;
-  --text-muted: #8c959f;
-  --accent: #0969da;
-  --accent-hover: #0550ae;
-  --accent-subtle: #ddf4ff;
-  --border: #d0d7de;
-  --border-subtle: #e1e4e8;
-  --card-bg: #ffffff;
-  --card-border: #d0d7de;
-  --card-shadow: 0 1px 3px rgba(31, 35, 40, 0.08), 0 1px 2px rgba(31, 35, 40, 0.04);
+  --violet-050: #f6f4ff;
+  --violet-100: #ece7ff;
+  --violet-300: #b9a9f7;
+  --violet-400: #8d77f0;
+  --violet-500: #7056dc;
+  --violet-700: #4f38b8;
+  --violet-900: #2a1d6b;
+  --on-brand: #ffffff;
+  --brand-hover: var(--violet-700);
+  --surface: #ffffff;
+  --surface-raised: #f7f6fb;
+  --surface-sunken: #eeecf5;
+  --ink: #1d1a2e;
+  --ink-muted: #5f5a72;
+  --ink-faint: #76718a;
+  --line: #d9d6e6;
+  --line-subtle: #e8e6f0;
+  --line-strong: #8b86a0;
+  --success: #1a7f37;
+  --success-soft: #dafbe1;
+  --warning: #9a6700;
+  --warning-soft: #fff8c5;
+  --danger: #c4232d;
+  --danger-soft: #ffebe9;
+  --shadow-card: 0 1px 3px rgba(29, 26, 46, 0.08), 0 1px 2px rgba(29, 26, 46, 0.04);
+  --shadow-lift: 0 4px 12px rgba(29, 26, 46, 0.08);
   /* A macOS window's own shadow, drawn by CSS rather than baked into the screenshot. */
-  --window-shadow: drop-shadow(0 22px 28px rgba(31, 35, 40, 0.22)) drop-shadow(0 0 1px rgba(31, 35, 40, 0.35));
-  --callout-info-bg: #e6f6ff;
-  --callout-info-border: #54aeff;
-  --callout-warn-bg: #fff8c5;
-  --callout-warn-border: #d4a72c;
-  --callout-success-bg: #dafbe1;
-  --callout-success-border: #4ac26b;
-  --callout-danger-bg: #ffebe9;
-  --callout-danger-border: #ff8182;
-  --code-bg: #f6f8fa;
-  --code-border: #d0d7de;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --window-shadow: drop-shadow(0 22px 28px rgba(29, 26, 46, 0.22)) drop-shadow(0 0 1px rgba(29, 26, 46, 0.35));
+  --font-sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-icon: 22px;
+  --radius-pill: 999px;
   --max-width: 1040px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-primary: #0d1117;
-    --bg-secondary: #161b22;
-    --bg-tertiary: #21262d;
-    --text-primary: #f0f6fc;
-    --text-secondary: #8b949e;
-    --text-muted: #6e7681;
-    --accent: #58a6ff;
-    --accent-hover: #79c0ff;
-    --accent-subtle: #0c2d6b;
-    --border: #30363d;
-    --border-subtle: #21262d;
-    --card-bg: #161b22;
-    --card-border: #30363d;
-    --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    --window-shadow: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(240, 246, 252, 0.28));
-    --callout-info-bg: #0c2d6b;
-    --callout-info-border: #1f6feb;
-    --callout-warn-bg: #3b2300;
-    --callout-warn-border: #9e6a03;
-    --callout-success-bg: #033a16;
-    --callout-success-border: #238636;
-    --callout-danger-bg: #490202;
-    --callout-danger-border: #da3633;
-    --code-bg: #161b22;
-    --code-border: #30363d;
+    --violet-050: #1e1838;
+    --violet-100: #2c2452;
+    --violet-300: #5b49b5;
+    --violet-400: #a492f6;
+    --violet-500: #8f7bf2;
+    --violet-700: #c3b6fa;
+    --violet-900: #e6e0ff;
+    --on-brand: #140f2e;
+    --brand-hover: var(--violet-400);
+    --surface: #13111c;
+    --surface-raised: #1b1826;
+    --surface-sunken: #252134;
+    --ink: #f1eefb;
+    --ink-muted: #aaa4bf;
+    --ink-faint: #8a849e;
+    --line: #36314a;
+    --line-subtle: #252134;
+    --line-strong: #6c6683;
+    --success: #3fb950;
+    --success-soft: #0f2d1a;
+    --warning: #d29922;
+    --warning-soft: #2e2207;
+    --danger: #ff7b72;
+    --danger-soft: #3a1214;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-lift: 0 4px 12px rgba(0, 0, 0, 0.4);
+    --window-shadow: drop-shadow(0 22px 32px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(241, 238, 251, 0.28));
   }
+}
+
+/* Garage | Enterprise: only the brand layer changes; every other token is shared. */
+.edition-enterprise {
+  --violet-050: #f3f1f8;
+  --violet-100: #e6e1f2;
+  --violet-300: #b2a3dc;
+  --violet-400: #6c4fc0;
+  --violet-500: #4b2c9f;
+  --violet-700: #36207a;
+  --violet-900: #1f1247;
+  --on-brand: #ffffff;
+  --brand-hover: var(--violet-700);
+  --surface: #ffffff;
+  --surface-raised: #f5f6f8;
+  --surface-sunken: #eaecf0;
+  --ink: #121826;
+  --ink-muted: #4b5466;
+  --ink-faint: #677084;
+  --line: #d5d9e0;
+  --line-subtle: #e6e8ec;
+  --line-strong: #7d8698;
+}
+
+@media (prefers-color-scheme: dark) {
+  .edition-enterprise {
+    --violet-050: #1a1730;
+    --violet-100: #262046;
+    --violet-300: #4f3f8f;
+    --violet-400: #a898e4;
+    --violet-500: #9c8ae6;
+    --violet-700: #c6bbf0;
+    --violet-900: #e4defa;
+    --on-brand: #0e0b22;
+    --brand-hover: var(--violet-400);
+    --surface: #0e1016;
+    --surface-raised: #161922;
+    --surface-sunken: #1f2330;
+    --ink: #eef0f5;
+    --ink-muted: #a3abbb;
+    --ink-faint: #858d9e;
+    --line: #2c3240;
+    --line-subtle: #1f2330;
+    --line-strong: #5f677a;
+  }
+}
+
+/* The site's names for the tokens. Declared on .edition-enterprise too, so they resolve against its brand layer. */
+:root, .edition-enterprise {
+  --bg-primary: var(--surface);
+  --bg-secondary: var(--surface-raised);
+  --bg-tertiary: var(--surface-sunken);
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-muted);
+  --text-muted: var(--ink-faint);
+  --accent: var(--violet-700);
+  --accent-hover: var(--violet-900);
+  --accent-subtle: var(--violet-100);
+  --border: var(--line);
+  --border-subtle: var(--line-subtle);
+  --card-bg: var(--surface);
+  --card-border: var(--line);
+  --card-shadow: var(--shadow-card);
+  --callout-info-bg: var(--violet-050);
+  --callout-info-border: var(--violet-500);
+  --callout-warn-bg: var(--warning-soft);
+  --callout-warn-border: var(--warning);
+  --callout-success-bg: var(--success-soft);
+  --callout-success-border: var(--success);
+  --callout-danger-bg: var(--danger-soft);
+  --callout-danger-border: var(--danger);
+  --code-bg: var(--surface-raised);
+  --code-border: var(--line);
 }
 
 * {
@@ -118,7 +299,7 @@ a:hover {
 
 .site-branding:hover {
   text-decoration: none;
-  color: var(--accent);
+  color: var(--violet-700);
 }
 
 .site-logo {
@@ -141,8 +322,13 @@ a:hover {
   transition: color 0.15s ease;
 }
 
-.nav-link:hover, .nav-link.active {
+.nav-link:hover {
   color: var(--text-primary);
+  text-decoration: none;
+}
+
+.nav-link.active {
+  color: var(--violet-700);
   text-decoration: none;
 }
 
@@ -206,12 +392,19 @@ a:hover {
 }
 
 .btn-primary {
-  background-color: var(--accent);
-  color: #ffffff !important;
+  background-color: var(--violet-500);
+  color: var(--on-brand) !important;
 }
 
 .btn-primary:hover {
-  background-color: var(--accent-hover);
+  background-color: var(--brand-hover);
+}
+
+.btn:focus-visible,
+.card a:focus-visible,
+.nav-link:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
 }
 
 .btn-secondary {
@@ -222,7 +415,7 @@ a:hover {
 
 .btn-secondary:hover {
   background-color: var(--bg-tertiary);
-  border-color: var(--text-secondary);
+  border-color: var(--line-strong);
 }
 
 /* Quick Search / Filter Bar */
@@ -236,16 +429,20 @@ a:hover {
   width: 100%;
   padding: 0.75rem 1rem 0.75rem 2.5rem;
   font-size: 0.95rem;
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
   background-color: var(--bg-primary);
   color: var(--text-primary);
   outline: none;
 }
 
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
 .search-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.15);
+  border-color: var(--violet-500);
+  box-shadow: 0 0 0 3px var(--violet-100);
 }
 
 .search-icon {
@@ -278,8 +475,8 @@ a:hover {
 
 .card:hover {
   transform: translateY(-2px);
-  border-color: var(--accent);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  border-color: var(--violet-500);
+  box-shadow: var(--shadow-lift);
 }
 
 .card-icon {
@@ -329,9 +526,9 @@ a:hover {
 }
 .plan-status-active,
 .plan-status-proposed {
-  border-color: var(--callout-info-border);
-  background-color: var(--callout-info-bg);
-  color: var(--text-primary);
+  border-color: var(--violet-300);
+  background-color: var(--violet-100);
+  color: var(--violet-900);
 }
 .plan-status-landed {
   border-color: var(--callout-success-border);
@@ -1116,4 +1313,265 @@ details .faq-content {
   .project-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/*
+ * Term tooltips (_includes/term.html, assets/terms.js): the design system's Term.
+ * Trigger: the word itself, a dotted violet underline. Tip: a small raised card above it with the term's
+ * name in ink and a one- or two-sentence definition. Hover (after 120ms), keyboard focus or a tap opens it;
+ * Escape, tapping elsewhere or leaving closes it.
+ */
+.term {
+  position: relative;
+  display: inline;
+  --term-shift: 0px;
+}
+
+.term-trigger {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  cursor: help;
+  text-decoration: underline dotted var(--violet-500);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+.term-trigger:hover,
+.term.is-open .term-trigger {
+  color: var(--violet-700);
+  text-decoration-style: solid;
+}
+
+.term-trigger:focus-visible {
+  outline: 2px solid var(--violet-500);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.term-tip {
+  position: absolute;
+  z-index: 200;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  width: max-content;
+  max-width: min(300px, calc(100vw - 32px));
+  transform: translate(calc(-50% + var(--term-shift)), 4px);
+  padding: 0.75rem 0.9rem;
+  background: var(--surface);
+  color: var(--ink-muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift), var(--shadow-card);
+  font-size: 0.9rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: left;
+  white-space: normal;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0s linear 0.12s;
+}
+
+/* The caret, pointing at the word. */
+.term-tip::after {
+  content: "";
+  position: absolute;
+  left: calc(50% - var(--term-shift));
+  top: 100%;
+  width: 10px;
+  height: 10px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: translate(-50%, -5px) rotate(45deg);
+}
+
+.term-tip-name {
+  display: block;
+  margin-bottom: 0.15rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.term:hover .term-tip,
+.term:focus-within .term-tip,
+.term.is-open .term-tip {
+  visibility: visible;
+  opacity: 1;
+  transform: translate(calc(-50% + var(--term-shift)), 0);
+  transition: opacity 0.12s ease 0.12s, transform 0.12s ease 0.12s, visibility 0s;
+}
+
+.term:focus-within .term-tip,
+.term.is-open .term-tip {
+  transition-delay: 0s;
+}
+
+.term.is-dismissed .term-tip {
+  visibility: hidden;
+  opacity: 0;
+}
+
+.term.term-below .term-tip {
+  bottom: auto;
+  top: calc(100% + 10px);
+}
+
+.term.term-below .term-tip::after {
+  top: auto;
+  bottom: 100%;
+  transform: translate(-50%, 5px) rotate(225deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .term-tip,
+  .term:hover .term-tip,
+  .term:focus-within .term-tip,
+  .term.is-open .term-tip {
+    transform: translate(calc(-50% + var(--term-shift)), 0);
+    transition: none;
+  }
+}
+
+/* The glossary page (support/glossary.md). */
+.glossary dt {
+  font-weight: 600;
+  margin-top: 1.25rem;
+  scroll-margin-top: 5rem;
+}
+
+.glossary dd {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+}
+
+/* Garage | Enterprise (enterprise.md and the home page teaser). */
+.edition-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 1.2rem;
+  color: var(--ink);
+}
+
+.edition-lockup img {
+  width: 40px;
+  height: 40px;
+}
+
+.edition-lockup-edition {
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--line-strong);
+  color: var(--violet-700);
+  font-weight: 500;
+}
+
+.edition-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--violet-300);
+  background-color: var(--violet-100);
+  color: var(--violet-900);
+}
+
+.enterprise-teaser {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 1.5rem;
+  align-items: center;
+  padding: 1.75rem;
+  margin: 1.5rem 0 2.5rem;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+}
+
+.prose .enterprise-teaser h2 {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0;
+  border: none;
+}
+
+.prose .enterprise-teaser p {
+  color: var(--ink-muted);
+}
+
+.enterprise-teaser-art {
+  justify-self: center;
+}
+
+.enterprise-teaser-art img {
+  display: block;
+  width: 176px;
+  height: 176px;
+}
+
+.enterprise-hero {
+  text-align: center;
+  padding: 2.5rem 1rem 3rem;
+  margin-bottom: 2.5rem;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--line-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+}
+
+.enterprise-hero-icon {
+  width: 112px;
+  height: 112px;
+  margin-bottom: 1rem;
+}
+
+.prose .enterprise-hero h1 {
+  font-size: 2.6rem;
+  margin: 0.75rem 0 0.75rem;
+  padding: 0;
+  border: none;
+}
+
+.enterprise-hero p {
+  font-size: 1.15rem;
+  color: var(--ink-muted);
+  max-width: 640px;
+  margin: 0 auto 1.5rem;
+}
+
+@media (max-width: 720px) {
+  .enterprise-teaser {
+    grid-template-columns: 1fr;
+  }
+  .enterprise-teaser-art {
+    order: -1;
+    justify-self: start;
+  }
+  .enterprise-teaser-art img {
+    width: 96px;
+    height: 96px;
+  }
+  .prose .enterprise-hero h1 {
+    font-size: 2rem;
+  }
+}
+
+/* Closed term tips still take up layout space; keep them from widening the page on phones.
+   An open tip is kept inside the viewport by terms.js. */
+.site-main {
+  overflow-x: clip;
+}
+
+.edition-lockup + .edition-badge {
+  margin-left: 0.6rem;
+  vertical-align: 0.2em;
 }

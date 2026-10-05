@@ -23,7 +23,7 @@ already looking at. Describe what happened and Garage assembles the rest — ver
 database and helper service state, corpus counts, registered models, and optionally the most recent log
 lines.
 
-The report is built entirely on your Mac and shown to you in full before anything happens to it. Your
+The report is built entirely on your computer and shown to you in full before anything happens to it. Your
 home directory, user name, e-mail addresses, and any secrets are replaced with placeholders
 automatically, and indexed documents, messages, and search results are never included. From there you
 can copy it, save it as Markdown, or open a pre-filled GitHub issue in your browser — where you get one

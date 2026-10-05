@@ -1,0 +1,42 @@
+# Terms the site defines on hover ({% include term.html term="corpus" %}) and lists on /support/glossary.html.
+# Key: the term's id (lowercase, hyphens). name: how the glossary titles it. definition: one or two plain sentences,
+# at most about 30 words, that say what the thing is (never "a term for ...").
+corpus:
+  name: Corpus
+  definition: Everything Garage has indexed from your sources — documents, code and messages — searchable as one collection.
+source:
+  name: Source
+  definition: A folder, git repository, or Messages or Mail library you add to Garage to be indexed.
+chunk:
+  name: Chunk
+  definition: A passage of a document. Garage embeds and searches chunks, so search returns the part that matches, not the whole file.
+embedding:
+  name: Embedding
+  definition: A list of numbers a model computes for a chunk, so passages with similar meaning sit close together. Garage keeps one per chunk for each model.
+corpus-class:
+  name: Corpus class
+  definition: What a document is — document, code or communication. Communications never leave your computer.
+trust-tier:
+  name: Trust tier
+  definition: How much a document is trusted — authored by you, reference material, or received from someone else.
+attribution:
+  name: Attribution
+  definition: Working out who wrote each document, from git history, document metadata and path rules, with the evidence recorded.
+mcp:
+  name: MCP
+  definition: The Model Context Protocol, the open standard AI assistants use to call tools such as Garage's search.
+hybrid-search:
+  name: Hybrid search
+  definition: Vector similarity and keyword full-text search run together, with the two rankings fused into one list.
+rrf:
+  name: Reciprocal Rank Fusion
+  definition: A way to merge rankings — each result scores 1 ÷ (60 + its rank) in every list, and the scores are added up.
+backfill:
+  name: Backfill
+  definition: Embedding the chunks you already have with a newly added model, without reading your files again.
+fact:
+  name: Fact
+  definition: A short, self-contained statement a local model distills from a document, linked to the passage it came from.
+egress:
+  name: Egress
+  definition: Anything Garage sends off your computer. All of it passes one tested choke point with an allowlist of destinations.

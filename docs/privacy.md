@@ -23,7 +23,7 @@ which AI you connect:
   your conversation, Messages and Mail excerpts included if you indexed them; see
   [What connected agents receive](#what-connected-agents-receive).
 - **Fully private, on your computer.** With the built-in llama.cpp engine on a
-  Mac, or LM Studio or Ollama on this computer, and an agent that runs its model locally,
+  macOS, or LM Studio or Ollama on this computer, and an agent that runs its model locally,
   nothing leaves the machine.
 - **Your own server on your network.** With `embedding.ollama_host` or
   `embedding.lmstudio_host` set to another machine, documents and code go to
@@ -196,10 +196,10 @@ client evicted it is skipped without a download while its stat still matches.
 
 ## Garage's own endpoints
 
-The app's pieces talk to each other on this Mac: the Python pipeline to Postgres,
+The app's pieces talk to each other on this computer: the Python pipeline to Postgres,
 the app and its workers to the `GarageService` gRPC facade, and the `llama_xpc`
 provider to `LlamaXPCService`. A loopback TCP port is reachable by every process
-of every account on the Mac, so none of these listen on one:
+of every account on the computer, so none of these listen on one:
 
 - **Unix-domain sockets in an owner-only folder.** Postgres, gRPC and the
   llama-server API listen in `s/` at the root of the App Group container
@@ -217,7 +217,7 @@ of every account on the Mac, so none of these listen on one:
   of a caller-named `schema_dir`, run only for a caller presenting
   the app's per-launch token or arriving over that owner-only socket. A server
   on a loopback TCP port with no token refuses them, so no other account on
-  the Mac can point `embedding.ollama_host` off-box and widen the allowlist.
+  the computer can point `embedding.ollama_host` off-box and widen the allowlist.
 - **XPC peers must share the team.** Each XPC service puts a code-signing
   requirement on its connections (`anchor apple generic and certificate
   leaf[subject.OU]` = the team in its own signature), so only the app, its

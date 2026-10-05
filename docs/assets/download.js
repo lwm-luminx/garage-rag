@@ -48,7 +48,7 @@
     });
 
     var title = byId('download-title');
-    if (title && version) { title.textContent = 'Garage ' + version + ' for Mac'; }
+    if (title && version) { title.textContent = 'Garage ' + version + ' for macOS'; }
 
     var primary = byId('download-primary');
     var primaryLabel = primary && primary.querySelector('.btn-label');

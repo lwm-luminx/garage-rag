@@ -30,7 +30,7 @@ structured_data:
   <h1>Your files, your computer, your AI.</h1>
   <p>Garage indexes your documents, code, notes and messages on your computer and serves them to your AI assistant over the Model Context Protocol. Garage uploads nothing: your assistant gets only the excerpts it searches for, never the whole collection.</p>
   <div class="hero-actions">
-    <a id="download-primary" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary btn-large"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download for Mac</span></a>
+    <a id="download-primary" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary btn-large"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download for macOS</span></a>
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
@@ -50,8 +50,8 @@ structured_data:
 </div>
 
 <figure class="screenshot-figure screenshot-hero">
-  {% include screenshot.html name="mcp-server" alt="Garage for Mac's MCP Server page: Claude Desktop, Claude Code and LM Studio connected, and a question about a sample library answered with its sources" class="screenshot-window" loading="eager" %}
-  <figcaption>Garage for Mac, answering a question about a sample library through its MCP server.</figcaption>
+  {% include screenshot.html name="mcp-server" alt="Garage's MCP Server page: Claude Desktop, Claude Code and LM Studio connected, and a question about a sample library answered with its sources" class="screenshot-window" loading="eager" %}
+  <figcaption>Garage, answering a question about a sample library through its MCP server.</figcaption>
 </figure>
 
 <div class="hero-strip hero-hire">
@@ -71,13 +71,13 @@ structured_data:
   <div class="card">
     <span class="card-icon">🗂️</span>
     <h3>Indexes what you already have</h3>
-    <p>Folders, git repositories, Markdown, PDF, Office documents, scanned images and Apple Messages and Mail, parsed into searchable chunks in a private PostgreSQL database.</p>
+    <p>Folders, git repositories, Markdown, PDF, Office documents, scanned images and Apple Messages and Mail, parsed into searchable {% include term.html term="chunk" text="chunks" %} in a private PostgreSQL database.</p>
   </div>
 
   <div class="card">
     <span class="card-icon">🔎</span>
     <h3>Hybrid search</h3>
-    <p>Vector similarity and full-text search fused with Reciprocal Rank Fusion, so a question finds the meaning and a keyword finds the exact line.</p>
+    <p>Vector similarity and full-text search fused with {% include term.html term="rrf" text="Reciprocal Rank Fusion" %}, so a question finds the meaning and a keyword finds the exact line.</p>
   </div>
 
   <div class="card">
@@ -89,7 +89,7 @@ structured_data:
   <div class="card">
     <span class="card-icon">🔌</span>
     <h3>Works with your AI assistant</h3>
-    <p>An MCP 2.0 server lets Claude Desktop, Claude Code, Cursor and other MCP clients search your corpus, read documents and ask grounded questions.</p>
+    <p>An MCP 2.0 server lets Claude Desktop, Claude Code, Cursor and other {% include term.html term="mcp" text="MCP" %} clients search your {% include term.html term="corpus" %}, read documents and ask grounded questions.</p>
   </div>
 
   <div class="card">
@@ -147,7 +147,7 @@ Garage never uploads your files or its index. What leaves your computer depends 
   <div class="card">
     <span class="card-icon">💻</span>
     <h3>Fully private, on your computer</h3>
-    <p>Use the built-in llama.cpp engine on a Mac, or LM Studio or Ollama on this computer, for embeddings and answers, and connect an agent that runs its model locally, such as LM Studio's chat. Nothing leaves the machine: not your files, not the index, not the questions you ask.</p>
+    <p>Use the built-in llama.cpp engine on macOS, or LM Studio or Ollama on this computer, for embeddings and answers, and connect an agent that runs its model locally, such as LM Studio's chat. Nothing leaves the machine: not your files, not the index, not the questions you ask.</p>
   </div>
 
   <div class="card">
@@ -168,20 +168,35 @@ Garage never uploads your files or its index. What leaves your computer depends 
   </picture>
 </figure>
 
-Garage walks the sources you register, extracts text, decides who wrote each document and how much to trust it, and splits it into chunks. Each chunk is embedded under every model you register, one table per model, so adding a model is a backfill rather than a re-ingest. Search fuses the vector and keyword rankings and serves the result to your assistant over MCP. Everything lives in a PostgreSQL 18 + pgvector cluster the app bundles and runs for you.
+Garage walks the sources you register, extracts text, decides who wrote each document and how much to trust it, and splits it into chunks. Each chunk is embedded under every model you register, one table per model, so adding a model is a {% include term.html term="backfill" %} rather than a re-ingest. Search fuses the vector and keyword rankings and serves the result to your assistant over MCP. Everything lives in a PostgreSQL 18 + pgvector cluster the app bundles and runs for you.
+
+<section class="edition-enterprise enterprise-teaser" aria-labelledby="enterprise-teaser-title">
+  <div>
+    <span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Enterprise</span></span> <span class="edition-badge">Coming soon</span>
+    <h2 id="enterprise-teaser-title">Garage, for the whole organization</h2>
+    <p>Your company's data remains in the company, and AI agents can search only what you permit, with policy you can audit.</p>
+    <div class="hero-actions download-actions">
+      <a href="{{ '/enterprise/' | relative_url }}" class="btn btn-primary">Learn about Enterprise</a>
+      <a href="{{ '/support/contact.html' | relative_url }}" class="btn btn-secondary">Tell us what your team needs</a>
+    </div>
+  </div>
+  <div class="enterprise-teaser-art">
+    <img src="{{ '/assets/enterprise/icon.svg' | relative_url }}" alt="The Garage | Enterprise icon" width="176" height="176" loading="lazy">
+  </div>
+</section>
 
 <h2 id="download">Download</h2>
 
 <div class="download-panel">
   <div class="download-panel-main">
-    <h3 id="download-title">Garage for Mac</h3>
+    <h3 id="download-title">Garage for macOS</h3>
     <p id="download-detail">Apple Silicon (M1 and later), macOS 14 Sonoma or later. A signed and notarized <code>.pkg</code> installer.</p>
     <div class="hero-actions download-actions">
       <a id="download-pkg" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download installer</span></a>
       <a id="download-release" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener">All downloads on GitHub ↗</a>
       {% if site.app_store_live %}<a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>{% elsif site.testflight_url and site.testflight_url != "" %}<a id="download-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">App Store beta on TestFlight</a>{% endif %}
     </div>
-    {% if site.app_store_live %}<p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your Mac, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
+    {% if site.app_store_live %}<p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
   </div>
   <div class="download-panel-aside">
     <h4>After installing</h4>
@@ -190,7 +205,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>The first-run assistant picks your folders, an embedding model and the AI clients to connect.</li>
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
-    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. The Mac version runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
+    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. The macOS version runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
   </div>
 </div>
 
@@ -215,11 +230,11 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
 
 ## Also a command line and a Python package
 
-The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package on PyPI, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
+The macOS app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package on PyPI, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
 
 <h2 id="open-source">Open source, on GitHub</h2>
 
-Garage is free and open source. Everything is in one repository on GitHub: the Mac app, the Python pipeline, the Windows build and this website.
+Garage is free and open source. Everything is in one repository on GitHub: the macOS app, the Python pipeline, the Windows build and this website.
 
 <div class="grid">
   <div class="card">

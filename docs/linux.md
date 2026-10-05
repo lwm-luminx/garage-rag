@@ -11,15 +11,15 @@ description: How to run Garage on Linux from the command line, with PostgreSQL a
 
 ## What you get, and what you don't
 
-The Linux version is the same `garage_rag` Python package the Mac app runs inside. CI tests it on Linux on every push, against a real PostgreSQL with pgvector.
+The Linux version is the same `garage_rag` Python package the macOS app runs inside. CI tests it on Linux on every push, against a real PostgreSQL with pgvector.
 
 - **Included:** indexing folders and git repositories; Markdown, PDF, Office documents, code and `.eml` mail; image OCR with Tesseract; authorship attribution; hybrid search; fact distillation; and the MCP server over stdio or HTTP.
-- **Not on Linux:** the menu-bar app and its first-run assistant, the bundled database, and the built-in llama.cpp engine. Apple Messages, Apple Mail and HEIC images need a Mac too. Use [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) for embeddings and answers.
+- **Not on Linux:** the menu-bar app and its first-run assistant, the bundled database, and the built-in llama.cpp engine. Apple Messages, Apple Mail and HEIC images need macOS too. Use [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) for embeddings and answers.
 
 ## Before you start
 
 - Python 3.13 or 3.14 and [uv](https://docs.astral.sh/uv/), which can fetch Python for you (or `pipx`).
-- PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) 0.7 or later. CI tests PostgreSQL 18, the version the Mac app bundles.
+- PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) 0.7 or later. CI tests PostgreSQL 18, the version the macOS app bundles.
 - Ollama or LM Studio, on this computer or on another machine you run.
 - For OCR, optional: `libtesseract` with English language data (`tesseract-ocr` and `tesseract-ocr-eng` on Debian and Ubuntu).
 

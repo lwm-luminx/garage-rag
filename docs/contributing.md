@@ -6,7 +6,7 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
 
 <div class="hero">
   <h1>Contribute to Garage</h1>
-  <p>Garage is free and open source under the MIT license. The Mac app, the Python pipeline, the Windows build and this website all live in one repository on GitHub, and contributions of every size are welcome.</p>
+  <p>Garage is free and open source under the MIT license. The macOS app, the Python pipeline, the Windows build and this website all live in one repository on GitHub, and contributions of every size are welcome.</p>
   <div class="hero-actions">
     <a href="https://github.com/rickmark/garage-rag" class="btn btn-primary btn-large" target="_blank" rel="noopener">rickmark/garage-rag on GitHub ↗</a>
     <a href="https://github.com/rickmark/garage-rag/issues" class="btn btn-secondary btn-large" target="_blank" rel="noopener">Issues ↗</a>
@@ -19,13 +19,13 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
   <div class="card">
     <span class="card-icon">🐛</span>
     <h3>Report what you find</h3>
-    <p>A clear bug report is a contribution. In the Mac app, <strong>Report a Bug</strong> (in Logs, or the Help menu) assembles the details for you. Elsewhere, the <a href="{{ '/support/contact.html' | relative_url }}">contact page</a> lists what to include.</p>
+    <p>A clear bug report is a contribution. In the macOS app, <strong>Report a Bug</strong> (in Logs, or the Help menu) assembles the details for you. Elsewhere, the <a href="{{ '/support/contact.html' | relative_url }}">contact page</a> lists what to include.</p>
   </div>
 
   <div class="card">
     <span class="card-icon">🪟</span>
     <h3>Test on Windows and Linux</h3>
-    <p>Garage is growing beyond the Mac. Try the <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a> or the <a href="{{ '/linux.html' | relative_url }}">Linux command line</a> and tell us what breaks: your distribution, your file types, your MCP client.</p>
+    <p>Garage is cross-platform, and growing. Try the <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a> or the <a href="{{ '/linux.html' | relative_url }}">Linux command line</a> and tell us what breaks: your distribution, your file types, your MCP client.</p>
   </div>
 
   <div class="card">
@@ -46,9 +46,9 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
 | Folder | What's in it |
 | --- | --- |
 | [`garage_python/`](https://github.com/rickmark/garage-rag/tree/main/garage_python) | The `garage_rag` Python package: ingestion, extractors, attribution, embeddings, hybrid search, the MCP server and the `garage` CLI. Runs on macOS, Linux and Windows. |
-| [`macapp/`](https://github.com/rickmark/garage-rag/tree/main/macapp) | The Swift/SwiftUI Mac app, its XPC services and the `garage` / `garage-mcp` launchers. |
+| [`macapp/`](https://github.com/rickmark/garage-rag/tree/main/macapp) | The Swift/SwiftUI macOS app, its XPC services and the `garage` / `garage-mcp` launchers. |
 | [`data/sql/`](https://github.com/rickmark/garage-rag/tree/main/data/sql) | The database schema, the source of truth. Migrations are idempotent and re-applied, not tracked. |
-| [`proto/`](https://github.com/rickmark/garage-rag/tree/main/proto) | The gRPC contract between the Mac app and the Python service. |
+| [`proto/`](https://github.com/rickmark/garage-rag/tree/main/proto) | The gRPC contract between the macOS app and the Python service. |
 | [`ext/`](https://github.com/rickmark/garage-rag/tree/main/ext) | From-source builds of PostgreSQL, pgvector, Python, llama.cpp, Tesseract and the rest. |
 | [`docs/`](https://github.com/rickmark/garage-rag/tree/main/docs) | This website. |
 | [`docs/plans/`](https://github.com/rickmark/garage-rag/tree/main/docs/plans) | Engineering plans and design notes, published as the [plans page]({{ '/plans/' | relative_url }}). |
@@ -57,7 +57,7 @@ The [architecture guide]({{ '/architecture.html' | relative_url }}) walks throug
 
 ## Set up for Python work
 
-Most changes touch only the Python package, and that needs no Bazel, Xcode or Mac:
+Most changes touch only the Python package, and that needs no Bazel, Xcode or macOS:
 
 ```bash
 git clone https://github.com/rickmark/garage-rag.git
@@ -67,7 +67,7 @@ uv sync                                         # macOS
 .venv/bin/pytest                                # the unit tests mock the database
 ```
 
-The tests that need real SQL (`tests/test_postgres.py`) run when `GARAGE_TEST_DATABASE_URL` names a PostgreSQL server with pgvector and a superuser role, such as Homebrew's `postgresql@18` or the `pgvector/pgvector:pg18` Docker image. Each run creates and drops its own throwaway database. Don't point it at the Mac app's own database, which holds your real corpus.
+The tests that need real SQL (`tests/test_postgres.py`) run when `GARAGE_TEST_DATABASE_URL` names a PostgreSQL server with pgvector and a superuser role, such as Homebrew's `postgresql@18` or the `pgvector/pgvector:pg18` Docker image. Each run creates and drops its own throwaway database. Don't point it at the macOS app's own database, which holds your real corpus.
 
 Before you push, run the formatter and linters:
 
@@ -77,16 +77,16 @@ Before you push, run the formatter and linters:
 
 ## Build everything
 
-The whole repository, the Mac app included, builds with Bazel through the [Aspect CLI](https://docs.aspect.build/cli/):
+The whole repository, the macOS app included, builds with Bazel through the [Aspect CLI](https://docs.aspect.build/cli/):
 
 ```bash
 aspect build //...          # everything
-aspect build //:macapp      # the Mac app, with its own PostgreSQL, Python and llama.cpp
+aspect build //:macapp      # the macOS app, with its own PostgreSQL, Python and llama.cpp
 aspect test //...           # every test
 aspect gazelle              # regenerate BUILD files after adding Python sources
 ```
 
-The Mac app needs a Mac with Xcode. Windows builds PostgreSQL and Python with each project's own MSVC build, in [`.github/workflows/windows.yaml`](https://github.com/rickmark/garage-rag/blob/main/.github/workflows/windows.yaml), which is the place to start for Windows work.
+The macOS app needs macOS with Xcode. Windows builds PostgreSQL and Python with each project's own MSVC build, in [`.github/workflows/windows.yaml`](https://github.com/rickmark/garage-rag/blob/main/.github/workflows/windows.yaml), which is the place to start for Windows work.
 
 ## Ground rules
 
