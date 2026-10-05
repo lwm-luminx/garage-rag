@@ -2,7 +2,7 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_archive(
     name = "openssl",
-    build_file = "@//ext/openssl:openssl.BUILD.bazel",
+    build_file = "//ext/openssl:openssl.BUILD.bazel",
     sha256 = "7261c348e6e59bc7b635a30f98072e8817a1c60a7033bb570737394a3a061842",
     strip_prefix = "openssl-3.4.7",
     urls = [

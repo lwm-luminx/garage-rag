@@ -22,10 +22,17 @@ Two more things every test needs, added here rather than per target:
 
 load("@aspect_rules_py//py:defs.bzl", _py_pytest_test = "py_pytest_test")
 
-_PYTEST = "@pypi//pytest"
-_PYPROJECT = "//garage_python:pyproject.toml"
-_PACKAGE = "//garage_python/src/garage_rag"
-_LIBPQ = "//tools/pytest:libpq"
+# Label(), not strings: a legacy macro's string labels resolve against the calling BUILD file's
+# repo, so these would point into a module that loads this macro from @garage_rag.
+_PYTEST = Label("@pypi//pytest")
+_PYPROJECT = Label("//garage_python:pyproject.toml")
+_LIBPQ = Label("//tools/pytest:libpq")
+_PACKAGE = Label("//garage_python/src/garage_rag")
+
+def _with(labels, label):
+    if label in [native.package_relative_label(l) for l in labels]:
+        return labels
+    return labels + [label]
 
 def py_test(name, deps = [], data = [], **kwargs):
     """pytest-driven `py_test`; see the module docstring.
@@ -37,14 +44,8 @@ def py_test(name, deps = [], data = [], **kwargs):
         **kwargs: forwarded to `py_pytest_test`.
     """
     kwargs.pop("main", None)  # py_pytest_test provides its own entrypoint
-    if _PYTEST not in deps:
-        deps = deps + [_PYTEST]
-    if _PACKAGE not in deps:
-        deps = deps + [_PACKAGE]
-    if _PYPROJECT not in data:
-        data = data + [_PYPROJECT]
-    if _LIBPQ not in data:
-        data = data + [_LIBPQ]
+    deps = _with(_with(deps, _PYTEST), _PACKAGE)
+    data = _with(_with(data, _PYPROJECT), _LIBPQ)
     env = kwargs.pop("env", {})
     _py_pytest_test(
         name = name,
