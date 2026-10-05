@@ -762,7 +762,7 @@
     "@@rules_dotnet+//dotnet:extensions.bzl%dotnet": {
       "general": {
         "bzlTransitiveDigest": "uEHkcHo+qz0mZXMqN4Q7wBRkPontx/Bonzh6vyzfwyM=",
-        "usagesDigest": "OJbHvuBQL3J50zlbwKVNbVU/G/YO0FShJK4ijGC9p+A=",
+        "usagesDigest": "jyNpojSoSIQ7P1/5yyw0fVU6B8q8IiX0rkVStVPErZI=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "dotnet_x86_64-apple-darwin": {

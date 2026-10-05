@@ -4,7 +4,7 @@ http_file = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_
 
 http_archive(
     name = "tesseract",
-    build_file = "@//ext/tesseract:tesseract.BUILD.bazel",
+    build_file = "//ext/tesseract:tesseract.BUILD.bazel",
     sha256 = "9218e62793116d42a9f6d14cd9348518b27f382096eea3d0f2d1a24616bb5884",
     strip_prefix = "tesseract-5.5.3",
     urls = ["https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.5.3.tar.gz"],

@@ -1,6 +1,6 @@
 title: Garage
-tagline: Private local RAG and MCP server for your Mac
-description: "Garage indexes your documents, code and messages on your Mac and serves them to your AI assistant over MCP. Local-first: your files and the index stay on your Mac."
+tagline: Private local RAG and MCP server for your computer
+description: "Garage indexes your documents, code and messages on your computer and serves them to your AI assistant over MCP. Local-first: your files and the index stay on your computer. For macOS, with Windows in alpha and Linux from the command line."
 url: "https://garagerag.app"
 baseurl: ""
 lang: en_US
@@ -27,6 +27,11 @@ testflight_url: "https://testflight.apple.com/join/fjCMVpjK"
 # store version is approved and released.
 app_store_live: false
 
+# The Windows alpha download (a GitHub release asset or release page). While it is empty, /windows.html
+# says the alpha hasn't been posted yet, asks search engines not to index it, and the home page shows
+# Windows as "coming soon". Set it here once a Windows build is published and every entry point lights up.
+windows_alpha_url: ""
+
 # Build settings
 markdown: kramdown
 kramdown:
@@ -42,11 +47,15 @@ header_pages:
   - support/faq.md
   - support/privacy-policy.md
   - support/contact.md
+  - contributing.md
 
 plugins:
   - jekyll-seo-tag
   - jekyll-sitemap
   - jekyll-redirect-from
+
+# Engineering plans (docs/plans/) are published at /plans/; plans/index.md lists every page there
+# by its front matter (title, description, date, status, status_kind).
 
 # Jekyll skips dot-directories; .data holds files the app and editors fetch from the site
 # (models.json, which the build copies in from data/models, and garage.schema.json).
@@ -60,5 +69,3 @@ exclude:
   - vendor
   - BUILD.bazel
   - BUILD
-  # Design notes and research, kept in the repo but not published
-  - plans

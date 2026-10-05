@@ -2,7 +2,7 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_archive(
     name = "libicu",
-    build_file = "@//ext/libicu:libicu.BUILD.bazel",
+    build_file = "//ext/libicu:libicu.BUILD.bazel",
     patch_cmds = ["find . -mindepth 2 \\( -name 'BUILD' -o -name 'BUILD.bazel' \\) -delete"],
     sha256 = "dfacb46bfe4747410472ce3e1144bf28a102feeaa4e3875bac9b4c6cf30f4f3e",
     strip_prefix = "icu",

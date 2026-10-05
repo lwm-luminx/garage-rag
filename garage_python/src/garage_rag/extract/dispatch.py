@@ -268,6 +268,7 @@ _EXTRACTOR_MODULES: dict[Extractor, tuple[str, str]] = {
     _markdown: ("markdown", "text"),
     _plaintext: ("plaintext", "text"),
     _code: ("code", "text"),
+    _email: ("email", "mail"),
     _pdf: ("pdf", "pdf"),
     _docx: ("docx", "office"),
     _pptx: ("pptx", "office"),

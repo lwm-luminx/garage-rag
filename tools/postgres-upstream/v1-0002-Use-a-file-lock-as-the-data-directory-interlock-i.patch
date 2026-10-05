@@ -1,0 +1,386 @@
+From c5b984b52d5526bb97ac50e0cff9d8317581fc0e Mon Sep 17 00:00:00 2001
+From: Rick Mark-Penwell <rickmark@outlook.com>
+Date: Sun, 27 Sep 2026 20:32:16 +0000
+Subject: [PATCH v1 2/3] Use a file lock as the data directory interlock in
+ APPSTORE builds
+
+With shared_memory_type = mmap, sysv_shmem.c still creates a
+sizeof(PGShmemHeader) System V segment, because shm_nattch is the only
+way PGSharedMemoryIsInUse() can tell whether children of a crashed
+postmaster are still attached to the old shared memory.  The macOS App
+Sandbox refuses that shmget() with EPERM, so a sandboxed server cannot
+start at all.
+
+In an APPSTORE build, replace the shim segment with a file lock on the
+data directory: the postmaster takes an exclusive flock() on a
+descriptor of the directory to prove nothing else holds it, downgrades
+it to a shared lock and keeps the descriptor open.  Every child
+inherits the descriptor and therefore the lock, so there is no window
+in which a live child holds no lock, and the lock goes away by itself
+when the last process holding it exits.  A later postmaster probes
+with an exclusive lock, from CreateLockFile() when postmaster.pid is
+stale and from PGSharedMemoryCreate() when postmaster.pid is gone, and
+fails with the usual "pre-existing shared memory block is still in
+use" error exactly when an orphaned child still exists.  Locking the
+directory rather than postmaster.pid is what makes the second case
+work, as recovery/t/017_shm.pl checks.  Processes that detach from
+shared memory (PGSharedMemoryDetach) close the descriptor, so the
+syslogger does not hold the data directory.  Line 7 of postmaster.pid
+keeps its two numbers, carrying the directory's inode and 0.
+
+Such a build always uses anonymous mmap shared memory; a
+shared_memory_type other than mmap is refused at startup, and
+EXEC_BACKEND is not supported.  A build without --enable-appstore is
+unchanged.
+
+Discussion: https://postgr.es/m/a90b5411-705f-4286-bd81-a26c520a6cfb%40technowledgy.de
+---
+ doc/src/sgml/runtime.sgml     |  13 ++
+ src/backend/port/sysv_shmem.c | 222 +++++++++++++++++++++++++++++++++-
+ src/include/utils/pidfile.h   |   4 +-
+ 3 files changed, 237 insertions(+), 2 deletions(-)
+
+diff --git a/doc/src/sgml/runtime.sgml b/doc/src/sgml/runtime.sgml
+index d998491..30f85ea 100644
+--- a/doc/src/sgml/runtime.sgml
++++ b/doc/src/sgml/runtime.sgml
+@@ -719,6 +719,19 @@ psql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: No such
+     platforms use System V semaphores.
+    </para>
+ 
++   <para>
++    A server built with <option>--enable-appstore</option> (or
++    <option>-Dappstore=true</option> with Meson) uses no System V
++    <acronym>IPC</acronym> at all: its shared memory is anonymous
++    <function>mmap</function> memory, the interlock that keeps a new server
++    from starting while orphaned processes of a crashed server are still
++    attached to the old shared memory is a lock on the data directory, and
++    its semaphores are process-shared POSIX threads primitives kept in
++    shared memory.  Such a build is meant for environments that forbid
++    System V <acronym>IPC</acronym>, such as the macOS App Sandbox, and the
++    limits described in this section do not apply to it.
++   </para>
++
+    <para>
+     System V <acronym>IPC</acronym> features are typically constrained by
+     system-wide allocation limits.
+diff --git a/src/backend/port/sysv_shmem.c b/src/backend/port/sysv_shmem.c
+index 2e3886c..441238f 100644
+--- a/src/backend/port/sysv_shmem.c
++++ b/src/backend/port/sysv_shmem.c
+@@ -19,6 +19,7 @@
+  */
+ #include "postgres.h"
+ 
++#include <fcntl.h>
+ #include <signal.h>
+ #include <unistd.h>
+ #include <sys/file.h>
+@@ -65,8 +66,43 @@
+  * As of PostgreSQL 12, we regained the ability to use a large System V shared
+  * memory region even in non-EXEC_BACKEND builds, if shared_memory_type is set
+  * to sysv (though this is not the default).
++ *
++ * An APPSTORE build (--enable-appstore / -Dappstore=true) is for platforms
++ * where System V IPC is unavailable altogether, such as the macOS App Sandbox,
++ * which denies shmget() and semget() to a sandboxed process.  There the
++ * segment is always anonymous mmap() memory, and the interlock that the SysV
++ * shim provided through shm_nattch is provided by a shared flock() on the data
++ * directory itself instead: the postmaster takes the lock before it forks its
++ * first child, every child inherits the descriptor and therefore the lock, and
++ * a later postmaster asks for an exclusive lock first; if that fails, some
++ * child of the dead postmaster is still alive and still attached to the old
++ * shared memory.  Locking the directory rather than postmaster.pid means that
++ * removing the lock file by hand does not defeat the check, just as it does
++ * not defeat the SysV one.  The lock lives on the open file description, so it
++ * survives fork() and exec() and disappears only when the last process holding
++ * the descriptor exits.  Anonymous memory cannot be re-attached after exec(),
++ * so EXEC_BACKEND is not supported.
+  */
+ 
++#ifdef APPSTORE
++
++#ifdef EXEC_BACKEND
++#error APPSTORE builds cannot use EXEC_BACKEND
++#endif
++
++unsigned long UsedShmemSegID = 0;
++void	   *UsedShmemSegAddr = NULL;
++
++static Size AnonymousShmemSize;
++static void *AnonymousShmem = NULL;
++
++/* Descriptor on the data directory that carries our shared lock */
++static int	InterlockFd = -1;
++
++static void InterlockAcquire(void);
++static void InterlockRelease(int status, Datum arg);
++
++#else							/* !APPSTORE */
+ 
+ typedef key_t IpcMemoryKey;		/* shared memory key passed to shmget(2) */
+ typedef int IpcMemoryId;		/* shared memory ID returned by shmget(2) */
+@@ -454,6 +490,142 @@ PGSharedMemoryAttach(IpcMemoryId shmId,
+ 	return shmStat.shm_nattch == 0 ? SHMSTATE_UNATTACHED : SHMSTATE_ATTACHED;
+ }
+ 
++#endif							/* !APPSTORE */
++
++#ifdef APPSTORE
++
++/*
++ * InterlockProbe
++ *
++ * Open the data directory and try for an exclusive lock on it.  Returns the
++ * descriptor, still exclusively locked, if nobody else holds the directory;
++ * returns -1 with errno set if a process of an earlier postmaster still does
++ * (EWOULDBLOCK) or if the attempt failed for another reason.
++ */
++static int
++InterlockProbe(void)
++{
++	int			fd;
++
++	fd = open(DataDir, O_RDONLY | PG_BINARY, 0);
++	if (fd < 0)
++		return -1;
++
++	if (flock(fd, LOCK_EX | LOCK_NB) < 0)
++	{
++		int			save_errno = errno;
++
++		close(fd);
++		errno = save_errno;
++		return -1;
++	}
++
++	return fd;
++}
++
++/*
++ * InterlockAcquire
++ *
++ * Take a shared lock on the data directory and keep the descriptor open for
++ * the life of the postmaster.  Children inherit the descriptor, and with it
++ * the lock, across fork().  The descriptor must not be close-on-exec
++ * (EXEC_BACKEND is refused above anyway) and must never be closed by a child
++ * that still has the shared memory mapped.
++ *
++ * We first ask for an exclusive lock, which fails while a child of an earlier
++ * postmaster is still alive; this is what catches the case where somebody
++ * removed postmaster.pid, so CreateLockFile never got to ask.  Then we
++ * downgrade to a shared lock.  CreateDataDirLockFile() keeps two postmasters
++ * from racing through here at once.
++ *
++ * A shared memory reinitialization after a crash releases and reacquires the
++ * lock; no child exists at that point.
++ */
++static void
++InterlockAcquire(void)
++{
++	int			fd;
++
++	if (InterlockFd >= 0)
++		return;
++
++	fd = InterlockProbe();
++	if (fd < 0)
++	{
++		if (errno == EWOULDBLOCK)
++			ereport(FATAL,
++					(errcode(ERRCODE_LOCK_FILE_EXISTS),
++					 errmsg("pre-existing shared memory block is still in use"),
++					 errhint("Terminate any old server processes associated with data directory \"%s\".",
++							 DataDir)));
++		ereport(FATAL,
++				(errcode_for_file_access(),
++				 errmsg("could not lock data directory \"%s\": %m",
++						DataDir)));
++	}
++
++	if (flock(fd, LOCK_SH) < 0)
++		ereport(FATAL,
++				(errcode_for_file_access(),
++				 errmsg("could not lock data directory \"%s\": %m",
++						DataDir)));
++
++	InterlockFd = fd;
++	on_shmem_exit(InterlockRelease, (Datum) 0);
++}
++
++/*
++ * InterlockRelease
++ *
++ * Drop our shared lock.  Called as an on_shmem_exit callback, hence the
++ * funny argument list, and from PGSharedMemoryDetach for children that let
++ * go of shared memory.
++ */
++static void
++InterlockRelease(int status, Datum arg)
++{
++	if (InterlockFd >= 0)
++	{
++		if (close(InterlockFd) < 0)
++			elog(LOG, "could not close data directory \"%s\": %m", DataDir);
++		InterlockFd = -1;
++	}
++}
++
++/*
++ * PGSharedMemoryIsInUse
++ *
++ * Is a previously-existing shmem segment still existing and in use?
++ *
++ * Called by CreateLockFile when it finds a postmaster.pid whose postmaster
++ * is dead, before it unlinks the file.  The ids from line 7 of the file mean
++ * nothing here; what tells us whether orphaned children of that postmaster
++ * are still attached to its shared memory is whether they still hold the
++ * shared lock on the data directory.  An exclusive lock attempt fails
++ * exactly then.
++ */
++bool
++PGSharedMemoryIsInUse(unsigned long id1, unsigned long id2)
++{
++	int			fd;
++
++	fd = InterlockProbe();
++	if (fd >= 0)
++	{
++		close(fd);
++		return false;
++	}
++
++	if (errno == EWOULDBLOCK)
++		return true;
++
++	/* Anything else: be conservative. */
++	elog(LOG, "could not lock data directory \"%s\": %m", DataDir);
++	return true;
++}
++
++#endif							/* APPSTORE */
++
+ /*
+  * Identify the huge page size to use, and compute the related mmap flags.
+  *
+@@ -702,11 +874,13 @@ PGShmemHeader *
+ PGSharedMemoryCreate(Size size,
+ 					 PGShmemHeader **shim)
+ {
++#ifndef APPSTORE
+ 	IpcMemoryKey NextShmemSegID;
+ 	void	   *memAddress;
++	Size		sysvsize;
++#endif
+ 	PGShmemHeader *hdr;
+ 	struct stat statbuf;
+-	Size		sysvsize;
+ 
+ 	/*
+ 	 * We use the data directory's ID info (inode and device numbers) to
+@@ -736,6 +910,24 @@ PGSharedMemoryCreate(Size size,
+ 	/* Room for a header? */
+ 	Assert(size > MAXALIGN(sizeof(PGShmemHeader)));
+ 
++#ifdef APPSTORE
++	/* No System V shared memory at all in this build. */
++	if (shared_memory_type != SHMEM_TYPE_MMAP)
++		ereport(FATAL,
++				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
++				 errmsg("\"shared_memory_type\" must be \"mmap\" in this build")));
++
++	AnonymousShmem = CreateAnonymousSegment(&size);
++	AnonymousShmemSize = size;
++
++	/* Register on-exit routine to unmap the anonymous segment */
++	on_shmem_exit(AnonymousShmemDetach, (Datum) 0);
++
++	/* Hold the data directory against orphaned children of a crash */
++	InterlockAcquire();
++
++	hdr = (PGShmemHeader *) AnonymousShmem;
++#else							/* !APPSTORE */
+ 	if (shared_memory_type == SHMEM_TYPE_MMAP)
+ 	{
+ 		AnonymousShmem = CreateAnonymousSegment(&size);
+@@ -843,6 +1035,7 @@ PGSharedMemoryCreate(Size size,
+ 
+ 	/* Initialize new segment. */
+ 	hdr = (PGShmemHeader *) memAddress;
++#endif							/* !APPSTORE */
+ 	hdr->creatorPID = getpid();
+ 	hdr->magic = PGShmemMagic;
+ 	hdr->dsm_control = 0;
+@@ -858,6 +1051,26 @@ PGSharedMemoryCreate(Size size,
+ 	hdr->content_offset = MAXALIGN(sizeof(PGShmemHeader));
+ 	*shim = hdr;
+ 
++#ifdef APPSTORE
++	/* Save info for possible future use */
++	UsedShmemSegAddr = AnonymousShmem;
++	UsedShmemSegID = (unsigned long) statbuf.st_ino;
++
++	/*
++	 * Fill in line 7 of the lock file so that its format stays the same. The
++	 * key is the data directory inode, the ID is 0; CreateLockFile reads the
++	 * two numbers only to decide whether to call PGSharedMemoryIsInUse, which
++	 * ignores them.
++	 */
++	{
++		char		line[64];
++
++		sprintf(line, "%9lu %9lu", (unsigned long) statbuf.st_ino, 0UL);
++		AddToDataDirLockFile(LOCK_FILE_LINE_SHMEM_KEY, line);
++	}
++
++	return hdr;
++#else							/* !APPSTORE */
+ 	/* Save info for possible future use */
+ 	UsedShmemSegAddr = memAddress;
+ 	UsedShmemSegID = (unsigned long) NextShmemSegID;
+@@ -872,6 +1085,7 @@ PGSharedMemoryCreate(Size size,
+ 		return hdr;
+ 	memcpy(AnonymousShmem, hdr, sizeof(PGShmemHeader));
+ 	return (PGShmemHeader *) AnonymousShmem;
++#endif							/* !APPSTORE */
+ }
+ 
+ #ifdef EXEC_BACKEND
+@@ -971,6 +1185,11 @@ PGSharedMemoryNoReAttach(void)
+ void
+ PGSharedMemoryDetach(void)
+ {
++#ifdef APPSTORE
++	/* A process without the shared memory must not hold the interlock. */
++	InterlockRelease(0, (Datum) 0);
++	UsedShmemSegAddr = NULL;
++#else
+ 	if (UsedShmemSegAddr != NULL)
+ 	{
+ 		if ((shmdt(UsedShmemSegAddr) < 0)
+@@ -982,6 +1201,7 @@ PGSharedMemoryDetach(void)
+ 			elog(LOG, "shmdt(%p) failed: %m", UsedShmemSegAddr);
+ 		UsedShmemSegAddr = NULL;
+ 	}
++#endif
+ 
+ 	if (AnonymousShmem != NULL)
+ 	{
+diff --git a/src/include/utils/pidfile.h b/src/include/utils/pidfile.h
+index 82b4c19..f698537 100644
+--- a/src/include/utils/pidfile.h
++++ b/src/include/utils/pidfile.h
+@@ -23,7 +23,9 @@
+  *		4	port number
+  *		5	first Unix socket directory path (empty if none)
+  *		6	first listen_address (IP address or "*"; empty if no TCP port)
+- *		7	shared memory key (empty on Windows)
++ *		7	shared memory key (empty on Windows; "<inode> 0" in an
++ *			APPSTORE build, which holds a file lock instead of a
++ *			System V segment)
+  *		8	postmaster status (see values below)
+  *
+  * Lines 6 and up are added via AddToDataDirLockFile() after initial file
+-- 
+2.43.0
+

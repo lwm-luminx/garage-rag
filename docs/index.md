@@ -1,14 +1,14 @@
 ---
 layout: default
-title: Garage — Private local RAG and MCP server for your Mac
-description: Garage is a free, open-source local RAG app for macOS. It indexes your documents, code and messages on your Mac and serves them to Claude and other AI assistants over MCP.
+title: Garage — Private local RAG and MCP server for your computer
+description: Garage is a free, open-source local RAG app for macOS, with Windows in alpha and Linux from the command line. It indexes your documents, code and messages on your computer and serves them to Claude and other AI assistants over MCP.
 structured_data:
   "@context": https://schema.org
   "@type": SoftwareApplication
   name: Garage
-  description: A local-first personal RAG app for macOS. It indexes your documents, code, notes and messages on your Mac and serves them to your AI assistant over the Model Context Protocol (MCP).
+  description: A local-first personal RAG app. It indexes your documents, code, notes and messages on your computer and serves them to your AI assistant over the Model Context Protocol (MCP).
   applicationCategory: ProductivityApplication
-  operatingSystem: macOS 14 or later (Apple silicon)
+  operatingSystem: macOS 14 or later (Apple silicon); Windows (alpha); Linux (command line)
   url: https://garagerag.app/
   downloadUrl: https://github.com/rickmark/garage-rag/releases/latest
   image: https://garagerag.app/assets/social-card.png
@@ -27,13 +27,14 @@ structured_data:
 
 <div class="hero hero-landing">
   <img src="{{ '/assets/logo.png' | relative_url }}" alt="Garage Logo" class="hero-logo">
-  <h1>Your files, your Mac, your AI.</h1>
-  <p>Garage indexes your documents, code, notes and messages on your Mac and serves them to your AI assistant over the Model Context Protocol. Garage uploads nothing: your assistant gets only the excerpts it searches for, never the whole collection.</p>
+  <h1>Your files, your computer, your AI.</h1>
+  <p>Garage indexes your documents, code, notes and messages on your computer and serves them to your AI assistant over the Model Context Protocol. Garage uploads nothing: your assistant gets only the excerpts it searches for, never the whole collection.</p>
   <div class="hero-actions">
     <a id="download-primary" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary btn-large"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download for Mac</span></a>
     <a href="{{ '/support/' | relative_url }}" class="btn btn-secondary btn-large">Support Center</a>
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
+  <p class="download-meta">On Windows or Linux? {% if site.windows_alpha_url and site.windows_alpha_url != "" %}<a href="{{ '/windows.html' | relative_url }}">Try the Windows alpha</a>{% else %}<a href="{{ '/windows.html' | relative_url }}">Windows is coming</a>{% endif %}, or <a href="{{ '/linux.html' | relative_url }}">run it on Linux</a> from the command line.</p>
   {% unless site.app_store_live %}{% if site.testflight_url and site.testflight_url != "" %}<p class="download-meta">Want the Mac App Store version? It's in beta: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight</a>.</p>{% endif %}{% endunless %}
   <div id="download-alpha" class="hero-strip hero-alpha" hidden>
     <div class="hero-strip-text">
@@ -100,7 +101,7 @@ structured_data:
   <div class="card">
     <span class="card-icon">🛡️</span>
     <h3>Private by construction</h3>
-    <p>No cloud AI client in the app. One tested egress choke point with a destination allowlist, and Garage itself never sends your messages off your Mac. <a href="{{ '/support/privacy-policy.html' | relative_url }}">Read the privacy policy →</a></p>
+    <p>No cloud AI client in the app. One tested egress choke point with a destination allowlist, and Garage itself never sends your messages off your computer. <a href="{{ '/support/privacy-policy.html' | relative_url }}">Read the privacy policy →</a></p>
   </div>
 </div>
 
@@ -121,7 +122,7 @@ structured_data:
 
   <figure class="screenshot-figure">
     <h3>Connects to the assistants you already use</h3>
-    <p>Garage finds the MCP clients on your Mac and connects each one with a click.</p>
+    <p>Garage finds the MCP clients on your computer and connects each one with a click.</p>
     {% include screenshot.html name="assistants" alt="Connected Assistants: Claude Desktop, Claude Code and LM Studio connected, Cursor installed and ready to connect" class="screenshot-detail" %}
   </figure>
 
@@ -134,25 +135,25 @@ structured_data:
 
 ## Where your data goes
 
-Garage never uploads your files or its index. What leaves your Mac depends on which AI you connect, and Garage's [privacy guarantee]({{ '/privacy.html' | relative_url }}) is enforced by tests, not by promise.
+Garage never uploads your files or its index. What leaves your computer depends on which AI you connect, and Garage's [privacy guarantee]({{ '/privacy.html' | relative_url }}) is enforced by tests, not by promise.
 
 <div class="grid">
   <div class="card">
     <span class="card-icon">☁️</span>
     <h3>Claude, ChatGPT and other cloud assistants</h3>
-    <p>Most people connect a cloud assistant. Its app on your Mac queries Garage over MCP and gets only the relevant parts of your collection: the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant does send those parts to its provider's servers with your conversation, under the provider's terms, so leave out any source you don't want to go there.</p>
+    <p>Most people connect a cloud assistant. Its app on your computer queries Garage over MCP and gets only the relevant parts of your collection: the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant does send those parts to its provider's servers with your conversation, under the provider's terms, so leave out any source you don't want to go there.</p>
   </div>
 
   <div class="card">
     <span class="card-icon">💻</span>
-    <h3>Fully private, on your Mac</h3>
-    <p>Use the built-in llama.cpp engine, or LM Studio or Ollama on this Mac, for embeddings and answers, and connect an agent that runs its model locally, such as LM Studio's chat. Nothing leaves the machine: not your files, not the index, not the questions you ask.</p>
+    <h3>Fully private, on your computer</h3>
+    <p>Use the built-in llama.cpp engine on a Mac, or LM Studio or Ollama on this computer, for embeddings and answers, and connect an agent that runs its model locally, such as LM Studio's chat. Nothing leaves the machine: not your files, not the index, not the questions you ask.</p>
   </div>
 
   <div class="card">
     <span class="card-icon">🏠</span>
     <h3>Private AI on your own network</h3>
-    <p>Point Garage at an LM Studio or Ollama server on another machine you run, and documents and code go to that one server for embedding, and nowhere else. Messages and Mail never do: they stay on this Mac even then.</p>
+    <p>Point Garage at an LM Studio or Ollama server on another machine you run, and documents and code go to that one server for embedding, and nowhere else. Messages and Mail never do: they stay on this computer even then.</p>
   </div>
 </div>
 
@@ -163,7 +164,7 @@ Garage never uploads your files or its index. What leaves your Mac depends on wh
     <source media="(max-width: 640px) and (prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-narrow-dark.svg' | relative_url }}">
     <source media="(max-width: 640px)" srcset="{{ '/assets/diagrams/how-it-works-narrow-light.svg' | relative_url }}">
     <source media="(prefers-color-scheme: dark)" srcset="{{ '/assets/diagrams/how-it-works-dark.svg' | relative_url }}">
-    <img src="{{ '/assets/diagrams/how-it-works-light.svg' | relative_url }}" width="1040" height="470" loading="lazy" alt="Your folders, git repositories, documents, Messages and Mail, and cloud folders feed Garage on your Mac. Garage reads each file, attributes it, splits it into passages and embeds them with on-device models into a private PostgreSQL and pgvector library. Hybrid search over that library is served over MCP: your AI assistant asks a question and gets back only the excerpts it searched for. Garage uploads nothing.">
+    <img src="{{ '/assets/diagrams/how-it-works-light.svg' | relative_url }}" width="1040" height="470" loading="lazy" alt="Your folders, git repositories, documents, Messages and Mail, and cloud folders feed Garage on your computer. Garage reads each file, attributes it, splits it into passages and embeds them with on-device models into a private PostgreSQL and pgvector library. Hybrid search over that library is served over MCP: your AI assistant asks a question and gets back only the excerpts it searched for. Garage uploads nothing.">
   </picture>
 </figure>
 
@@ -189,13 +190,59 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
       <li>The first-run assistant picks your folders, an embedding model and the AI clients to connect.</li>
       <li>Ask Claude, or any MCP client, a question about your own files.</li>
     </ol>
-    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. Garage runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
+    <p><small>The installer version checks for updates through Sparkle, only after asking you once; the App Store version updates through the App Store. The Mac version runs on Apple Silicon only. The <code>.zip</code> archive is on the <a id="download-release-aside" href="https://github.com/rickmark/garage-rag/releases/latest" target="_blank" rel="noopener">GitHub release page</a>.</small></p>
+  </div>
+</div>
+
+<h3 id="other-platforms">Windows and Linux</h3>
+
+<div class="grid">
+  <div class="card">
+    <span class="card-icon">🪟</span>
+    <h3>Windows <small>alpha</small></h3>
+    {% if site.windows_alpha_url and site.windows_alpha_url != "" %}<p>An early build for 64-bit Windows. It isn't finished: expect rough edges, and back up anything you index with it.</p>
+    <a href="{{ '/windows.html' | relative_url }}" class="card-link">Get the Windows alpha →</a>{% else %}<p>A Windows version is on the way. The database, Python and indexer already build and pass their tests on Windows; the first alpha will be posted here.</p>
+    <a href="{{ '/windows.html' | relative_url }}" class="card-link">About the Windows alpha →</a>{% endif %}
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🐧</span>
+    <h3>Linux <small>command line</small></h3>
+    <p>There is no desktop app for Linux, but the whole pipeline runs there: the <code>garage</code> command, the <code>garage-mcp</code> server and hybrid search, over PostgreSQL with pgvector.</p>
+    <a href="{{ '/linux.html' | relative_url }}" class="card-link">Run Garage on Linux →</a>
   </div>
 </div>
 
 ## Also a command line and a Python package
 
-The app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline ships as the `garage_rag` Python package, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does. Sources, build instructions and the developer documentation are on <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">GitHub</a>: the <a href="{{ '/architecture.html' | relative_url }}">architecture guide</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
+The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package on PyPI, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
+
+<h2 id="open-source">Open source, on GitHub</h2>
+
+Garage is free and open source. Everything is in one repository on GitHub: the Mac app, the Python pipeline, the Windows build and this website.
+
+<div class="grid">
+  <div class="card">
+    <span class="card-icon">📦</span>
+    <h3>Source and releases</h3>
+    <p>Read the code, download every release and pre-release, and follow along as the Windows version comes together.</p>
+    <a href="https://github.com/rickmark/garage-rag" class="card-link" target="_blank" rel="noopener">rickmark/garage-rag ↗</a>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🐛</span>
+    <h3>Issues and ideas</h3>
+    <p>Report a bug, ask a question or suggest a feature. The app's <strong>Report a Bug</strong> button fills in the details for you.</p>
+    <a href="https://github.com/rickmark/garage-rag/issues" class="card-link" target="_blank" rel="noopener">Open an issue ↗</a>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🛠️</span>
+    <h3>Contribute</h3>
+    <p>Pull requests are welcome, from typo fixes to new extractors. Testing on Windows and Linux helps a lot right now.</p>
+    <a href="{{ '/contributing.html' | relative_url }}" class="card-link">How to contribute →</a>
+  </div>
+</div>
 
 <div class="callout callout-info">
   <div class="callout-title">💬 Need help?</div>

@@ -13,7 +13,7 @@ git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "g
 # workaround, as for 18.
 git_repository(
     name = "postgres19",
-    build_file = "@//ext/postgres:postgres.BUILD.bazel",
+    build_file = "//ext/postgres:postgres.BUILD.bazel",
     commit = "b73d13c32c834a2c8e1c60cb92f79530376cedf1",  # "REL_19_BETA4"
     patch_args = ["-p1"],
     patch_cmds = [

@@ -34,6 +34,7 @@ concurrency:
 
 jobs:
   python:
+    name: "Python: ruff and pytest (with Postgres + pgvector)"
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -60,13 +61,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: garage_python/pyproject.toml
-      - name: Create the venv
+      - name: Create a Python 3.14 venv with the dev extras
         # uv.lock only resolves for macOS, so install from pyproject, as the
         # web-session hook does on Linux.
         run: |
           uv venv --python 3.14 .venv
           uv pip install --python .venv -e '.[dev]'
-      - name: ruff
+      - name: Ruff lint and format check
         run: |
           .venv/bin/ruff check .
           .venv/bin/ruff format --check .
@@ -79,7 +80,7 @@ jobs:
           sudo apt-get install -y -qq libgit2-dev libtesseract-dev tesseract-ocr-eng pkg-config
           ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
           ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
-      - name: pytest
+      - name: pytest, the whole suite (test_postgres.py against the service)
         # Typer forces Rich's terminal mode (ANSI colour, boxed errors) when
         # GITHUB_ACTIONS is set, which breaks the CLI tests' output checks. Bazel's
         # test sandbox never passes it, so clear it here too.
@@ -91,6 +92,7 @@ jobs:
           PYTHONPATH: ${{ runner.temp }}/garage_git:${{ runner.temp }}/garage_tesseract
 
   python-package:
+    name: "Python package: build, check and smoke-test the sdist and wheel"
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -114,12 +116,12 @@ jobs:
           enable-cache: true
           cache-suffix: package
           cache-dependency-glob: garage_python/pyproject.toml
-      - name: Build the sdist and wheel
+      - name: Build the sdist and wheel and check their metadata (twine --strict)
         working-directory: garage_python
         run: |
           uv build --out-dir "$RUNNER_TEMP/dist"
           uvx twine check --strict "$RUNNER_TEMP"/dist/*
-      - name: Smoke test the wheel
+      - name: Install the wheel in a fresh venv and smoke-test it (console scripts, packaged data, init-db)
         env:
           GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_wheel
         run: |
@@ -128,7 +130,7 @@ jobs:
           uv venv --python 3.14 "$RUNNER_TEMP/wheel"
           uv pip install --python "$RUNNER_TEMP/wheel" "$RUNNER_TEMP"/dist/*.whl
           tools/pypi/smoke_test.sh "$RUNNER_TEMP/wheel/bin/python" "$version"
-      - name: Smoke test the sdist
+      - name: Build from the sdist in a fresh venv and smoke-test it
         env:
           GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_sdist
         run: |
@@ -139,6 +141,7 @@ jobs:
           tools/pypi/smoke_test.sh "$RUNNER_TEMP/sdist/bin/python" "$version"
 
   python-freethreaded:
+    name: "Python: pytest on free-threaded 3.14t (informational)"
     # The same suite on the free-threaded build of CPython 3.14 (the `t` ABI),
     # twice: once as the interpreter behaves by default (grpcio's extension
     # re-enables the GIL when it is imported) and once with PYTHON_GIL=0, which
@@ -177,7 +180,7 @@ jobs:
           enable-cache: true
           cache-suffix: freethreaded
           cache-dependency-glob: garage_python/pyproject.toml
-      - name: Create the venv
+      - name: Create a free-threaded Python 3.14t venv with the dev extras
         run: |
           echo 'cryptography>=45' > "$RUNNER_TEMP/overrides.txt"
           uv venv --python 3.14t .venv
@@ -194,6 +197,7 @@ jobs:
           PYTHON_GIL: "0"
 
   swiftcheck:
+    name: "Swift: syntax check (tree-sitter)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -209,18 +213,22 @@ jobs:
         run: python3 tools/pythonkit/generate_symbols.py --check
 
   format:
+    name: "Format: Python and Starlark formatting"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
-      - run: aspect format --task:name format
+      - name: aspect format
+        run: aspect format --task:name format
 
   gazelle:
+    name: "Gazelle: BUILD files match the Python sources"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
-      - run: aspect gazelle --task:name gazelle
+      - name: aspect gazelle
+        run: aspect gazelle --task:name gazelle
 
   # The Bazel build of winapp/ (winapp/README.md, "Bazel"): every project but the WinUI app and
   # its FlaUI tests, compiled and tested on Linux, plus the check that each BUILD.bazel still
@@ -254,13 +262,16 @@ jobs:
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
   buildifier:
+    name: "Buildifier: Starlark files"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
-      - run: aspect buildifier --task:name buildifier
+      - name: aspect buildifier
+        run: aspect buildifier --task:name buildifier
 
   lint:
+    name: "Lint: Ruff and ty over //..., Apple targets included (macOS)"
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
@@ -268,4 +279,5 @@ jobs:
           # ext/pythonkit/PythonKit, which the Apple targets compile.
           submodules: true
       - uses: ./.github/actions/setup-aspect
-      - run: aspect lint --task:name lint -- //...
+      - name: aspect lint //...
+        run: aspect lint --task:name lint -- //...
