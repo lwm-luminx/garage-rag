@@ -68,7 +68,7 @@ For detailed architectural and design specifications, see:
 ├── macapp/                   # Native macOS SwiftUI application (GarageApp), its XPC services and launchers
 ├── proto/garage.proto        # gRPC contract between the app and the Python GarageService
 ├── tools/                    # Tooling, linters, formatters, and Bazel environment helpers
-└── winapp/                   # Native Windows app in development (.NET 10, built with the .NET SDK, not Bazel)
+└── winapp/                   # Native Windows app in development (.NET 10 SDK solution; Bazel builds all but the WinUI app)
 ```
 
 ---
