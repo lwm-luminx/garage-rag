@@ -65,6 +65,29 @@ Both are built from the same commit and share one data folder and one Keychain i
    - What's New, and the screenshots (`StoreScreenshotsUITests`, 2880 × 1800, light and dark);
    - the App Privacy answers, which must match `docs/support/privacy-policy.md`;
    - the Notes for App Review.
+
+   App Review has rejected the listing and the build for each of these before:
+   - **The name and subtitle never say "Mac"** (guideline 5.2.5). Apple reads "for Mac" and the like as
+     confusable with its own products. Put platform words in the description, not the subtitle.
+   - **The tip in-app purchases go in with the version** (guideline 2.1(b)). Attach every tip product
+     under the version's In-App Purchases section, check that each one reads Ready to Submit, and that
+     the Paid Apps Agreement is active under Business. Until Apple approves them the store returns no
+     products and the splash shows no tip buttons, so the reviewer finds nothing.
+   - **The Notes for App Review say where the tips are and what Contacts is for.** The setup assistant
+     takes the window on a fresh install, so the splash does not open by itself on first launch. Name the
+     path: **Garage → About Garage…**, tip buttons at the bottom of the first card, "Open source runs on
+     people". For the Contacts entitlement
+     (guideline 2.4.5(i)), name the path that asks for it: add the **Apple Mail** or **Messages** source,
+     give Garage Full Disk Access as the app explains, and ingest it. Contacts names the senders of those
+     messages, which otherwise show as phone numbers and addresses. Folder sources never ask.
+   - **The Notes for App Review say what `network.server` is for** (guideline 2.4.5(i)). Garage's
+     servers accept connections only from the same Mac: the bundled Postgres (a Unix-domain socket, or
+     localhost when the socket's path is too long), the gRPC and llama services on Unix-domain sockets,
+     and the optional MCP HTTP server at `127.0.0.1:8787/mcp`. Name the path that shows it:
+     **MCP Server → Start**, then **Test** lists the tools.
+   - **Nothing in the bundle names the `itms-services` URL scheme** (guideline 2.5.2). CPython's
+     `urllib.parse` lists it unless configured `--with-app-store-compliance` (`//ext/python`), and
+     `//macapp/Sources/GarageApp:bundle_layout_test` fails if any file in the app names it.
 6. Submit for review.
 
 ## 4. After the release

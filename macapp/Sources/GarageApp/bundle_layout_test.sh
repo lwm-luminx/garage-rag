@@ -13,7 +13,9 @@
 # `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
 # service binary defines the framework's types. Every versioned framework in Contents/Frameworks
 # is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
-# validation needs.
+# validation needs. Nothing in the bundle, source, bytecode or binary, names the itms-services URL
+# scheme, which App Review rejects under guideline 2.5.2 (CPython's urllib.parse lists it unless
+# configured --with-app-store-compliance).
 set -euo pipefail
 
 archive="$1"
@@ -203,6 +205,16 @@ for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPC
         fail "$name does not link PythonXPCService.framework"
     fi
 done
+
+# App Review scans the whole bundle for the itms-services scheme (guideline 2.5.2). The Makefile
+# step that patches it out of the stdlib ignores its own failure, so check the result here.
+itms="$(grep -rlaF -- "itms-services" "$app" 2>/dev/null || true)"
+if [ -n "$itms" ]; then
+    fail "the bundle names the itms-services URL scheme (App Review guideline 2.5.2):"
+    printf '%s\n' "$itms" | sed "s|^$app/|       |"
+else
+    pass "nothing in the bundle names the itms-services URL scheme"
+fi
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures check(s) failed"
