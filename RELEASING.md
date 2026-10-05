@@ -79,6 +79,11 @@ Both are built from the same commit and share one data folder and one Keychain i
      (guideline 2.4.5(i)), name the path that asks for it: add the **Apple Mail** or **Messages** source,
      give Garage Full Disk Access as the app explains, and ingest it. Contacts names the senders of those
      messages, which otherwise show as phone numbers and addresses. Folder sources never ask.
+   - **The Notes for App Review say what `network.server` is for** (guideline 2.4.5(i)). Garage's
+     servers accept connections only from the same Mac: the bundled Postgres (a Unix-domain socket, or
+     localhost when the socket's path is too long), the gRPC and llama services on Unix-domain sockets,
+     and the optional MCP HTTP server at `127.0.0.1:8787/mcp`. Name the path that shows it:
+     **MCP Server → Start**, then **Test** lists the tools.
    - **Nothing in the bundle names the `itms-services` URL scheme** (guideline 2.5.2). CPython's
      `urllib.parse` lists it unless configured `--with-app-store-compliance` (`//ext/python`), and
      `//macapp/Sources/GarageApp:bundle_layout_test` fails if any file in the app names it.
