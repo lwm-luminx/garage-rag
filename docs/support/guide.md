@@ -40,6 +40,7 @@ Welcome to the comprehensive support guide for **Garage**. This guide covers sys
 
 - **Operating System**: macOS 14.0 (Sonoma) or later
 - **Architecture**: Apple Silicon (M1 and later) only
+- **Windows and Linux**: Garage also runs from the command line on [Linux]({{ '/linux.html' | relative_url }}), and a [Windows alpha]({{ '/windows.html' | relative_url }}) is on the way. This guide describes the Mac app; the [command line](#command-line-interface) sections apply everywhere.
 - **Memory**: 8 GB RAM minimum (16 GB+ recommended when running local embedding models)
 - **Disk Space**: ~500 MB for Garage application and embedded PostgreSQL, plus the models you download; database size depends on ingested document corpus
 - **Embedding Backend**: none to install. Garage runs embedding and distillation models itself with its built-in llama.cpp engine; [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) can be used instead
@@ -77,7 +78,7 @@ The sidebar starts with **Status**, followed by three groups:
 
 <h3 id="command-line-interface">Command Line Interface (<code>garage</code>)</h3>
 
-For automated pipelines or terminal workflows, the `garage` CLI communicates with the database. The app includes it at `/Applications/Garage.app/Contents/MacOS/garage` (with `garage-mcp` beside it); when a command needs the database and Garage is not running, it opens the app in the background and uses its database, with no password to configure. The same commands ship in the `garage_rag` Python package for use against any PostgreSQL with pgvector.
+For automated pipelines or terminal workflows, the `garage` CLI communicates with the database. The app includes it at `/Applications/Garage.app/Contents/MacOS/garage` (with `garage-mcp` beside it); when a command needs the database and Garage is not running, it opens the app in the background and uses its database, with no password to configure. The same commands ship in the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package (`uv tool install garage-rag`) for use against any PostgreSQL with pgvector; see [Garage on Linux]({{ '/linux.html' | relative_url }}).
 
 ```bash
 # Put the launchers on your PATH (optional). The copies find Garage wherever it is installed.

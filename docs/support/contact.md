@@ -30,7 +30,7 @@ can copy it, save it as Markdown, or open a pre-filled GitHub issue in your brow
 more chance to read it before posting.
 
 **By hand**: [open a GitHub Issue](https://github.com/rickmark/garage-rag/issues) and include:
-  - macOS version and Mac model (e.g., macOS 15.0 Sequoia, M3 MacBook Air)
+  - Operating system and computer model (e.g., macOS 15.0 Sequoia on an M3 MacBook Air, Windows 11 x64, or Ubuntu 24.04)
   - Garage version / commit hash
   - Relevant sanitized log snippets (see below)
   - Exact steps to reproduce the issue

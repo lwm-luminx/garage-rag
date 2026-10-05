@@ -310,6 +310,48 @@ a:hover {
   gap: 0.25rem;
 }
 
+/* Engineering plans: status badges on the index cards and the meta line above a plan */
+.plan-status {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--card-border);
+  background-color: var(--card-bg);
+  color: var(--text-secondary);
+}
+.plans-grid .card .plan-status {
+  align-self: flex-start;
+  margin-bottom: 0.75rem;
+}
+.plan-status-active,
+.plan-status-proposed {
+  border-color: var(--callout-info-border);
+  background-color: var(--callout-info-bg);
+  color: var(--text-primary);
+}
+.plan-status-landed {
+  border-color: var(--callout-success-border);
+  background-color: var(--callout-success-bg);
+  color: var(--text-primary);
+}
+.plan-status-deferred {
+  border-color: var(--callout-warn-border);
+  background-color: var(--callout-warn-bg);
+  color: var(--text-primary);
+}
+.prose .plan-meta {
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+.plan-meta-sep {
+  margin: 0 0.15rem;
+}
+
 /* Typography & Prose */
 .prose {
   line-height: 1.7;
@@ -782,5 +824,296 @@ details .faq-content {
   .diagram img {
     max-width: 380px;
     margin: 0 auto;
+  }
+}
+
+/* About page (about.md) */
+.profile {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+}
+
+.profile-photo {
+  flex-shrink: 0;
+  width: 160px;
+  height: 160px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.prose .profile h1 {
+  font-size: 2.4rem;
+  margin: 0 0 0.25rem;
+  padding: 0;
+  border: none;
+}
+
+.prose .profile p {
+  margin-bottom: 0;
+}
+
+.profile-eyebrow {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.profile-role {
+  font-size: 1.1rem;
+  color: var(--text-secondary);
+}
+
+.prose .profile .profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.85rem 0 1.1rem;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  border-radius: 999px;
+  background-color: var(--callout-success-bg);
+  border: 1px solid var(--callout-success-border);
+}
+
+.profile-badge-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background-color: var(--callout-success-border);
+}
+
+.profile-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.profile-note {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  border-left: 3px solid var(--border);
+  padding-left: 1rem;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin: 2rem 0 1rem;
+}
+
+.stat {
+  padding: 1rem 1.1rem;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  background-color: var(--card-bg);
+  display: flex;
+  flex-direction: column;
+}
+
+.stat strong {
+  font-size: 1.7rem;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--accent);
+}
+
+.stat span {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+/* Career: a vertical line with a dot per role */
+.prose .timeline {
+  list-style: none;
+  padding-left: 0;
+  margin: 1.5rem 0;
+}
+
+.timeline li {
+  position: relative;
+  padding: 0 0 1.25rem 1.75rem;
+  margin: 0;
+  border-left: 2px solid var(--border);
+  margin-left: 0.4rem;
+}
+
+.timeline li:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+.timeline li::before {
+  content: "";
+  position: absolute;
+  left: -0.45rem;
+  top: 0.35rem;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background-color: var(--bg-primary);
+  border: 2px solid var(--accent);
+}
+
+.prose .timeline h3 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+}
+
+.timeline h3 span {
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-left: 0.4rem;
+}
+
+.prose .timeline p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+/* T2 research */
+.feature-panel {
+  display: grid;
+  grid-template-columns: 3fr 2fr;
+  gap: 1.5rem;
+  padding: 1.5rem 1.75rem;
+  margin: 1.25rem 0 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background-color: var(--bg-secondary);
+}
+
+.feature-panel-aside {
+  border-left: 1px solid var(--border);
+  padding-left: 1.5rem;
+  font-size: 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.prose .feature-panel p {
+  margin-bottom: 0.75rem;
+}
+
+.prose .milestones {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+}
+
+.prose .milestones li {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.milestones li span {
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--accent);
+  padding-top: 0.2rem;
+}
+
+/* Project cards and lists */
+.project-grid {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.project-grid .card,
+.contrib-grid .card {
+  padding: 1.25rem 1.4rem;
+}
+
+.prose .project-list {
+  list-style: none;
+  padding-left: 0;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.prose .project-list li {
+  margin-bottom: 0.6rem;
+}
+
+.project-list a {
+  font-weight: 600;
+}
+
+.project-list small,
+.project-columns small {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-right: 0.25rem;
+}
+
+.prose .project-columns {
+  columns: 2;
+  column-gap: 2rem;
+  font-size: 0.92rem;
+}
+
+.project-columns li {
+  break-inside: avoid;
+}
+
+.contrib-grid .card h3 {
+  font-size: 1.05rem;
+}
+
+.card-accent {
+  border-color: var(--callout-info-border);
+  background-color: var(--callout-info-bg);
+}
+
+.card-accent p {
+  color: var(--text-primary);
+}
+
+@media (max-width: 720px) {
+  .profile {
+    flex-direction: column;
+    text-align: center;
+    padding: 1.5rem 1rem;
+  }
+  .profile-actions {
+    justify-content: center;
+  }
+  .prose .profile h1 {
+    font-size: 1.9rem;
+  }
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .feature-panel {
+    grid-template-columns: 1fr;
+  }
+  .feature-panel-aside {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 1rem;
+  }
+  .prose .project-columns {
+    columns: 1;
+  }
+  .project-grid {
+    grid-template-columns: 1fr;
   }
 }

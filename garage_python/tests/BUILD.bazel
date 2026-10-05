@@ -662,10 +662,10 @@ py_test(
     srcs = ["test_fake_messages.py"],
     deps = [
         ":conftest",
-        ":fake_messages",
         "//garage_python/src/garage_rag/db",
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/ingest",
+        "//garage_python/tests:fake_messages",
         "@pypi//pytest",
     ],
 )
@@ -838,5 +838,15 @@ py_test(
         "//garage_python/src/garage_rag/mcp_server",  # keep: garage-mcp, run as a child process
         "@pypi//pytest",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_extract_dispatch",
+    srcs = ["test_extract_dispatch.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/extract",
+        "@pypi//pytest",
     ],
 )

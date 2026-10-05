@@ -273,6 +273,20 @@ def ingest_one(
             source_sha256=raw_hash_hex or "",
         )
         return
+    except PlaceholderFile:
+        # extract() checks for a cloud stub before reading, so a file that turned
+        # dataless after ensure_local is a placeholder here too, not a failure.
+        log.info("Placeholder file %s not materialized; no document written", candidate.uri)
+        counters.placeholders += 1
+        gateway.record_placeholder(
+            source_ctx.run_id,
+            source_ctx.slug,
+            candidate.uri,
+            candidate.mtime.timestamp(),
+            candidate.path.stem,
+            "not materialized",
+        )
+        return
     except (ExtractionError, OSError) as exc:
         if refused_dataless_read(exc):
             # The kernel declined to download it: a placeholder the budget did not cover

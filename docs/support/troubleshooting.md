@@ -174,7 +174,7 @@ Garage meters cloud stub materialization. In `~/.garage.json`, adjust placeholde
   }
 }
 ```
-Setting `"materialize": false` means online-only placeholders are never downloaded: they are counted as placeholders and get no document until their contents are on your Mac. A file that was indexed before the sync client made it online-only keeps its index entry and is skipped without a download while it stays unchanged. With materialization on, `limit` (files) and `max_bytes` cap what one run downloads; `0` means unlimited. In the app these settings live in `garage.json` in its data folder.
+Setting `"materialize": false` means online-only placeholders are never downloaded: they are counted as placeholders and get no document until their contents are on your computer. A file that was indexed before the sync client made it online-only keeps its index entry and is skipped without a download while it stays unchanged. With materialization on, `limit` (files) and `max_bytes` cap what one run downloads; `0` means unlimited. In the app these settings live in `garage.json` in its data folder.
 
 ---
 

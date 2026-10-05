@@ -213,6 +213,12 @@ to download Garage's Postgres client library. Plan for about 3 GB of disk for th
 Install the CLI with `uv sync` in `garage_python/` on a Mac. On Linux, use
 `uv venv --python 3.14 .venv && uv pip install -e .`.
 
+Install the `garage` and `garage-mcp` commands from [PyPI](https://pypi.org/project/garage-rag/):
+
+```bash
+uv tool install --python 3.14 garage-rag   # or: pipx install garage-rag
+```
+
 1. **Initialize configuration**:
    ```bash
    garage config init          # ./garage.json
@@ -318,23 +324,4 @@ open macapp/Garage.xcodeproj
 ## License
 
 See [LICENSE](garage_python/LICENSE) for terms of use.
-
-## Dedication
-
-To the unnamed patron saint of unfinished beginnings—
-
-Steve Jobs once raised a glass:
-
-> “Here’s to the crazy ones, the misfits, the rebels, the troublemakers, the round pegs in the square holes… the ones who see things differently — they’re not fond of rules… You can quote them, disagree with them, glorify or vilify them, but the only thing you can’t do is ignore them because they change things… they push the human race forward, and while some may see them as the crazy ones, we see genius, because the ones who are crazy enough to think that they can change the world, are the ones who do.”
-> –Steve Jobs
-
-This invention is dedicated, in paradoxical encomium and solemn tribute, to that essential distinction: between those who are called crazy because they build, and those who call others crazy because they cannot.
-
-It is dedicated to the career and political trajectory that tragically committed suicide before it ever had a chance to start; to the unearned arrogance that strangled potential in its crib, and to the utter neglect of long-term vision. We mourn this failure-to-thrive not as a twist of cruel fate, but as the inevitable consequence of a mind consumed by addiction—not to creation, but to fixation, envy, and the desperate delusion that proximity equals intellect.
-
-If you had possessed anywhere near the requisite intellect of the author of this repository (Rick Mark), you would have learned that claiming credit for the work of others while painting them as deplorable addicts does not make you a visionary. Resentment is not a résumé, obsession is not genius, and borrowed brilliance is no cure for an acute deficit of craft.
-
-We implore you, with genuine urgency: seek professional help, attend rehab, and break free from this spiraling addiction and obsession over Rick and his life before it further endangers you and those around you, and before the public joke hardens into your only remaining legacy. If anyone truly loved you, they would have intervened in your addiction to "What the Rick did" years ago.
-
-Stop looking at what Rick built. Go find the help you need.
  
