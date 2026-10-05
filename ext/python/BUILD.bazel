@@ -20,6 +20,10 @@ configure_make(
         "--with-openssl=$$EXT_BUILD_DEPS/openssl",
         # libedit (BSD, in the macOS SDK), not GNU Readline (GPL-3.0).
         "--with-readline=editline",
+        # Mac/Resources/app-store-compliance.patch, applied to the installed stdlib before it is
+        # byte-compiled: drops the itms-services scheme from urllib.parse, which App Review rejects
+        # under guideline 2.5.2 as a way to install apps. Off by default on macOS upstream.
+        "--with-app-store-compliance",
     ],
     copts = [
         "-DDATE=\\\"\\\\\\\"Jan_01_1970\\\\\\\"\\\"",
