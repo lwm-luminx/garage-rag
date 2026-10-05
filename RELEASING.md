@@ -75,7 +75,8 @@ Both are built from the same commit and share one data folder and one Keychain i
      products and the splash shows no tip buttons, so the reviewer finds nothing.
    - **The Notes for App Review say where the tips are and what Contacts is for.** The setup assistant
      takes the window on a fresh install, so the splash does not open by itself on first launch. Name the
-     path: **Garage → About Garage…**, tip buttons under the version line. For the Contacts entitlement
+     path: **Garage → About Garage…**, tip buttons at the bottom of the first card, "Open source runs on
+     people". For the Contacts entitlement
      (guideline 2.4.5(i)), name the path that asks for it: add the **Apple Mail** or **Messages** source,
      give Garage Full Disk Access as the app explains, and ingest it. Contacts names the senders of those
      messages, which otherwise show as phone numbers and addresses. Folder sources never ask.
