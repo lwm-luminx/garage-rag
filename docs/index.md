@@ -174,7 +174,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
   <div>
     <span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Enterprise</span></span> <span class="edition-badge">Coming soon</span>
     <h2 id="enterprise-teaser-title">Garage, for the whole organization</h2>
-    <p>The same local-first index and privacy guarantee, deployed and managed across your team's computers, with policy you can audit.</p>
+    <p>Your company's data remains in the company, and AI agents can search only what you permit, with policy you can audit.</p>
     <div class="hero-actions download-actions">
       <a href="{{ '/enterprise/' | relative_url }}" class="btn btn-primary">Learn about Enterprise</a>
       <a href="{{ '/support/contact.html' | relative_url }}" class="btn btn-secondary">Tell us what your team needs</a>

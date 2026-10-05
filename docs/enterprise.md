@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Garage | Enterprise
-description: Garage | Enterprise is coming — Garage's local-first, private RAG and MCP server, made for teams and managed fleets of computers.
+description: Garage | Enterprise is coming — private RAG and MCP search for your organization. Your company's data stays in the company, and agents can search only what you permit.
 permalink: /enterprise/
 image: /assets/enterprise/icon.png
 ---
@@ -12,7 +12,7 @@ image: /assets/enterprise/icon.png
   <img src="{{ '/assets/enterprise/icon.svg' | relative_url }}" alt="" class="enterprise-hero-icon" width="112" height="112">
   <div><span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Enterprise</span></span></div>
   <h1>Private AI search, for the whole organization.</h1>
-  <p>Garage | Enterprise is Garage for teams: the same local-first index and the same privacy guarantee, deployed and managed across the computers your organization runs.</p>
+  <p>Garage | Enterprise is Garage for teams. Your company's data remains in the company, and AI agents can search only what you permit.</p>
   <div class="hero-actions">
     <a href="{{ '/support/contact.html' | relative_url }}" class="btn btn-primary btn-large">Tell us what your team needs</a>
     <a href="{{ '/' | relative_url }}" class="btn btn-secondary btn-large">Explore Garage today</a>
@@ -34,8 +34,8 @@ image: /assets/enterprise/icon.png
   </div>
 
   <div class="card">
-    <h3>The same privacy guarantee</h3>
-    <p>Each {% include term.html term="corpus" %} stays on the computer it came from. Communications never leave the machine, and the guarantee stays enforced by tests, not by promise.</p>
+    <h3>Your data stays in the company</h3>
+    <p>Your company's data remains in the company: it is indexed on infrastructure your organization runs, never sent to a cloud provider. Agents can search only the sources you permit, and the guarantee is enforced by tests, not by promise.</p>
   </div>
 </div>
 
