@@ -1,0 +1,121 @@
+name: Sync main into next
+
+# Daily: merge main into next through a PR.
+#
+# - next already has main: nothing to do.
+# - Clean merge: the merge (plus a refreshed MODULE.bazel.lock if the merge left it stale) goes to
+#   sync/main-into-next with a PR into next, and CI is dispatched on it. PRs and pushes made with
+#   GITHUB_TOKEN trigger no workflows, so CI is started explicitly; `land` merges the PR once that
+#   run passes, and leaves it open with a comment if it fails.
+# - Conflicts: a PR from main into next is opened for a person to resolve.
+on:
+  schedule:
+    - cron: "0 12 * * *" # 06:00 America/Denver (MDT)
+  workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+
+concurrency:
+  group: sync-main-into-next
+  cancel-in-progress: false
+
+env:
+  SYNC_BRANCH: sync/main-into-next
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  sync:
+    if: github.event_name != 'workflow_run'
+    # macOS, as CI: the lockfile refresh should resolve the module graph the way CI checks it.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: recursive
+      - name: Merge main into next
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main next
+
+          if git merge-base --is-ancestor origin/main origin/next; then
+            echo "next already contains main."
+            echo "result=up-to-date" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Someone pushed fixes to an open sync PR: leave it to them rather than overwrite it.
+          if git fetch origin "$SYNC_BRANCH" 2>/dev/null &&
+             [ -n "$(git log origin/next..FETCH_HEAD --not origin/main --format='%ae' | grep -v 'github-actions\[bot\]')" ]; then
+            echo "$SYNC_BRANCH has commits from people; not replacing it."
+            echo "result=skip" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          git checkout -B "$SYNC_BRANCH" origin/next
+          if ! git merge --no-ff origin/main -m "Merge main into next"; then
+            git merge --abort
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git submodule update --init --recursive
+          echo "result=merged" >> "$GITHUB_OUTPUT"
+      - name: Refresh MODULE.bazel.lock
+        if: steps.merge.outputs.result == 'merged' && hashFiles('MODULE.bazel.lock') != ''
+        run: |
+          if ! bazel mod deps --lockfile_mode=error >/dev/null; then
+            bazel mod deps --lockfile_mode=update >/dev/null
+            git add MODULE.bazel.lock
+            git commit -m "Refresh MODULE.bazel.lock after merging main"
+          fi
+      - name: Open the sync PR and dispatch CI
+        if: steps.merge.outputs.result == 'merged'
+        run: |
+          git push --force origin "$SYNC_BRANCH"
+          if [ -z "$(gh pr list --head "$SYNC_BRANCH" --base next --state open --json number --jq '.[].number')" ]; then
+            gh pr create --head "$SYNC_BRANCH" --base next --title "Merge main into next" --body \
+              "Automated daily sync from [$GITHUB_WORKFLOW]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). Merged automatically once CI passes on this branch; if it fails, this PR stays open for a fix."
+          fi
+          gh workflow run CI --ref "$SYNC_BRANCH"
+      - name: Open a PR for the conflicts
+        if: steps.merge.outputs.result == 'conflict'
+        run: |
+          if [ -n "$(gh pr list --head main --base next --state open --json number --jq '.[].number')" ]; then
+            echo "A main -> next PR is already open."
+            exit 0
+          fi
+          gh pr create --head main --base next --title "Merge main into next (conflicts)" --body \
+            "The daily sync ([$GITHUB_WORKFLOW]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)) could not merge main into next cleanly. Resolve the conflicts on a branch from next (\`git merge origin/main\`) and merge that, or resolve them here."
+
+  land:
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'sync/main-into-next'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Merge the sync PR, or report the failure
+        env:
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          pr=$(gh pr list --head "$SYNC_BRANCH" --base next --state open --json number,headRefOid \
+                 --jq ".[] | select(.headRefOid == \"$HEAD_SHA\") | .number")
+          if [ -z "$pr" ]; then
+            echo "No open sync PR at $HEAD_SHA (superseded or already merged)."
+            exit 0
+          fi
+          if [ "$CONCLUSION" = "success" ]; then
+            gh pr merge "$pr" --merge --match-head-commit "$HEAD_SHA" --delete-branch
+          else
+            gh pr comment "$pr" --body "CI $CONCLUSION on $HEAD_SHA: $RUN_URL. Leaving this open for a fix."
+          fi
