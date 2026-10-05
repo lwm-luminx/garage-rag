@@ -62,20 +62,21 @@ public static class Look
     };
 
     /// <summary>
-    /// A tint as a brush that reads in light and dark themes. In high contrast every tint is the
-    /// highlight colour, since the person's own colours replace the app's; the row's words carry its state.
+    /// A tint as a brush that reads in light and dark themes: the design system's status and corpus
+    /// colours (Theme/GarageTheme.xaml). Orange and yellow are both its warning, as every status is a word
+    /// plus a colour. In high contrast every tint is the highlight colour, since the person's own colours
+    /// replace the app's; the row's words carry its state.
     /// </summary>
     public static Brush TintBrush(Tint tint) => HighContrast
         ? Theme("SystemColorHighlightColorBrush", Colors.Yellow)
         : tint switch
         {
-            Tint.Green => Theme("SystemFillColorSuccessBrush", Colors.SeaGreen),
-            Tint.Orange => Theme("SystemFillColorCautionBrush", Colors.DarkOrange),
-            Tint.Red => Theme("SystemFillColorCriticalBrush", Colors.Firebrick),
-            Tint.Blue => Theme("AccentFillColorDefaultBrush", Colors.RoyalBlue),
-            Tint.Purple => new SolidColorBrush(Color.FromArgb(0xFF, 0x88, 0x4E, 0xD0)),
-            Tint.Yellow => new SolidColorBrush(Color.FromArgb(0xFF, 0xD8, 0xA1, 0x00)),
-            _ => Theme("TextFillColorTertiaryBrush", Colors.Gray),
+            Tint.Green => Theme("GarageSuccessBrush", Colors.SeaGreen),
+            Tint.Orange or Tint.Yellow => Theme("GarageWarningBrush", Colors.DarkGoldenrod),
+            Tint.Red => Theme("GarageDangerBrush", Colors.Firebrick),
+            Tint.Blue => Theme("GarageCorpusDocumentBrush", Colors.RoyalBlue),
+            Tint.Purple => Theme("GarageCorpusCodeBrush", Colors.SlateBlue),
+            _ => Theme("GarageInkFaintBrush", Colors.Gray),
         };
 
     /// <summary>A source status tone as a brush.</summary>

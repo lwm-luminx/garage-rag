@@ -104,6 +104,7 @@ public sealed partial class ModelsPage : Page
             Title = $"Drop {slug}?",
             Content = Strings.Get("Code_ModelsPage_ThisDeregistersTheModelAndDeletes"),
             PrimaryButtonText = Strings.Get("Code_ModelsPage_Drop"),
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
             CloseButtonText = Strings.Get("Code_ModelsPage_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };

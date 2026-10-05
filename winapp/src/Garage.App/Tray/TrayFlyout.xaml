@@ -7,11 +7,11 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <StackPanel x:Name="Root" Spacing="10" Padding="12" Width="440">
+    <StackPanel x:Name="Root" Spacing="12" Padding="12" Width="440">
         <!-- Header -->
         <Grid>
             <TextBlock x:Uid="TrayFlyout_1" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="2">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="4">
                 <Button x:Uid="TrayFlyout_menubar_openGarage" Click="OnOpen" Style="{StaticResource SubtleButtonStyle}" Padding="8,4"
                         AutomationProperties.AutomationId="menubar.openGarage">
                     <FontIcon Glyph="&#xE737;" FontSize="14" />
@@ -29,7 +29,7 @@
 
         <Border x:Name="AnswerCard" Padding="10" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" AutomationProperties.AutomationId="menubar.answer">
-            <StackPanel Spacing="6">
+            <StackPanel Spacing="8">
                 <Grid>
                     <TextBlock x:Name="AskedText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                TextTrimming="CharacterEllipsis" Margin="0,0,28,0" />
@@ -47,7 +47,7 @@
                            AutomationProperties.AutomationId="menubar.answer.error" />
                 <TextBlock x:Name="FootnoteText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                            AutomationProperties.AutomationId="menubar.answer.footnote" />
-                <StackPanel x:Name="CitationsPanel" Spacing="2" />
+                <StackPanel x:Name="CitationsPanel" Spacing="4" />
             </StackPanel>
         </Border>
 
@@ -61,7 +61,7 @@
         <!-- Services: "All systems go", or the worst problem; opens Status. -->
         <Button x:Name="ServicesRow" Click="OnShowStatus" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Padding="10,8"
                 AutomationProperties.AutomationId="menubar.services">
-            <Grid ColumnSpacing="10">
+            <Grid ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -80,10 +80,10 @@
         <!-- Activity -->
         <Border x:Name="ActivityCard" Padding="10" CornerRadius="6" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" AutomationProperties.AutomationId="menubar.activity">
-            <StackPanel Spacing="6">
+            <StackPanel Spacing="8">
                 <Grid>
                     <HyperlinkButton x:Name="StatusLink" Click="OnShowStatus" Padding="0" AutomationProperties.AutomationId="menubar.status">
-                        <StackPanel Orientation="Horizontal" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
                             <Ellipse x:Name="ActivityDot" Width="8" Height="8" VerticalAlignment="Center" />
                             <TextBlock x:Name="ActivityTitle" Style="{StaticResource BodyStrongTextBlockStyle}" Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                             <TextBlock x:Name="ActivityPercent" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -98,7 +98,7 @@
                 <TextBlock x:Name="ActivityDetail" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                 <TextBlock x:Name="ActivityItem" FontFamily="Consolas" FontSize="11" TextTrimming="CharacterEllipsis" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                 <TextBlock x:Name="StageTrail" FontSize="11" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                <StackPanel x:Name="AttentionPanel" Spacing="2" />
+                <StackPanel x:Name="AttentionPanel" Spacing="4" />
             </StackPanel>
         </Border>
     </StackPanel>

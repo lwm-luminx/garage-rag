@@ -15,28 +15,29 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Spacing="2">
-            <TextBlock x:Uid="SourcesPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
-            <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="sources.summary" />
-        </StackPanel>
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <StackPanel Spacing="4">
+                <TextBlock x:Uid="SourcesPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="sources.summary" />
+            </StackPanel>
+        </Border>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
             <Button x:Uid="SourcesPage_AddButton" x:Name="AddButton" Style="{StaticResource AccentButtonStyle}" Click="OnAdd" AutomationProperties.AutomationId="sources.add">
-                <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="SourcesPage_2" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="SourcesPage_2" /></StackPanel>
             </Button>
             <Button x:Uid="SourcesPage_UpdateEverythingButton" x:Name="UpdateEverythingButton" Click="OnUpdateEverything" AutomationProperties.AutomationId="sources.updateEverything">
-                <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE895;" FontSize="14" /><TextBlock x:Uid="SourcesPage_3" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE895;" FontSize="14" /><TextBlock x:Uid="SourcesPage_3" /></StackPanel>
             </Button>
             <Button x:Uid="SourcesPage_ScanAllButton" x:Name="ScanAllButton" Click="OnScanAll" AutomationProperties.AutomationId="sources.scanAll" />
             <Button x:Uid="SourcesPage_SyncButton" x:Name="SyncButton" Click="OnSync" AutomationProperties.AutomationId="sources.sync" />
             <Button x:Uid="SourcesPage_StopButton" x:Name="StopButton" Click="OnStop" AutomationProperties.AutomationId="sources.stop">
-                <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE71A;" FontSize="14" /><TextBlock x:Uid="SourcesPage_StopText" x:Name="StopText" /></StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE71A;" FontSize="14" /><TextBlock x:Uid="SourcesPage_StopText" x:Name="StopText" /></StackPanel>
             </Button>
         </StackPanel>
 
         <!-- What the pipeline is doing: the Status page's Library headline while a run goes. -->
-        <Border x:Name="ActivityCard" Grid.Row="2" Padding="14,10" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+        <Border Style="{StaticResource GarageCardStyle}" x:Name="ActivityCard" Grid.Row="2" Padding="16,12">
             <StackPanel Spacing="4">
                 <StackPanel Orientation="Horizontal" Spacing="8">
                     <FontIcon x:Name="ActivityGlyph" FontSize="14" />
@@ -53,7 +54,7 @@
         <ListView x:Name="RowsList" Grid.Row="4" SelectionMode="None" AutomationProperties.AutomationId="sources.list">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="src:SourceRowPresentation">
-                    <Grid ColumnSpacing="14" Padding="0,10">
+                    <Grid ColumnSpacing="16" Padding="0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -62,12 +63,12 @@
                         <Border Width="36" Height="36" CornerRadius="18" VerticalAlignment="Top" Background="{x:Bind local:Look.TintBrush(Tint)}">
                             <FontIcon Glyph="{x:Bind local:Look.SourceGlyph(Symbol)}" FontSize="16" Foreground="{ThemeResource TintGlyphBrush}" />
                         </Border>
-                        <StackPanel Grid.Column="1" Spacing="3">
+                        <StackPanel Grid.Column="1" Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="{x:Bind Title}" FontWeight="SemiBold" />
                                 <ItemsControl ItemsSource="{x:Bind Badges}">
                                     <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="6" /></ItemsPanelTemplate>
+                                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" Spacing="8" /></ItemsPanelTemplate>
                                     </ItemsControl.ItemsPanel>
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="src:SourceBadge">
@@ -99,7 +100,7 @@
                             <Button x:Uid="SourcesPage_6" Tag="{x:Bind Title}" Click="OnScanOne" Visibility="{x:Bind local:Look.HiddenWhen(ShowsCancel)}">
                                 <FontIcon Glyph="&#xE721;" FontSize="14" />
                             </Button>
-                            <Button x:Uid="SourcesPage_7" Tag="{x:Bind Title}" Click="OnRemove">
+                            <Button Style="{StaticResource DangerButtonStyle}" x:Uid="SourcesPage_7" Tag="{x:Bind Title}" Click="OnRemove">
                                 <FontIcon Glyph="&#xE74D;" FontSize="14" />
                             </Button>
                         </StackPanel>

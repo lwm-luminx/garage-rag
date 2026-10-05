@@ -8,21 +8,96 @@
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+                <!-- The Garage design system: its colours on WinUI's own keys (Theme/GarageTheme.xaml). -->
+                <ResourceDictionary Source="ms-appx:///Theme/GarageTheme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             <local:BoolToVisibilityConverter x:Key="BoolToVisibility" />
-            <!-- The glyph on a tinted status circle: white on the tint, and the highlight's own text
-                 colour in high contrast, where Look.TintBrush draws circles in the highlight colour. -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="TintGlyphBrush" Color="White" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="TintGlyphBrush" Color="White" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="HighContrast">
-                    <SolidColorBrush x:Key="TintGlyphBrush" Color="{ThemeResource SystemColorHighlightTextColor}" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
+
+            <!-- Type: the platform's own (Segoe UI Variable) at WinUI's sizes, which are the design
+                 system's scale for a 14-pixel body. Titles are bold with -0.02em tracking (title-1). -->
+            <Style x:Key="TitleTextBlockStyle" TargetType="TextBlock" BasedOn="{StaticResource BaseTextBlockStyle}">
+                <Setter Property="FontSize" Value="28" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="CharacterSpacing" Value="-20" />
+                <Setter Property="OpticalMarginAlignment" Value="TrimSideBearings" />
+            </Style>
+
+            <!-- The line-subtle rule under a page's title. -->
+            <Style x:Key="PageTitleRuleStyle" TargetType="Border">
+                <Setter Property="BorderBrush" Value="{ThemeResource GarageLineSubtleBrush}" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="0,0,0,12" />
+            </Style>
+
+            <!-- A destructive action (Reset Database, Remove, the confirmations of either): the design
+                 system's danger button. Danger text on the secondary button's ground; on hover and press,
+                 the danger-soft ground and a danger border. WinUI's DefaultButtonStyle with those brushes. -->
+            <Style x:Key="DangerButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="{ThemeResource ButtonBackground}" />
+                <Setter Property="BackgroundSizing" Value="InnerBorderEdge" />
+                <Setter Property="Foreground" Value="{ThemeResource GarageDangerBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource ButtonBorderBrush}" />
+                <Setter Property="BorderThickness" Value="{ThemeResource ButtonBorderThemeThickness}" />
+                <Setter Property="Padding" Value="{StaticResource ButtonPadding}" />
+                <Setter Property="HorizontalAlignment" Value="Left" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="FontFamily" Value="{ThemeResource ContentControlThemeFontFamily}" />
+                <Setter Property="FontWeight" Value="Normal" />
+                <Setter Property="FontSize" Value="{ThemeResource ControlContentThemeFontSize}" />
+                <Setter Property="UseSystemFocusVisuals" Value="{StaticResource UseSystemFocusVisuals}" />
+                <Setter Property="FocusVisualMargin" Value="-3" />
+                <Setter Property="CornerRadius" Value="{ThemeResource ControlCornerRadius}" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <ContentPresenter x:Name="ContentPresenter" Background="{TemplateBinding Background}" Foreground="{TemplateBinding Foreground}"
+                                              BackgroundSizing="{TemplateBinding BackgroundSizing}" BorderBrush="{TemplateBinding BorderBrush}"
+                                              BorderThickness="{TemplateBinding BorderThickness}" Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}" ContentTransitions="{TemplateBinding ContentTransitions}"
+                                              CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" AutomationProperties.AccessibilityView="Raw">
+                                <ContentPresenter.BackgroundTransition>
+                                    <BrushTransition Duration="0:0:0.15" />
+                                </ContentPresenter.BackgroundTransition>
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource GarageDangerSoftBrush}" />
+                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource GarageDangerBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource GarageDangerSoftBrush}" />
+                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource GarageDangerBrush}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Background" Value="{ThemeResource ButtonBackgroundDisabled}" />
+                                                <Setter Target="ContentPresenter.BorderBrush" Value="{ThemeResource ButtonBorderBrushDisabled}" />
+                                                <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource ButtonForegroundDisabled}" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </ContentPresenter>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <!-- A card: surface, a 1px line border, radius-md, space-6 padding. -->
+            <Style x:Key="GarageCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="24" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

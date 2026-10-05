@@ -35,9 +35,29 @@ public sealed partial class App : Application, IDisposable
     private ToastNotifier? _toasts;
     private bool _handedOffToRelaunch;
 
+    /// <summary>
+    /// <c>--appearance light|dark</c> pins the app's theme for this run, as on the Mac (screenshots, UI
+    /// tests); otherwise it follows Windows.
+    /// </summary>
+    public const string AppearanceArgument = "--appearance";
+
     /// <summary>Creates the application.</summary>
     public App()
     {
+        // Only settable before the first window: in the constructor, ahead of the resources.
+        string[] arguments = Environment.GetCommandLineArgs();
+        int appearance = Array.IndexOf(arguments, AppearanceArgument);
+        if (appearance >= 0 && appearance + 1 < arguments.Length)
+        {
+            if (arguments[appearance + 1].Equals("dark", StringComparison.OrdinalIgnoreCase))
+            {
+                RequestedTheme = ApplicationTheme.Dark;
+            }
+            else if (arguments[appearance + 1].Equals("light", StringComparison.OrdinalIgnoreCase))
+            {
+                RequestedTheme = ApplicationTheme.Light;
+            }
+        }
         InitializeComponent();
         // A crash leaves its exception in the data folder's logs, where a bug report can find it.
         UnhandledException += (_, e) =>
@@ -78,7 +98,7 @@ public sealed partial class App : Application, IDisposable
         string dataDirectory = _services?.Layout.DataDirectory ?? ServiceHostLayout.CurrentDataDirectory();
         string[] arguments = Environment.GetCommandLineArgs();
         bool afterReset = arguments.Contains(AfterDatabaseResetArgument, StringComparer.Ordinal);
-        var launch = new AppLaunch(afterReset, PersistsCompletion: true, new RunKeyStartup(), Distribution.Current, AppContext.BaseDirectory);
+        var launch = new AppLaunch(afterReset, PersistsCompletion: true, Distribution.Startup(), Distribution.Current, AppContext.BaseDirectory);
         _pages = new PageModels(State, new JsonPreferences(Path.Combine(dataDirectory, "app-settings.json")), launch, _postgres);
         _pages.FirstRun.RestartServices = RetryStartAsync;
         _pages.FirstRun.Finished += (_, _) => _ = RefreshAfterFirstRunAsync();
@@ -91,7 +111,8 @@ public sealed partial class App : Application, IDisposable
         {
             _pages.FirstRun.Begin(afterDatabaseReset: afterReset);
         }
-        LaunchAction action = LaunchCommand.Parse(arguments.Skip(1));
+        // The MSIX's StartupTask starts Garage with no command line; the Run key passes --background.
+        LaunchAction action = Distribution.LaunchedAtSignIn() ? LaunchAction.Background : LaunchCommand.Parse(arguments.Skip(1));
         // Launch at sign-in starts in the notification area only, unless the assistant needs the window.
         if (action != LaunchAction.Background || _pages.FirstRun.IsActive)
         {

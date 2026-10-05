@@ -233,6 +233,18 @@ dotnet format Garage.slnx --verify-no-changes
   workflow builds, with `GARAGE_TEST_REQUIRE_PYTHON=1` so skips fail.
 - **Warnings are errors,** including the recommended analyzers. `winapp/README.md` has the bridge's
   design.
+- **Installers** (`winapp/packaging`, its README):
+  - `stage.ps1` lays out the app, the services, Python, `site-packages` and Postgres;
+  - `msix.ps1` makes the MSIX, for the Store or for App Installer;
+  - `msi.ps1` makes a per-machine MSI and `Garage-Setup.exe` (a Burn bootstrapper) with WiX v5.
+    Stay on v5: v6 and later ask for a maintenance-fee EULA.
+  - Postgres and ICU need the Visual C++ runtime, at least as new as the MSVC that built them (read
+    from their PE headers). It always comes from Microsoft's signed Redistributable, never a Visual
+    Studio folder:
+    - the MSIX carries its DLLs, since Microsoft's VCLibs framework package stops at 14.39;
+    - `Garage-Setup.exe` runs it when System32's runtime is older;
+    - the bare MSI refuses to install without it.
+  - The `package` job in `windows.yaml` builds all three, unsigned.
 
 ### Swift app dev loop
 

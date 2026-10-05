@@ -6,7 +6,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid Padding="40,16,40,24" RowSpacing="16">
+    <Grid Padding="40,16,40,24" RowSpacing="16" Background="{ThemeResource GarageSurfaceBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />

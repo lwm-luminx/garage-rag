@@ -120,6 +120,7 @@ public sealed partial class DatabasePage : Page
                 TextWrapping = TextWrapping.Wrap,
             },
             PrimaryButtonText = Strings.Get("Code_DatabasePage_ReplaceDatabase"),
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
             CloseButtonText = Strings.Get("Code_DatabasePage_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
@@ -161,6 +162,7 @@ public sealed partial class DatabasePage : Page
             Title = Strings.Get("Code_DatabasePage_ResetTheGarageDatabase"),
             Content = content,
             PrimaryButtonText = Strings.Get("Code_DatabasePage_ResetAndRelaunch"),
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
             CloseButtonText = Strings.Get("Code_DatabasePage_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };

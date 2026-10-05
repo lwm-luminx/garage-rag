@@ -7,17 +7,18 @@
 
     <ScrollViewer>
     <StackPanel Spacing="16" MaxWidth="900" HorizontalAlignment="Left" Padding="0,0,16,16">
-        <StackPanel Orientation="Horizontal" Spacing="12">
-            <TextBlock x:Uid="DatabasePage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
-            <Button x:Uid="DatabasePage_2" Click="OnRefresh" VerticalAlignment="Center">
-                <FontIcon Glyph="&#xE72C;" FontSize="14" />
-            </Button>
-        </StackPanel>
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <TextBlock x:Uid="DatabasePage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                <Button x:Uid="DatabasePage_2" Click="OnRefresh" VerticalAlignment="Center">
+                    <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                </Button>
+            </StackPanel>
+        </Border>
 
         <!-- Garage's own Postgres: the Mac's DatabaseHeadline row, and Reset Database. -->
-        <Border x:Name="ServerCard" Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-            <Grid ColumnSpacing="14">
+        <Border Style="{StaticResource GarageCardStyle}" x:Name="ServerCard">
+            <Grid ColumnSpacing="16">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
@@ -32,8 +33,8 @@
                     <TextBlock x:Name="ServerWhere" TextWrapping="Wrap" FontSize="12" IsTextSelectionEnabled="True"
                                Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                 </StackPanel>
-                <Button x:Uid="DatabasePage_ResetButton" x:Name="ResetButton" Grid.Column="2" VerticalAlignment="Top" Click="OnReset" AutomationProperties.AutomationId="database.reset">
-                    <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE74D;" FontSize="14" /><TextBlock x:Uid="DatabasePage_3" /></StackPanel>
+                <Button Style="{StaticResource DangerButtonStyle}" x:Uid="DatabasePage_ResetButton" x:Name="ResetButton" Grid.Column="2" VerticalAlignment="Top" Click="OnReset" AutomationProperties.AutomationId="database.reset">
+                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE74D;" FontSize="14" /><TextBlock x:Uid="DatabasePage_3" /></StackPanel>
                 </Button>
             </Grid>
         </Border>
@@ -42,15 +43,15 @@
         <!-- Schema and Backups: only with Garage's own Postgres. -->
         <StackPanel x:Name="OwnServerBoxes" Spacing="12">
             <TextBlock x:Uid="DatabasePage_4" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid ColumnSpacing="14">
+            <Border Style="{StaticResource GarageCardStyle}">
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <FontIcon x:Name="SchemaGlyph" FontSize="18" VerticalAlignment="Top" />
-                    <StackPanel Grid.Column="1" Spacing="2">
+                    <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock x:Name="SchemaTitle" FontWeight="SemiBold" AutomationProperties.AutomationId="database.schema" />
                         <TextBlock x:Name="SchemaDetail" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock x:Name="Extensions" TextWrapping="Wrap" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"
@@ -61,8 +62,8 @@
             </Border>
 
             <TextBlock x:Uid="DatabasePage_5" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid ColumnSpacing="14">
+            <Border Style="{StaticResource GarageCardStyle}">
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
@@ -89,10 +90,8 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate x:DataType="db:DatabaseFigure">
-                    <Border Padding="16,12" MinWidth="130" CornerRadius="8"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                        <StackPanel Spacing="2">
+                    <Border Style="{StaticResource GarageCardStyle}" Padding="16,12" MinWidth="130">
+                        <StackPanel Spacing="4">
                             <TextBlock Text="{x:Bind Label}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             <TextBlock Text="{x:Bind Value}" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
                             <TextBlock Text="{x:Bind Note}" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

@@ -12,7 +12,9 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock x:Uid="DocumentsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <TextBlock x:Uid="DocumentsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        </Border>
 
         <Grid Grid.Row="1" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
@@ -46,7 +48,7 @@
                       AutomationProperties.AutomationId="documents.list">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="docs:DocumentListItem">
-                        <StackPanel Padding="0,6" Spacing="2">
+                        <StackPanel Padding="0,6" Spacing="4">
                             <TextBlock Text="{x:Bind DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                             <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
                                 <Run Text="{x:Bind SourceSlug}" /> · <Run Text="{x:Bind CorpusClass}" /> · <Run Text="{x:Bind Counts}" />
@@ -56,7 +58,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel x:Name="EmptyPanel" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="360">
+            <StackPanel x:Name="EmptyPanel" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="360">
                 <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
@@ -70,7 +72,7 @@
                     <ProgressRing x:Name="DetailProgress" IsActive="False" HorizontalAlignment="Left" />
                     <!-- Outside DetailPanel: a failed load has no detail, and must still say why. -->
                     <InfoBar x:Name="DetailErrorBar" Severity="Error" IsClosable="False" AutomationProperties.AutomationId="documents.detailError" />
-                    <StackPanel x:Name="DetailPanel" Spacing="10">
+                    <StackPanel x:Name="DetailPanel" Spacing="12">
                         <TextBlock x:Name="DetailTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                         <TextBlock x:Name="DetailSummary" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         <TextBlock x:Name="DetailUri" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
