@@ -22,19 +22,19 @@ windows_page: true
 {% unless windows_open %}
 <div class="callout callout-warning">
   <div class="callout-title">⏳ The alpha hasn't been posted yet</div>
-  <p>The download link appears on this page when the first Windows build is ready. To hear about it, watch the <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">repository on GitHub</a> (<strong>Watch → Custom → Releases</strong>). In the meantime, Garage runs on a <a href="{{ '/#download' | relative_url }}">Mac</a> and from the command line on <a href="{{ '/linux.html' | relative_url }}">Linux</a>.</p>
+  <p>The download link appears on this page when the first Windows build is ready. To hear about it, watch the <a href="https://github.com/rickmark/garage-rag" target="_blank" rel="noopener">repository on GitHub</a> (<strong>Watch → Custom → Releases</strong>). In the meantime, Garage runs on <a href="{{ '/#download' | relative_url }}">macOS</a> and from the command line on <a href="{{ '/linux.html' | relative_url }}">Linux</a>.</p>
 </div>
 {% endunless %}
 
 ## Where the Windows version stands
 
-PostgreSQL with pgvector, Python and the Garage pipeline already build from source on Windows, and every push to `main` runs the database tests against that Windows build. That's the core the alpha ships: the same indexer, hybrid search and MCP server as the Mac app.
+PostgreSQL with pgvector, Python and the Garage pipeline already build from source on Windows, and every push to `main` runs the database tests against that Windows build. That's the core the alpha ships: the same indexer, hybrid search and MCP server as the macOS app.
 
 The alpha is for people who are comfortable with rough edges:
 
-- **Expect a command line first.** The Mac app's menu-bar window, first-run assistant and one-click assistant connections are Mac-only for now. You drive the alpha with `garage` and `garage-mcp`, as on [Linux]({{ '/linux.html' | relative_url }}).
-- **Bring your own model server.** The Mac's built-in llama.cpp engine isn't in the alpha. Run [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) for embeddings and answers, on this computer or on another machine you run.
-- **Mac-only sources stay Mac-only.** Apple Messages, Apple Mail and HEIC photos need a Mac. Folders, git repositories, Markdown, PDF, Office documents, code and `.eml` mail work everywhere.
+- **Expect a command line first.** The macOS app's menu-bar window, first-run assistant and one-click assistant connections are macOS-only for now. You drive the alpha with `garage` and `garage-mcp`, as on [Linux]({{ '/linux.html' | relative_url }}).
+- **Bring your own model server.** The macOS app's built-in llama.cpp engine isn't in the alpha. Run [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) for embeddings and answers, on this computer or on another machine you run.
+- **macOS-only sources stay macOS-only.** Apple Messages, Apple Mail and HEIC photos need macOS. Folders, git repositories, Markdown, PDF, Office documents, code and `.eml` mail work everywhere.
 - **Things may change between builds**, including where data is kept. Back up anything you can't re-index.
 
 ## Before you start
@@ -66,5 +66,5 @@ Alpha testers shape the Windows version. When something breaks or feels wrong, [
 
 <div class="callout callout-info">
   <div class="callout-title">🛡️ Same privacy, every platform</div>
-  <p>On Windows as on a Mac, Garage uploads nothing. Content goes only to the model server you configure, and communications such as mail never leave this computer. The same code enforces it on every platform; see <a href="{{ '/privacy.html' | relative_url }}">how it works</a>.</p>
+  <p>On Windows as on macOS, Garage uploads nothing. Content goes only to the model server you configure, and communications such as mail never leave this computer. The same code enforces it on every platform; see <a href="{{ '/privacy.html' | relative_url }}">how it works</a>.</p>
 </div>

@@ -14,10 +14,11 @@ ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "docs" / "assets"
 OUT = ASSETS / "social-card.png"
 WIDTH, HEIGHT = 1200, 630
-BACKGROUND = (246, 248, 250)
-TEXT = (31, 35, 40)
-SECONDARY = (101, 109, 118)
-ACCENT = (9, 105, 218)
+# The Garage design system's light theme: surface-raised, ink, ink-muted and violet-700.
+BACKGROUND = (247, 246, 251)
+TEXT = (29, 26, 46)
+SECONDARY = (95, 90, 114)
+ACCENT = (79, 56, 184)
 FONTS = Path("/usr/share/fonts/truetype/dejavu")
 
 
@@ -56,13 +57,13 @@ def main() -> None:
     shot_x, shot_y = 560, 90
     shadow = Image.new("RGBA", (shot.width + 40, shot.height + 40), (0, 0, 0, 0))
     ImageDraw.Draw(shadow).rounded_rectangle(
-        (20, 24, shot.width + 20, shot.height + 24), 14, fill=(31, 35, 40, 40)
+        (20, 24, shot.width + 20, shot.height + 24), 14, fill=(29, 26, 46, 40)
     )
     card.paste(shadow, (shot_x - 20, shot_y - 20), shadow)
     card.paste(shot, (shot_x, shot_y))
     draw.rectangle(
         (shot_x - 1, shot_y - 1, shot_x + shot.width, shot_y + shot.height),
-        outline=(208, 215, 222),
+        outline=(217, 214, 230),
     )
 
     # Logo and wordmark.
@@ -75,7 +76,7 @@ def main() -> None:
     draw.text((64, 212), "Garage", font=font(True, 76), fill=TEXT)
 
     y = 318
-    for line in wrap(draw, "Your files, your Mac, your AI.", font(True, 34), 460):
+    for line in wrap(draw, "Your files, your computer, your AI.", font(True, 34), 460):
         draw.text((64, y), line, font=font(True, 34), fill=ACCENT)
         y += 46
     y += 14

@@ -18,7 +18,7 @@ redirect_from:
 <details open>
   <summary>What is Garage?</summary>
   <div class="faq-content">
-    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for your computer: a native Mac app, a <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a>, and a command line for <a href="{{ '/linux.html' | relative_url }}">Linux</a>. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code.</p>
+    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for your computer: a native macOS app, a <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a>, and a command line for <a href="{{ '/linux.html' | relative_url }}">Linux</a>. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code.</p>
   </div>
 </details>
 
@@ -32,7 +32,7 @@ redirect_from:
 <details>
   <summary>How is Garage different from cloud RAG solutions?</summary>
   <div class="faq-content">
-    <p>Unlike cloud solutions, Garage stores 100% of your documents, extracted chunks, and vector embeddings in a private local PostgreSQL instance on your machine. Garage never uploads them. If you connect a cloud assistant like Claude or ChatGPT, the assistant sends the relevant excerpts its searches return, and the documents it opens, to its provider's servers; the rest of the collection never leaves your Mac.</p>
+    <p>Unlike cloud solutions, Garage stores 100% of your documents, extracted chunks, and vector embeddings in a private local PostgreSQL instance on your machine. Garage never uploads them. If you connect a cloud assistant like Claude or ChatGPT, the assistant sends the relevant excerpts its searches return, and the documents it opens, to its provider's servers; the rest of the collection never leaves your computer.</p>
   </div>
 </details>
 
@@ -41,12 +41,12 @@ redirect_from:
 ## Privacy & Security
 
 <details>
-  <summary>Does my data ever leave my Mac?</summary>
+  <summary>Does my data ever leave my computer?</summary>
   <div class="faq-content">
     <p><strong>Your files and the index never do.</strong> What leaves your computer depends only on which AI you connect:</p>
     <ul>
       <li><strong>Claude, ChatGPT and other cloud assistants</strong> (what most people use): the assistant's app queries Garage over MCP and gets only the relevant parts of your collection, the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant sends those parts to its provider's servers with your conversation, including excerpts from Messages and Mail if you have indexed them, and handled under the provider's terms.</li>
-      <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp engine on a Mac, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
+      <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp engine on macOS, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
       <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this computer even then.</li>
     </ul>
     <p>Garage itself sends nothing to the cloud, and that is enforced by tests rather than by convention:</p>

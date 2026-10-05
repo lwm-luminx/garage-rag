@@ -1,0 +1,14 @@
+{%- comment -%}
+  A term with its definition on hover, focus or tap. The definition comes from _data/glossary.yml.
+    {% include term.html term="corpus" %}                    → "corpus"
+    {% include term.html term="corpus" text="corpora" %}     → "corpora", defined as corpus
+  Define a term at its first use on a page, not every use. The look and the rules are the design system's Term.
+{%- endcomment -%}
+{%- assign entry = site.data.glossary[include.term] -%}
+{%- assign label = include.text | default: include.term | replace: "-", " " -%}
+{%- if entry -%}
+{%- capture n %}{% increment term_count %}{% endcapture -%}
+<span class="term"><button type="button" class="term-trigger" aria-describedby="term-tip-{{ n | strip }}" aria-expanded="false">{{ label }}</button><span class="term-tip" role="tooltip" id="term-tip-{{ n | strip }}"><span class="term-tip-name">{{ entry.name }}</span> {{ entry.definition }}</span></span>
+{%- else -%}
+{{ label }}{% comment %}No glossary entry: plain text. term_test checks every include names a defined term.{% endcomment %}
+{%- endif -%}

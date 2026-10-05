@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"><title>Garage Enterprise</title><rect x="100" y="100" width="824" height="824" rx="185" fill="#4b2c9f"/><rect x="148" y="148" width="728" height="728" rx="140" fill="none" stroke="#b2a3dc" stroke-width="16"/><g transform="translate(512 512) scale(0.93) translate(-512 -512)">
+  <path fill="#e6e1f2" d="M240 240 H432 V416 Z"/>
+  <path fill="#e6e1f2" d="M592 592 V784 H784 Z"/>
+  <path fill="#e6e1f2" d="M592 416 V224 A192 192 0 0 1 784 416 Z"/><path fill="#e6e1f2" d="M432 592 V800 A192 192 0 0 1 240 592 Z"/>
+  <rect fill="#ffffff" x="448" y="224" width="128" height="576" rx="28"/>
+  <rect fill="#ffffff" x="224" y="448" width="576" height="128" rx="28"/>
+</g></svg>

@@ -40,7 +40,7 @@ Welcome to the comprehensive support guide for **Garage**. This guide covers sys
 
 - **Operating System**: macOS 14.0 (Sonoma) or later
 - **Architecture**: Apple Silicon (M1 and later) only
-- **Windows and Linux**: Garage also runs from the command line on [Linux]({{ '/linux.html' | relative_url }}), and a [Windows alpha]({{ '/windows.html' | relative_url }}) is on the way. This guide describes the Mac app; the [command line](#command-line-interface) sections apply everywhere.
+- **Windows and Linux**: Garage also runs from the command line on [Linux]({{ '/linux.html' | relative_url }}), and a [Windows alpha]({{ '/windows.html' | relative_url }}) is on the way. This guide describes the macOS app; the [command line](#command-line-interface) sections apply everywhere.
 - **Memory**: 8 GB RAM minimum (16 GB+ recommended when running local embedding models)
 - **Disk Space**: ~500 MB for Garage application and embedded PostgreSQL, plus the models you download; database size depends on ingested document corpus
 - **Embedding Backend**: none to install. Garage runs embedding and distillation models itself with its built-in llama.cpp engine; [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) can be used instead
@@ -228,7 +228,7 @@ When indexing Apple Messages (`~/Library/Messages`) or Apple Mail (`~/Library/Ma
 
 ### Granting Full Disk Access
 
-1. Open **System Settings** on your Mac.
+1. Open **System Settings** in macOS.
 2. Navigate to **Privacy & Security → Full Disk Access**.
 3. Click the **+** button and add **Garage** (or your **Terminal** app if running via CLI).
 4. Toggle the switch to **On**.

@@ -25,6 +25,7 @@
   {% if page.structured_data %}<script type="application/ld+json">{{ page.structured_data | jsonify }}</script>{% endif %}
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
   <link rel="apple-touch-icon" href="{{ '/assets/logo.png' | relative_url }}">
+  <link rel="preload" href="{{ '/assets/fonts/IBMPlexSans-Var-latin.woff2' | relative_url }}" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
 </head>
 <body>
@@ -53,6 +54,7 @@
       <a href="{{ '/support/guide.html' | relative_url }}" class="nav-link {% if page.url contains '/support/guide' %}active{% endif %}">User Guide</a>
       <a href="{{ '/support/troubleshooting.html' | relative_url }}" class="nav-link {% if page.url contains 'troubleshooting' %}active{% endif %}">Troubleshooting</a>
       <a href="{{ '/support/faq.html' | relative_url }}" class="nav-link {% if page.url contains 'faq' %}active{% endif %}">FAQ</a>
+      <a href="{{ '/support/glossary.html' | relative_url }}" class="nav-link {% if page.url contains 'glossary' %}active{% endif %}">Glossary</a>
       <a href="{{ '/support/privacy-policy.html' | relative_url }}" class="nav-link {% if page.url contains 'privacy-policy' %}active{% endif %}">Privacy Policy</a>
       <a href="{{ '/support/contact.html' | relative_url }}" class="nav-link {% if page.url contains 'contact' %}active{% endif %}">Contact</a>
     </div>
@@ -82,8 +84,10 @@
         <a href="{{ '/support/guide.html' | relative_url }}">User Guide</a>
         <a href="{{ '/support/troubleshooting.html' | relative_url }}">Troubleshooting</a>
         <a href="{{ '/support/faq.html' | relative_url }}">FAQ</a>
+        <a href="{{ '/support/glossary.html' | relative_url }}">Glossary</a>
         <a href="{{ '/support/privacy-policy.html' | relative_url }}">Privacy Policy</a>
         <a href="{{ '/support/contact.html' | relative_url }}">Contact & Issues</a>
+        <a href="{{ '/enterprise/' | relative_url }}">Garage | Enterprise</a>
         <a href="{{ '/contributing.html' | relative_url }}">Contribute</a>
         <a href="{{ '/plans/' | relative_url }}">Plans</a>
         <a href="{{ '/about.html' | relative_url }}">About the Creator</a>
@@ -112,5 +116,6 @@
       }
     });
   </script>
+  <script src="{{ '/assets/terms.js' | relative_url }}" defer></script>
 </body>
 </html>

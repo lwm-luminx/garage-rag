@@ -49,7 +49,7 @@ the *file*.
 > renamed file is attributed from commits touching its current path, which in
 > practice still identifies the right person.
 
-> **Needs git.** On a Mac this signal runs only when a working `git` is installed, from the
+> **Needs git.** On macOS this signal runs only when a working `git` is installed, from the
 > Xcode Command Line Tools or Xcode. macOS's own `/usr/bin/git` is a stub that asks to install
 > them, so without them Garage skips git history (it never opens that prompt) and attributes
 > files from the signals below.
