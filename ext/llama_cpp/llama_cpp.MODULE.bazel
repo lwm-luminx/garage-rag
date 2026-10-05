@@ -2,7 +2,7 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_archive(
     name = "llama_cpp_framework",
-    build_file = "@//ext/llama_cpp:llama_cpp.BUILD.bazel",
+    build_file = "//ext/llama_cpp:llama_cpp.BUILD.bazel",
     sha256 = "9c2948aa9c79c92dd0e4c98e11ff5cf76dfdcaebdeb18e3e93409e9a98aefdab",
     strip_prefix = "llama.cpp-0.4.0",
     urls = ["https://github.com/ggml-org/llama.cpp/archive/refs/tags/v0.4.0.tar.gz"],

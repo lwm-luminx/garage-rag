@@ -2,7 +2,7 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 http_archive(
     name = "postgres",
-    build_file = "@//ext/postgres:postgres.BUILD.bazel",
+    build_file = "//ext/postgres:postgres.BUILD.bazel",
     patch_args = ["-p1"],
     patch_cmds = [
         "sed -i.bak -e 's/^[# ]*shared_memory_type = .*/shared_memory_type = mmap/' -e 's/^[# ]*dynamic_shared_memory_type = .*/dynamic_shared_memory_type = mmap/' src/backend/utils/misc/postgresql.conf.sample",
