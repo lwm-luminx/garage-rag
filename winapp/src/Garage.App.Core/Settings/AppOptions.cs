@@ -24,6 +24,9 @@ public enum AppDistribution
 
     /// <summary>The Microsoft Store, which updates it (betas through package flights).</summary>
     Store,
+
+    /// <summary>The MSI (<c>winapp/packaging</c>): a newer installer, run or deployed, updates it.</summary>
+    WindowsInstaller,
 }
 
 /// <summary>The update feeds (windows.md §6).</summary>
@@ -48,6 +51,7 @@ public static class UpdateFeeds
         AppDistribution.AppInstaller => channel == UpdateChannel.Beta
             ? "Garage checks for betas and releases each time it starts."
             : "Garage checks for new releases each time it starts.",
+        AppDistribution.WindowsInstaller => "Garage updates when a newer installer is run, by you or by your organization.",
         _ => "This copy of Garage runs from a build folder and does not update itself.",
     };
 

@@ -575,6 +575,18 @@ Users install that build themselves, and Garage neither ships nor modifies it.
     build offers the same as Store add-ons; the `.appinstaller` build has none.
 - **Capabilities.** `runFullTrust` and `internetClient` (downloads, updates). No broad file-system
   capability is needed, since full-trust processes read the user's files.
+- **Built** ([winapp/packaging](../../winapp/packaging/README.md)):
+  - `stage.ps1` lays out the shipped folder from `windows.yaml`'s Python and Postgres builds;
+  - `msix.ps1` packs it as the MSIX, with a `StartupTask` and the notification activator in the
+    manifest, and writes the `.appinstaller` feed;
+  - `msi.ps1` builds a per-machine MSI with WiX v5, for IT deployment, and `Garage-Setup.exe`, a
+    bootstrapper that installs Microsoft's Visual C++ Redistributable first when needed;
+  - the Visual C++ runtime Postgres and ICU need always comes from Microsoft's signed
+    Redistributable. The MSIX carries its DLLs, since the VCLibs framework package stops at 14.39,
+    older than the toolset that builds Postgres;
+  - CI's `package` job builds all three, unsigned.
+  - Not yet: the execution-alias launchers, llama.cpp and Tesseract (none is built for Windows yet),
+    and signing in CI.
 
 ## 7. Out of scope and follow-ups
 

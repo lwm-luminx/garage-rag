@@ -12,24 +12,26 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock x:Uid="FactsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
-            <StackPanel Grid.Column="1" x:Name="GleanPanel" Spacing="2" VerticalAlignment="Center" Margin="12,0">
-                <TextBlock x:Name="GleanText" AutomationProperties.AutomationId="facts.glean" />
-                <ProgressBar x:Name="GleanBar" />
-            </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
-                <Button x:Uid="FactsPage_GleanButton" x:Name="GleanButton" Style="{StaticResource AccentButtonStyle}" Click="OnGlean"
-                       
-                        AutomationProperties.AutomationId="facts.gleanButton" />
-                <Button x:Uid="FactsPage_StopGleanButton" x:Name="StopGleanButton" Click="OnStopGlean" />
-            </StackPanel>
-        </Grid>
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Uid="FactsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+                <StackPanel Grid.Column="1" x:Name="GleanPanel" Spacing="4" VerticalAlignment="Center" Margin="12,0">
+                    <TextBlock x:Name="GleanText" AutomationProperties.AutomationId="facts.glean" />
+                    <ProgressBar x:Name="GleanBar" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <Button x:Uid="FactsPage_GleanButton" x:Name="GleanButton" Style="{StaticResource AccentButtonStyle}" Click="OnGlean"
+                           
+                            AutomationProperties.AutomationId="facts.gleanButton" />
+                    <Button x:Uid="FactsPage_StopGleanButton" x:Name="StopGleanButton" Click="OnStopGlean" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
         <Grid Grid.Row="1" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
@@ -57,7 +59,7 @@
             <ListView x:Name="FactsList" SelectionMode="Single" SelectionChanged="OnFactSelected" AutomationProperties.AutomationId="facts.list">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="facts:FactListItem">
-                        <StackPanel Padding="0,6" Spacing="2">
+                        <StackPanel Padding="0,6" Spacing="4">
                             <TextBlock Text="{x:Bind Fact}" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
                             <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
                                 <Run Text="{x:Bind FactClass}" /> · <Run Text="{x:Bind DocumentDisplayTitle}" />
@@ -67,7 +69,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel x:Name="EmptyPanel" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="380">
+            <StackPanel x:Name="EmptyPanel" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="380">
                 <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>

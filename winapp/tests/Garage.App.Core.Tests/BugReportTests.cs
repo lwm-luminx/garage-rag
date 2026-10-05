@@ -299,6 +299,8 @@ public sealed class BugReportTests
         Assert.False(new AppOptionsViewModel(preferences, new MemoryStartupRegistration(), AppDistribution.Store).CanChooseChannel);
         Assert.StartsWith("The Microsoft Store keeps Garage up to date", UpdateFeeds.Explanation(AppDistribution.Store, UpdateChannel.Beta), StringComparison.Ordinal);
         Assert.Equal("This copy of Garage runs from a build folder and does not update itself.", UpdateFeeds.Explanation(AppDistribution.Unpackaged, UpdateChannel.Stable));
+        Assert.Equal("Garage updates when a newer installer is run, by you or by your organization.", UpdateFeeds.Explanation(AppDistribution.WindowsInstaller, UpdateChannel.Beta));
+        Assert.False(new AppOptionsViewModel(preferences, new MemoryStartupRegistration(), AppDistribution.WindowsInstaller).CanChooseChannel);
     }
 
     [Fact]

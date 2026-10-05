@@ -14,7 +14,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock x:Uid="SearchPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <TextBlock x:Uid="SearchPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        </Border>
 
         <!-- Query row: the Mac's search controls header. -->
         <Grid Grid.Row="1" ColumnSpacing="8">
@@ -58,7 +60,7 @@
                       AutomationProperties.AutomationId="search.results">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="search:SearchResultItem">
-                        <StackPanel Padding="0,8" Spacing="2">
+                        <StackPanel Padding="0,8" Spacing="4">
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock Text="{x:Bind Rank}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Text="{x:Bind DisplayTitle}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
@@ -72,7 +74,7 @@
                 </ListView.ItemTemplate>
             </ListView>
 
-            <StackPanel x:Name="EmptyPanel" Spacing="6" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420">
+            <StackPanel x:Name="EmptyPanel" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420">
                 <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
@@ -84,26 +86,26 @@
                     <TextBlock x:Name="HitTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     <TextBlock x:Name="HitScore" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <TextBlock x:Name="HitTags" Style="{StaticResource CaptionTextBlockStyle}" />
-                    <StackPanel x:Name="HeadingPanel" Spacing="2">
+                    <StackPanel x:Name="HeadingPanel" Spacing="4">
                         <TextBlock x:Uid="SearchPage_3" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock x:Name="HitHeading" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     </StackPanel>
-                    <StackPanel x:Name="AuthorsPanel" Spacing="2">
+                    <StackPanel x:Name="AuthorsPanel" Spacing="4">
                         <TextBlock x:Uid="SearchPage_4" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock x:Name="HitAuthors" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     </StackPanel>
-                    <StackPanel Spacing="2">
+                    <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock x:Uid="SearchPage_5" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                             <HyperlinkButton x:Uid="SearchPage_6" Click="OnCopyUri" Padding="4,0" />
                         </StackPanel>
                         <TextBlock x:Name="HitUri" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontFamily="Consolas" />
                     </StackPanel>
-                    <StackPanel x:Name="SnippetPanel" Spacing="2">
+                    <StackPanel x:Name="SnippetPanel" Spacing="4">
                         <TextBlock x:Uid="SearchPage_7" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <TextBlock x:Name="HitSnippet" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                     </StackPanel>
-                    <StackPanel Spacing="2">
+                    <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock x:Uid="SearchPage_8" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                             <HyperlinkButton x:Uid="SearchPage_9" Click="OnCopyContent" Padding="4,0" />

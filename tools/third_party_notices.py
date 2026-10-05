@@ -186,6 +186,19 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         (f"{RAW}/sparkle-project/Sparkle/2.10.0/LICENSE",),
     ),
     Component(
+        # Windows: the Burn engine and its standard installer UI, which Garage-Setup.exe embeds
+        # (winapp/packaging/setup); the MSI itself carries no WiX code. MS-RL 3(A) asks for the
+        # license and the source of those files, which is the tag below, unmodified.
+        "WiX Toolset (Burn bootstrapper in Garage-Setup.exe)",
+        "5.0.2",
+        "MS-RL",
+        "https://wixtoolset.org/ (source: https://github.com/wixtoolset/wix/tree/v5.0.2)",
+        (
+            f"{RAW}/wixtoolset/wix/v5.0.2/LICENSE.TXT",
+            f"{RAW}/spdx/license-list-data/v3.27.0/text/MS-RL.txt",
+        ),
+    ),
+    Component(
         "LangExtract (vendored subset, modified)",
         "1.7.0",
         "Apache-2.0",

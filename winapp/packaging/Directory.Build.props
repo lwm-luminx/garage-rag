@@ -1,0 +1,8 @@
+<Project>
+  <!-- The installer projects here are WiX projects, not .NET ones. Having a Directory.Build.props of
+       their own keeps winapp/'s (C# settings, warnings as errors) from applying; this also turns off its
+       central package versions, which list no WiX package. -->
+  <PropertyGroup>
+    <ImportDirectoryPackagesProps>false</ImportDirectoryPackagesProps>
+  </PropertyGroup>
+</Project>
