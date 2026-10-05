@@ -37,7 +37,7 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
   <div class="card">
     <span class="card-icon">🧩</span>
     <h3>Write code</h3>
-    <p>New extractors, attribution rules, MCP tools, model support, performance and Windows work. Issues are a good place to start: say what you plan before a big change, so it fits.</p>
+    <p>New extractors, attribution rules, MCP tools, model support, performance and Windows work. Issues are a good place to start: say what you plan before a big change, so it fits. The <a href="{{ '/plans/' | relative_url }}">engineering plans</a> show what is already proposed or under way.</p>
   </div>
 </div>
 
@@ -51,6 +51,7 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
 | [`proto/`](https://github.com/rickmark/garage-rag/tree/main/proto) | The gRPC contract between the Mac app and the Python service. |
 | [`ext/`](https://github.com/rickmark/garage-rag/tree/main/ext) | From-source builds of PostgreSQL, pgvector, Python, llama.cpp, Tesseract and the rest. |
 | [`docs/`](https://github.com/rickmark/garage-rag/tree/main/docs) | This website. |
+| [`docs/plans/`](https://github.com/rickmark/garage-rag/tree/main/docs/plans) | Engineering plans and design notes, published as the [plans page]({{ '/plans/' | relative_url }}). |
 
 The [architecture guide]({{ '/architecture.html' | relative_url }}) walks through the pipeline, and the repository's [`CLAUDE.md`](https://github.com/rickmark/garage-rag/blob/main/CLAUDE.md) is the detailed map for anyone, human or coding agent, working in the code.
 

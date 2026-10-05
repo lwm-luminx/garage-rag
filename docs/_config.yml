@@ -54,6 +54,9 @@ plugins:
   - jekyll-sitemap
   - jekyll-redirect-from
 
+# Engineering plans (docs/plans/) are published at /plans/; plans/index.md lists every page there
+# by its front matter (title, description, date, status, status_kind).
+
 # Jekyll skips dot-directories; .data holds files the app and editors fetch from the site
 # (models.json, which the build copies in from data/models, and garage.schema.json).
 include:
@@ -66,5 +69,3 @@ exclude:
   - vendor
   - BUILD.bazel
   - BUILD
-  # Design notes and research, kept in the repo but not published
-  - plans
