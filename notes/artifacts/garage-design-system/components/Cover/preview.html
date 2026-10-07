@@ -1,0 +1,75 @@
+<!-- @dsCard height=288 -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Garage</title>
+<style>
+  html, body { margin:0; height:100%; }
+  body { background:var(--surface); color:var(--ink); font-family:var(--font-sans); overflow:hidden; }
+  .cover { position:relative; height:288px; overflow:hidden; }
+  .art { position:absolute; top:0; left:480px; width:480px; height:288px; overflow:hidden; }
+  .art svg { display:block; width:520px; height:288px; }
+  .brand { fill:var(--violet-500); }
+  .tint { fill:var(--violet-100); }
+  [data-theme="dark"] .tint, [data-theme="enterprise-dark"] .tint { fill:var(--violet-300); }
+  .deep { fill:var(--violet-900); }
+  .hi { fill:var(--violet-400); }
+  .plus { fill:var(--violet-100); }
+  .leaf { fill:var(--violet-400); }
+  .blk { rx:var(--radius-lg); }
+  .chip { rx:var(--radius-sm); }
+  .words { position:absolute; left:var(--space-10); bottom:var(--space-10); max-width:440px; }
+  .name { margin:0; font-size:120px; line-height:.9; font-weight:700; letter-spacing:-.03em; color:var(--ink); }
+  .tag { margin:var(--space-3) 0 0 6px; font-size:14px; line-height:20px; color:var(--ink-muted); }
+</style>
+</head>
+<body>
+<div class="cover">
+<div class="art" aria-hidden="true">
+<svg viewBox="0 0 520 288" width="520" height="288">
+<!--
+  blocks      violet-500 176x252 slab bled off the top (the icon's body, largest) · violet-100 136x168 (the glyph's lavender) · violet-900 bled off the right edge · violet-400 64x32 chip (the icon's highlight) — about 35% of 960x288
+  arrangement one tall brand slab with satellites, bottoms on one line space-10 + space-2 above the edge, space-4 gutters
+  pattern     literal motif: the icon's plus-and-leaf glyph — a plus grid at space-6 pitch cut into the slab in violet-100, thinning upward, and two leaf lenses (radius arcs) in violet-400 on the deep block
+  scales      gutters space-4; pitch space-6; block corners radius-lg, chip radius-sm, plus bars rx 2 (half their 4px width)
+-->
+<rect class="brand blk" x="16" y="-12" width="176" height="252" rx="12"/>
+<rect class="tint blk" x="208" y="72" width="136" height="168" rx="12"/>
+<rect class="hi chip" x="208" y="24" width="64" height="32" rx="6"/>
+<rect class="deep blk" x="360" y="24" width="176" height="216" rx="12"/>
+<path class="leaf" d="M392 208 A64 64 0 0 1 456 144 A64 64 0 0 1 392 208 Z"/>
+<path class="leaf" d="M424 120 A64 64 0 0 1 488 56 A64 64 0 0 1 424 120 Z"/>
+<rect class="plus" x="34" y="214" width="12" height="4" rx="2"/><rect class="plus" x="38" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="58" y="214" width="12" height="4" rx="2"/><rect class="plus" x="62" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="82" y="214" width="12" height="4" rx="2"/><rect class="plus" x="86" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="106" y="214" width="12" height="4" rx="2"/><rect class="plus" x="110" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="130" y="214" width="12" height="4" rx="2"/><rect class="plus" x="134" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="154" y="214" width="12" height="4" rx="2"/><rect class="plus" x="158" y="210" width="4" height="12" rx="2"/>
+<rect class="plus" x="34" y="190" width="12" height="4" rx="2"/><rect class="plus" x="38" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="58" y="190" width="12" height="4" rx="2"/><rect class="plus" x="62" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="82" y="190" width="12" height="4" rx="2"/><rect class="plus" x="86" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="106" y="190" width="12" height="4" rx="2"/><rect class="plus" x="110" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="130" y="190" width="12" height="4" rx="2"/><rect class="plus" x="134" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="154" y="190" width="12" height="4" rx="2"/><rect class="plus" x="158" y="186" width="4" height="12" rx="2"/>
+<rect class="plus" x="58" y="166" width="12" height="4" rx="2"/><rect class="plus" x="62" y="162" width="4" height="12" rx="2"/>
+<rect class="plus" x="82" y="166" width="12" height="4" rx="2"/><rect class="plus" x="86" y="162" width="4" height="12" rx="2"/>
+<rect class="plus" x="106" y="166" width="12" height="4" rx="2"/><rect class="plus" x="110" y="162" width="4" height="12" rx="2"/>
+<rect class="plus" x="130" y="166" width="12" height="4" rx="2"/><rect class="plus" x="134" y="162" width="4" height="12" rx="2"/>
+<rect class="plus" x="154" y="166" width="12" height="4" rx="2"/><rect class="plus" x="158" y="162" width="4" height="12" rx="2"/>
+<rect class="plus" x="82" y="142" width="12" height="4" rx="2"/><rect class="plus" x="86" y="138" width="4" height="12" rx="2"/>
+<rect class="plus" x="106" y="142" width="12" height="4" rx="2"/><rect class="plus" x="110" y="138" width="4" height="12" rx="2"/>
+<rect class="plus" x="130" y="142" width="12" height="4" rx="2"/><rect class="plus" x="134" y="138" width="4" height="12" rx="2"/>
+<rect class="plus" x="154" y="142" width="12" height="4" rx="2"/><rect class="plus" x="158" y="138" width="4" height="12" rx="2"/>
+<rect class="plus" x="106" y="118" width="12" height="4" rx="2"/><rect class="plus" x="110" y="114" width="4" height="12" rx="2"/>
+<rect class="plus" x="154" y="118" width="12" height="4" rx="2"/><rect class="plus" x="158" y="114" width="4" height="12" rx="2"/>
+<rect class="plus" x="130" y="94" width="12" height="4" rx="2"/><rect class="plus" x="134" y="90" width="4" height="12" rx="2"/>
+</svg>
+</div>
+<div class="words">
+<h1 class="name">Garage</h1>
+<p class="tag">Your files, searchable by your assistants. Nothing leaves your computer.</p>
+</div>
+</div>
+</body>
+</html>

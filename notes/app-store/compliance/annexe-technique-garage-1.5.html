@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Annexe technique – Garage RAG 1.5</title>
+<style>
+  body { font-family: "Liberation Serif", "Times New Roman", serif; font-size: 11pt; line-height: 1.35; margin: 2cm; color: #000; }
+  h1 { font-size: 16pt; margin-bottom: 0.2em; }
+  h2 { font-size: 13pt; margin-top: 1.4em; border-bottom: 1px solid #444; }
+  h3 { font-size: 11.5pt; margin-top: 1em; }
+  table { border-collapse: collapse; width: 100%; margin: 0.6em 0; font-size: 9.5pt; }
+  th, td { border: 1px solid #555; padding: 4px 6px; vertical-align: top; text-align: left; }
+  th { background: #e8e8e8; }
+  .meta td:first-child { width: 32%; font-weight: bold; }
+  .note { font-size: 9.5pt; color: #333; }
+  .todo { background: #fff3b0; }
+</style>
+</head>
+<body>
+
+<h1>Annexe technique au dossier de déclaration</h1>
+<p><strong>Moyen de cryptologie : « Garage RAG », version 1.5, application pour macOS</strong><br>
+Déclaration de fourniture et d'importation d'un moyen de cryptologie (article 30 de la loi n° 2004-575 du 21 juin 2004 ; décret n° 2007-663 du 2 mai 2007 ; arrêté du 29 janvier 2015)</p>
+<p>Déclarant : Rick Mark-Penwell, développeur et éditeur, personne physique.<br>
+Date : <span class="todo">[à compléter à la signature]</span></p>
+
+<h2>1. Identification du moyen</h2>
+<table class="meta">
+<tr><td>Dénomination commerciale</td><td>Garage RAG (également désignée « Garage »)</td></tr>
+<tr><td>Version déclarée</td><td>1.5 (numéro de build : <span class="todo">[à compléter]</span>)</td></tr>
+<tr><td>Identifiant de l'application</td><td>me.rickmark.garage-rag (Apple ID App Store : 6811306880)</td></tr>
+<tr><td>Éditeur / développeur</td><td>Rick Mark-Penwell, personne physique établie aux États-Unis</td></tr>
+<tr><td>Type de produit</td><td>Logiciel applicatif grand public (aucun matériel)</td></tr>
+<tr><td>Plateforme</td><td>macOS 14 ou ultérieur, processeurs Apple Silicon (arm64) uniquement</td></tr>
+<tr><td>Prix et licence</td><td>Gratuit. Code source ouvert sous licence MIT : https://github.com/rickmark/garage-rag</td></tr>
+<tr><td>Canaux de distribution en France</td><td>(1) Mac App Store d'Apple ; (2) téléchargement direct depuis https://garagerag.app (application signée « Developer ID » et notariée par Apple)</td></tr>
+<tr><td>Site du produit</td><td>https://garagerag.app</td></tr>
+</table>
+
+<h2>2. Description générale et finalité du produit</h2>
+<p>Garage est un outil personnel de recherche documentaire qui fonctionne entièrement sur l'ordinateur de l'utilisateur. Il indexe les fichiers de l'utilisateur (documents, code source, et, si l'utilisateur l'autorise, ses courriels et messages) dans une base de données PostgreSQL locale, calcule des représentations vectorielles au moyen de modèles d'intelligence artificielle exécutés localement (bibliothèque llama.cpp), et permet une recherche hybride (plein texte et vectorielle) sur ce corpus. Il met ce corpus à disposition des assistants d'intelligence artificielle installés sur le même ordinateur par l'intermédiaire d'un serveur local utilisant le protocole MCP (Model Context Protocol).</p>
+<p>Garage ne comporte aucun compte utilisateur et l'éditeur n'exploite aucun serveur recevant des données des utilisateurs. L'application n'envoie aucun contenu indexé à l'éditeur ni à un tiers.</p>
+<p><strong>La cryptologie n'est pas une fonction du produit.</strong> Garage n'offre ni stockage chiffré, ni messagerie chiffrée, ni réseau privé virtuel, ni aucun service de chiffrement mis à disposition de l'utilisateur. La cryptographie présente dans l'application sert uniquement, de façon accessoire, à protéger les connexions réseau sortantes au moyen du protocole standard TLS, et à vérifier l'intégrité et l'authenticité de fichiers téléchargés.</p>
+
+<h2>3. Inventaire des fonctions cryptographiques</h2>
+<p>Le tableau ci-dessous recense toutes les bibliothèques cryptographiques présentes dans l'application et l'usage qui en est fait.</p>
+<table>
+<tr><th>Composant</th><th>Bibliothèque et version</th><th>Fonction</th><th>Usage dans Garage</th></tr>
+<tr><td>Application native (Swift)</td><td>Services réseau et de sécurité du système macOS (URLSession, Security.framework)</td><td>Confidentialité et authentification des communications (client TLS)</td><td>Téléchargement de modèles d'IA depuis huggingface.co, lecture du catalogue de modèles sur garagerag.app, vérification des mises à jour (version téléchargement direct uniquement). Cryptographie fournie par le système d'exploitation.</td></tr>
+<tr><td>Application native (Swift)</td><td>CryptoKit (système macOS)</td><td>Contrôle d'intégrité</td><td>Empreinte SHA-256 des fichiers de modèles téléchargés, comparée à la valeur attendue.</td></tr>
+<tr><td>Application native (Swift)</td><td>Trousseau d'accès macOS (Keychain Services)</td><td>Protection d'un secret par le système</td><td>Conservation du mot de passe de la base de données locale et, le cas échéant, d'un jeton d'accès LM Studio saisi par l'utilisateur. Aucune cryptographie propre à l'application.</td></tr>
+<tr><td>Interpréteur Python intégré</td><td>OpenSSL 3.4.7 (liaison statique ; modules <code>_ssl</code> et <code>_hashlib</code> de Python 3.13)</td><td>Confidentialité et authentification des communications (client TLS)</td><td>Utilisé seulement si l'utilisateur configure l'adresse <code>https://</code> d'un serveur de modèles (LM Studio ou Ollama) situé sur une autre machine. Les certificats sont vérifiés par rapport au magasin de confiance de macOS. Par défaut, ces échanges ont lieu en local, sans chiffrement.</td></tr>
+<tr><td>Bibliothèque Python « cryptography »</td><td>cryptography 43.0.3 (inclut sa propre copie d'OpenSSL)</td><td>Déchiffrement de documents</td><td>Utilisée par la bibliothèque d'extraction pdfminer.six pour lire le texte des fichiers PDF chiffrés appartenant à l'utilisateur (chiffrement RC4 ou AES défini par la norme PDF, ISO 32000). L'application déchiffre ces fichiers pour les indexer mais ne chiffre aucune donnée.</td></tr>
+<tr><td>Bibliothèque Python « grpcio »</td><td>grpcio 1.83.1 (inclut BoringSSL)</td><td>Aucune (présente mais non utilisée)</td><td>La communication gRPC entre l'application et ses composants Python passe en clair par des sockets locaux (Unix) ; aucune fonction TLS n'est activée.</td></tr>
+<tr><td>Application native (Swift)</td><td>grpc-swift 1.x avec SwiftNIO SSL (inclut BoringSSL)</td><td>Aucune (présente mais non utilisée)</td><td>Même canal gRPC local, ouvert en mode non chiffré.</td></tr>
+<tr><td>Base de données intégrée</td><td>PostgreSQL 18 et libpq, compilés sans prise en charge de TLS</td><td>Authentification uniquement</td><td>Authentification SCRAM-SHA-256 du client local auprès du serveur local (socket Unix). Aucun chiffrement.</td></tr>
+<tr><td>Mise à jour (version téléchargement direct uniquement ; absente de la version App Store)</td><td>Sparkle 2</td><td>Authentification et contrôle d'intégrité</td><td>Vérification de la signature EdDSA (Ed25519) des mises à jour avant installation. Téléchargement par TLS du système.</td></tr>
+</table>
+<p class="note">Les empreintes SHA-256 calculées sur le contenu des documents servent à détecter les fichiers modifiés (déduplication) et ne constituent pas une fonction de sécurité.</p>
+
+<h2>4. Caractéristiques cryptographiques</h2>
+<h3>4.1 Algorithmes</h3>
+<p>Uniquement des algorithmes et protocoles normalisés et publics ; aucun algorithme propriétaire ou non publié.</p>
+<table>
+<tr><th>Protocole ou usage</th><th>Algorithmes</th><th>Normes</th></tr>
+<tr><td>TLS 1.2 et TLS 1.3 (client)</td><td>Chiffrement : AES-128-GCM, AES-256-GCM, ChaCha20-Poly1305.<br>Échange de clés : ECDHE (X25519, P-256, P-384), et le cas échéant groupes hybrides post-quantiques proposés par le système.<br>Signature : ECDSA, RSA (PSS et PKCS#1 v1.5), Ed25519 selon le certificat du serveur.<br>Hachage : SHA-256, SHA-384.</td><td>RFC 8446, RFC 5246, FIPS 197, RFC 8439, RFC 7748, FIPS 186-5, FIPS 180-4</td></tr>
+<tr><td>Déchiffrement de PDF</td><td>RC4 (40 à 128 bits), AES-128-CBC, AES-256-CBC</td><td>ISO 32000-1 et 32000-2</td></tr>
+<tr><td>Intégrité des modèles téléchargés</td><td>SHA-256</td><td>FIPS 180-4</td></tr>
+<tr><td>Authentification de la base de données locale</td><td>SCRAM-SHA-256</td><td>RFC 5802, RFC 7677</td></tr>
+<tr><td>Signature des mises à jour (hors App Store)</td><td>EdDSA Ed25519</td><td>RFC 8032</td></tr>
+</table>
+<p>Les suites effectivement retenues sont négociées automatiquement entre la bibliothèque et le serveur distant, selon la configuration par défaut de macOS ou d'OpenSSL.</p>
+
+<h3>4.2 Longueur des clés</h3>
+<ul>
+<li>Clés symétriques : 128 ou 256 bits (sessions TLS) ; jusqu'à 256 bits pour les PDF chiffrés.</li>
+<li>Clés asymétriques : courbes elliptiques de 255 à 384 bits ; RSA de 2048 bits ou plus, selon le certificat présenté par le serveur.</li>
+</ul>
+
+<h3>4.3 Gestion des clés</h3>
+<ul>
+<li>Les clés de session TLS sont éphémères, générées lors de chaque établissement de connexion, conservées en mémoire vive et jamais enregistrées.</li>
+<li>L'application ne génère aucune clé de chiffrement à long terme et ne chiffre aucune donnée stockée.</li>
+<li>L'éditeur ne détient aucune clé, n'exploite aucun service de séquestre et n'a aucun accès aux données ou aux communications des utilisateurs.</li>
+<li>Le mot de passe permettant d'ouvrir un PDF chiffré, lorsqu'il est nécessaire, est celui du document lui-même ; il n'est pas conservé par l'application.</li>
+</ul>
+
+<h3>4.4 Données stockées</h3>
+<p>La base de données locale n'est pas chiffrée par l'application. La protection des données au repos relève des fonctions du système d'exploitation (FileVault), que Garage ne pilote pas.</p>
+
+<h3>4.5 Possibilité de modification par l'utilisateur</h3>
+<p>L'utilisateur ne peut ni choisir ni modifier les algorithmes, les suites de chiffrement ou la longueur des clés. Son seul choix consiste à indiquer, s'il le souhaite, l'adresse d'un serveur de modèles distant, ce qui détermine si une connexion TLS est établie.</p>
+
+<h3>4.6 Mise en œuvre</h3>
+<p>La cryptographie est entièrement logicielle et provient de bibliothèques tierces publiques et largement diffusées (système macOS, OpenSSL, BoringSSL, bibliothèque « cryptography »). Garage ne contient aucune implémentation cryptographique propre. Le code source de l'application est public.</p>
+
+<h2>5. Modalités de commercialisation</h2>
+<ul>
+<li>Produit grand public, gratuit, destiné aux particuliers et aux professionnels, disponible sans restriction dans le monde entier.</li>
+<li>Installé et configuré par l'utilisateur lui-même, sans assistance de l'éditeur.</li>
+<li>Distribution par le Mac App Store d'Apple et par téléchargement direct sur https://garagerag.app. Aucun distributeur ni revendeur en France.</li>
+<li>Aucune prestation de cryptologie n'est fournie pour le compte d'autrui.</li>
+</ul>
+
+<h2>6. Documents joints</h2>
+<ul>
+<li>Formulaire « Déclaration et demande d'autorisation d'opérations relatives à un moyen de cryptologie », signé.</li>
+<li>La présente annexe technique.</li>
+<li>Documentation commerciale : description du produit sur https://garagerag.app (en anglais).</li>
+</ul>
+
+<p style="margin-top:2em">Fait à <span class="todo">[ville]</span>, le <span class="todo">[date]</span><br><br>
+Rick Mark-Penwell<br>
+Signature :</p>
+
+</body>
+</html>

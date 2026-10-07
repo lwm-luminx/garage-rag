@@ -1,0 +1,216 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Garage Stage Icons</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#f5f4f0; --ink:#1d1c1a; --ink-2:#5b5955; --ink-3:#8b8883; --line:#d9d7cf;
+  --accent:#5b46c8; --accent-ink:#4a37b0; --menubar:#e9e8e3; --menu-ink:#1d1c1a; --card:#ffffff;
+  --popover:#f3f2ee; --trail-dim:#a09d96;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#16161a; --ink:#ececf1; --ink-2:#aeadb8; --ink-3:#7d7c88; --line:#2c2c35;
+    --accent:#a493ff; --accent-ink:#c3b7ff; --menubar:#26262d; --menu-ink:#ececf1; --card:#1d1d23;
+    --popover:#242429; --trail-dim:#6b6a76;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#16161a; --ink:#ececf1; --ink-2:#aeadb8; --ink-3:#7d7c88; --line:#2c2c35;
+  --accent:#a493ff; --accent-ink:#c3b7ff; --menubar:#26262d; --menu-ink:#ececf1; --card:#1d1d23;
+  --popover:#242429; --trail-dim:#6b6a76;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 "IBM Plex Sans",system-ui,sans-serif;padding:0 16px}
+.wrap{max-width:1000px;margin:0 auto;padding-block:40px 80px}
+h1{font:700 40px/1.05 Fraunces,Georgia,serif;letter-spacing:-.01em;margin:0 0 12px;text-wrap:balance}
+h2{font:600 24px/1.15 Fraunces,Georgia,serif;margin:0 0 4px}
+p{max-width:64ch;margin:0 0 12px}
+.lede{font-size:18px;color:var(--ink-2)}
+.eyebrow{font:500 12px/1 "IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:0 0 10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin:28px 0}
+.stage{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:18px}
+.stage h2{margin-bottom:2px}
+.stage .name{font:500 12px/1 "IBM Plex Mono",monospace;color:var(--ink-3);margin:0 0 14px}
+.stage p{font-size:14px;color:var(--ink-2);margin:12px 0 0}
+.pair{display:flex;gap:14px;align-items:flex-end}
+.tile{width:72px;height:72px;border-radius:17px;background:linear-gradient(180deg,#8b74f4,#5c48cc);display:grid;place-items:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.35)}
+.tile svg{width:44px;height:44px;color:#f4f0ff}
+.mono{display:grid;gap:8px;justify-items:center}
+.mono svg{color:var(--ink);display:block}
+.mono span{font:400 10px/1 "IBM Plex Mono",monospace;color:var(--ink-3)}
+.alt{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line);display:flex;gap:12px;align-items:center}
+.alt svg{width:28px;height:28px;color:var(--ink-2);flex:none}
+.alt span{font-size:13px;color:var(--ink-2)}
+.menubar{background:var(--menubar);border:1px solid var(--line);border-radius:8px;height:30px;display:inline-flex;align-items:center;gap:16px;padding:0 12px;color:var(--menu-ink);font:500 13px/1 system-ui,sans-serif}
+.menubar svg{width:18px;height:18px;color:currentColor}
+.popover{display:inline-block;background:var(--popover);border:1px solid var(--line);border-radius:12px;padding:14px 16px;min-width:300px;box-shadow:0 12px 30px rgba(0,0,0,.12)}
+.popover .head{font:600 13px/1.3 system-ui,sans-serif;margin-bottom:10px}
+.trail{display:flex;align-items:center;gap:8px}
+.trail .st{display:flex;align-items:center;gap:5px;font:500 12px/1 system-ui,sans-serif;color:var(--trail-dim)}
+.trail .st svg{width:16px;height:16px}
+.trail .st.done{color:var(--ink-2)}
+.trail .st.cur{color:var(--accent-ink)}
+.trail .chev{color:var(--trail-dim);font-size:11px}
+.row{display:flex;flex-wrap:wrap;gap:28px;align-items:flex-start;margin:14px 0 30px}
+.notes{border-top:1px solid var(--line);padding-top:22px}
+.notes li{font-size:15px;color:var(--ink-2);margin-bottom:8px}
+.notes li b{color:var(--ink)}
+svg.g{fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+@media (max-width:600px){h1{font-size:32px}}
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- All glyphs on a 24 grid, 1.8 stroke, round caps: the SF Symbol "regular" weight look. -->
+
+    <!-- SCAN: a folder with a beam sweeping across it -->
+    <symbol id="scan" viewBox="0 0 24 24">
+      <path d="M3 7.5V6a1.5 1.5 0 0 1 1.5-1.5H9l2 2h8.5A1.5 1.5 0 0 1 21 8v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5Z"/>
+      <path d="M1.5 12.5h21" stroke-width="2.2"/>
+      <path d="M6 15.5h2.5M10.5 15.5h1.5" opacity=".55"/>
+    </symbol>
+    <symbol id="scan-alt" viewBox="0 0 24 24">
+      <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16"/>
+      <path d="M2.5 12h19" stroke-width="2.2"/>
+    </symbol>
+
+    <!-- READ: an open page with text being drawn out, plus a reading caret -->
+    <symbol id="read" viewBox="0 0 24 24">
+      <path d="M6 3.5h8l4 4V19a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V4.5a1 1 0 0 1 1-1Z"/>
+      <path d="M14 3.5v4h4"/>
+      <path d="M8.5 11h7M8.5 14h7M8.5 17h4"/>
+    </symbol>
+    <symbol id="read-alt" viewBox="0 0 24 24">
+      <path d="M3 6.5c2.5-1 5-1 7.5.5v12c-2.5-1.5-5-1.5-7.5-.5ZM21 6.5c-2.5-1-5-1-7.5.5v12c2.5-1.5 5-1.5 7.5-.5Z"/>
+      <path d="M12 7v12" opacity=".5"/>
+      <path d="M5.5 10.5H8M5.5 13.5H8M16 10.5h2.5M16 13.5h2.5" opacity=".7"/>
+    </symbol>
+
+    <!-- INDEX: three index-card tabs, one raised -->
+    <symbol id="index" viewBox="0 0 24 24">
+      <path d="M3.5 9.5h5V7h4v2.5h8V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19Z"/>
+      <path d="M3.5 13.5h17" opacity=".55"/>
+      <path d="M12.5 9.5V7h4v2.5" opacity=".55"/>
+      <path d="M8.5 4.5h4" opacity=".5"/>
+    </symbol>
+    <symbol id="index-alt" viewBox="0 0 24 24">
+      <path d="M6.5 7.5l5.5 5.5 5-6.5M12 13l-5.5 4.5M12 13l6 3.5"/>
+      <circle cx="6.5" cy="7.5" r="2.4" fill="currentColor" stroke="none"/>
+      <circle cx="17" cy="6.5" r="2.4" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="13" r="2.8" fill="currentColor" stroke="none"/>
+      <circle cx="6.5" cy="17.5" r="2.4" fill="currentColor" stroke="none"/>
+      <circle cx="18" cy="16.5" r="2.4" fill="currentColor" stroke="none"/>
+    </symbol>
+
+    <!-- DISTILL: the excerpt, one line lifted out of the page -->
+    <symbol id="distill" viewBox="0 0 24 24">
+      <path d="M6 3.5h7l4 4V10M5.5 14v5a1.5 1.5 0 0 0 1.5 1.5h8.5A1.5 1.5 0 0 0 17 19v-1"/>
+      <path d="M13 3.5v4h4"/>
+      <path d="M8.5 8h2.5" opacity=".55"/>
+      <rect x="9" y="11" width="13" height="5" rx="1.6" fill="currentColor" stroke="none"/>
+      <path d="M11.5 13.5h6.5" stroke="var(--card, #fff)" stroke-width="1.4"/>
+    </symbol>
+    <symbol id="distill-alt" viewBox="0 0 24 24">
+      <path d="M4 4h16l-6 7v6.5l-4 2V11Z"/>
+      <path d="M12 3.5v0" opacity="0"/>
+      <circle cx="18.5" cy="18.5" r="1.7" fill="currentColor" stroke="none"/>
+      <path d="M18.5 12.5v3" opacity=".6"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <p class="eyebrow">Garage for macOS · pipeline stage icons</p>
+  <h1>Scan, Read, Index, Distill</h1>
+  <p class="lede">Four stage glyphs in one family: a 24-point grid, a 1.8-point round stroke and one filled accent each, so they sit next to SF Symbols in the menu-bar popover and the Status page without looking imported. Each is shown as a monochrome template and on the purple tile from the app icon work.</p>
+  <p style="font-size:14px;color:var(--ink-3)">The app's own stage names are Scan, Ingest, Embed and Distill. "Read" here is Ingest (extract text, decide who wrote it) and "Index" is Embed (chunk and vectorise); the glyphs work under either set of labels.</p>
+
+  <div class="grid">
+    <section class="stage">
+      <h2>Scan</h2>
+      <p class="name">walk the sources · stat, don't open</p>
+      <div class="pair">
+        <div class="tile"><svg class="g"><use href="#scan"/></svg></div>
+        <div class="mono"><svg class="g" width="32" height="32"><use href="#scan"/></svg><span>32</span></div>
+        <div class="mono"><svg class="g" width="18" height="18"><use href="#scan"/></svg><span>18</span></div>
+      </div>
+      <p>A folder with a beam crossing it. The beam is the one heavy line, so at 18 px it still reads as "something sweeping over a folder" rather than a folder with a shelf.</p>
+      <div class="alt"><svg class="g"><use href="#scan-alt"/></svg><span>Alternate: viewfinder corners with the beam, the barcode-scanner idiom. Cleaner, but loses the folder.</span></div>
+    </section>
+
+    <section class="stage">
+      <h2>Read</h2>
+      <p class="name">ingest · extract text and attribute it</p>
+      <div class="pair">
+        <div class="tile"><svg class="g"><use href="#read"/></svg></div>
+        <div class="mono"><svg class="g" width="32" height="32"><use href="#read"/></svg><span>32</span></div>
+        <div class="mono"><svg class="g" width="18" height="18"><use href="#read"/></svg><span>18</span></div>
+      </div>
+      <p>A page with a folded corner and three text lines. Deliberately the plainest of the four: the document is the object every other stage transforms, so this is the baseline shape they all quote.</p>
+      <div class="alt"><svg class="g"><use href="#read-alt"/></svg><span>Alternate: an open book. Warmer, but a book says "reading" as a person does it, not extraction.</span></div>
+    </section>
+
+    <section class="stage">
+      <h2>Index</h2>
+      <p class="name">embed · chunk and vectorise under every model</p>
+      <div class="pair">
+        <div class="tile"><svg class="g"><use href="#index"/></svg></div>
+        <div class="mono"><svg class="g" width="32" height="32"><use href="#index"/></svg><span>32</span></div>
+        <div class="mono"><svg class="g" width="18" height="18"><use href="#index"/></svg><span>18</span></div>
+      </div>
+      <p>An index-card box with one tabbed card standing proud. It says "filed and findable" in the same vocabulary as the catalog-drawer icon direction, and the tab survives 18 px.</p>
+      <div class="alt"><svg class="g"><use href="#index-alt"/></svg><span>Alternate: a five-node embedding graph, the honest picture of pgvector. Reads as dots below 24 px.</span></div>
+    </section>
+
+    <section class="stage">
+      <h2>Distill</h2>
+      <p class="name">enrich-facts · one fact lifted out of a document</p>
+      <div class="pair">
+        <div class="tile"><svg class="g"><use href="#distill"/></svg></div>
+        <div class="mono"><svg class="g" width="32" height="32"><use href="#distill"/></svg><span>32</span></div>
+        <div class="mono"><svg class="g" width="18" height="18"><use href="#distill"/></svg><span>18</span></div>
+      </div>
+      <p>The excerpt from the app-icon round, reduced to a symbol: the page outline breaks where a filled card carrying one line pulls out of it. The fill is the accent, so it is the one stage glyph with solid weight, which is right for the stage that produces something new.</p>
+      <div class="alt"><svg class="g"><use href="#distill-alt"/></svg><span>Alternate: a funnel and a drop, the chemistry reading of "distill". Universal, but nothing about it is Garage.</span></div>
+    </section>
+  </div>
+
+  <p class="eyebrow">In place</p>
+  <div class="row">
+    <div>
+      <div class="menubar">
+        <svg class="g"><use href="#scan"/></svg>
+        <svg class="g"><use href="#read"/></svg>
+        <svg class="g"><use href="#index"/></svg>
+        <svg class="g"><use href="#distill"/></svg>
+        <span>Mon 21:21</span>
+      </div>
+      <p style="font-size:12px;color:var(--ink-3);margin-top:8px">Template rendering at 18 px, menu-bar weight</p>
+    </div>
+    <div>
+      <div class="popover">
+        <div class="head">Indexing 3 sources · 1,204 documents to go</div>
+        <div class="trail">
+          <span class="st done"><svg class="g"><use href="#scan"/></svg>Scan</span><span class="chev">›</span>
+          <span class="st cur"><svg class="g"><use href="#read"/></svg>Read</span><span class="chev">›</span>
+          <span class="st"><svg class="g"><use href="#index"/></svg>Index</span><span class="chev">›</span>
+          <span class="st"><svg class="g"><use href="#distill"/></svg>Distill</span>
+        </div>
+      </div>
+      <p style="font-size:12px;color:var(--ink-3);margin-top:8px">The stage trail in the menu-bar popover, with the glyphs beside the titles it shows today</p>
+    </div>
+  </div>
+
+  <div class="notes">
+    <p class="eyebrow">Shipping them</p>
+    <ul>
+      <li><b>As custom SF Symbols.</b> Each glyph exports as an SVG into the SF Symbols app's template, which gives regular and semibold weights and the monochrome, hierarchical and multicolor rendering modes for free. Then they are Image with a symbol name in the asset catalog, and the stage trail, the Sources status column and the Facts section all take them where they use Image(systemName:) today.</li>
+      <li><b>Distill</b> doubles as the Facts section icon in the sidebar (replacing the generic lightbulb) and as the badge for the Glean Facts action on a document.</li>
+      <li><b>Index</b> and the catalog-drawer app-icon direction share a vocabulary, so if that direction wins, the two reinforce each other. If the roll-up door wins, Index still works: a card box is what you keep in a garage.</li>
+    </ul>
+  </div>
+</div>
+
+</body></html>

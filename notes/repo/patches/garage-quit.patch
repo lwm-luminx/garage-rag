@@ -1,0 +1,254 @@
+diff --git a/CLAUDE.md b/CLAUDE.md
+index ca995214..02428848 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -409,7 +409,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`),
+   database and nothing listens on 14824
+   they open the app hidden (`--background`), then read the Postgres password from the Keychain
+   and export `GARAGE_DATABASE_URL`; stdio registrations therefore carry no database URL. Only
+-  these bundled launchers do this; `garage` from a venv is untouched.
++  these bundled launchers do this; `garage` from a venv is untouched. `garage quit` (launcher only,
++  never Python) posts a distributed notification that makes every running Garage quit as its Quit
++  menu item does, and waits for it; use it before a UI test run, which refuses to share the Mac
++  with a running Garage.
+ - `GarageMCPService` owns a separate long-lived `garage-mcp` HTTP process at
+   `127.0.0.1:8787/mcp`; Claude Desktop/Code instead spawn their own stdio `garage-mcp` via `garage
+   mcp-install`, so both transports coexist.
+diff --git a/macapp/README.md b/macapp/README.md
+index ad6539f7..5dc85f4c 100644
+--- a/macapp/README.md
++++ b/macapp/README.md
+@@ -85,6 +85,11 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
+   hidden (`--background`: services start, no window) and waits for Postgres; it then reads the
+   database password from the Keychain and exports `GARAGE_DATABASE_URL` itself. An explicit
+   `GARAGE_DATABASE_URL` wins; `GARAGE_NO_APP_LAUNCH=1` fails instead of opening the app.
++  `garage quit` is the other way round: the launcher answers it before Python starts, posts
++  `GarageAppLaunch.quitNotification` (a distributed notification, which the sandboxed launcher may
++  send where an Apple event to the app would be refused or ask for Automation consent), and waits up
++  to 30s for every running Garage to exit. The app quits as its Quit menu item does. It never
++  starts the app, and says so when Garage is not running.
+   `garage-mcp` does not wait for Postgres (only its tool calls use the database, and the MCP
+   handshake must not sit behind a cold start) unless the app has never stored a password, and
+   never mirrors its stdout (the MCP stream) into the unified log. The launcher finds the app it
+diff --git a/macapp/Sources/GarageApp/AppDelegate.swift b/macapp/Sources/GarageApp/AppDelegate.swift
+index e25028c5..2578a484 100644
+--- a/macapp/Sources/GarageApp/AppDelegate.swift
++++ b/macapp/Sources/GarageApp/AppDelegate.swift
+@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
+     }
+     private var _appState: AppState?
+     private var isTerminating = false
++    private var quitObserver: NSObjectProtocol?
+ 
+     /// Quit Garage (⌘Q and the menu bar's Quit). AppKit refuses to terminate while a window shows a
+     /// sheet ("App termination blocked by modal sheet"), and the splash is shown as one at every
+@@ -52,6 +53,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
+     /// database is not running: start the services, keep to the menu bar, and close
+     /// the window SwiftUI opens at launch (the Dock icon or menu bar item reopens it).
+     func applicationDidFinishLaunching(_ notification: Notification) {
++        // `garage quit`: quit as the Quit menu item does, from the run loop.
++        quitObserver = DistributedNotificationCenter.default().addObserver(
++            forName: Notification.Name(GarageAppLaunch.quitNotification),
++            object: nil,
++            queue: .main
++        ) { _ in
++            MainActor.assumeIsolated { AppDelegate.quit() }
++        }
++
+         guard CommandLine.arguments.contains(GarageAppLaunch.backgroundArgument) else { return }
+         Task { @MainActor [weak self] in
+             self?.appState?.launch()
+diff --git a/macapp/Sources/GarageLauncher/AppQuit.swift b/macapp/Sources/GarageLauncher/AppQuit.swift
+new file mode 100644
+index 00000000..80ed341b
+--- /dev/null
++++ b/macapp/Sources/GarageLauncher/AppQuit.swift
+@@ -0,0 +1,54 @@
++import AppKit
++import Foundation
++import PythonXPCService
++
++/// `garage quit`: asks every running Garage to quit the way its Quit menu item does (services
++/// stopped, Postgres given its shutdown checkpoint) and waits for it to exit. The launcher answers
++/// it before Python starts, so it never opens the app it was asked to close.
++enum AppQuit {
++    static let bundleIdentifier = "me.rickmark.garage-rag"
++    /// The app allows Postgres 15s for its shutdown checkpoint; this covers that and the rest of
++    /// the quit.
++    static let timeout: TimeInterval = 30
++
++    static let usage = """
++        usage: garage quit
++
++        Quit Garage if it is running: its services stop and Postgres shuts down cleanly. Garage
++        opens again by itself when a garage or garage-mcp command next needs the database.
++        """
++
++    static func run(_ arguments: [String]) -> Int32 {
++        if arguments.contains("--help") || arguments.contains("-h") {
++            print(usage)
++            return 0
++        }
++        let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleIdentifier)
++        guard !running.isEmpty else {
++            print("Garage is not running.")
++            return 0
++        }
++        DistributedNotificationCenter.default().postNotificationName(
++            Notification.Name(GarageAppLaunch.quitNotification),
++            object: nil,
++            userInfo: nil,
++            deliverImmediately: true
++        )
++        // isTerminated is updated through the run loop, so spin it rather than sleep.
++        let deadline = Date().addingTimeInterval(timeout)
++        while Date() < deadline {
++            if running.allSatisfy(\.isTerminated) {
++                print("Garage quit.")
++                return 0
++            }
++            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
++        }
++        let pids = running.filter { !$0.isTerminated }.map { String($0.processIdentifier) }
++        fputs(
++            "Garage (pid \(pids.joined(separator: ", "))) did not quit within \(Int(timeout))s. "
++                + "Quit it from its menu bar item.\n",
++            stderr
++        )
++        return 1
++    }
++}
+diff --git a/macapp/Sources/GarageLauncher/Launcher.swift b/macapp/Sources/GarageLauncher/Launcher.swift
+index 846b6068..afa8f8ee 100644
+--- a/macapp/Sources/GarageLauncher/Launcher.swift
++++ b/macapp/Sources/GarageLauncher/Launcher.swift
+@@ -14,6 +14,8 @@ public struct LauncherEntryPoint {
+     let mirrorsOutputToLog: Bool
+     /// Whether this invocation talks to the database, so the app has to be running.
+     let needsDatabase: ([String]) -> Bool
++    /// Answer `quit` here, before Python and before anything could start the app: `garage` only.
++    let answersQuit: Bool
+     /// Hold Python back until Postgres accepts connections. Off for `garage-mcp`: it
+     /// only opens the database inside tool calls, and an MCP client times out a
+     /// server whose `initialize` waits on a cold start.
+@@ -25,6 +27,7 @@ public struct LauncherEntryPoint {
+         function: "main_cli",
+         mirrorsOutputToLog: true,
+         needsDatabase: LauncherEntryPoint.cliNeedsDatabase,
++        answersQuit: true,
+         waitsForDatabase: true
+     )
+ 
+@@ -34,18 +37,29 @@ public struct LauncherEntryPoint {
+         function: "main",
+         mirrorsOutputToLog: false,
+         needsDatabase: { arguments in !arguments.contains("--help") && !arguments.contains("-h") },
++        answersQuit: false,
+         waitsForDatabase: false
+     )
+ 
+     /// Subcommands that never open the database.
+     static let commandsWithoutDatabase: Set<String> = ["config", "mcp-install", "mcp-uninstall", "mcp-status", "version"]
+ 
+-    /// `garage [global options] COMMAND ...`: false for help, bare `garage` and
++    /// `garage quit`, which the launcher answers itself (`AppQuit`).
++    static let quitCommand = "quit"
++
++    /// `garage [global options] COMMAND ...`: false for help, bare `garage`, `quit` and
+     /// `commandsWithoutDatabase`, so those work without starting the app.
+     static func cliNeedsDatabase(_ arguments: [String]) -> Bool {
+         if arguments.contains("--help") || arguments.contains("-h") {
+             return false
+         }
++        guard let command = command(in: arguments), command != quitCommand else { return false }
++        return !commandsWithoutDatabase.contains(command)
++    }
++
++    /// The subcommand of `garage [global options] COMMAND ...` (`arguments` includes the program
++    /// name), past `--config PATH` / `-c PATH` and other options; nil when there is none.
++    static func command(in arguments: [String]) -> String? {
+         var remaining = arguments.dropFirst()
+         while let option = remaining.first, option.hasPrefix("-") {
+             remaining = remaining.dropFirst()
+@@ -53,14 +67,21 @@ public struct LauncherEntryPoint {
+                 remaining = remaining.dropFirst()
+             }
+         }
+-        guard let command = remaining.first else { return false }
+-        return !commandsWithoutDatabase.contains(command)
++        return remaining.first
++    }
++
++    /// Whether this is `garage quit`, which never reaches Python.
++    func isQuit(_ arguments: [String]) -> Bool {
++        answersQuit && LauncherEntryPoint.command(in: arguments) == LauncherEntryPoint.quitCommand
+     }
+ }
+ 
+ public enum Launcher {
+     /// Runs `entry` in the embedded interpreter and exits with its status.
+     public static func run(_ entry: LauncherEntryPoint) -> Never {
++        if entry.isQuit(CommandLine.arguments) {
++            exit(AppQuit.run(CommandLine.arguments))
++        }
+         let executable = executablePath()
+         let appBundle = containingAppBundle(of: executable)
+         exportMCPLauncherPath(appBundle: appBundle, executable: executable)
+diff --git a/macapp/Sources/PythonXPCService/GaragePostgresEndpoint.swift b/macapp/Sources/PythonXPCService/GaragePostgresEndpoint.swift
+index 869ffeb6..b8bd598e 100644
+--- a/macapp/Sources/PythonXPCService/GaragePostgresEndpoint.swift
++++ b/macapp/Sources/PythonXPCService/GaragePostgresEndpoint.swift
+@@ -287,4 +287,9 @@ public enum GarageAppLaunch {
+     /// `--data-directory <path>`: run on this data folder instead of the real one, with no migration,
+     /// no link and a separate Keychain item. For UI tests, which reset the database.
+     public static let dataDirectoryArgument = "--data-directory"
++
++    /// Posted by `garage quit` as a distributed notification: every running Garage quits as its Quit
++    /// menu item would. A notification rather than an Apple event, which the sandboxed App Store
++    /// launcher may not send and which would ask for Automation consent.
++    public static let quitNotification = "me.rickmark.garage-rag.quit"
+ }
+diff --git a/macapp/Tests/GarageAppUITests/GarageUITestCase.swift b/macapp/Tests/GarageAppUITests/GarageUITestCase.swift
+index 615a1f64..3946a1da 100644
+--- a/macapp/Tests/GarageAppUITests/GarageUITestCase.swift
++++ b/macapp/Tests/GarageAppUITests/GarageUITestCase.swift
+@@ -40,7 +40,7 @@ class GarageUITestCase: XCTestCase {
+         let running = Self.runningGarageInstances()
+         try XCTSkipUnless(
+             running.isEmpty,
+-            "Quit Garage first (pids \(running.map(\.processIdentifier))): this test would share its port and its quit path kills XPC services by name."
++            "Quit Garage first (`garage quit`; pids \(running.map(\.processIdentifier))): this test would share its port and its quit path kills XPC services by name."
+         )
+         for port in Self.servicePorts {
+             try XCTSkipIf(Self.isListening(on: port), "Something already listens on 127.0.0.1:\(port).")
+diff --git a/macapp/Tests/GarageAppUnitTests/LauncherTests.swift b/macapp/Tests/GarageAppUnitTests/LauncherTests.swift
+index 65b4dde9..9b972e86 100644
+--- a/macapp/Tests/GarageAppUnitTests/LauncherTests.swift
++++ b/macapp/Tests/GarageAppUnitTests/LauncherTests.swift
+@@ -68,4 +68,26 @@ final class LauncherTests: XCTestCase {
+         let launcher = try executable("bin/garage")
+         XCTAssertNil(Launcher.mcpLauncherPath(appBundle: nil, executable: launcher))
+     }
++
++    // MARK: - garage quit
++
++    func testTheCommandIsFoundPastGlobalOptions() {
++        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "quit"]), "quit")
++        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "--config", "/tmp/g.json", "search", "x"]), "search")
++        XCTAssertEqual(LauncherEntryPoint.command(in: ["garage", "-c", "quit", "status"]), "status")
++        XCTAssertNil(LauncherEntryPoint.command(in: ["garage", "--verbose"]))
++    }
++
++    /// `garage quit` must not start the app it is about to quit.
++    func testQuitIsAnsweredByTheCLILauncherWithoutTheDatabase() {
++        XCTAssertTrue(LauncherEntryPoint.cli.isQuit(["garage", "quit"]))
++        XCTAssertTrue(LauncherEntryPoint.cli.isQuit(["garage", "--config", "/tmp/g.json", "quit"]))
++        XCTAssertFalse(LauncherEntryPoint.cliNeedsDatabase(["garage", "quit"]))
++        XCTAssertTrue(LauncherEntryPoint.cliNeedsDatabase(["garage", "status"]))
++    }
++
++    func testOnlyTheCLILauncherAnswersQuit() {
++        XCTAssertFalse(LauncherEntryPoint.mcp.isQuit(["garage-mcp", "quit"]))
++        XCTAssertFalse(LauncherEntryPoint.cli.isQuit(["garage", "search", "quit"]))
++    }
+ }

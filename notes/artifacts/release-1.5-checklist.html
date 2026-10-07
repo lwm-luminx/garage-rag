@@ -1,0 +1,850 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><title>Garage 1.5 Release Checklist</title><link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" id="fonts" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans+Condensed:wght@500;600;700&amp;family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&amp;display=swap"><style id="css">
+:root{
+  --paper:#f3f4f1; --card:#fbfbf9; --ink:#1b222c; --muted:#5c6572; --line:#d9dcd6;
+  --accent:#2c5a86; --accent-soft:#e1e9f2; --done:#3d7a4f; --done-soft:#e3efe5;
+  --mac:#8a5a12; --mac-soft:#f5ead6; --rick:#7a3e6e; --rick-soft:#f1e3ee; --idea:#2c5a86; --idea-soft:#e1e9f2;
+  --prog:#6b5d12; --prog-soft:#f1eed4;
+  --display:"IBM Plex Sans Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --paper:#14181e; --card:#1b2028; --ink:#e6e8eb; --muted:#9aa3ae; --line:#2e3540;
+    --accent:#86b2dc; --accent-soft:#1f2c3b; --done:#7cc190; --done-soft:#1d2e23;
+    --mac:#e0b35f; --mac-soft:#342a17; --rick:#d59bc8; --rick-soft:#34222f; --idea:#86b2dc; --idea-soft:#1f2c3b;
+    --prog:#d6c56a; --prog-soft:#302d17;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --paper:#14181e; --card:#1b2028; --ink:#e6e8eb; --muted:#9aa3ae; --line:#2e3540;
+  --accent:#86b2dc; --accent-soft:#1f2c3b; --done:#7cc190; --done-soft:#1d2e23;
+  --mac:#e0b35f; --mac-soft:#342a17; --rick:#d59bc8; --rick-soft:#34222f; --idea:#86b2dc; --idea-soft:#1f2c3b;
+  --prog:#d6c56a; --prog-soft:#302d17;
+}
+:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.55 var(--body);padding:0 16px}
+.wrap{max-width:860px;margin:0 auto;padding-block:40px 64px}
+h1,h2{font-family:var(--display);text-wrap:balance;margin:0}
+h1{font-size:clamp(30px,5vw,42px);font-weight:700;letter-spacing:-.01em;line-height:1.1}
+h2{font-size:22px;font-weight:600}
+code{font-family:var(--mono);font-size:.86em;background:var(--accent-soft);padding:1px 5px;border-radius:3px;word-break:break-word}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.lede{color:var(--muted);max-width:65ch;margin:12px 0 0}
+.meters{margin-top:24px;display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px 28px}
+.meter{display:flex;flex-direction:column;gap:8px}
+.meter-name{font-family:var(--display);font-size:17px;font-weight:600}
+.meter-key{color:var(--muted);font-size:13px;margin:8px 0 0;max-width:65ch}
+.meter-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.meter-num{font-family:var(--display);font-size:24px;font-weight:600;font-variant-numeric:tabular-nums}
+.meter-num small{font-size:15px;color:var(--muted);font-weight:500}
+.bar{height:8px;background:var(--line);border-radius:4px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--done);transition:width .3s}
+.save{font-family:var(--mono);font-size:12px;color:var(--muted);margin-top:8px;min-height:1em}
+.save.err{color:var(--rick)}
+.toolbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:2;background:var(--paper);padding-block:12px;margin-top:20px;border-bottom:1px solid var(--line);display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.sep{width:1px;align-self:stretch;background:var(--line);margin:0 4px}
+.chip{font:500 13px var(--body);border:1px solid var(--line);background:var(--card);color:var(--ink);padding:5px 12px;border-radius:999px;cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.chip:focus-visible,.item input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.legend{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+section.phase{margin-top:40px}
+.phase-head{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.phase-head .count{font-family:var(--mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.phase-num{font-family:var(--mono);font-size:13px;color:var(--accent)}
+.phase-sub{color:var(--muted);margin:6px 0 14px;max-width:65ch}
+ul.items{list-style:none;margin:0;padding:0;border-top:1px solid var(--line)}
+.item{display:grid;grid-template-columns:22px 1fr;gap:12px;padding:12px 4px;border-bottom:1px solid var(--line)}
+.item input{width:18px;height:18px;margin:3px 0 0;accent-color:var(--done);cursor:pointer}
+.item input:disabled{cursor:default}
+.item .text{min-width:0}
+.item.done .t{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--line)}
+.item .t{display:block}
+.item .note{display:block;color:var(--muted);font-size:13.5px;margin-top:3px}
+.tags{display:inline-flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.tag{font:500 11px var(--mono);letter-spacing:.03em;text-transform:uppercase;padding:2px 7px;border-radius:3px;white-space:nowrap}
+.tag.mac{color:var(--mac);background:var(--mac-soft)}
+.tag.rick{color:var(--rick);background:var(--rick-soft)}
+.tag.idea{color:var(--idea);background:var(--idea-soft)}
+.tag.progress{color:var(--prog);background:var(--prog-soft)}
+.tag.when{color:var(--done);background:var(--done-soft)}
+.review .who{display:block;font-size:13px;color:var(--muted);margin-top:4px}
+.review .who b{font-weight:600;color:var(--ink)}
+.empty{color:var(--muted);font-style:italic;padding:12px 4px}
+.foot{margin-top:48px;color:var(--muted);font-size:13px;max-width:65ch}
+.ro{margin-top:12px;font-size:13px;color:var(--muted)}
+@media (max-width:560px){.legend{margin-left:0}}
+@media (prefers-reduced-motion:reduce){.bar i{transition:none}}
+</style></head><body><div class="wrap">
+  <header>
+    <div class="eyebrow">Garage · Apple Silicon · Developer ID and App Store</div>
+    <h1>Garage 1.5 release checklist</h1>
+    <p class="lede" id="snapshot"></p>
+    <div class="meters">
+      <div class="meter">
+        <div class="meter-row"><span class="meter-name">Developer ID</span><span class="meter-num" id="num-devid"></span></div>
+        <div class="bar" aria-hidden="true"><i id="bar-devid"></i></div>
+      </div>
+      <div class="meter">
+        <div class="meter-row"><span class="meter-name">App Store</span><span class="meter-num" id="num-store"></span></div>
+        <div class="bar" aria-hidden="true"><i id="bar-store"></i></div>
+      </div>
+    </div>
+    <div class="save" id="save" role="status" aria-live="polite"></div>
+    <p class="meter-key" id="meter-key"></p>
+    <p class="ro" id="ro" hidden="">This view is read-only, so ticks here aren't saved.</p>
+  </header>
+  <nav class="toolbar" aria-label="Filter">
+    <button class="chip" id="r-all" data-r="all">Both releases</button>
+    <button class="chip" id="r-devid" data-r="devid">Developer ID</button>
+    <button class="chip" id="r-store" data-r="store">App Store</button>
+    <span class="sep" aria-hidden="true"></span>
+    <button class="chip" id="f-all" data-f="all">All</button>
+    <button class="chip" id="f-open" data-f="open">Open</button>
+    <button class="chip" id="f-mac" data-f="mac">Needs a Mac</button>
+    <button class="chip" id="f-rick" data-f="rick">For Rick</button>
+    <button class="chip" id="f-idea" data-f="idea">Claude's ideas</button>
+    <span class="legend">
+      <span class="tag mac">Mac</span><span class="tag rick">Rick</span><span class="tag idea">Idea</span><span class="tag progress">Running</span>
+    </span>
+  </nav>
+  <main id="phases"></main>
+  <p class="foot" id="foot"></p>
+</div>
+<script type="application/json" id="state">
+{
+ "snapshot": "As of 26 September 2026, 14:20 UTC. v1.5-alpha carries the App Store work (#106), RELEASING.md and the missed fixes (#117), the store build's folder-access and MCP fixes (#119), the UI test runner's App Group (#120) and the sandbox root fix (#121). Earlier on the alpha the M4 passed the full UI suite 53 of 53 and the model tests 3 of 3. The store Mail and Messages tests now get past their setup error but need a clean rerun. The Developer ID 1.5 ships first, and the App Store waits for Apple's review of 1.0.",
+ "foot": "Tick a box and the page saves for everyone after a short pause. Items tagged Idea are Claude's suggestions, not agreed scope. Ask in the thread to add, drop or reword an item.",
+ "phases": [
+  {
+   "id": "alpha",
+   "title": "Finish the alpha",
+   "sub": "PR #102: tests and docs on top of v1.5-alpha, for the Developer ID release. The store build's tests moved to the App Store section.",
+   "items": [
+    {
+     "id": "a1",
+     "t": "Cut \u003ccode>v1.5-alpha\u003c/code> from main with #99 and #101",
+     "done": true
+    },
+    {
+     "id": "a2",
+     "t": "\u003ccode>aspect test //...\u003c/code> passes on #102: 48 of 48 on the M4",
+     "done": true
+    },
+    {
+     "id": "a3",
+     "t": "Fix the 13 UI tests that expected the old page labels (6febee6)",
+     "done": true
+    },
+    {
+     "id": "a4",
+     "t": "Developer ID build, \u003ccode>aspect test //...\u003c/code> and the full UI suite on 6febee6",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "On the M3."
+    },
+    {
+     "id": "a8",
+     "t": "Model-backed UI tests on #102: a mock model server, search results, backfill with the Status counts, Glean Facts and the Facts page, and MCP Try It with rag_ask",
+     "tags": [
+      "progress"
+     ],
+     "n": "Rick moved these into the alpha on 25 September.",
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "a7",
+     "t": "Mark #102 ready once both suites are clean, then merge it",
+     "n": "2,761 added lines of tests and docs. See the code review under Reviews.",
+     "done": true,
+     "at": "Sep 25"
+    }
+   ],
+   "rel": "devid"
+  },
+  {
+   "id": "verify",
+   "title": "Verify on a Mac",
+   "sub": "Things only a signed Developer ID build on real hardware can prove. The store build's checks moved to the App Store section.",
+   "items": [
+    {
+     "id": "m2",
+     "t": "Open 1.5 over a real v1.0 data folder",
+     "tags": [
+      "mac",
+      "idea"
+     ],
+     "n": "Check that the folder moves into the App Group container, the Keychain item copies without a prompt, migrations 008 to 013 apply, and old documents still come back in search."
+    },
+    {
+     "id": "m4",
+     "t": "Read the Keychain from the helpers: \u003ccode>garage\u003c/code> and \u003ccode>garage-mcp\u003c/code>, from Terminal and from Claude Desktop, with no prompt",
+     "tags": [
+      "mac"
+     ],
+     "n": "Developer ID build. The store build's half is in the App Store section."
+    },
+    {
+     "id": "m6",
+     "t": "Run \u003ccode>lipo -archs\u003c/code> over the final bundles, site-packages .so files included: arm64 only",
+     "tags": [
+      "mac"
+     ],
+     "n": "The arm64 thinning from #76 has never been checked on a Mac."
+    },
+    {
+     "id": "m7",
+     "t": "Run \u003ccode>codesign --verify --deep --strict\u003c/code> and \u003ccode>spctl -a -vv\u003c/code> on the notarized app and .pkg, and check that no release entitlement carries get-task-allow",
+     "tags": [
+      "mac",
+      "idea"
+     ]
+    },
+    {
+     "id": "m8",
+     "t": "Rehearse a Sparkle update: install 1.5, serve a local feed with a higher build, and confirm it updates and relaunches",
+     "tags": [
+      "mac",
+      "idea"
+     ],
+     "n": "v1.0 has no updater, so every later release depends on 1.5's working the first time."
+    },
+    {
+     "id": "m9",
+     "t": "Reset Database in both builds: the relaunched instance takes over and re-syncs the sources",
+     "tags": [
+      "mac"
+     ],
+     "rel": "both"
+    },
+    {
+     "id": "m11",
+     "t": "Postgres starts with AGE preloaded",
+     "done": true,
+     "n": "Rick confirmed on 25 September."
+    }
+   ],
+   "rel": "devid"
+  },
+  {
+   "id": "decide",
+   "title": "Decide and tidy before the cut",
+   "sub": "Scope calls, small cleanups, and the decisions already made (ticked).",
+   "items": [
+    {
+     "id": "d1",
+     "t": "Mail and Messages in the store build",
+     "tags": [
+      "rick"
+     ],
+     "n": "Rick tested the store build on the M3: choosing the Mail folder does nothing without Full Disk Access, and Messages is greyed out. Decided: the store setup asks for the home folder, then Full Disk Access, which can be skipped with a clear warning. Mail and Messages grey out with a NEEDS FULL DISK ACCESS badge until it is on (#106). The Developer ID build doesn't need Full Disk Access except for Mail and Messages.",
+     "done": true,
+     "at": "Sep 25",
+     "rel": "store"
+    },
+    {
+     "id": "d2",
+     "t": "Rename the pipeline for people new to AI: Library, and Scan \u203a Read \u203a Index \u203a Glean",
+     "tags": [
+      "rick"
+     ],
+     "n": "In 1.5 (#104, 829be57): the Status box is Library, embed reads as Index and ingest as Read, and the Embedded figure is Indexed. The Models page and the CLI keep \"embedding model\". Still open: one Library bar covering chunking, embedding and distillation.",
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "d3",
+     "t": "Write release notes that present 1.5 as the polished 1.0",
+     "tags": [
+      "idea",
+      "progress"
+     ],
+     "n": "Drafted 26 Sep: release/1.5-release-notes.md in the project files, ready for publish_appcast --notes. Rick to read and edit. The App Store's What's New is still the draft in app-store-listing/draft.md."
+    },
+    {
+     "id": "d4",
+     "t": "Drop the redundant \u003ccode>files.user-selected.read-only\u003c/code> from the 9 entitlements files that still carry it",
+     "tags": [
+      "idea"
+     ],
+     "n": "The read-write entitlement already covers it (entitlements audit).",
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "d5",
+     "t": "Turn off the unused Sustained Execution capability on the App ID, or decide to leave it",
+     "tags": [
+      "idea",
+      "rick"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "d6",
+     "t": "Move issue #27's leftovers to 1.5.1",
+     "n": "Moved to issue #118 for 1.5.1: one model catalog (models.json as the only source), and remove .actrc.",
+     "done": true,
+     "at": "Sep 26"
+    },
+    {
+     "id": "d7",
+     "t": "Delete leftover branches",
+     "tags": [
+      "rick"
+     ],
+     "n": "For example origin/claude/sms-ingestion, which #79 and #92 superseded, and the branches of merged PRs. I'll list them and you delete.",
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "d8",
+     "t": "Export compliance: ITSAppUsesNonExemptEncryption is false",
+     "done": true,
+     "n": "#75"
+    },
+    {
+     "id": "d9",
+     "t": "Version 1.5, the privacy manifest, the unused usage strings, the Keychain fix and the launcher helper bundles",
+     "done": true,
+     "n": "#65, #66, #69"
+    }
+   ],
+   "rel": "devid"
+  },
+  {
+   "id": "devid",
+   "title": "Ship the Developer ID build",
+   "sub": "Ships first, while the App Store waits on Apple's review of 1.0. Follows \"Cutting a release\" in macapp/README.md.",
+   "items": [
+    {
+     "id": "r1",
+     "t": "Freeze main and build from a full clone, not a shallow one",
+     "n": "The build number is main's commit count, and Sparkle refuses one that isn't newer."
+    },
+    {
+     "id": "r2",
+     "t": "Push a signed tag \u003ccode>v1.5\u003c/code> (Secretive)",
+     "tags": [
+      "rick"
+     ]
+    },
+    {
+     "id": "r3",
+     "t": "\u003ccode>aspect build //macapp/package:GarageApp\u003c/code>, then \u003ccode>aspect run //macapp/package:notarize_all\u003c/code>",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "r4",
+     "t": "\u003ccode>aspect run //macapp/package:publish_appcast -- v1.5 --notes notes.md\u003c/code>",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "r5",
+     "t": "Create the v1.5 GitHub release with \u003ccode>Garage-1.5.zip\u003c/code> and the arm64 .pkg only",
+     "tags": [
+      "rick"
+     ]
+    },
+    {
+     "id": "r6",
+     "t": "Push docs/appcast.xml as a signed commit only after the upload, then run \u003ccode>publish_appcast -- --check-live\u003c/code>"
+    },
+    {
+     "id": "r7",
+     "t": "Point the site's download button at the 1.5 .pkg and check garagerag.app in light and dark"
+    },
+    {
+     "id": "r8",
+     "t": "Delete the v1.0 release's x86_64 assets",
+     "tags": [
+      "rick"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    }
+   ],
+   "rel": "devid"
+  },
+  {
+   "id": "store",
+   "title": "Ship the App Store build (after Apple's 1.0 review)",
+   "sub": "Split off the alpha on 25 September: the store work is on claude/app-store (#106). 1.0 (build 0.9 (66)) stays in App Review, and once Apple answers the store likely jumps straight to 1.5. The store build carries no Sparkle and is sandboxed.",
+   "items": [
+    {
+     "id": "s0",
+     "t": "Wait for App Review's answer on 1.0 (build 0.9 (66)), then create 1.5 in App Store Connect and attach a 1.5 build",
+     "tags": [
+      "rick"
+     ],
+     "n": "Decided 25 Sep: leave 1.0 in review and learn from its feedback. The Developer ID 1.5 ships in the meantime."
+    },
+    {
+     "id": "s9",
+     "t": "Fix the store build's folder access before submitting 1.5",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "Review V3: B2 (the ~/ roots pointing into the container) was fixed in #106. B1 (the services couldn't use the app's bookmarks; folder grants now reach them as URLs) and B3 (MCP registration now writes in the real home folder) were merged in #119 on 26 Sep. Still to do: a store-build check on a Mac covering the home grant, an ingest of Documents and of a custom folder, and MCP registration."
+    },
+    {
+     "id": "s10",
+     "t": "Merge #106 (the App Store work) once the store build is back in scope",
+     "tags": [
+      "rick"
+     ],
+     "n": "Rick merged #106 into v1.5-alpha on 26 Sep. It was rebased first so it could be rebase-merged. CI was green, including the macOS Bazel tests.",
+     "done": true,
+     "at": "Sep 26"
+    },
+    {
+     "id": "a5",
+     "t": "Store build and the full UI suite, with the 5 Mail and Messages tests",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "M4, 26 Sep: the store build is sandboxed and loads no class twice. The Mail and Messages tests failed in setup (Cocoa error 513) because the sandboxed test runner had no App Group. #120 signs the runner with the team and the App Group; on e08c162 setup gets past 513. That run then lost Automation Mode midway (\"Not authorized for performing UI testing actions\") and was cancelled, so it needs a clean rerun."
+    },
+    {
+     "id": "a6",
+     "t": "Re-authorize the UI test runner after its signature changes: Automation Mode and data access",
+     "tags": [
+      "rick",
+      "mac"
+     ],
+     "n": "A new runner signature asks again: a permission prompt, Automation Mode (automationmodetool enable-automationmode-without-authentication), and Full Disk Access if the tests need it. 26 Sep: the team-signed runner from #120 needed all of it once."
+    },
+    {
+     "id": "m1",
+     "t": "Launch the store build on a fresh data folder: first-run assistant, Postgres init, one source ingested, search finds it",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "m3",
+     "t": "Switch from the Developer ID build to the store build on the same data",
+     "tags": [
+      "mac"
+     ],
+     "n": "Both should share the corpus and the Keychain item, with no \"created by the other Garage build\" error."
+    },
+    {
+     "id": "s14",
+     "t": "Read the Keychain from the store build's helpers, from Terminal and from Claude Desktop, with no prompt",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "m5",
+     "t": "Run \u003ccode>tools/macos/trace_loaded_images.sh\u003c/code> through a full ingest, OCR, embedding, search, MCP and the launchers on the store build",
+     "tags": [
+      "mac"
+     ],
+     "n": "Every loaded image should carry the team ID. Library validation has been on in the store build since #78."
+    },
+    {
+     "id": "m10",
+     "t": "Check MCP registration from the sandboxed store build",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "Review V3 B3, fixed in #119 (merged 26 Sep): mcp install writes the real ~/.claude.json and Claude Desktop config, not the container's. Rick OK'd the M4 checking it with a backup and restore. Confirm Claude Desktop actually sees Garage."
+    },
+    {
+     "id": "s1",
+     "t": "\u003ccode>aspect build //macapp:xcarchive --config=appstore_release\u003c/code>, then \u003ccode>aspect run //macapp:xcarchive_open\u003c/code>",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "s2",
+     "t": "Install the GarageMacAppConnect profile, run Organizer's Validate App, then Distribute",
+     "tags": [
+      "mac",
+      "rick"
+     ]
+    },
+    {
+     "id": "s3",
+     "t": "Install through TestFlight on the Mac that didn't build it before submitting",
+     "tags": [
+      "idea",
+      "mac"
+     ]
+    },
+    {
+     "id": "s4",
+     "t": "App Store Connect listing: description, keywords, category, support URL (garagerag.app/support), privacy policy URL, age rating",
+     "tags": [
+      "rick"
+     ]
+    },
+    {
+     "id": "s5",
+     "t": "Make the App Privacy answers match the privacy policy, including the models.json fetch",
+     "tags": [
+      "rick"
+     ]
+    },
+    {
+     "id": "s6",
+     "t": "Screenshots of Status, Search, Sources, Documents, Models and MCP Server at 2880 \u00d7 1800, light and dark",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "StoreScreenshotsUITests takes them over the made-up fixture corpus. M4, 26 Sep: 2 of 2 passed at 2880 \u00d7 1800 (with the Dock hidden), in the project files as appstore-0N-\u003cpage>-\u003cappearance>.png. Still to fix: the Status shot shows helper self tests failing (Backend 11/12, Ingest 10/12, Embeddings 9/11, Built-in Engine 3/4, MCP 12/13) and an unfinished index. They fail in the regular build too; Rick to run Test All by hand so the failures can be named."
+    },
+    {
+     "id": "s7",
+     "t": "Notes for App Review",
+     "tags": [
+      "idea",
+      "progress"
+     ],
+     "n": "Drafted 26 Sep: release/1.5-app-review-notes.md in the project files. It follows #106's flow: the home folder grant, Full Disk Access skippable, and the built-in engine. It assumes s9's B1 and B3 are fixed first."
+    },
+    {
+     "id": "s8",
+     "t": "Submit for review",
+     "tags": [
+      "rick"
+     ]
+    }
+   ],
+   "rel": "store"
+  },
+  {
+   "id": "after",
+   "title": "After release",
+   "sub": "",
+   "items": [
+    {
+     "id": "p1",
+     "t": "Install 1.5 over v1.0 from the website on a clean user account",
+     "tags": [
+      "mac"
+     ]
+    },
+    {
+     "id": "p2",
+     "t": "Watch in-app bug reports and GitHub issues for the first few days, and cut 1.5.1 with this same list"
+    },
+    {
+     "id": "p3",
+     "t": "Save the release steps as RELEASING.md in the repo so 1.5.1 reuses them",
+     "tags": [
+      "idea"
+     ],
+     "n": "RELEASING.md merged with #117 on 26 Sep.",
+     "done": true,
+     "at": "Sep 26"
+    },
+    {
+     "id": "p4",
+     "t": "Try Enhanced Security (hardened process) on a branch, and plan docs/plans/v1.5.md as 1.6",
+     "tags": [
+      "idea"
+     ]
+    },
+    {
+     "id": "p5",
+     "t": "Move the app's gRPC calls onto XPC with code-signing checks, and drop the local network port",
+     "tags": [
+      "idea"
+     ],
+     "n": "Rick's long-term direction (25 Sep). 1.5 adds a per-launch token to the gRPC service as a stopgap (review V1-S4)."
+    },
+    {
+     "id": "p6",
+     "t": "Unify the Python side on one OpenSSL: build grpcio (\u003ccode>GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1\u003c/code>) and cryptography (\u003ccode>OPENSSL_DIR\u003c/code>) from source against \u003ccode>//ext/openssl\u003c/code>",
+     "n": "Rick, 25 Sep: keep for later. grpc-swift's NIOSSL/BoringSSL stays as is."
+    }
+   ]
+  },
+  {
+   "id": "beta",
+   "title": "Beta: close the UI test gaps",
+   "sub": "Moved out of 1.5 on 25 September. The full map is in ui-coverage-gaps.md in the project files.",
+   "items": [
+    {
+     "id": "b0",
+     "t": "Fixture corpus plus UI tests for Documents, the setup walk, the menu bar, Logs, custom model registration and Sources stop and error",
+     "tags": [
+      "mac",
+      "progress"
+     ],
+     "n": "Already on #102 (062a13a). They stay in the alpha if they pass on the M4."
+    },
+    {
+     "id": "b6",
+     "t": "Fact prompts: add, edit, enable, delete and run"
+    },
+    {
+     "id": "b7",
+     "t": "Catalog downloads, embedding inspection and on-demand load (#87)"
+    },
+    {
+     "id": "b8",
+     "t": "Sparkle Check for Updates"
+    },
+    {
+     "id": "b9",
+     "t": "Bug reporter redaction and compose"
+    },
+    {
+     "id": "b10",
+     "t": "The store build's security-scoped bookmark flow"
+    },
+    {
+     "id": "b11",
+     "t": "Route Python's llama_xpc calls (backfill, enrich-facts, MCP ask) over XPC and drop LlamaXPCService's loopback HTTP listener",
+     "n": "Rick kept the HTTP API on port 8790 for the alpha (25 Sep). Follows his direction toward IPC with no network."
+    }
+   ]
+  },
+  {
+   "id": "reviews",
+   "title": "Reviews to hold",
+   "review": true,
+   "sub": "Each one is a separate pass with a clear owner. Tick it when its findings are fixed or consciously accepted.",
+   "items": [
+    {
+     "id": "v1",
+     "t": "Security and privacy",
+     "n": "Developer ID: all four fixed in #104 (log redaction, redactor rules, a per-launch gRPC token, model file names checked). Ran 25 Sep: no blockers. Should fix: the ingest service logs the database password and LM Studio token publicly (main.swift:294, :396); the bug-report redactor misses Bearer tokens and JSON passwords; gRPC on 50051 has no auth; the catalog's download_file can contain ../. Findings: release-review/1.5-reviews/ in the project files. Original scope: Only net/egress.py opens outbound connections and its CALLERS list is current. Communications never leave loopback. The models.json fetch is disclosed. The MCP HTTP server (127.0.0.1:8787) and the gRPC port bind to loopback only; service/server.py:1416 builds host:port, so check the default host. Postgres on 14824 uses the Keychain password.",
+     "w": "A Claude review thread, with Fable as second opinion",
+     "tags": [
+      "progress"
+     ]
+    },
+    {
+     "id": "v2",
+     "t": "Signing and entitlements",
+     "n": "Ran 25 Sep (repo half): 2 blockers. #102 predates #103 and still ships the old profiles, and 4 XPC services are signed without hardened runtime. Findings: release-review/1.5-reviews/ in the project files. Original scope: Every bundle's entitlements against the entitlements audit, no disable-library-validation in the store build, hardened runtime on, one team ID across all Mach-O, and current profiles for all six bundles. Both are fixed: #103 is merged into #102, and #104 signs the 4 services with the hardened runtime.",
+     "w": "Claude reads the repo, then the M3 checks the built app",
+     "tags": [
+      "progress"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "v3",
+     "t": "App Review readiness",
+     "n": "Store only, moved with the store work to #106. Ran 25 Sep: not ready, 3 likely blockers (inferred). The ingest service can't use app-scoped bookmarks, the ~/ template sources point into the container, and MCP registration writes inside the container. Also: whole-disk request, Patreon link, Mail and Messages offered but unworkable. Findings: release-review/1.5-reviews/ in the project files. Original scope: Guideline 2.1 (every advertised feature works in the store build), 2.4.5 (sandboxed, no self-update, nothing written outside the container, helpers inside the bundle) and 5.1.1 (privacy).",
+     "w": "Claude drafts, Rick decides",
+     "tags": [
+      "progress"
+     ],
+     "rel": "store"
+    },
+    {
+     "id": "v4",
+     "t": "Upgrade and data safety",
+     "n": "Migrations re-apply cleanly on real v1.0 data. GarageDataMigration only renames. Reset deletes only pgdata. The release notes suggest a backup before upgrading.",
+     "w": "Claude with test_postgres, plus an M4 run on a copy of a real corpus"
+    },
+    {
+     "id": "v5",
+     "t": "UX and copy across the redesigned pages",
+     "n": "Developer ID: the 22 copy fixes are in #104. Ran 25 Sep (copy half): 22 should-fix, all copy. Wrong help texts, and the engine and backend go by 5 names each. Findings: release-review/1.5-reviews/ in the project files. Original scope: Status, Sources, Models, Database, MCP, Facts, the sidebar, the menu bar and first run landed within a day of each other. Check they use the same terms (Indexing, Update Everything, Scan & Ingest), plus VoiceOver labels, dark mode and small windows. The UI tests broke on label drift, so the docs may have too.",
+     "w": "Rick at the Mac, Claude for the copy",
+     "tags": [
+      "progress"
+     ]
+    },
+    {
+     "id": "v6",
+     "t": "Docs and site",
+     "n": "Ran 25 Sep: 3 should-fix. The MCP loopback-only claims, the .pkg download name, and no App Store install path. The first two are fixed in #104; the App Store install path moved to #106. Findings: release-review/1.5-reviews/ in the project files. Original scope: The support guide, FAQ, troubleshooting and screenshots match the 1.5 pages. Apple Silicon only everywhere. The privacy policy is current.",
+     "w": "Claude",
+     "tags": [
+      "progress"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "v7",
+     "t": "Licenses",
+     "n": "Developer ID: all three fixed in #104. Ran 25 Sep: no blockers. The GPL-3.0 text is missing for psycopg, libiconv in lxml has no notice, and the About copyright reads MIT. Findings: release-review/1.5-reviews/ in the project files. Original scope: Regenerate THIRD_PARTY_NOTICES after the AGE, Sparkle, llama.cpp, Tesseract and Leptonica changes, and confirm nothing AGPL ships. The test checks the file matches, not that NATIVE_COMPONENTS is complete.",
+     "w": "Claude",
+     "tags": [
+      "progress"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "v8",
+     "t": "Code review of #102, then of v1.0..main as a whole",
+     "n": "Developer ID: all four fixed in #104. Ran 25 Sep: no blockers, #102 clean. 4 should-fix: re-index drops fact vectors, Skip during a reset fails it, the 4 MiB gRPC limit breaks long Messages threads, and a stale postmaster.pid can get an unrelated process killed. Findings: release-review/1.5-reviews/ in the project files. Original scope: Look for leftover debug code, TODOs, and test-only hooks (UI-test environment variables) that a release build can still reach.",
+     "w": "Claude code review, with Fable as second opinion",
+     "tags": [
+      "progress"
+     ],
+     "done": true,
+     "at": "Sep 25"
+    },
+    {
+     "id": "v9",
+     "t": "Performance and resources",
+     "n": "A large-folder ingest, memory with the embedding model loaded at launch (#99) on an 8 GB Mac, launch time, and the log tables under a fast ingest (#93).",
+     "w": "Rick on the M3"
+    }
+   ],
+   "rel": "both"
+  }
+ ],
+ "meterKey": "Developer ID counts the alpha, Mac checks, decisions and its ship steps; App Store counts its own section. Both count the reviews and checks that cover both builds. After release and Beta aren't counted."
+}
+</script>
+<script id="app">
+(function(){
+  var raw = document.getElementById('state').textContent;
+  var S = JSON.parse(raw);
+  var LABEL = {mac:'Mac',rick:'Rick',idea:'Idea',progress:'Running'};
+  var filter = 'all';
+  var release = 'all';
+  try { filter = localStorage.getItem('g15-filter') || 'all'; release = localStorage.getItem('g15-release') || 'all'; } catch(e){}
+  var api = null, readOnly = false, timer = null, pending = false;
+
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+  function inRelease(it, p){
+    if (release === 'all') return true;
+    var r = it.rel || p.rel;
+    return r === release || r === 'both';
+  }
+  function shown(it){
+    if (filter === 'all') return true;
+    if (filter === 'open') return !it.done;
+    return (it.tags||[]).indexOf(filter) >= 0;
+  }
+  function render(){
+    document.getElementById('snapshot').textContent = S.snapshot;
+    document.getElementById('foot').textContent = S.foot;
+    var T = {devid:[0,0], store:[0,0]}, html = '';
+    S.phases.forEach(function(p, pi){
+      var pd = 0, pt = 0; p.items.forEach(function(it){
+        if (inRelease(it, p)){ pt++; if (it.done) pd++; }
+        var r = it.rel || p.rel;
+        ['devid','store'].forEach(function(k){ if (r === k || r === 'both'){ T[k][1]++; if (it.done) T[k][0]++; } });
+      });
+      if (release !== 'all' && !p.items.some(function(it){ return inRelease(it, p); })) return;
+      var rows = p.items.filter(function(it){ return inRelease(it, p) && shown(it); }).map(function(it){
+        var tags = (it.tags||[]).map(function(t){ return '<span class="tag '+t+'">'+LABEL[t]+'</span>'; }).join('');
+        if (it.done && it.at) tags += '<span class="tag when">Done '+esc(it.at)+'</span>';
+        return '<li class="item'+(it.done?' done':'')+(p.review?' review':'')+'">'+
+          '<input type="checkbox" id="cb-'+it.id+'" data-id="'+it.id+'"'+(it.done?' checked':'')+(readOnly?' disabled':'')+'>'+
+          '<label class="text" for="cb-'+it.id+'"><span class="t">'+it.t+'</span>'+
+          (it.n?'<span class="note">'+esc(it.n)+'</span>':'')+
+          (it.w?'<span class="who"><b>Who:</b> '+esc(it.w)+'</span>':'')+
+          (tags?'<span class="tags">'+tags+'</span>':'')+'</label></li>';
+      }).join('');
+      html += '<section class="phase" id="'+p.id+'"><div class="phase-head"><span class="phase-num">'+(p.review?'R':String(pi+1))+'</span><h2>'+esc(p.title)+'</h2><span class="count">'+pd+' of '+pt+'</span></div>'+
+        (p.sub?'<p class="phase-sub">'+esc(p.sub)+'</p>':'')+
+        '<ul class="items">'+(rows||'<li class="empty">Nothing here matches this filter.</li>')+'</ul></section>';
+    });
+    document.getElementById('phases').innerHTML = html;
+    ['devid','store'].forEach(function(k){
+      var d = T[k][0], t = T[k][1];
+      document.getElementById('num-'+k).innerHTML = d+' <small>of '+t+'</small>';
+      document.getElementById('bar-'+k).style.width = (t? (100*d/t):0)+'%';
+    });
+    document.getElementById('meter-key').textContent = S.meterKey || '';
+    Array.prototype.forEach.call(document.querySelectorAll('.chip'), function(b){ b.setAttribute('aria-pressed', (b.dataset.f ? b.dataset.f===filter : b.dataset.r===release)?'true':'false'); });
+    document.getElementById('ro').hidden = !readOnly;
+  }
+  function setSave(t, err){ var el=document.getElementById('save'); el.textContent=t; el.className='save'+(err?' err':''); }
+
+  function buildDoc(){
+    var css = document.getElementById('css').textContent;
+    var js = document.getElementById('app').textContent;
+    var fonts = document.getElementById('fonts').getAttribute('href');
+    var body = document.querySelector('.wrap').cloneNode(true);
+    body.querySelector('#phases').innerHTML = '';
+    ['snapshot','num-devid','num-store','meter-key','save','foot'].forEach(function(id){ var e=body.querySelector('#'+id); if(e) e.textContent=''; });
+    body.querySelector('#save').className = 'save';
+    ['#bar-devid','#bar-store'].forEach(function(q){ body.querySelector(q).removeAttribute('style'); });
+    var ro = body.querySelector('#ro'); ro.setAttribute('hidden','');
+    Array.prototype.forEach.call(body.querySelectorAll('.chip'), function(b){ b.removeAttribute('aria-pressed'); });
+    var json = JSON.stringify(S, null, 1).replace(/</g,'\\u003c');
+    return '<!doctype html>\n<html lang="en"><head><meta charset="utf-8">'+
+      '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'+
+      '<title>'+esc(document.title)+'</title>'+
+      '<link rel="preconnect" href="https://fonts.googleapis.com">'+
+      '<link rel="stylesheet" id="fonts" href="'+esc(fonts)+'">'+
+      '<style id="css">'+css+'</style></head><body>'+body.outerHTML+
+      '\n<script type="application/json" id="state">\n'+json+'\n<\/script>\n'+
+      '<script id="app">'+js+'<\/script></body></html>';
+  }
+  function schedule(){
+    pending = true; setSave('Saving…');
+    clearTimeout(timer);
+    timer = setTimeout(save, 2000);
+  }
+  function save(){
+    if (!pending) return;
+    if (!api){ setSave('Not saved: saving is unavailable in this view', true); return; }
+    pending = false;
+    api.publish(buildDoc()).then(function(){ setSave('Saved'); }, function(err){
+      var c = err && err.code;
+      if (c === 'conflict'){ setSave('Someone else saved first; reloading their version'); return; }
+      if (c === 'not_writer' || c === 'not_granted' || c === 'consent_required' || c === 'capability_disabled' || c === 'not_declared'){
+        readOnly = true; setSave(''); render(); return;
+      }
+      if (c === 'rate_limited'){ pending = true; setSave('Saving shortly…'); timer = setTimeout(save, 8000); return; }
+      setSave('Couldn’t save. Tick again to retry.', true);
+    });
+  }
+  document.addEventListener('change', function(e){
+    var cb = e.target; if (!cb.matches || !cb.matches('input[type=checkbox][data-id]')) return;
+    if (readOnly) return;
+    S.phases.forEach(function(p){ p.items.forEach(function(it){
+      if (it.id === cb.dataset.id){
+        it.done = cb.checked;
+        if (cb.checked) it.at = new Date().toLocaleDateString('en-US',{month:'short',day:'numeric'}); else delete it.at;
+      }
+    }); });
+    render();
+    var again = document.getElementById('cb-'+cb.dataset.id); if (again) again.focus();
+    schedule();
+  });
+  document.addEventListener('click', function(e){
+    var b = e.target.closest && e.target.closest('.chip'); if (!b) return;
+    if (b.dataset.r){ release = b.dataset.r; try { localStorage.setItem('g15-release', release); } catch(err){} }
+    else { filter = b.dataset.f; try { localStorage.setItem('g15-filter', filter); } catch(err){} }
+    render();
+  });
+  render();
+  if (window.claude && window.claude.use){
+    window.claude.use('artifact').then(function(a){
+      api = a;
+      if (!a){ setSave(''); }
+      if (pending) save();
+    }, function(){ api = null; });
+  }
+})();
+</script></body></html>
+</body></html>

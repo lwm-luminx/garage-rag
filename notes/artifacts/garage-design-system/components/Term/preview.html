@@ -1,0 +1,19 @@
+<!-- @dsCard group="Content" height=230 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Term — preview</title></head>
+<body>
+<p id="root" class="g-prose"></p>
+<script>
+  var G = window.Garage, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    'Assistants search your ',
+    h(G.Term, { term: 'Corpus', definition: 'Everything Garage has indexed from your sources — documents, code and messages — searchable as one collection.', className: 'is-open' }, 'corpus'),
+    ' through ',
+    h(G.Term, { term: 'MCP', definition: 'The Model Context Protocol, the open standard AI assistants use to call tools such as Garage’s search.' }, 'MCP'),
+    ', and each document is split into ',
+    h(G.Term, { term: 'Chunk', definition: 'A passage of a document. Garage embeds and searches chunks, so search returns the part that matches.' }, 'chunks'),
+    '.'));
+</script>
+</body>
+</html>

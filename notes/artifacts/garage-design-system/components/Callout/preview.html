@@ -1,0 +1,12 @@
+<!-- @dsCard group="Feedback" height=330 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Callout — preview</title></head>
+<body>
+<div id="root" class="g-stack"></div>
+<script>
+  var G = window.Garage, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null, h(G.Callout, { tone: 'info' }, 'Garage runs entirely on this Mac. Your assistants reach it over MCP.'), h(G.Callout, { tone: 'success', title: 'Index is up to date' }, '4,812 documents, 61,203 chunks embedded.'), h(G.Callout, { tone: 'warning', title: 'Alpha build' }, 'Expect rough edges; your corpus is safe to rebuild.'), h(G.Callout, { tone: 'danger', title: 'Reset Database' }, 'Deletes the index. Your source files are not touched.')));
+</script>
+</body>
+</html>

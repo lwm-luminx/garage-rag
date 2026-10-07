@@ -1,0 +1,12 @@
+<!-- @dsCard group="Actions" height=88 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Button — preview</title></head>
+<body>
+<div id="root" class="g-row"></div>
+<script>
+  var G = window.Garage, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null, h(G.Button, { variant: 'primary', size: 'large' }, 'Download Garage'), h(G.Button, { variant: 'primary' }, 'Update Everything'), h(G.Button, null, 'Add Source'), h(G.Button, { variant: 'quiet' }, 'View on GitHub'), h(G.Button, { variant: 'danger' }, 'Reset Database'), h(G.Button, { disabled: true }, 'Syncing…')));
+</script>
+</body>
+</html>
