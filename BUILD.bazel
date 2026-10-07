@@ -27,10 +27,6 @@
 # repin.py's, so gazelle leaves the folder alone.
 # gazelle:exclude winapp
 
-# notes holds design notes, research and release records moved out of the project workspace; its
-# scripts are kept for reference and run by hand, outside Bazel.
-# gazelle:exclude notes
-
 exports_files(
     [
         "README.md",
