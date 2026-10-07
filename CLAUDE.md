@@ -754,7 +754,10 @@ dated so a stale one can be spotted. `notes/history/` has the thread-by-thread r
 - The Sparkle appcast has a beta channel (`--channel beta`); through 1.5 every entry went to all installs ("until
   1.5 final, beta is also the main channel", 2026-09-28). Ask before publishing a beta-only entry.
 - Alphas and betas ship as GitHub pre-releases from signed `v<ver>-alpha.N`/`-beta.N` tags. Tag only after the
-  build from that commit is verified.
+  build from that commit is verified, and never move or patch a release tag: fixes go on a branch off it.
+- The app prefers the site's `models.json` (served from `main`) over the one it bundles, so a catalog change that
+  older builds would misread must reach the site with care, and a beta that changes the catalog needs the site's
+  copy updated first.
 
 ### Site and anything public
 

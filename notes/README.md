@@ -11,7 +11,7 @@ Enterprise designs live in `lwm-luminx/garage-enterprise` (`docs/`).
 | `design/` | Page redesign notes (Status, Sources, Models, MCP, Database, menu bar), the IPC hardening brief and the cloud placeholder plan for 1.5.5. |
 | `research/` | Write-ups: Dropbox online-only files, the dlopen survey, fact dedup clustering, LangExtract into an AGE graph, the OpenSSL audit, Python 3.14 / 3.15 / free-threaded 3.14t (with the blocker-check script the weekly routine runs). |
 | `v2/` | Garage v2: several corpora on one Mac, and peer sync across a person's Macs. |
-| `postgres-upstream/` | The `--enable-appstore` patch series for pgsql-hackers, its plan and the email Rick sends. |
+| `postgres-upstream/` | The plan and email draft for upstreaming `--enable-appstore`; the patch series itself is in `tools/postgres-upstream/`. |
 | `release-1.5/` | Build reports, notarization runbook, release and TestFlight notes, App Review notes, the beta backlog, validation reports and the nine 1.5 reviews (`reviews/`). |
 | `app-store/` | Listing copy draft and the French (ANSSI) encryption declaration package (`compliance/`). |
 | `site/` | Launch post drafts, the demo video script and the homepage diagram generator. |
