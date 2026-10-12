@@ -1575,3 +1575,75 @@ details .faq-content {
   margin-left: 0.6rem;
   vertical-align: 0.2em;
 }
+
+/* Love Wins Media: the band above the header on every page, and the line in the footer */
+.lwm-band {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 32px;
+  padding: 0.3rem 1rem;
+  background: linear-gradient(90deg, #be185d 0%, #b45309 100%);
+  color: #ffffff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+}
+
+.lwm-band:hover,
+.lwm-band:focus-visible {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.lwm-band:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -4px;
+}
+
+.lwm-heart {
+  flex: none;
+  fill: currentColor;
+}
+
+@media (prefers-color-scheme: dark) {
+  .lwm-band {
+    background: linear-gradient(90deg, #9d174d 0%, #be185d 45%, #92400e 100%);
+  }
+}
+
+.footer-lwm {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.footer-lwm a {
+  color: #be185d;
+  font-weight: 600;
+}
+
+.footer-lwm a:hover {
+  color: #9d174d;
+}
+
+.lwm-heart-text {
+  color: #ec4899;
+}
+
+@media (prefers-color-scheme: dark) {
+  .footer-lwm a {
+    color: #f472b6;
+  }
+  .footer-lwm a:hover {
+    color: #fbcfe8;
+  }
+}
+
+.footer-lwm-copy {
+  white-space: nowrap;
+}
