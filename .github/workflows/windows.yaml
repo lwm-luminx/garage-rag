@@ -17,6 +17,10 @@ name: Windows build
 # - `winapp`: the native Windows app (winapp/), built with the .NET SDK rather than
 #   Bazel. Its tests embed the built interpreter through Garage.Python and drive
 #   garage_rag's host contracts, with garage_rag's dependencies in a venv.
+# - `package`: the MSIX, the MSI and Garage-Setup.exe (winapp/packaging), staged
+#   from the two builds above, uploaded unsigned as `garage-windows-x64`. The Visual
+#   C++ runtime comes from Microsoft's Redistributable, downloaded by the scripts.
+#   Signing and the Store's identity are release steps (winapp/packaging/README.md).
 #
 # tools/windows/fetch_ext.py reads the url and sha256 out of ext/*/*.MODULE.bazel,
 # so a version bump there moves this build too. The Postgres sandbox patches and
@@ -343,3 +347,38 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           dotnet test --project tests/Garage.App.UITests/Garage.App.UITests.csproj -c Release --no-build
+
+  package:
+    needs: [postgres, python]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v7
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      - uses: actions/download-artifact@v4
+        with:
+          name: python-windows-x64
+          path: ${{ runner.temp }}\python
+      - uses: actions/download-artifact@v4
+        with:
+          name: postgres-windows-x64
+          path: ${{ runner.temp }}\pgsql
+      - name: Stage
+        run: winapp/packaging/stage.ps1 -PythonHome "$env:RUNNER_TEMP\python" -PostgresHome "$env:RUNNER_TEMP\pgsql"
+      - name: MSIX
+        run: winapp/packaging/msix.ps1
+      - name: MSI
+        run: winapp/packaging/msi.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: garage-windows-x64
+          path: |
+            winapp/packaging/out/*.msix
+            winapp/packaging/out/*.msi
+            winapp/packaging/out/Garage-Setup-*.exe
+          if-no-files-found: error

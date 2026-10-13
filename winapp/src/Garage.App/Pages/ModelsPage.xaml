@@ -7,13 +7,14 @@
     xmlns:models="using:Garage.App.Core.Models">
 
     <ScrollViewer>
-        <StackPanel Spacing="14" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
-            <TextBlock x:Uid="ModelsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <StackPanel Spacing="16" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
+            <Border Style="{StaticResource PageTitleRuleStyle}">
+                <TextBlock x:Uid="ModelsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+            </Border>
 
             <!-- The Overall tab's Embedding card. -->
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid ColumnSpacing="14">
+            <Border Style="{StaticResource GarageCardStyle}">
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -31,7 +32,7 @@
 
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button x:Uid="ModelsPage_RegisterButton" x:Name="RegisterButton" Click="OnRegister" AutomationProperties.AutomationId="models.register">
-                    <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="ModelsPage_2" /></StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE710;" FontSize="14" /><TextBlock x:Uid="ModelsPage_2" /></StackPanel>
                 </Button>
                 <Button x:Uid="ModelsPage_EmbedAllButton" x:Name="EmbedAllButton" Style="{StaticResource AccentButtonStyle}" Click="OnEmbedAll" AutomationProperties.AutomationId="models.embedAll" />
                 <Button x:Uid="ModelsPage_CancelEmbedButton" x:Name="CancelEmbedButton" Click="OnCancelEmbed" />
@@ -52,7 +53,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="3">
+                            <StackPanel Spacing="4">
                                 <StackPanel Orientation="Horizontal" Spacing="8">
                                     <TextBlock Text="{x:Bind Slug}" FontWeight="SemiBold" />
                                     <Border Padding="6,1" CornerRadius="4" BorderThickness="1" BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"

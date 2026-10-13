@@ -7,12 +7,13 @@
     xmlns:mcp="using:Garage.App.Core.Mcp">
 
     <ScrollViewer>
-        <StackPanel Spacing="14" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
-            <TextBlock x:Uid="McpPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <StackPanel Spacing="16" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,0">
+            <Border Style="{StaticResource PageTitleRuleStyle}">
+                <TextBlock x:Uid="McpPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+            </Border>
 
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid ColumnSpacing="14">
+            <Border Style="{StaticResource GarageCardStyle}">
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -38,7 +39,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <StackPanel Spacing="2">
+                <StackPanel Spacing="4">
                     <TextBlock x:Uid="McpPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="mcp.summary" />
                 </StackPanel>
@@ -50,7 +51,7 @@
             <ListView x:Name="RowsList" SelectionMode="None" AutomationProperties.AutomationId="mcp.list">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="mcp:McpClientRowPresentation">
-                        <Grid ColumnSpacing="14" Padding="0,8">
+                        <Grid ColumnSpacing="16" Padding="0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
@@ -59,7 +60,7 @@
                             <Border Width="34" Height="34" CornerRadius="17" VerticalAlignment="Top" Background="{x:Bind local:Look.TintBrush(Tint)}">
                                 <FontIcon Glyph="{x:Bind local:Look.ClientGlyph(Symbol)}" FontSize="15" Foreground="{ThemeResource TintGlyphBrush}" />
                             </Border>
-                            <StackPanel Grid.Column="1" Spacing="2">
+                            <StackPanel Grid.Column="1" Spacing="4">
                                 <TextBlock Text="{x:Bind Client.Label}" FontWeight="SemiBold" />
                                 <TextBlock Text="{x:Bind Status}" Foreground="{x:Bind local:Look.TintBrush(Tint)}" TextWrapping="Wrap" />
                                 <TextBlock Text="{x:Bind Client.Path}" FontFamily="Consolas" FontSize="12" Foreground="{ThemeResource TextFillColorTertiaryBrush}"

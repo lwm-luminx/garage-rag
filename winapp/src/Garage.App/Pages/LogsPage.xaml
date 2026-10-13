@@ -13,7 +13,9 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock x:Uid="LogsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <Border Style="{StaticResource PageTitleRuleStyle}">
+            <TextBlock x:Uid="LogsPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        </Border>
 
         <Grid Grid.Row="1" ColumnSpacing="8">
             <Grid.ColumnDefinitions>

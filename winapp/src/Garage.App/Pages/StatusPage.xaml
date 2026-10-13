@@ -5,8 +5,10 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <ScrollViewer>
-        <StackPanel Spacing="14" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,16">
-            <TextBlock x:Uid="StatusPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+        <StackPanel Spacing="16" MaxWidth="960" HorizontalAlignment="Left" Padding="0,0,16,16">
+            <Border Style="{StaticResource PageTitleRuleStyle}">
+                <TextBlock x:Uid="StatusPage_1" Style="{StaticResource TitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level1" />
+            </Border>
 
             <InfoBar x:Name="Connection" IsOpen="True" IsClosable="False" AutomationProperties.AutomationId="status.connection">
                 <InfoBar.ActionButton>
@@ -16,9 +18,8 @@
 
             <!-- Library: what the pipeline is doing, or what is left to index (the Mac's IndexingPresentation). -->
             <TextBlock x:Uid="StatusPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid ColumnSpacing="14">
+            <Border Style="{StaticResource GarageCardStyle}">
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -44,10 +45,10 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Top">
                         <Button x:Uid="StatusPage_UpdateEverythingButton" x:Name="UpdateEverythingButton" Click="OnUpdateEverything" AutomationProperties.AutomationId="status.updateEverything"
  >
-                            <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE895;" FontSize="14" /><TextBlock x:Uid="StatusPage_3" /></StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE895;" FontSize="14" /><TextBlock x:Uid="StatusPage_3" /></StackPanel>
                         </Button>
                         <Button x:Uid="StatusPage_StopButton" x:Name="StopButton" Click="OnStop" AutomationProperties.AutomationId="status.stop">
-                            <StackPanel Orientation="Horizontal" Spacing="6"><FontIcon Glyph="&#xE71A;" FontSize="14" /><TextBlock x:Uid="StatusPage_StopText" x:Name="StopText" /></StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8"><FontIcon Glyph="&#xE71A;" FontSize="14" /><TextBlock x:Uid="StatusPage_StopText" x:Name="StopText" /></StackPanel>
                         </Button>
                         <Button x:Uid="StatusPage_AddSourceButton" x:Name="AddSourceButton" Style="{StaticResource AccentButtonStyle}" Click="OnAddSource"
                                 AutomationProperties.AutomationId="status.addSource" />
@@ -57,8 +58,7 @@
 
             <!-- Automatic Updates: under Library, since a scheduled run is the same scan, read and index. -->
             <TextBlock x:Uid="StatusPage_4" Style="{StaticResource BodyStrongTextBlockStyle}" />
-            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+            <Border Style="{StaticResource GarageCardStyle}">
                 <StackPanel Spacing="8">
                     <StackPanel Orientation="Horizontal" Spacing="16">
                         <ToggleSwitch x:Uid="StatusPage_AutomaticSwitch" x:Name="AutomaticSwitch" Toggled="OnAutomaticToggled"
@@ -80,15 +80,14 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Uid="StatusPage_6" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
                         <Button x:Uid="StatusPage_status_services_testAll" Click="OnTestAll" AutomationProperties.AutomationId="status.services.testAll" />
                         <Button x:Uid="StatusPage_status_services_refresh" Click="OnRefreshServices" AutomationProperties.AutomationId="status.services.refresh">
                             <FontIcon Glyph="&#xE72C;" FontSize="14" />
                         </Button>
                     </StackPanel>
                 </Grid>
-                <Border Padding="16,8" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Border Style="{StaticResource GarageCardStyle}" Padding="16,8">
                     <StackPanel x:Name="ServiceRows" AutomationProperties.AutomationId="status.services" />
                 </Border>
             </StackPanel>

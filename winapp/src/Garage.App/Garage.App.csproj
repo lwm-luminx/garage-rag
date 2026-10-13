@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The Windows app: WinUI 3 on the Windows App SDK. Unpackaged and self-contained while it is
-       developed (docs/plans/windows-ui.md §6, decision 2); MSIX packaging comes with windows.md §6.
+  <!-- The Windows app: WinUI 3 on the Windows App SDK. Built unpackaged and self-contained; the MSI
+       and the MSIX are made from its published output by winapp/packaging (windows.md §6).
        Every decision lives in Garage.App.Core; this project binds to it. -->
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -11,6 +11,9 @@
     <AssemblyName>Garage</AssemblyName>
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
+    <!-- Without it `dotnet publish` leaves out Garage.pri, which holds the compiled XAML and the
+         strings, so a published app fails at its first page. -->
+    <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -37,10 +40,12 @@
   </ItemGroup>
 
   <!-- Shipped beside the app: the model catalog the setup assistant offers (found the way
-       garage_rag.db.catalog finds it), and the notices Settings opens. -->
+       garage_rag.db.catalog finds it), the notices Settings opens, and the app icon (the Mac's) for
+       the title bar. -->
   <ItemGroup>
     <Content Include="..\..\..\data\models\models.json" Link="data\models\models.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\..\data\notices\THIRD_PARTY_NOTICES.txt" Link="THIRD_PARTY_NOTICES.txt" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\..\macapp\GarageApp.xcassets\AppIcon.appiconset\AppIcon-32@2x.png" Link="Assets\GarageIcon.png" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

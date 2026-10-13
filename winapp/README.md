@@ -21,11 +21,12 @@ the WinUI app and its UI tests too, on macOS and Linux; see [Bazel](#bazel).
 | `src/Garage.Grpc` | The `GarageService` client generated from `proto/garage.proto`, the `x-garage-token` interceptor, and `services.proto` (the app's control plane to its services) with its named-pipe channel |
 | `src/Garage.Services` | `Garage.Services.exe`: one Garage service per process (`--service core` runs `GarageService`, `--service ingest` runs `garage_rag.ingest`), embedding CPython, answering the app over a named pipe |
 | `src/Garage.App.Core` | Everything the UI decides, with no UI framework: `AppState`, `OperationRunner` (ported from the Mac), the backends (`ServiceHostBackend` over `ServiceManager`, and `DevBackend`), the pipeline (`LibraryCoordinator`), navigation order, presentation values |
-| `src/Garage.App` | The WinUI 3 app (`Garage.exe`): window, `NavigationView`, pages, notification-area icon. Unpackaged and self-contained while in development |
+| `src/Garage.App` | The WinUI 3 app (`Garage.exe`): window, `NavigationView`, pages, notification-area icon. Built unpackaged and self-contained |
 | `tests/Garage.Python.Tests` | xUnit v3 tests that embed a real CPython 3.14 and drive `garage_rag` |
 | `tests/Garage.App.Core.Tests` | xUnit v3 tests of Core: the pages' view models and presentations (ported with the Mac's test cases) and the pipeline, against a fake client and a fake ingest service |
 | `tests/Garage.App.UITests` | FlaUI tests of the built app against a fake backend they serve; run with `GARAGE_UI_TESTS=1` (below) |
 | `tests/Garage.Services.Tests` | xUnit v3 tests that start the real service processes as the app does, and (with `GARAGE_TEST_DATABASE_URL`) ingest a folder into a throwaway database through them |
+| `packaging` | The MSIX (Microsoft Store, App Installer) and the MSI (per machine, WiX v5), both made from one staged layout; see [packaging/README.md](packaging/README.md) |
 
 ## Run the app
 
@@ -75,6 +76,14 @@ of starting another app, and hands over its command line: the jump list's tasks 
 `Garage.exe --do search|ask|add-source|update-everything`, and `--background` (launch at sign-in)
 starts in the notification area only. A new install opens on the setup assistant; Settings'
 **Setup Assistant…** shows it again.
+
+The look is the Garage design system (Garage violet on violet-tinted neutrals, light and dark).
+`src/Garage.App/Theme/GarageTheme.xaml` holds its colour tokens as `Garage*Brush` and points WinUI's
+own resource keys at them (the accent, text, cards, buttons, inputs, callouts, the navigation pane),
+so pages use the standard keys and styles and take the look from there. `App.xaml` adds the page
+title, its rule, `GarageCardStyle` and `DangerButtonStyle` (destructive actions). High contrast keeps
+the system's colours. `--appearance light|dark` pins the theme for one run, as on the Mac, for
+screenshots and tests.
 
 ## Build and test
 

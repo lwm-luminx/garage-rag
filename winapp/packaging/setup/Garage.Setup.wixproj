@@ -1,0 +1,22 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- Garage-Setup.exe: a WiX Burn bootstrapper that installs Microsoft's Visual C++ Redistributable
+       when this PC's runtime is missing or older than Postgres needs, then the MSI. Built by msi.ps1.
+       It embeds the Burn engine (MS-RL), listed in THIRD_PARTY_NOTICES.txt. -->
+  <PropertyGroup>
+    <OutputType>Bundle</OutputType>
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
+    <OutputName>Garage-Setup-$(ProductVersion)-$(InstallerPlatform)</OutputName>
+    <!-- The installer window's logo: the app icon (the Mac's, 128 pixels, so it stays sharp when the
+         64-pixel logo is scaled for the display). -->
+    <LogoPath>$(MSBuildThisFileDirectory)..\..\..\macapp\GarageApp.xcassets\AppIcon.appiconset\AppIcon-128.png</LogoPath>
+    <DefineConstants>ProductVersion=$(ProductVersion);IconPath=$(IconPath);LogoPath=$(LogoPath);MsiPath=$(MsiPath);VCRedistPath=$(VCRedistPath);VCRuntimeRequired=$(VCRuntimeRequired)</DefineConstants>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WixToolset.Bal.wixext" Version="5.0.2" />
+    <PackageReference Include="WixToolset.Util.wixext" Version="5.0.2" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The direct-download feed (windows.md section 6): App Installer installs the MSIX from it and, on each
+     launch, updates to a newer one. msix.ps1 -AppInstallerUri fills the {{...}} fields; publish the
+     result at {{FeedUri}}, beside the MSIX. -->
+<AppInstaller
+  xmlns="http://schemas.microsoft.com/appx/appinstaller/2018"
+  Version="{{Version}}"
+  Uri="{{FeedUri}}">
+  <MainPackage
+    Name="{{IdentityName}}"
+    Publisher="{{Publisher}}"
+    Version="{{Version}}"
+    ProcessorArchitecture="{{Arch}}"
+    Uri="{{PackageUri}}" />
+  <UpdateSettings>
+    <OnLaunch HoursBetweenUpdateChecks="0" ShowPrompt="false" UpdateBlocksActivation="false" />
+    <AutomaticBackgroundTask />
+  </UpdateSettings>
+</AppInstaller>

@@ -1,0 +1,25 @@
+<Project Sdk="WixToolset.Sdk/5.0.2">
+
+  <!-- The MSI: Garage installed per machine in Program Files\Garage from the staged layout. Built by
+       msi.ps1, which passes these properties; see winapp/packaging/README.md. WiX v5 is MS-RL, with
+       no maintenance-fee EULA to accept (v6 and later ask for one). -->
+  <PropertyGroup>
+    <!-- The stage.ps1 output to install. -->
+    <StageDir Condition="'$(StageDir)' == ''">$(MSBuildThisFileDirectory)..\out\stage-x64</StageDir>
+    <!-- MAJOR.MINOR.BUILD: Windows Installer compares only these three in an upgrade. -->
+    <ProductVersion Condition="'$(ProductVersion)' == ''">0.0.0</ProductVersion>
+    <IconPath Condition="'$(IconPath)' == ''">$(MSBuildThisFileDirectory)..\out\work-x64\Garage.ico</IconPath>
+    <InstallerPlatform Condition="'$(InstallerPlatform)' == ''">x64</InstallerPlatform>
+    <!-- The Visual C++ runtime Postgres needs (14.51), and the version just below it the search uses. -->
+    <VCRuntimeRequired Condition="'$(VCRuntimeRequired)' == ''">14.0</VCRuntimeRequired>
+    <VCRuntimeMinVersion Condition="'$(VCRuntimeMinVersion)' == ''">13.65535.65535.65535</VCRuntimeMinVersion>
+    <OutputName>Garage-$(ProductVersion)-$(InstallerPlatform)</OutputName>
+    <DefineConstants>StageDir=$(StageDir);ProductVersion=$(ProductVersion);IconPath=$(IconPath);InstallerArch=$(InstallerPlatform);VCRuntimeRequired=$(VCRuntimeRequired);VCRuntimeMinVersion=$(VCRuntimeMinVersion)</DefineConstants>
+    <!-- ICE03 rejects the Language WiX reads from the Windows App SDK's own DLLs: Microsoft.ui.xaml.dll
+         lists about 90 languages (longer than the column), and its MUI satellites use LCIDs newer than
+         ICE03's table. Windows Installer reads Language only to break a tie between two files of equal
+         version, which the MajorUpgrade (old version removed first) never asks it to. Every other ICE runs. -->
+    <SuppressIces>ICE03</SuppressIces>
+  </PropertyGroup>
+
+</Project>
