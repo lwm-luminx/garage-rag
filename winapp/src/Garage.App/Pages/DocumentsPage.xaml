@@ -74,6 +74,13 @@
                         <TextBlock x:Name="DetailTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
                         <TextBlock x:Name="DetailSummary" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                         <TextBlock x:Name="DetailUri" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button x:Uid="DocumentsPage_CopyUriButton" Click="OnCopyUri" />
+                            <Button x:Uid="DocumentsPage_ShowInExplorerButton" x:Name="ShowInExplorerButton" Click="OnShowInExplorer" />
+                            <Button x:Uid="DocumentsPage_ShowInGraphButton" Click="OnShowInGraph" AutomationProperties.AutomationId="documents.detail.graph" />
+                            <Button x:Name="GleanButton" Click="OnGlean" AutomationProperties.AutomationId="documents.detail.glean" />
+                        </StackPanel>
+                        <TextBlock x:Name="GleanText" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock x:Name="DetailExtracted" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <TextBlock x:Name="DetailAuthors" TextWrapping="Wrap" />
                         <TextBlock x:Name="FactsHeader" Style="{StaticResource BodyStrongTextBlockStyle}" />

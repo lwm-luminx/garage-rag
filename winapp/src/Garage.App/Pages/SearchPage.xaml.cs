@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using Garage.App.Core.Search;
+using Garage.App.Core.Tray;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -37,6 +38,7 @@ public sealed partial class SearchPage : Page
         _model.PropertyChanged += OnModelChanged;
         Show();
         _ = LoadSourcesAsync();
+        _ = LoadModelsAsync();
         QueryBox.Focus(FocusState.Programmatic);
     }
 
@@ -51,6 +53,29 @@ public sealed partial class SearchPage : Page
         SourceBox.SelectedItem = _model.Sources.Contains(selected) ? selected : _model.Sources[0];
         _loading = false;
     }
+
+    private async Task LoadModelsAsync()
+    {
+        await _model.LoadModelsAsync().ConfigureAwait(true);
+        _loading = true;
+        ModelBox.ItemsSource = _model.Models.Select(m => new ModelChoice(m, SearchViewModel.ModelTitle(m))).ToList();
+        ModelBox.DisplayMemberPath = nameof(ModelChoice.Title);
+        ModelBox.SelectedItem = ((List<ModelChoice>)ModelBox.ItemsSource).First(c => c.Slug == _model.Model);
+        _loading = false;
+    }
+
+    private void OnModelChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_loading && ModelBox.SelectedItem is ModelChoice choice)
+        {
+            _model.Model = choice.Slug;
+        }
+    }
+
+    private void OnShowInExplorer(object sender, RoutedEventArgs e) =>
+        Shell.ShowInExplorer(_model.SelectedResult is { } hit ? QuickSearch.FilePathForUri(hit.Uri) : null);
+
+    private sealed record ModelChoice(string Slug, string Title);
 
     private void SelectFilters()
     {
@@ -148,6 +173,7 @@ public sealed partial class SearchPage : Page
         AuthorsPanel.Visibility = hit.Authors.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         HitAuthors.Text = hit.AuthorsList;
         HitUri.Text = hit.Uri;
+        ShowInExplorerLink.Visibility = QuickSearch.FilePathForUri(hit.Uri) is null ? Visibility.Collapsed : Visibility.Visible;
         SnippetPanel.Visibility = hit.HasDistinctSnippet ? Visibility.Visible : Visibility.Collapsed;
         HitSnippet.Text = hit.Snippet;
         HitContent.Text = hit.Content;

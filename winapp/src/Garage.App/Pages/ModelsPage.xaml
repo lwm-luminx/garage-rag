@@ -35,6 +35,12 @@
                 </Button>
                 <Button x:Uid="ModelsPage_EmbedAllButton" x:Name="EmbedAllButton" Style="{StaticResource AccentButtonStyle}" Click="OnEmbedAll" AutomationProperties.AutomationId="models.embedAll" />
                 <Button x:Uid="ModelsPage_CancelEmbedButton" x:Name="CancelEmbedButton" Click="OnCancelEmbed" />
+                <Button x:Uid="ModelsPage_GleanButton" x:Name="GleanButton" Click="OnGlean" AutomationProperties.AutomationId="models.gleanFacts" />
+                <Button x:Uid="ModelsPage_StopGleanButton" x:Name="StopGleanButton" Click="OnStopGlean" />
+            </StackPanel>
+            <StackPanel x:Name="GleanPanel" Spacing="4">
+                <TextBlock x:Name="GleanText" AutomationProperties.AutomationId="models.glean" />
+                <ProgressBar x:Name="GleanBar" />
             </StackPanel>
             <StackPanel x:Name="BackfillPanel" Spacing="4">
                 <TextBlock x:Name="BackfillText" AutomationProperties.AutomationId="models.backfill" />
@@ -90,6 +96,56 @@
             </StackPanel>
             <TextBlock x:Uid="ModelsPage_11"
                        TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+
+            <!-- Fact Prompts: the Mac's FactPromptsSection. -->
+            <Grid ColumnSpacing="12" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="4">
+                    <TextBlock x:Uid="ModelsPage_PromptsTitle" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
+                    <TextBlock x:Name="PromptsExplanation" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                </StackPanel>
+                <Button x:Uid="ModelsPage_NewPromptButton" x:Name="NewPromptButton" Grid.Column="1" VerticalAlignment="Top" Click="OnNewPrompt"
+                        AutomationProperties.AutomationId="models.prompts.new" />
+            </Grid>
+            <TextBlock x:Name="PromptsError" TextWrapping="Wrap" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+            <StackPanel x:Name="PromptsPanel" Spacing="6" AutomationProperties.AutomationId="models.prompts" />
+
+            <!-- Test an Embedding: embed a sentence and inspect the whole vector. -->
+            <Expander x:Name="EmbeddingTestExpander" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" Margin="0,8,0,0"
+                      AutomationProperties.AutomationId="models.embeddingTest">
+                <Expander.Header>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock x:Uid="ModelsPage_EmbeddingTestTitle" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                        <TextBlock x:Uid="ModelsPage_EmbeddingTestSubtitle" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Expander.Header>
+                <StackPanel Spacing="10">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <ComboBox x:Uid="ModelsPage_TestModelBox" x:Name="TestModelBox" MinWidth="220" SelectionChanged="OnTestModelChanged" />
+                        <NumberBox x:Uid="ModelsPage_TestDimsBox" x:Name="TestDimsBox" Minimum="0" Maximum="16384" SpinButtonPlacementMode="Compact"
+                                   MinWidth="130" ValueChanged="OnTestDimsChanged" />
+                    </StackPanel>
+                    <TextBox x:Name="TestTextBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="56" TextChanged="OnTestTextChanged"
+                             AutomationProperties.AutomationId="models.embeddingTest.text" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Uid="ModelsPage_TestEmbedButton" x:Name="TestEmbedButton" Style="{StaticResource AccentButtonStyle}" Click="OnTestEmbed"
+                                AutomationProperties.AutomationId="models.embeddingTest.run" />
+                        <ProgressRing x:Name="TestProgress" IsActive="False" Width="20" Height="20" />
+                        <Button x:Uid="ModelsPage_TestCopyCsvButton" x:Name="TestCopyCsvButton" Click="OnTestCopyCsv" />
+                        <Button x:Uid="ModelsPage_TestCopyJsonButton" x:Name="TestCopyJsonButton" Click="OnTestCopyJson" />
+                    </StackPanel>
+                    <TextBlock x:Name="TestError" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+                    <StackPanel x:Name="TestResultPanel" Spacing="6">
+                        <TextBlock x:Name="TestCaption" FontWeight="SemiBold" AutomationProperties.AutomationId="models.embeddingTest.caption" />
+                        <StackPanel x:Name="TestFigures" Orientation="Horizontal" Spacing="12" />
+                        <TextBlock x:Name="TestPreview" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    </StackPanel>
+                </StackPanel>
+            </Expander>
         </StackPanel>
     </ScrollViewer>
 </Page>

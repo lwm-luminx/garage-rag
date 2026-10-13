@@ -24,6 +24,9 @@ public enum AppSection
     /// <summary>Distilled facts and their prompts.</summary>
     Facts,
 
+    /// <summary>The graph of documents, authors and facts (Apache AGE).</summary>
+    Graph,
+
     /// <summary>Hybrid search over the corpus.</summary>
     Search,
 
@@ -40,7 +43,7 @@ public enum SidebarGroup
     /// <summary>Sources, Models, MCP Server.</summary>
     Configuration,
 
-    /// <summary>Documents, Facts, Search.</summary>
+    /// <summary>Documents, Facts, Graph, Search.</summary>
     Data,
 
     /// <summary>Database, Logs.</summary>
@@ -65,7 +68,7 @@ public static class AppSections
     public static IReadOnlyList<AppSection> SectionsIn(SidebarGroup group) => group switch
     {
         SidebarGroup.Configuration => [AppSection.Sources, AppSection.Models, AppSection.Mcp],
-        SidebarGroup.Data => [AppSection.Documents, AppSection.Facts, AppSection.Search],
+        SidebarGroup.Data => [AppSection.Documents, AppSection.Facts, AppSection.Graph, AppSection.Search],
         SidebarGroup.Advanced => [AppSection.Database, AppSection.Logs],
         _ => throw new ArgumentOutOfRangeException(nameof(group), group, null),
     };
@@ -79,6 +82,7 @@ public static class AppSections
         AppSection.Mcp => "MCP Server",
         AppSection.Documents => "Documents",
         AppSection.Facts => "Facts",
+        AppSection.Graph => "Graph",
         AppSection.Search => "Search",
         AppSection.Database => "Database",
         AppSection.Logs => "Logs",
@@ -88,7 +92,10 @@ public static class AppSections
     /// <summary>The group heading.</summary>
     public static string Title(this SidebarGroup group) => group.ToString();
 
-    /// <summary>The page for Ctrl+<paramref name="number"/> (1-based, navigation order), or null.</summary>
+    /// <summary>The most pages a digit reaches: Ctrl+1 to Ctrl+9.</summary>
+    public const int ShortcutCount = 9;
+
+    /// <summary>The page for Ctrl+<paramref name="number"/> (1-based, navigation order), or null; pages past the ninth have none.</summary>
     public static AppSection? ForShortcut(int number) =>
-        number >= 1 && number <= NavigationOrder.Count ? NavigationOrder[number - 1] : null;
+        number >= 1 && number <= Math.Min(ShortcutCount, NavigationOrder.Count) ? NavigationOrder[number - 1] : null;
 }

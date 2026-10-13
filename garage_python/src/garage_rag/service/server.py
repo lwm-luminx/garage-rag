@@ -47,6 +47,8 @@ from garage_rag.proto.garage_pb2 import (
     DropModelRequest,
     DropModelResponse,
     EmbeddingChunkItem,
+    EmbedTextRequest,
+    EmbedTextResponse,
     EnrichFactsRequest,
     EnrichFactsStatus,
     EnsureLlamaModelRequest,
@@ -1042,6 +1044,25 @@ class GarageRpcServicer(GarageServiceServicer):
 
         drop_model(request.slug)
         return DropModelResponse(message=f"dropped {request.slug}")
+
+    @_grpc_errors
+    def EmbedText(self, request: EmbedTextRequest, context: grpc.ServicerContext) -> EmbedTextResponse:
+        """Embed one text with a registered model (the app's Test an Embedding)."""
+        from garage_rag.embed.base import EmbeddingError
+        from garage_rag.ops.models import embed_text
+
+        try:
+            embedded = embed_text(request.text, request.model or None, dimensions=request.dimensions or None)
+        except EmbeddingError as exc:
+            # The model server did not answer or refused: say so, rather than an opaque UNKNOWN.
+            context.abort(grpc.StatusCode.UNAVAILABLE, str(exc))
+        return EmbedTextResponse(
+            model=embedded.model,
+            provider=embedded.provider,
+            model_ref=embedded.model_ref,
+            native_dims=embedded.native_dims,
+            vector=embedded.vector,
+        )
 
     @_grpc_errors
     def Backfill(self, request: BackfillRequest, context: grpc.ServicerContext) -> Iterator[BackfillStatus]:

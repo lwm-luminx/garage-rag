@@ -493,7 +493,8 @@ presenter over the same function the CLI command calls (`ops/`), and a
   `GetStatus`, `GetVersion`, `Ping`.
 - **Operations**: `AddSource`, `RemoveSource`, `Scan` (streaming),
   `SyncSources`, `ImportSourcesToConfig`, `Reconcile`, `RegisterModel`,
-  `SetDefaultModel`, `DropModel`, `Backfill` and `EnrichFacts` (both streaming;
+  `SetDefaultModel`, `DropModel`, `EmbedText` (one text through a registered model, for the
+  Windows app's Test an Embedding), `Backfill` and `EnrichFacts` (both streaming;
   cancelling the call stops the work at its next progress step),
   `ListFactPrompts`, `InitDb`, `GetSetting` / `SetSetting`, `McpInstall` /
   `McpUninstall` / `McpStatus`, and `EnsureLlamaModel` for processes that cannot

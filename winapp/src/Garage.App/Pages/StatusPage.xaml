@@ -82,6 +82,7 @@
                     <TextBlock x:Uid="StatusPage_6" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                         <Button x:Uid="StatusPage_status_services_testAll" Click="OnTestAll" AutomationProperties.AutomationId="status.services.testAll" />
+                        <Button x:Uid="StatusPage_RestartAllButton" x:Name="RestartAllButton" Click="OnRestartAll" AutomationProperties.AutomationId="status.services.restartAll" />
                         <Button x:Uid="StatusPage_status_services_refresh" Click="OnRefreshServices" AutomationProperties.AutomationId="status.services.refresh">
                             <FontIcon Glyph="&#xE72C;" FontSize="14" />
                         </Button>

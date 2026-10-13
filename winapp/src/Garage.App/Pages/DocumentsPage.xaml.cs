@@ -1,6 +1,9 @@
 using System.ComponentModel;
 using System.Globalization;
 using Garage.App.Core.Documents;
+using Garage.App.Core.Facts;
+using Garage.App.Core.Graph;
+using Garage.App.Core.Tray;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -12,6 +15,7 @@ namespace Garage.App.Pages;
 /// <summary>The Documents page (the Mac's <c>DocumentsView</c>): filters, the list and the selected document's chunks.</summary>
 public sealed partial class DocumentsPage : Page
 {
+    private PageModels _pages = null!;
     private DocumentsViewModel _model = null!;
     private bool _loading;
 
@@ -22,7 +26,9 @@ public sealed partial class DocumentsPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        _model = ((PageModels)e.Parameter).Documents;
+        _pages = (PageModels)e.Parameter;
+        _model = _pages.Documents;
+        _pages.State.Facts.PropertyChanged += OnModelChanged;
         _loading = true;
         FilterBox.Text = _model.SearchText;
         SourceBox.ItemsSource = _model.Sources;
@@ -44,11 +50,57 @@ public sealed partial class DocumentsPage : Page
         _loading = true;
         SourceBox.SelectedItem = _model.Sources.Contains(source) ? source : _model.Sources[0];
         _loading = false;
-        await _model.RefreshAsync().ConfigureAwait(true);
+        if (_model.PendingFocus is { } focus)
+        {
+            await _model.ShowAsync(focus).ConfigureAwait(true);
+            _loading = true;
+            FilterBox.Text = _model.SearchText;
+            SourceBox.SelectedItem = _model.Source;
+            ClassBox.SelectedItem = _model.CorpusClass;
+            TrustBox.SelectedItem = _model.TrustTier;
+            DocumentsList.SelectedItem = _model.Documents.FirstOrDefault(d => d.Id == focus.Id);
+            _loading = false;
+            Show();
+        }
+        else
+        {
+            await _model.RefreshAsync().ConfigureAwait(true);
+        }
     }
 
     /// <inheritdoc/>
-    protected override void OnNavigatedFrom(NavigationEventArgs e) => _model.PropertyChanged -= OnModelChanged;
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        _model.PropertyChanged -= OnModelChanged;
+        _pages.State.Facts.PropertyChanged -= OnModelChanged;
+    }
+
+    private void OnCopyUri(object sender, RoutedEventArgs e) => Clipboard.Copy(_model.Detail?.Uri);
+
+    private void OnShowInExplorer(object sender, RoutedEventArgs e) =>
+        Shell.ShowInExplorer(_model.Detail is { } detail ? QuickSearch.FilePathForUri(detail.Uri) : null);
+
+    private void OnShowInGraph(object sender, RoutedEventArgs e)
+    {
+        if (_model.Detail is { } detail)
+        {
+            _pages.ShowInGraph(new GraphFocus("Document", detail.Id));
+        }
+    }
+
+    // Glean Facts from this one document, on the facts runner; the detail is reread afterwards.
+    private async void OnGlean(object sender, RoutedEventArgs e)
+    {
+        if (_model.Detail is not { } detail)
+        {
+            return;
+        }
+        await _pages.Facts.GleanAsync(_pages.State.Facts, _pages.State.Notifier, new GleanScope(DocumentId: detail.Id)).ConfigureAwait(true);
+        if (_model.Selected?.Id == detail.Id)
+        {
+            await _model.LoadDetailAsync().ConfigureAwait(true);
+        }
+    }
 
     private async void OnFilterChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -118,6 +170,12 @@ public sealed partial class DocumentsPage : Page
         DetailTitle.Text = detail.DisplayTitle;
         DetailSummary.Text = detail.Summary;
         DetailUri.Text = detail.Uri;
+        ShowInExplorerButton.Visibility = Look.VisibleWhen(QuickSearch.FilePathForUri(detail.Uri) is not null);
+        bool gleaning = _pages.State.Facts.IsRunning;
+        GleanButton.IsEnabled = !gleaning;
+        GleanButton.Content = detail.Facts.Count == 0 ? "Glean Facts" : "Re-glean Facts";
+        GleanText.Text = gleaning ? _pages.Facts.GleanProgress ?? "" : "";
+        GleanText.Visibility = Look.VisibleIf(GleanText.Text);
         DetailExtracted.Text = detail.ExtractedBy;
         DetailAuthors.Text = detail.Authors.Count > 0 ? "By " + string.Join(", ", detail.Authors) : "";
         FactsHeader.Text = string.Create(CultureInfo.CurrentCulture, $"Facts ({detail.Facts.Count:N0})");

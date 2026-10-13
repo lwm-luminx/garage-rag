@@ -23,11 +23,25 @@
                     <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock x:Name="HeadlineTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" AutomationProperties.AutomationId="mcp.headline" />
                         <TextBlock x:Name="HeadlineDetail" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <StackPanel x:Name="HttpPanel" Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
-                            <ToggleSwitch x:Uid="McpPage_HttpSwitch" x:Name="HttpSwitch" Toggled="OnHttpToggled"
-                                          AutomationProperties.AutomationId="mcp.http" />
-                            <TextBlock x:Name="HttpUrlText" VerticalAlignment="Center" FontFamily="Consolas" IsTextSelectionEnabled="True"
-                                       AutomationProperties.AutomationId="mcp.http.url" />
+                        <StackPanel x:Name="HttpPanel" Spacing="8" Margin="0,6,0,0">
+                            <StackPanel Orientation="Horizontal" Spacing="12">
+                                <ToggleSwitch x:Uid="McpPage_HttpSwitch" x:Name="HttpSwitch" Toggled="OnHttpToggled"
+                                              AutomationProperties.AutomationId="mcp.http" />
+                                <TextBlock x:Name="HttpUrlText" VerticalAlignment="Center" FontFamily="Consolas" IsTextSelectionEnabled="True"
+                                           AutomationProperties.AutomationId="mcp.http.url" />
+                                <Button x:Uid="McpPage_CopyAddressButton" x:Name="CopyAddressButton" Click="OnCopyAddress" VerticalAlignment="Center">
+                                    <FontIcon Glyph="&#xE8C8;" FontSize="14" />
+                                </Button>
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <NumberBox x:Uid="McpPage_PortBox" x:Name="PortBox" Minimum="1024" Maximum="65535" SpinButtonPlacementMode="Compact"
+                                           MinWidth="130" ValueChanged="OnPortChanged" AutomationProperties.AutomationId="mcp.port" />
+                                <Button x:Uid="McpPage_RandomButton" Click="OnRandomPort" VerticalAlignment="Bottom" />
+                                <Button x:Uid="McpPage_TestButton" x:Name="TestButton" Click="OnTest" VerticalAlignment="Bottom" AutomationProperties.AutomationId="mcp.test" />
+                                <Button x:Uid="McpPage_RestartButton" x:Name="RestartButton" Click="OnRestart" VerticalAlignment="Bottom" AutomationProperties.AutomationId="mcp.restart" />
+                            </StackPanel>
+                            <TextBlock x:Name="ToolsText" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="mcp.tools" />
                         </StackPanel>
                     </StackPanel>
                 </Grid>
@@ -37,12 +51,26 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <StackPanel Spacing="2">
                     <TextBlock x:Uid="McpPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
                     <TextBlock x:Name="SummaryText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="mcp.summary" />
                 </StackPanel>
-                <Button x:Uid="McpPage_ConnectAllButton" x:Name="ConnectAllButton" Grid.Column="1" Style="{StaticResource AccentButtonStyle}" Click="OnConnectAll"
+                <Button x:Uid="McpPage_MoreButton" Grid.Column="1" VerticalAlignment="Center" AutomationProperties.AutomationId="mcp.more">
+                    <FontIcon Glyph="&#xE712;" FontSize="14" />
+                    <Button.Flyout>
+                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                            <MenuFlyoutItem x:Uid="McpPage_LookAgainItem" Click="OnLookAgain" AutomationProperties.AutomationId="mcp.lookAgain">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE72C;" /></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                            <MenuFlyoutItem x:Uid="McpPage_ConnectFileItem" Click="OnConnectFile" AutomationProperties.AutomationId="mcp.connectFile">
+                                <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE8E5;" /></MenuFlyoutItem.Icon>
+                            </MenuFlyoutItem>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                </Button>
+                <Button x:Uid="McpPage_ConnectAllButton" x:Name="ConnectAllButton" Grid.Column="2" Style="{StaticResource AccentButtonStyle}" Click="OnConnectAll"
                         AutomationProperties.AutomationId="mcp.connectAll" />
             </Grid>
             <InfoBar x:Name="ResultBar" IsClosable="True" AutomationProperties.AutomationId="mcp.result" />
@@ -68,6 +96,17 @@
                             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4" VerticalAlignment="Top">
                                 <Button Tag="{x:Bind Client.Key}" Content="{x:Bind ActionTitle}" Click="OnConnect" Visibility="{x:Bind local:Look.VisibleIf(ActionTitle)}" />
                                 <Button x:Uid="McpPage_3" Tag="{x:Bind Client.Key}" Click="OnDisconnect" Visibility="{x:Bind local:Look.VisibleWhen(Client.IsRegistered)}" />
+                                <Button x:Uid="McpPage_RowMoreButton" Tag="{x:Bind Client.Path}">
+                                    <FontIcon Glyph="&#xE712;" FontSize="14" />
+                                    <Button.Flyout>
+                                        <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                            <MenuFlyoutItem x:Uid="McpPage_OpenConfigItem" Tag="{x:Bind Client.Path}" Click="OnOpenConfig"
+                                                            IsEnabled="{x:Bind Client.ExistsOnDisk}" />
+                                            <MenuFlyoutItem x:Uid="McpPage_ShowConfigItem" Tag="{x:Bind Client.Path}" Click="OnShowConfig" />
+                                            <MenuFlyoutItem x:Uid="McpPage_CopyPathItem" Tag="{x:Bind Client.Path}" Click="OnCopyPath" />
+                                        </MenuFlyout>
+                                    </Button.Flyout>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </DataTemplate>
@@ -78,6 +117,73 @@
             <TextBlock x:Name="CommandText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
             <TextBlock x:Uid="McpPage_5"
                        TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+
+            <!-- Try It: call the running server the way an assistant would. -->
+            <Border Padding="16" CornerRadius="8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock x:Uid="McpPage_TryTitle" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" />
+                    <SelectorBar x:Name="TryModeBar" SelectionChanged="OnTryModeChanged" AutomationProperties.AutomationId="mcp.try.mode">
+                        <SelectorBarItem x:Uid="McpPage_TryAskItem" Tag="Ask" />
+                        <SelectorBarItem x:Uid="McpPage_TryPromptItem" Tag="Prompt" />
+                        <SelectorBarItem x:Uid="McpPage_TryToolItem" Tag="Tool" />
+                    </SelectorBar>
+                    <TextBlock x:Name="TryExplanation" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+
+                    <StackPanel x:Name="PromptPanel" Spacing="8">
+                        <TextBox x:Name="TryPromptBox" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="72" MaxHeight="160"
+                                 TextChanged="OnTryInputChanged" AutomationProperties.AutomationId="mcp.try.prompt" />
+                        <StackPanel Orientation="Horizontal" Spacing="12">
+                            <NumberBox x:Uid="McpPage_TryTokensBox" x:Name="TryTokensBox" Minimum="16" Maximum="4096" SmallChange="16" LargeChange="256"
+                                       SpinButtonPlacementMode="Compact" ValueChanged="OnTryTokensChanged" />
+                            <Slider x:Uid="McpPage_TryTemperature" x:Name="TryTemperatureSlider" Minimum="0" Maximum="1.5" StepFrequency="0.05" Width="180"
+                                    ValueChanged="OnTryTemperatureChanged" />
+                            <TextBlock x:Name="TryTemperatureText" VerticalAlignment="Bottom" Margin="0,0,0,8" FontFamily="Consolas" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel x:Name="ToolPanel" Spacing="8">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <ComboBox x:Uid="McpPage_TryToolBox" x:Name="TryToolBox" MinWidth="200" DisplayMemberPath="Name" SelectionChanged="OnTryToolChanged"
+                                      AutomationProperties.AutomationId="mcp.try.tool" />
+                            <TextBox x:Uid="McpPage_TryQueryBox" x:Name="TryQueryBox" MinWidth="220" TextChanged="OnTryInputChanged" VerticalAlignment="Bottom" />
+                            <TextBox x:Uid="McpPage_TryDocumentBox" x:Name="TryDocumentBox" MinWidth="120" TextChanged="OnTryInputChanged" VerticalAlignment="Bottom" />
+                        </StackPanel>
+                        <TextBlock x:Name="TryToolDescription" TextWrapping="Wrap" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBox x:Uid="McpPage_TryJsonBox" x:Name="TryJsonBox" AcceptsReturn="True" FontFamily="Consolas" MinHeight="60"
+                                 TextChanged="OnTryInputChanged" />
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button x:Uid="McpPage_TryRunButton" x:Name="TryRunButton" Style="{StaticResource AccentButtonStyle}" Click="OnTryRun"
+                                AutomationProperties.AutomationId="mcp.try.run">
+                            <Button.KeyboardAccelerators>
+                                <KeyboardAccelerator Modifiers="Control" Key="Enter" />
+                            </Button.KeyboardAccelerators>
+                        </Button>
+                        <ProgressRing x:Name="TryProgress" IsActive="False" Width="20" Height="20" />
+                        <TextBlock x:Uid="McpPage_TryStartServer" x:Name="TryStartServer" VerticalAlignment="Center" Style="{StaticResource CaptionTextBlockStyle}"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+
+                    <TextBlock x:Name="TryError" TextWrapping="Wrap" IsTextSelectionEnabled="True" Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                               AutomationProperties.AutomationId="mcp.try.error" />
+
+                    <StackPanel x:Name="TryOutputPanel" Spacing="6">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBlock x:Name="TryOutputTitle" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
+                            <TextBlock x:Name="TryOutputModel" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                            <Button x:Uid="McpPage_TryCopyButton" Click="OnTryCopy" Padding="8,2" />
+                        </StackPanel>
+                        <TextBlock x:Name="TryOutputText" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="mcp.try.answer" />
+                        <TextBlock x:Uid="McpPage_TrySourcesTitle" x:Name="TrySourcesTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <StackPanel x:Name="TrySourcesPanel" Spacing="8" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </Page>

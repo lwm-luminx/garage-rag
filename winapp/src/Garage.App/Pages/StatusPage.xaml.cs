@@ -210,6 +210,19 @@ public sealed partial class StatusPage : Page
 
     private async void OnRefreshServices(object sender, RoutedEventArgs e) => await Model.RefreshServicesAsync().ConfigureAwait(true);
 
+    private async void OnRestartAll(object sender, RoutedEventArgs e)
+    {
+        RestartAllButton.IsEnabled = false;
+        try
+        {
+            await Model.RestartAllAsync().ConfigureAwait(true);
+        }
+        finally
+        {
+            RestartAllButton.IsEnabled = true;
+        }
+    }
+
     /// <summary>One service's row: its state, Test, Restart, and the self tests under it.</summary>
     private sealed class ServiceRowView
     {

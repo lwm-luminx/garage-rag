@@ -39,6 +39,8 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
         AppWindow.Closing += OnClosing;
 
         BuildNavigation();
+        pages.Navigate = Select;
+        pages.ReportBug = ShowBugReportAsync;
         AddShortcuts();
         Select(AppSections.Top);
 
@@ -85,12 +87,14 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
         }
     }
 
-    /// <summary>Report a Bug, over the window.</summary>
-    public async Task ShowBugReportAsync()
+    /// <summary>Report a Bug, over the window; <paramref name="setup"/> presets the report (the Logs page attaches its lines).</summary>
+    public async Task ShowBugReportAsync(Action<Core.Diagnostics.BugReportViewModel>? setup = null)
     {
         if (Content.XamlRoot is { } root)
         {
-            await Dialogs.BugReportDialog.ShowAsync(root, await _pages.NewBugReportAsync().ConfigureAwait(true)).ConfigureAwait(true);
+            Core.Diagnostics.BugReportViewModel report = await _pages.NewBugReportAsync().ConfigureAwait(true);
+            setup?.Invoke(report);
+            await Dialogs.BugReportDialog.ShowAsync(root, report).ConfigureAwait(true);
         }
     }
 
@@ -136,7 +140,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
     // Ctrl+1…9 open the pages in navigation order (the Mac's Cmd+number); Ctrl+, opens Settings.
     private void AddShortcuts()
     {
-        for (int number = 1; number <= AppSections.NavigationOrder.Count; number++)
+        for (int number = 1; AppSections.ForShortcut(number) is not null; number++)
         {
             AppSection section = AppSections.ForShortcut(number)!.Value;
             var accelerator = new KeyboardAccelerator { Modifiers = VirtualKeyModifiers.Control, Key = VirtualKey.Number0 + number };
@@ -207,6 +211,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
                 AppSection.Search => ContentFrame.Navigate(typeof(SearchPage), _pages),
                 AppSection.Documents => ContentFrame.Navigate(typeof(DocumentsPage), _pages),
                 AppSection.Facts => ContentFrame.Navigate(typeof(FactsPage), _pages),
+                AppSection.Graph => ContentFrame.Navigate(typeof(GraphPage), _pages),
                 AppSection.Database => ContentFrame.Navigate(typeof(DatabasePage), _pages),
                 AppSection.Logs => ContentFrame.Navigate(typeof(LogsPage), _pages),
                 _ => ContentFrame.Navigate(typeof(StatusPage), _pages),
@@ -226,6 +231,7 @@ internal static class SectionGlyphs
         AppSection.Mcp => "",        // Connect      (server.rack)
         AppSection.Documents => "",  // Document     (doc.text.magnifyingglass)
         AppSection.Facts => "",      // Lightbulb    (lightbulb)
+        AppSection.Graph => "",      // Network      (point.3.connected.trianglepath.dotted)
         AppSection.Search => "",     // Search       (magnifyingglass)
         AppSection.Database => "",   // Library      (cylinder.split.1x2)
         AppSection.Logs => "",       // CommandPrompt (terminal)

@@ -96,11 +96,42 @@
                             </Button>
                             <Button x:Uid="SourcesPage_5" Tag="{x:Bind Title}" Click="OnCancelOne" Visibility="{x:Bind local:Look.VisibleWhen(ShowsCancel)}"
                                     IsEnabled="{x:Bind local:Look.Not(CancelDisabled)}" Content="{x:Bind CancelTitle}" />
-                            <Button x:Uid="SourcesPage_6" Tag="{x:Bind Title}" Click="OnScanOne" Visibility="{x:Bind local:Look.HiddenWhen(ShowsCancel)}">
-                                <FontIcon Glyph="&#xE721;" FontSize="14" />
-                            </Button>
-                            <Button x:Uid="SourcesPage_7" Tag="{x:Bind Title}" Click="OnRemove">
-                                <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                            <Button x:Uid="SourcesPage_MoreButton" Tag="{x:Bind Title}" AutomationProperties.AutomationId="sources.row.more">
+                                <FontIcon Glyph="&#xE712;" FontSize="14" />
+                                <Button.Flyout>
+                                    <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="OnMoreOpening">
+                                        <MenuFlyoutItem x:Uid="SourcesPage_ScanOnlyItem" AutomationProperties.AutomationId="sources.menu.scanOnly" Tag="{x:Bind Title}" Click="OnScanOne">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE721;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Uid="SourcesPage_IncludeCodeItem" AutomationProperties.AutomationId="sources.menu.includeCode" Tag="{x:Bind Title}" Click="OnIngestIncludingCode">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE943;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Uid="SourcesPage_ReindexItem" AutomationProperties.AutomationId="sources.menu.reindex" Tag="{x:Bind Title}" Click="OnReindex">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE777;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Uid="SourcesPage_GleanItem" AutomationProperties.AutomationId="sources.menu.glean" Tag="{x:Bind Title}" Click="OnGleanSource">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xEA80;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem x:Uid="SourcesPage_CheckDeletedItem" AutomationProperties.AutomationId="sources.menu.checkDeleted" Tag="{x:Bind Title}" Click="OnCheckDeleted">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE9CE;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Uid="SourcesPage_ForgetDeletedItem" AutomationProperties.AutomationId="sources.menu.forgetDeleted" Tag="{x:Bind Title}" Click="OnForgetDeleted">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem x:Uid="SourcesPage_ShowInExplorerItem" AutomationProperties.AutomationId="sources.menu.showInExplorer" Tag="{x:Bind Title}" Click="OnShowInExplorer">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE838;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutItem x:Uid="SourcesPage_EditItem" AutomationProperties.AutomationId="sources.menu.edit" Tag="{x:Bind Title}" Click="OnEdit">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE70F;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                        <MenuFlyoutSeparator />
+                                        <MenuFlyoutItem x:Uid="SourcesPage_RemoveItem" AutomationProperties.AutomationId="sources.menu.remove" Tag="{x:Bind Title}" Click="OnRemove">
+                                            <MenuFlyoutItem.Icon><FontIcon Glyph="&#xE74D;" /></MenuFlyoutItem.Icon>
+                                        </MenuFlyoutItem>
+                                    </MenuFlyout>
+                                </Button.Flyout>
                             </Button>
                         </StackPanel>
                     </Grid>

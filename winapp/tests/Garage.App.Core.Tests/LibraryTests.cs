@@ -42,6 +42,8 @@ public sealed class LibraryTests
     {
         public List<string> Ingested { get; } = [];
 
+        public List<IngestSourceRequest> Requests { get; } = [];
+
         public HashSet<string> Failing { get; } = [];
 
         /// <summary>Sources whose ingest waits after its first update until cancelled.</summary>
@@ -54,6 +56,7 @@ public sealed class LibraryTests
         public async IAsyncEnumerable<IngestProgress> IngestAsync(IngestSourceRequest request, [EnumeratorCancellation] CancellationToken cancellationToken)
         {
             Ingested.Add(request.Source);
+            Requests.Add(request);
             yield return Progress(request.Source, "scan", total: 2);
             if (Blocking.Contains(request.Source))
             {
@@ -210,6 +213,20 @@ public sealed class LibraryTests
         Assert.Equal("notes", client.Requests.OfType<ScanRequest>().Single().Source);
         Assert.Equal(["notes"], ingest.Ingested);
         Assert.Empty(library.IngestQueue);
+    }
+
+    [Fact]
+    public async Task Ingest_including_code_and_re_index_everything_reach_the_ingest()
+    {
+        var client = Client("notes");
+        var ingest = new FakeIngest();
+        using LibraryCoordinator library = Library(client, ingest);
+
+        Assert.True(await library.ScanAndIngestAsync("notes", includeCode: true));
+        Assert.True(await library.ScanAndIngestAsync("notes", force: true));
+
+        Assert.True(client.Requests.OfType<ScanRequest>().First().IncludeCode);
+        Assert.Equal([(true, false), (false, true)], ingest.Requests.Select(r => (r.IncludeCode, r.Force)));
     }
 
     [Fact]

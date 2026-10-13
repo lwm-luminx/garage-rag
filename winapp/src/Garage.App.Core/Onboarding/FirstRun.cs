@@ -292,6 +292,9 @@ public sealed record FirstRunSourceTemplate(
 /// <param name="ProviderRefs">The names other providers know it by (<c>ollama</c>, <c>lmstudio</c>).</param>
 /// <param name="Description">A line about it.</param>
 /// <param name="Tags">Its uses (<c>distillation</c>, <c>inference</c>); none means both.</param>
+/// <param name="ModelCardUrl">Its model card and licence, when the catalog links one.</param>
+/// <param name="Maker">Who made it.</param>
+/// <param name="CountryOfOrigin">Where its maker is.</param>
 public sealed record ModelPreset(
     string Slug,
     string Name,
@@ -300,8 +303,14 @@ public sealed record ModelPreset(
     string ModelRef,
     IReadOnlyDictionary<string, string> ProviderRefs,
     string Description = "",
-    IReadOnlyList<string>? Tags = null)
+    IReadOnlyList<string>? Tags = null,
+    string? ModelCardUrl = null,
+    string? Maker = null,
+    string? CountryOfOrigin = null)
 {
+    /// <summary>"BAAI, CN": who made it and where, as the Mac's <c>originSummary</c>; "" when the catalog says neither.</summary>
+    public string OriginSummary => string.Join(", ", new[] { Maker, CountryOfOrigin }.Where(p => !string.IsNullOrEmpty(p)));
+
     /// <summary>Whether it can distil facts: untagged models count, as on the Mac.</summary>
     public bool IsForDistillation => Tags is null || Tags.Contains("distillation");
 
@@ -394,7 +403,10 @@ public sealed record ModelCatalog(IReadOnlyList<ModelPreset> Embedding, IReadOnl
                 Text(entry, "model_ref") ?? slug,
                 refs,
                 Text(entry, "description") ?? "",
-                tags));
+                tags,
+                Text(entry, "model_card_url"),
+                Text(entry, "maker"),
+                Text(entry, "country_of_origin")));
         }
         return presets;
     }

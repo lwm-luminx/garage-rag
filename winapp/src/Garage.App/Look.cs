@@ -78,6 +78,35 @@ public static class Look
             _ => Theme("TextFillColorTertiaryBrush", Colors.Gray),
         };
 
+    /// <summary>
+    /// A Graph page label's colour (the Mac's SwiftUI system colours), at <paramref name="opacity"/>.
+    /// In high contrast every label is the highlight colour; the chips and inspector name them.
+    /// </summary>
+    public static Brush GraphBrush(Core.Graph.GraphTint tint, double opacity = 1)
+    {
+        if (HighContrast)
+        {
+            return Theme("SystemColorHighlightColorBrush", Colors.Yellow);
+        }
+        Color color = tint switch
+        {
+            Core.Graph.GraphTint.Blue => Color.FromArgb(0xFF, 0x0A, 0x84, 0xFF),
+            Core.Graph.GraphTint.Teal => Color.FromArgb(0xFF, 0x30, 0xB0, 0xC7),
+            Core.Graph.GraphTint.Green => Color.FromArgb(0xFF, 0x34, 0xC7, 0x59),
+            Core.Graph.GraphTint.Mint => Color.FromArgb(0xFF, 0x00, 0xC7, 0xBE),
+            Core.Graph.GraphTint.Orange => Color.FromArgb(0xFF, 0xFF, 0x95, 0x00),
+            Core.Graph.GraphTint.Purple => Color.FromArgb(0xFF, 0xAF, 0x52, 0xDE),
+            Core.Graph.GraphTint.Pink => Color.FromArgb(0xFF, 0xFF, 0x2D, 0x55),
+            Core.Graph.GraphTint.Indigo => Color.FromArgb(0xFF, 0x58, 0x56, 0xD6),
+            Core.Graph.GraphTint.Cyan => Color.FromArgb(0xFF, 0x32, 0xAD, 0xE6),
+            Core.Graph.GraphTint.Brown => Color.FromArgb(0xFF, 0xA2, 0x84, 0x5E),
+            Core.Graph.GraphTint.Red => Color.FromArgb(0xFF, 0xFF, 0x3B, 0x30),
+            Core.Graph.GraphTint.Yellow => Color.FromArgb(0xFF, 0xD8, 0xA1, 0x00),
+            _ => Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93),
+        };
+        return new SolidColorBrush(color) { Opacity = opacity };
+    }
+
     /// <summary>A source status tone as a brush.</summary>
     public static Brush ToneBrush(SourceTone tone) => tone switch
     {

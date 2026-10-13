@@ -197,13 +197,33 @@ public sealed partial class SourcesViewModel : ObservableObject
         }
     }
 
-    /// <summary>Applies <c>garage.json</c>'s sources to the database, then reloads.</summary>
+    /// <summary>
+    /// Keeps <c>garage.json</c> and the database listing the same sources, then reloads: sources added
+    /// here are written to the file first (import adds only those it lacks), then the file is applied
+    /// (declared sources win), so neither side discards one. The Mac's Sync.
+    /// </summary>
     public Task<OperationResult> SyncAsync() => RunAsync(async (_, token) =>
     {
+        ImportSourcesToConfigResponse imported = await _client.ImportSourcesToConfigAsync(new ImportSourcesToConfigRequest(), Options(token)).ConfigureAwait(true);
         SyncSourcesResponse sync = await _client.SyncSourcesAsync(new SyncSourcesRequest(), Options(token)).ConfigureAwait(true);
-        return string.IsNullOrEmpty(sync.Message)
+        string importLine = string.IsNullOrEmpty(imported.Message)
+            ? imported.Added.Count > 0 ? $"Wrote {string.Join(", ", imported.Added)} to {imported.Path}" : ""
+            : imported.Message;
+        string syncLine = string.IsNullOrEmpty(sync.Message)
             ? $"Synced {sync.Declared} declared sources: {sync.Created.Count} added, {sync.Updated.Count} updated"
             : sync.Message;
+        return string.Join('\n', new[] { importLine, syncLine }.Where(line => line.Length > 0));
+    });
+
+    /// <summary>
+    /// Check for Deleted Files (<paramref name="apply"/> false) counts the documents whose files are gone;
+    /// Forget Deleted Files (true) deletes them, unless so many are gone that the server refuses (a
+    /// disconnected drive looks like every file deleted).
+    /// </summary>
+    public Task<OperationResult> ReconcileAsync(string slug, bool apply) => RunAsync(async (_, token) =>
+    {
+        ReconcileResponse reconciled = await _client.ReconcileAsync(new ReconcileRequest { Source = slug, Apply = apply }, Options(token)).ConfigureAwait(true);
+        return SourcesReconcile.Describe(reconciled, apply);
     });
 
     /// <summary>
@@ -221,10 +241,14 @@ public sealed partial class SourcesViewModel : ObservableObject
         return new OperationResult(ok, LastResult ?? "");
     }
 
-    /// <summary>Scan &amp; Ingest of one source: its row shows the queue, the scan, then the read.</summary>
-    public async Task<bool> ScanAndIngestAsync(string slug)
+    /// <summary>
+    /// Scan &amp; Ingest of one source: its row shows the queue, the scan, then the read.
+    /// <paramref name="includeCode"/> reads code files too (Ingest Including Code); <paramref name="force"/>
+    /// reads every file again, changed or not (Re-index Everything).
+    /// </summary>
+    public async Task<bool> ScanAndIngestAsync(string slug, bool includeCode = false, bool force = false)
     {
-        bool ok = await Library.ScanAndIngestAsync(slug).ConfigureAwait(true);
+        bool ok = await Library.ScanAndIngestAsync(slug, includeCode, force).ConfigureAwait(true);
         LastResult = Library.LastResult;
         return ok;
     }
@@ -337,5 +361,30 @@ public static class LocalAccess
             return root.Length == 1 ? home : Path.Combine(home, root[2..]);
         }
         return root;
+    }
+}
+
+/// <summary>What Check for Deleted Files and Forget Deleted Files report.</summary>
+public static class SourcesReconcile
+{
+    /// <summary>The server's message, or one made from the counts.</summary>
+    public static string Describe(ReconcileResponse response, bool apply)
+    {
+        ArgumentNullException.ThrowIfNull(response);
+        if (!string.IsNullOrEmpty(response.Message))
+        {
+            return response.Message;
+        }
+        if (response.Refused)
+        {
+            return $"Did not forget deleted files in {response.Source}: {response.Reason}";
+        }
+        string missing = string.Create(CultureInfo.CurrentCulture,
+            $"{response.Candidates:N0} of {response.TotalDocuments:N0} {SourceRowPresentation.Plural("document", response.TotalDocuments)} in {response.Source}");
+        return apply
+            ? string.Create(CultureInfo.CurrentCulture, $"Forgot {response.Deleted:N0} deleted {SourceRowPresentation.Plural("file", response.Deleted)} ({missing} were missing)")
+            : response.Candidates == 0
+                ? $"Every file in {response.Source} is still there"
+                : $"{missing} point at files that are gone. Forget Deleted Files removes them.";
     }
 }
