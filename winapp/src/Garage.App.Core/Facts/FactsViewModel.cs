@@ -38,8 +38,58 @@ public sealed record FactListItem(
         return new(summary.Id, summary.DocumentId, summary.Ord, summary.Fact, summary.FactClass, summary.AttributesJson,
             summary.HasCharStart ? summary.CharStart : null, summary.HasCharEnd ? summary.CharEnd : null,
             summary.Extractor, summary.ExtractorModel, summary.CreatedAt, summary.DocumentTitle, summary.DocumentUri,
-            summary.SourceSlug, summary.CorpusClass, summary.Excerpt, summary.ExcerptStart);
+            summary.SourceSlug, summary.CorpusClass, summary.Excerpt, summary.ExcerptStart)
+        {
+            DistilledFactId = summary.DistilledFactId == 0 ? null : summary.DistilledFactId,
+            DistilledSize = summary.DistilledSize,
+            DistilledStatement = summary.DistilledStatement,
+            DistilledGenerated = summary.DistilledGenerated,
+            DistilledSpread = summary.DistilledSpread,
+            RestatesFactId = summary.RestatesFactId == 0 ? null : summary.RestatesFactId,
+        };
     }
+
+    /// <summary>The distilled fact this potential fact backs (<c>garage cluster-facts</c>); null before one ran.</summary>
+    public long? DistilledFactId { get; init; }
+
+    /// <summary>How many potential facts back that distilled fact; more than one means restatements.</summary>
+    public int DistilledSize { get; init; }
+
+    /// <summary>The distilled fact's statement: the local model's sentence, or one member's own text.</summary>
+    public string DistilledStatement { get; init; } = "";
+
+    /// <summary>Whether the local model wrote <see cref="DistilledStatement"/> (it is then not a quotation).</summary>
+    public bool DistilledGenerated { get; init; }
+
+    /// <summary>How varied the facts behind the distilled fact are: their mean cosine distance to its centroid.</summary>
+    public double DistilledSpread { get; init; }
+
+    /// <summary>The fact of the same document this one restates; null when it restates none.</summary>
+    public long? RestatesFactId { get; init; }
+
+    /// <summary>Whether other facts state the same claim.</summary>
+    public bool HasRestatements => DistilledSize > 1;
+
+    /// <summary>How closely the facts behind the distilled fact agree, as a whole percentage; null for a fact alone.</summary>
+    public int? AgreementPercent => HasRestatements ? (int)Math.Floor((1 - DistilledSpread) * 100) : null;
+
+    /// <summary>The list row's badge: "×3" for a claim stated three times, else "↻" for a restatement within its document, else "".</summary>
+    public string Badge => HasRestatements
+        ? string.Create(CultureInfo.CurrentCulture, $"×{DistilledSize}")
+        : RestatesFactId is not null ? "↻" : "";
+
+    /// <summary>The badge's tooltip.</summary>
+    public string BadgeHelp => HasRestatements
+        ? string.Create(CultureInfo.CurrentCulture, $"Stated {DistilledSize} times")
+        : RestatesFactId is not null ? "Restates another fact of the same document" : "";
+
+    /// <summary>"Stated 3 Times".</summary>
+    public string StatedTitle => string.Create(CultureInfo.CurrentCulture, $"Stated {DistilledSize} Times");
+
+    /// <summary>"The statements agree 92% (how close their meanings are)."</summary>
+    public string? AgreementText => AgreementPercent is { } agreement
+        ? string.Create(CultureInfo.CurrentCulture, $"The statements agree {agreement}% (how close their meanings are).")
+        : null;
 
     /// <summary>The document's title, else its file name, else "(untitled)".</summary>
     public string DocumentDisplayTitle => CorpusTaxonomy.DisplayTitle(DocumentTitle, DocumentUri);
@@ -180,6 +230,24 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
     /// <summary>Corpus class filter.</summary>
     [ObservableProperty]
     public partial string CorpusClass { get; set; } = CorpusTaxonomy.All;
+
+    /// <summary>Lists the facts that restate one claim once, as the claim's representative.</summary>
+    [ObservableProperty]
+    public partial bool GroupRestatements { get; set; }
+
+    /// <summary>Narrows the list to one document's facts ("Facts from This Document"); null for every document.</summary>
+    [ObservableProperty]
+    public partial FactsDocumentFilter? DocumentFilter { get; set; }
+
+    /// <summary>Narrows the list to the restatements of one claim ("Show All Statements"); null for every fact.</summary>
+    [ObservableProperty]
+    public partial FactsDistilledFilter? DistilledFilter { get; set; }
+
+    /// <summary>"Facts from House.md", for the bar above a one-document list.</summary>
+    public string? DocumentFilterTitle => DocumentFilter is { } filter ? $"Facts from {filter.Title}" : null;
+
+    /// <summary>"Statements of “The roof is slate.”", for the bar above one claim's restatements.</summary>
+    public string? DistilledFilterTitle => DistilledFilter is { } filter ? $"Statements of “{filter.Statement}”" : null;
 
     /// <summary>Facts matching the filters.</summary>
     [ObservableProperty]
@@ -339,13 +407,15 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
     public partial double? GleanFraction { get; private set; }
 
     /// <summary>
-    /// Distills facts from every document whose prompts, content or model changed since its last run
-    /// (<c>stale_only</c>, as Update Everything does on the Mac), on <paramref name="runner"/>, reporting
-    /// each document; reloads the list when it ends. Cancel stops it at the next document.
+    /// Distills facts on <paramref name="runner"/>, reporting each document, and reloads the list when it
+    /// ends; Cancel stops it at the next document. With no <paramref name="scope"/> it runs on every
+    /// document whose prompts, content or model changed since its last run (<c>stale_only</c>, as Update
+    /// Everything does on the Mac); a scope narrows it to one source, one document or some prompts.
     /// </summary>
-    public async Task<Operations.OperationResult> GleanAsync(Operations.OperationRunner runner, State.INotifier? notifier = null)
+    public async Task<Operations.OperationResult> GleanAsync(Operations.OperationRunner runner, State.INotifier? notifier = null, GleanScope? scope = null)
     {
         ArgumentNullException.ThrowIfNull(runner);
+        EnrichFactsRequest request = (scope ?? GleanScope.Stale).Request();
         Operations.OperationResult result = await runner.RunAsync(async (log, token) =>
         {
             GleanProgress = "Starting…";
@@ -354,7 +424,7 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
             try
             {
                 using AsyncServerStreamingCall<EnrichFactsStatus> call = client.EnrichFacts(
-                    new EnrichFactsRequest { StaleOnly = true }, new CallOptions(cancellationToken: token));
+                    request, new CallOptions(cancellationToken: token));
                 await foreach (EnrichFactsStatus step in call.ResponseStream.ReadAllAsync(token).ConfigureAwait(true))
                 {
                     switch (step.Phase)
@@ -390,14 +460,17 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
         return result;
     }
 
-    private ListFactsRequest ListRequest(int offset) => new()
+    internal ListFactsRequest ListRequest(int offset) => new()
     {
         Query = SearchText.Trim(),
         Source = CorpusTaxonomy.Filter(Source) ?? "",
         FactClass = CorpusTaxonomy.Filter(FactClass) ?? "",
         CorpusClass = CorpusTaxonomy.Filter(CorpusClass) ?? "",
+        DocumentId = DocumentFilter?.Id ?? 0,
         Limit = PageSize,
         Offset = offset,
+        Collapse = GroupRestatements && DistilledFilter is null,
+        DistilledFactId = DistilledFilter?.Id ?? 0,
     };
 
     private FactStatsRequest StatsRequest() => new()
@@ -406,12 +479,81 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
         Source = CorpusTaxonomy.Filter(Source) ?? "",
         FactClass = CorpusTaxonomy.Filter(FactClass) ?? "",
         CorpusClass = CorpusTaxonomy.Filter(CorpusClass) ?? "",
+        DocumentId = DocumentFilter?.Id ?? 0,
     };
+
+    /// <summary>
+    /// Distill Facts (<c>garage cluster-facts</c>) on <paramref name="runner"/>: groups the facts that
+    /// restate one claim and has the local model state each claim once. <paramref name="full"/>
+    /// ("Regroup All Facts") regroups the corpus; otherwise only new facts are placed.
+    /// </summary>
+    public async Task<Operations.OperationResult> DistillAsync(Operations.OperationRunner runner, bool full = false, State.INotifier? notifier = null)
+    {
+        ArgumentNullException.ThrowIfNull(runner);
+        Operations.OperationResult result = await runner.RunAsync(async (log, token) =>
+        {
+            GleanProgress = full ? "Regrouping every fact…" : "Distilling facts…";
+            GleanFraction = null;
+            string summary = "";
+            try
+            {
+                using AsyncServerStreamingCall<ClusterFactsStatus> call = client.ClusterFacts(
+                    new ClusterFactsRequest { Full = full }, new CallOptions(cancellationToken: token));
+                await foreach (ClusterFactsStatus step in call.ResponseStream.ReadAllAsync(token).ConfigureAwait(true))
+                {
+                    if (step.Phase != "finished" && !string.IsNullOrEmpty(step.Message))
+                    {
+                        log.AppendLog(step.Message, Operations.LogChannel.Stdout);
+                    }
+                    foreach (string error in step.Errors)
+                    {
+                        log.AppendLog(error, Operations.LogChannel.Stderr);
+                    }
+                    GleanProgress = DistillProgress(step) ?? GleanProgress;
+                    GleanFraction = step.Phase == "distill" && step.ToDistill > 0 ? Math.Clamp((double)step.Distilled / step.ToDistill, 0, 1) : null;
+                    if (step.Phase == "finished")
+                    {
+                        if (!string.IsNullOrEmpty(step.Graph))
+                        {
+                            log.AppendLog(step.Graph, Operations.LogChannel.Stdout);
+                        }
+                        summary = string.IsNullOrEmpty(step.Message)
+                            ? string.Create(CultureInfo.CurrentCulture, $"{Plural(step.DistilledFacts, "distilled fact")}, {step.Clusters:N0} grouping {Plural(step.ClusteredFacts, "fact")}")
+                            : step.Message;
+                    }
+                }
+                (notifier ?? State.SilentNotifier.Instance).Notify("Facts distilled", summary);
+                return summary;
+            }
+            finally
+            {
+                GleanProgress = null;
+                GleanFraction = null;
+            }
+        }).ConfigureAwait(true);
+        await RefreshAsync().ConfigureAwait(true);
+        return result;
+    }
+
+    /// <summary>A Distill step as one line, or null for a step that says nothing new.</summary>
+    internal static string? DistillProgress(ClusterFactsStatus step)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        return step.Phase switch
+        {
+            "documents" => string.Create(CultureInfo.CurrentCulture, $"Comparing facts within {Plural(step.Documents, "document")}…"),
+            "neighbors" => string.Create(CultureInfo.CurrentCulture, $"Finding similar facts… {step.Scanned:N0} of {step.Facts:N0}"),
+            "grow" => string.Create(CultureInfo.CurrentCulture, $"Grouping restatements… {Plural(step.Candidates, "group")}"),
+            "attach" => string.Create(CultureInfo.CurrentCulture, $"Placing new facts… {step.Attached:N0} joined"),
+            "distill" => string.Create(CultureInfo.CurrentCulture, $"Stating each claim once… {step.Distilled:N0} of {step.ToDistill:N0}"),
+            _ => null,
+        };
+    }
 
     private static CallOptions Options(CancellationToken cancellationToken) =>
         new(deadline: DateTime.UtcNow + CallTimeout, cancellationToken: cancellationToken);
 
-    private static string Plural(long count, string word) =>
+    internal static string Plural(long count, string word) =>
         string.Create(CultureInfo.CurrentCulture, $"{count:N0} {(count == 1 ? word : word + "s")}");
 
     private void Notify()
@@ -419,5 +561,32 @@ public sealed partial class FactsViewModel(GarageService.GarageServiceClient cli
         OnPropertyChanged(nameof(CountText));
         OnPropertyChanged(nameof(EmptyState));
         OnPropertyChanged(nameof(CanLoadMore));
+        OnPropertyChanged(nameof(DocumentFilterTitle));
+        OnPropertyChanged(nameof(DistilledFilterTitle));
+    }
+}
+
+/// <summary>"Facts from This Document": the document and the title the bar shows.</summary>
+public sealed record FactsDocumentFilter(long Id, string Title);
+
+/// <summary>"Show All Statements": the distilled fact and its statement.</summary>
+public sealed record FactsDistilledFilter(long Id, string Statement);
+
+/// <summary>What a Glean Facts run covers.</summary>
+/// <param name="Source">One source's slug, or null for every source.</param>
+/// <param name="DocumentId">One document, or null.</param>
+/// <param name="Prompts">Just these prompts, or null for every enabled one.</param>
+/// <param name="StaleOnly">Skip a prompt whose last run had the same prompt text, content and model.</param>
+public sealed record GleanScope(string? Source = null, long? DocumentId = null, IReadOnlyList<string>? Prompts = null, bool StaleOnly = false)
+{
+    /// <summary>Every document something changed for: the Facts page's and Update Everything's run.</summary>
+    public static GleanScope Stale { get; } = new(StaleOnly: true);
+
+    /// <summary>The request for this scope.</summary>
+    public EnrichFactsRequest Request()
+    {
+        var request = new EnrichFactsRequest { Source = Source ?? "", DocumentId = DocumentId ?? 0, StaleOnly = StaleOnly };
+        request.Prompts.AddRange(Prompts ?? []);
+        return request;
     }
 }

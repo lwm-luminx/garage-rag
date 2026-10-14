@@ -3,9 +3,11 @@ using Garage.App.Core.Database;
 using Garage.App.Core.Diagnostics;
 using Garage.App.Core.Documents;
 using Garage.App.Core.Facts;
+using Garage.App.Core.Graph;
 using Garage.App.Core.Library;
 using Garage.App.Core.Logging;
 using Garage.App.Core.Mcp;
+using Garage.App.Core.Navigation;
 using Garage.App.Core.Models;
 using Garage.App.Core.Onboarding;
 using Garage.App.Core.Search;
@@ -39,6 +41,8 @@ public sealed class PageModels : IDisposable
         State = state;
         Models = new(state.Client, state.Operations, state.Backfill, state.Notifier);
         Facts = new(state.Client);
+        FactPrompts = new(state.Client);
+        EmbeddingTest = new(state.Client);
         // Update Everything and Automatic Updates embed and glean through the Models and Facts pages'
         // own runs, so those pages show the progress whoever started it.
         Library = new LibraryCoordinator(
@@ -60,8 +64,10 @@ public sealed class PageModels : IDisposable
             Preferences = preferences,
             Http = state.Backend is Core.Backend.ServiceHostBackend serviceHost ? new ServiceMcpHost(serviceHost.Services) : null,
         };
+        McpTryIt = new(() => state.Backend.Mcp);
         Search = new(state.Client);
         Documents = new(state.Client);
+        Graph = new(state.Client, () => state.Connection == BackendConnection.Connected);
         Database = new(state.Client, postgres)
         {
             // A restore replaces what the pipeline reads and writes: stop it first, and reread every
@@ -171,6 +177,9 @@ public sealed class PageModels : IDisposable
     /// <summary>MCP Server.</summary>
     public McpViewModel Mcp { get; }
 
+    /// <summary>The MCP page's Try It panel.</summary>
+    public McpTryItViewModel McpTryIt { get; }
+
     /// <summary>Search.</summary>
     public SearchViewModel Search { get; }
 
@@ -179,6 +188,35 @@ public sealed class PageModels : IDisposable
 
     /// <summary>Facts.</summary>
     public FactsViewModel Facts { get; }
+
+    /// <summary>The Fact Prompts section on the Models page.</summary>
+    public FactPromptsViewModel FactPrompts { get; }
+
+    /// <summary>Test an Embedding on the Models page.</summary>
+    public EmbeddingTestViewModel EmbeddingTest { get; }
+
+    /// <summary>Graph.</summary>
+    public GraphViewModel Graph { get; }
+
+    /// <summary>Report a Bug over the window, with a chance to preset the report; the main window sets it.</summary>
+    public Func<Action<BugReportViewModel>?, Task>? ReportBug { get; set; }
+
+    /// <summary>Shows a page; the main window sets it.</summary>
+    public Action<AppSection>? Navigate { get; set; }
+
+    /// <summary>Show in Graph: the Graph page, centered on <paramref name="focus"/>.</summary>
+    public void ShowInGraph(GraphFocus focus)
+    {
+        Graph.PendingFocus = focus;
+        Navigate?.Invoke(AppSection.Graph);
+    }
+
+    /// <summary>Open Document: the Documents page, filtered to the document and with it selected.</summary>
+    public void OpenDocument(long id, string uri)
+    {
+        Documents.PendingFocus = new DocumentFocus(id, uri);
+        Navigate?.Invoke(AppSection.Documents);
+    }
 
     /// <summary>Database.</summary>
     public DatabaseViewModel Database { get; }

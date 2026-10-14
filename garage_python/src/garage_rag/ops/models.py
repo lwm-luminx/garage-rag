@@ -91,6 +91,45 @@ def set_default_model(slug: str) -> None:
         emb_tables.set_default_model(session, slug)
 
 
+@dataclass
+class EmbeddedText:
+    """One text embedded by a registered model: what the app's Test an Embedding shows."""
+
+    model: str
+    provider: str
+    model_ref: str
+    native_dims: int
+    vector: list[float]
+
+
+def embed_text(text: str, slug: str | None = None, *, dimensions: int | None = None) -> EmbeddedText:
+    """Embed ``text`` with the model registered as ``slug`` (the default model when None).
+
+    The vector is the model's own; ``dimensions`` keeps only its first so many values and
+    renormalizes them, as a Matryoshka model's stored prefix is. The text goes to the model's
+    provider through the same embedder backfill and search use, so the egress allowlist applies.
+    ValueError for an empty text or a width the vector does not have; LookupError for an
+    unregistered model.
+    """
+    from garage_rag.db.registry import StoragePlan, truncate_vector
+    from garage_rag.embed.factory import get_embedder
+
+    if not text.strip():
+        raise ValueError("nothing to embed: the text is empty")
+    with session_scope() as session:
+        row = emb_tables.get_model(session, slug)
+        provider, model_ref, model = row.provider, row.model_ref, row.slug
+    vector = get_embedder(provider, model_ref).embed([text])[0]
+    native = len(vector)
+    if dimensions:
+        if not 0 < dimensions <= native:
+            raise ValueError(f"{model} gives {native} dimensions; {dimensions} is not between 1 and {native}")
+        vector = truncate_vector(
+            vector, StoragePlan(stored_dims=dimensions, storage_kind="vector", index_kind="hnsw", truncated_from=native)
+        )
+    return EmbeddedText(model=model, provider=provider, model_ref=model_ref, native_dims=native, vector=vector)
+
+
 def drop_model(slug: str) -> None:
     """Deregister a model and drop its table, discarding its vectors."""
     with session_scope() as session:

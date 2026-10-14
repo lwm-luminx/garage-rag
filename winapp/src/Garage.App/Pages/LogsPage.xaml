@@ -31,7 +31,12 @@
             <ToggleButton x:Uid="LogsPage_NewestFirstToggle" x:Name="NewestFirstToggle" Grid.Column="3" Click="OnNewestFirst" />
         </Grid>
 
-        <ListView x:Name="Rows" Grid.Row="2" SelectionMode="Extended" AutomationProperties.AutomationId="logs.table">
+        <Grid Grid.Row="2" ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <ListView x:Name="Rows" SelectionMode="Extended" SelectionChanged="OnRowsSelected" AutomationProperties.AutomationId="logs.table">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="ops:LogLine">
                     <Grid ColumnSpacing="12" Padding="0,2">
@@ -50,10 +55,39 @@
             </ListView.ItemTemplate>
         </ListView>
 
+        <!-- The selected entry in full: the Mac's log entry detail inspector. -->
+        <Border x:Name="Inspector" Grid.Column="1" Width="320" Padding="14" CornerRadius="8" Visibility="Collapsed"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                AutomationProperties.AutomationId="logs.inspector">
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <TextBlock x:Uid="LogsPage_DetailsTitle" Style="{StaticResource BodyStrongTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" VerticalAlignment="Center" />
+                    <Button x:Uid="LogsPage_CloseDetailsButton" HorizontalAlignment="Right" Click="OnCloseDetails" Padding="6,2">
+                        <FontIcon Glyph="&#xE711;" FontSize="12" />
+                    </Button>
+                </Grid>
+                <TextBlock Grid.Row="1" x:Name="DetailMeta" TextWrapping="Wrap" IsTextSelectionEnabled="True" Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <ScrollViewer Grid.Row="2">
+                    <TextBlock x:Name="DetailText" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True"
+                               AutomationProperties.AutomationId="logs.inspector.text" />
+                </ScrollViewer>
+                <Button Grid.Row="3" x:Uid="LogsPage_CopyTextButton" Click="OnCopyDetail" />
+            </Grid>
+        </Border>
+        </Grid>
+
         <!-- Status bar under the table, as on the Mac: counts, then the actions. -->
         <Grid Grid.Row="3" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
@@ -61,6 +95,7 @@
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="logs.count" />
             <Button x:Uid="LogsPage_2" Grid.Column="1" Click="OnCopy" />
             <Button x:Uid="LogsPage_3" Grid.Column="2" Click="OnClear" />
+            <Button x:Uid="LogsPage_ReportBugButton" Grid.Column="3" Click="OnReportBug" AutomationProperties.AutomationId="logs.reportBug" />
         </Grid>
     </Grid>
 </Page>

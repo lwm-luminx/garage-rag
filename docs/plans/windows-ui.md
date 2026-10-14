@@ -33,7 +33,7 @@ In scope:
   `Garage.App.Core` holding every view model, the app state and the presentation types, so they
   can be unit-tested without a UI.
 - **The surfaces:**
-  - the nine pages;
+  - the ten pages;
   - the notification-area icon and its flyout;
   - the first-run assistant;
   - Database Reset;
@@ -55,7 +55,7 @@ Out of scope, in windows.md:
 
 | Mac | What |
 |---|---|
-| `Views/ContentView.swift` | `AppSection` (9 pages) and `SidebarGroup`: Status on top, then **Configuration** (Sources, Models, MCP Server), **Data** (Documents, Facts, Search), **Advanced** (Database, Logs). A unit test holds the order |
+| `Views/ContentView.swift` | `AppSection` (10 pages) and `SidebarGroup`: Status on top, then **Configuration** (Sources, Models, MCP Server), **Data** (Documents, Facts, Graph, Search), **Advanced** (Database, Logs). A unit test holds the order |
 | `Views/*View.swift` | One view per page, split into extensions for the large ones (`ModelsView+*`, `StatusView+Services`, `MCPServerView+TryIt`) |
 | `Views/*Presentation.swift` | Plain presentation values with the page's wording and state logic (`StatusPagePresentation`, `SourcesPresentation`, `ModelsPresentation`, `MCPServerPresentation`, `DatabasePresentation`, and others), each unit-tested |
 | `Views/MenuBar*.swift`, `Components/MenuBar*` | The menu-bar extra: status, quick search, **Ask Garage** (`MenuBarAnswer`: the local model's answer from the `rag_agent` MCP tool, with the tool calls it made and its citations), navigation, Ingest Now, Stop |
@@ -158,6 +158,7 @@ Each row lists the Mac source it ports, the WinUI treatment, and the RPCs behind
 | **MCP Server** | `MCPServerView`, `+TryIt`, `MCPServerPresentation`, `MCPClientRowPresentation` | Client rows (Claude Desktop, Claude Code, ...) with Install / Update / Remove; stdio by default; the HTTP server behind an explicit toggle (`garage.mcp.httpEnabled` behaviour); "Try it" panel | `McpStatus`, `McpInstall`, `McpUninstall`, `Search` |
 | **Documents** | `DocumentsView`, `CorpusTaxonomy` | List/detail (`TwoPaneView` or split): filters by class and trust; the document's chunks and authors | `ListDocuments`, `GetDocument` |
 | **Facts** | `FactsView`, `FactPromptsSection` | Fact counts per prompt and model; fact list with grounding spans; prompts section; "Glean facts" with progress | `GetFactStats`, `ListFacts`, `ListFactPrompts`, `EnrichFacts` |
+| **Graph** | `GraphView`, `GraphLayout`, `GraphPresentation`, `GraphItems` | Search on the left, the chosen vertex's neighbourhood drawn on a `Canvas` with the Mac's radial layout (click to inspect, double-click to center), and an inspector with connections and properties; label chips filter vertices and edges. Documents and Facts link in with **Show in Graph**, and the inspector's **Open Document** links back | `GetGraphLabels`, `FindGraphVertices`, `GetGraphNeighborhood` |
 | **Search** | `SearchView` | `AutoSuggestBox` query, trust/class filters, results with excerpts; Ctrl+F from anywhere | `Search` |
 | **Database** | `DatabaseView`, `DatabasePresentation`, `DatabaseResetSheet` | Schema and contents summaries; Reset Database as a `ContentDialog` with typed confirmation, then relaunch (`AppInstance.Restart`) | `GetStats`, `InitDb`; reset via `IBackend` |
 | **Logs** | `LogsView`, `LogTableView` | Virtualized list with level filter and search. Under it, a status bar with the counts ("showing the latest ...") and the copy/export/clear actions, as the Mac's table now has. Sources: the app log, then the services' log streams (U3) | — / service log streams |
@@ -629,6 +630,7 @@ from the last row.
 | 2026-09-27 | `v1.5-beta` `2454039` | The plan's baseline |
 | 2026-09-29 | `main` `b82c6d2` (97 commits past the baseline, which it contains), `v1.5-beta` `839bc39` | See below |
 | 2026-09-29 (U3) | `v1.5-beta` `b809c88` | The App Store build asks for the home folder before the disk, and reads Contacts only for communication sources. Neither has a Windows counterpart: nothing is sandboxed, and ingest passes no contact names |
+| 2026-10-12 | `next` `481f0a7`, page by page and by the RPCs each UI calls | See below |
 
 What the 2026-09-29 check found:
 
@@ -654,6 +656,38 @@ What the 2026-09-29 check found:
 
 **On `v1.5-beta` only (not yet on `main`):**
 - **The tip jar** (App Store in-app purchases): a Store-only item in U5, planned as Store add-ons.
+
+What the 2026-10-12 check found, and what the `windows/ui-parity` branch added:
+
+- **The Graph page** (Apache AGE) was missing, with the Show in Graph links from Documents and Facts:
+  `Graph/` in Core (the Mac's layout, label styles and wording, ported with their tests) and
+  `GraphPage`. `AppSection` gains `Graph` between Facts and Search, as on the Mac; Ctrl+1…9 stop at
+  Database, so Logs (the tenth page) has no digit.
+- **Facts:** Distill Facts and Regroup All Facts (`ClusterFacts`), Group Restatements, the distilled
+  fact in the inspector (stated N times, agreement, Show All Statements), Facts from This Document,
+  Open Document, Show in Explorer and Show in Graph.
+- **Fact Prompts** on the Models page (`ListFactPrompts`, written back whole through
+  `SetSetting facts.prompts`), with `FactPromptConfig` ported with its tests; Glean Facts on the
+  Models page.
+- **Sources:** a More menu per row: Scan Only, Ingest Including Code, Re-index Everything
+  (`force`), Glean Facts for the source, Check / Forget Deleted Files (`Reconcile`), Show in
+  Explorer, Edit…, Remove. Add Source gains a Kind picker and this PC's presets; Sync imports the
+  app's sources into garage.json before applying it (`ImportSourcesToConfig`), as the Mac's does.
+- **MCP Server:** Try It (Ask the Corpus, Prompt the Model, Call a Tool), Test (`tools/list`),
+  Restart, the port (remembered; Random), Copy Address, Look for Assistants Again, Connect a Config
+  File…, and per assistant Open Config File, Show in Explorer and Copy Path.
+- **Database:** Stop / Start / Restart Postgres, Copy Connection URL, Open in Database App, Show
+  Data Folder, Re-apply the Whole Schema, and Back Up First… in Reset Database.
+- **Models:** Test an Embedding, through a new `EmbedText` RPC (the Mac embeds through its built-in
+  engine, which Windows does not have yet, and the app never talks to a model server itself);
+  Register Model offers the catalog's presets with their description, maker and model card.
+- **Documents and Search:** Copy URI, Show in Explorer, Show in Graph and per-document Glean Facts;
+  Search gains the Mac's model picker.
+- **Status and Logs:** Restart All; a log entry detail panel, and Report a Bug with the lines attached.
+- **Still waiting on Garage's llama service** (windows.md Phase 4), not drift: the built-in
+  engine's Load, Unload, Download, Verify and Delete Model File, and `EnsureLlamaModel`.
+- **Mac-only, by design:** permission cards and Privacy Settings, OSLog fetch, Sparkle, the splash
+  window, Contacts names.
 
 **For this branch:** `windows/python-bridge` forked from `2454039`, so it has none of the above
 yet. Merge `v1.5-beta` into it before opening the PR. Expect conflicts in `README.md` (`main`

@@ -18,11 +18,12 @@ import grpc
 import pytest
 
 from garage_rag.config import Settings, reset_settings, set_settings
+from garage_rag.embed.base import EmbeddingError
 from garage_rag.ingest.reconcile import ReconcileResult
 from garage_rag.ingest.scanner import SourceScanResult
 from garage_rag.ops.backfill import BackfillEvent
 from garage_rag.ops.facts import EnrichEvent, EnrichSummary
-from garage_rag.ops.models import RegisteredModel
+from garage_rag.ops.models import EmbeddedText, RegisteredModel, embed_text
 from garage_rag.ops.sources import AddSourceResult, RemoveSourceResult, ScanEvent, SyncResult
 from garage_rag.proto.garage_pb2 import (
     AddSourceRequest,
@@ -490,6 +491,72 @@ class TestModelDefaults:
             pytest.raises(RuntimeError, match="NOT_FOUND"),
         ):
             client.set_default_model("x")
+
+
+class TestEmbedText:
+    def test_maps_the_request_and_the_vector(self, client: GarageClient) -> None:
+        embedded = EmbeddedText(model="bge-m3", provider="ollama", model_ref="bge-m3", native_dims=4, vector=[0.5, 0.5])
+        with patch("garage_rag.ops.models.embed_text", return_value=embedded) as op:
+            res = client.embed_text("the roof is slate", model="bge-m3", dimensions=2)
+        op.assert_called_once_with("the roof is slate", "bge-m3", dimensions=2)
+        assert (res.model, res.provider, res.model_ref, res.native_dims) == ("bge-m3", "ollama", "bge-m3", 4)
+        assert list(res.vector) == [0.5, 0.5]
+
+    def test_empty_model_and_dimensions_mean_the_defaults(self, client: GarageClient) -> None:
+        embedded = EmbeddedText(model="bge-m3", provider="ollama", model_ref="bge-m3", native_dims=1, vector=[1.0])
+        with patch("garage_rag.ops.models.embed_text", return_value=embedded) as op:
+            client.embed_text("x")
+        op.assert_called_once_with("x", None, dimensions=None)
+
+    def test_a_model_server_failure_is_unavailable(self, client: GarageClient) -> None:
+        with (
+            patch(
+                "garage_rag.ops.models.embed_text",
+                side_effect=EmbeddingError("ollama embed failed for bge-m3: refused"),
+            ),
+            pytest.raises(RuntimeError, match="UNAVAILABLE.*refused"),
+        ):
+            client.embed_text("x")
+
+    def test_an_unknown_model_is_not_found(self, client: GarageClient) -> None:
+        with (
+            patch("garage_rag.ops.models.embed_text", side_effect=LookupError("no model 'x' registered")),
+            pytest.raises(RuntimeError, match="NOT_FOUND"),
+        ):
+            client.embed_text("x", model="x")
+
+
+class TestEmbedTextOp:
+    def _embed(self, vector: list[float], **kwargs):
+        row = SimpleNamespace(slug="bge-m3", provider="ollama", model_ref="bge-m3")
+        embedder = MagicMock()
+        embedder.embed.return_value = [vector]
+        with (
+            patch("garage_rag.ops.models.session_scope"),
+            patch("garage_rag.db.emb_tables.get_model", return_value=row),
+            patch("garage_rag.embed.factory.get_embedder", return_value=embedder) as factory,
+        ):
+            result = embed_text("hello", **kwargs)
+        factory.assert_called_once_with("ollama", "bge-m3")
+        return result
+
+    def test_returns_the_models_own_vector(self) -> None:
+        result = self._embed([3.0, 4.0, 0.0])
+        assert result.native_dims == 3
+        assert result.vector == [3.0, 4.0, 0.0]
+
+    def test_dimensions_keep_a_renormalized_prefix(self) -> None:
+        result = self._embed([3.0, 4.0, 12.0], dimensions=2)
+        assert result.native_dims == 3
+        assert result.vector == pytest.approx([0.6, 0.8])
+
+    def test_more_dimensions_than_the_model_gives_is_refused(self) -> None:
+        with pytest.raises(ValueError, match="gives 2 dimensions"):
+            self._embed([1.0, 0.0], dimensions=3)
+
+    def test_empty_text_is_refused_before_any_lookup(self) -> None:
+        with pytest.raises(ValueError, match="empty"):
+            embed_text("   ")
 
 
 class TestInitDb:

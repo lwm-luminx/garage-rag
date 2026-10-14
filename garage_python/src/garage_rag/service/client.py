@@ -26,6 +26,8 @@ from garage_rag.proto.garage_pb2 import (
     ClusterFactsStatus,
     DropModelRequest,
     DropModelResponse,
+    EmbedTextRequest,
+    EmbedTextResponse,
     EnrichFactsRequest,
     EnrichFactsStatus,
     EnsureLlamaModelRequest,
@@ -329,6 +331,11 @@ class GarageClient:
 
     def drop_model(self, slug: str) -> DropModelResponse:
         return self._invoke_unary("DropModel", DropModelRequest(slug=slug), DropModelResponse)
+
+    def embed_text(self, text: str, model: str = "", dimensions: int = 0) -> EmbedTextResponse:
+        return self._invoke_unary(
+            "EmbedText", EmbedTextRequest(text=text, model=model, dimensions=dimensions), EmbedTextResponse
+        )
 
     def backfill(self, request: BackfillRequest) -> Iterator[BackfillStatus]:
         return self._invoke_stream("Backfill", request, BackfillStatus)

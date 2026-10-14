@@ -15,6 +15,9 @@ public interface IMcpHttpHost
     /// <summary>Where the server listens: <c>http://127.0.0.1:8787/mcp</c>.</summary>
     Uri Url { get; }
 
+    /// <summary>The port it listens on; a change takes effect when the server next starts.</summary>
+    int Port { get; set; }
+
     /// <summary>Starts or stops the server; returns whether it reached the asked-for state.</summary>
     Task<bool> SetEnabledAsync(bool enabled);
 }
@@ -28,6 +31,13 @@ public sealed class ServiceMcpHost(ServiceManager services) : IMcpHttpHost
 
     /// <inheritdoc/>
     public Uri Url => services.McpUrl;
+
+    /// <inheritdoc/>
+    public int Port
+    {
+        get => services.McpPort;
+        set => services.McpPort = value;
+    }
 
     /// <inheritdoc/>
     public Task<bool> SetEnabledAsync(bool enabled) => services.SetMcpEnabledAsync(enabled);

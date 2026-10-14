@@ -10,6 +10,7 @@ namespace Garage.App.Pages;
 /// <summary>The Logs page (the Mac's <c>LogsView</c>): a buffer, text and level filters, and the status bar.</summary>
 public sealed partial class LogsPage : Page
 {
+    private PageModels _pages = null!;
     private LogsViewModel _model = null!;
     private bool _loading;
 
@@ -20,7 +21,8 @@ public sealed partial class LogsPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        _model = ((PageModels)e.Parameter).Logs;
+        _pages = (PageModels)e.Parameter;
+        _model = _pages.Logs;
         _loading = true;
         SourceBox.ItemsSource = _model.Sources;
         SourceBox.SelectedItem = _model.Source;
@@ -74,6 +76,46 @@ public sealed partial class LogsPage : Page
     }
 
     private void OnClear(object sender, RoutedEventArgs e) => _model.Clear();
+
+    // Report a Bug with this source's recent lines attached (read them in the preview before sending).
+    private async void OnReportBug(object sender, RoutedEventArgs e)
+    {
+        if (_pages.ReportBug is { } report)
+        {
+            string? source = _model.Source?.Source;
+            await report(bug =>
+            {
+                bug.IncludeLogs = true;
+                if (source is not null && bug.LogSources.Contains(source))
+                {
+                    bug.LogSource = source;
+                }
+            }).ConfigureAwait(true);
+        }
+    }
+
+    // One row selected: the inspector shows it in full.
+    private void OnRowsSelected(object sender, SelectionChangedEventArgs e)
+    {
+        if (Rows.SelectedItems.Count == 1 && Rows.SelectedItem is LogLine line)
+        {
+            Inspector.Visibility = Visibility.Visible;
+            DetailMeta.Text = $"{line.Timestamp.LocalDateTime:yyyy-MM-dd HH:mm:ss.fff} · {line.LevelName} · {line.Source} · {line.Channel.Name()}";
+            DetailText.Text = line.Text;
+        }
+        else
+        {
+            Inspector.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void OnCloseDetails(object sender, RoutedEventArgs e)
+    {
+        Inspector.Visibility = Visibility.Collapsed;
+        Rows.SelectedItems.Clear();
+    }
+
+    private void OnCopyDetail(object sender, RoutedEventArgs e) => Clipboard.Copy(DetailText.Text);
 
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e) => Show();
 

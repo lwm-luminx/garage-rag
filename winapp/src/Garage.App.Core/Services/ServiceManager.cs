@@ -74,8 +74,8 @@ public sealed class ServiceManager : IServiceHost, IDisposable
     /// <summary>MCP over HTTP (the Mac's GarageMCPServerService): started only while it is switched on.</summary>
     public ServiceProcess Mcp { get; }
 
-    /// <summary>The MCP HTTP server's port, the Mac's.</summary>
-    public int McpPort { get; init; } = 8787;
+    /// <summary>The MCP HTTP server's port, the Mac's by default; a change takes effect at the service's next start.</summary>
+    public int McpPort { get; set; } = 8787;
 
     /// <summary>The MCP HTTP server's address.</summary>
     public Uri McpUrl => new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", McpPort, "/mcp").Uri;

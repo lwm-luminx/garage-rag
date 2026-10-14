@@ -52,6 +52,14 @@ public sealed partial class DatabasePage : Page
             ServerWhere.Text = _model.Postgres is { } postgres ? $"{postgres.Version ?? "PostgreSQL"} · {postgres.Layout.ClusterDirectory}" : "";
         }
         ResetButton.IsEnabled = !_model.IsResetting && !_model.IsFinishingReset && !_model.IsBackingUp;
+        bool serverUp = _model.Postgres?.Status.IsUp == true;
+        bool canSwitch = !_model.IsSwitchingServer && !_model.IsResetting && !_model.IsFinishingReset && !_model.IsBackingUp;
+        StopButton.Visibility = Look.VisibleWhen(serverUp);
+        RestartButton.Visibility = Look.VisibleWhen(serverUp);
+        StartButton.Visibility = Look.HiddenWhen(serverUp);
+        StopButton.IsEnabled = StartButton.IsEnabled = RestartButton.IsEnabled = canSwitch;
+        CopyUrlItem.IsEnabled = OpenInAppItem.IsEnabled = _model.HasOwnServer;
+        ReapplyItem.IsEnabled = serverUp && !_model.IsApplyingSchema;
 
         OwnServerBoxes.Visibility = _model.HasOwnServer ? Visibility.Visible : Visibility.Collapsed;
         if (_model.Schema is { } schema)
@@ -66,7 +74,7 @@ public sealed partial class DatabasePage : Page
         }
         Extensions.Text = _model.Details is { Extensions.Count: > 0 } details ? "Extensions: " + string.Join(", ", details.Extensions) : "";
         bool up = _model.Postgres?.Status.IsUp == true;
-        BackupButton.IsEnabled = RestoreButton.IsEnabled = up && !_model.IsBackingUp && !_model.IsResetting;
+        BackupButton.IsEnabled = RestoreButton.IsEnabled = up && !_model.IsBackingUp && !_model.IsResetting && !_model.IsSwitchingServer;
         ActionBar.IsOpen = _model.ActionResult is not null;
         if (_model.ActionResult is { } action)
         {
@@ -83,6 +91,48 @@ public sealed partial class DatabasePage : Page
     }
 
     private async void OnApplySchema(object sender, RoutedEventArgs e) => await _model.ApplySchemaAsync().ConfigureAwait(true);
+
+    private async void OnStopServer(object sender, RoutedEventArgs e)
+    {
+        var confirm = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = Strings.Get("Code_DatabasePage_StopPostgres"),
+            Content = new TextBlock { Text = Strings.Get("Code_DatabasePage_StopPostgresDetail"), TextWrapping = TextWrapping.Wrap },
+            PrimaryButtonText = Strings.Get("Code_DatabasePage_Stop"),
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
+            CloseButtonText = Strings.Get("Code_DatabasePage_Cancel"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await confirm.ShowAsync() == ContentDialogResult.Primary)
+        {
+            await _model.StopServerAsync().ConfigureAwait(true);
+        }
+    }
+
+    private async void OnStartServer(object sender, RoutedEventArgs e) => await _model.StartServerAsync().ConfigureAwait(true);
+
+    private async void OnRestartServer(object sender, RoutedEventArgs e) => await _model.RestartServerAsync().ConfigureAwait(true);
+
+    private void OnCopyUrl(object sender, RoutedEventArgs e) => Clipboard.Copy(_model.ConnectionUrl);
+
+    private void OnOpenInApp(object sender, RoutedEventArgs e)
+    {
+        if (!Shell.Open(_model.ConnectionUrl))
+        {
+            ActionBar.IsOpen = true;
+            ActionBar.Severity = InfoBarSeverity.Warning;
+            ActionBar.Message = Strings.Get("Code_DatabasePage_NoDatabaseApp");
+        }
+    }
+
+    private void OnShowDataFolder(object sender, RoutedEventArgs e)
+    {
+        if (_model.Postgres is { } postgres)
+        {
+            Shell.ShowInExplorer(postgres.Layout.DataDirectory);
+        }
+    }
 
     private async void OnBackup(object sender, RoutedEventArgs e)
     {
@@ -156,6 +206,26 @@ public sealed partial class DatabasePage : Page
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             IsTextSelectionEnabled = true,
         });
+        // Back Up First…: a dump that Restore… brings back after the reset (the Mac's sheet offers it too).
+        var backupResult = new TextBlock { TextWrapping = TextWrapping.Wrap, Visibility = Visibility.Collapsed };
+        var backupFirst = new Button { Content = Strings.Get("Code_DatabasePage_BackUpFirst"), HorizontalAlignment = HorizontalAlignment.Left };
+        ToolTipService.SetToolTip(backupFirst, Strings.Get("Code_DatabasePage_BackUpFirstHelp"));
+        backupFirst.Click += async (_, _) =>
+        {
+            if (await Platform.Pickers.SaveFileAsync($"Garage {DateTime.Now:yyyy-MM-dd HHmm}", "Garage backup", ".garagedump").ConfigureAwait(true) is not { } path)
+            {
+                return;
+            }
+            backupFirst.IsEnabled = false;
+            await _model.BackupAsync(path).ConfigureAwait(true);
+            backupFirst.IsEnabled = true;
+            backupResult.Visibility = Visibility.Visible;
+            backupResult.Text = _model.ActionResult is { Succeeded: true }
+                ? $"Saved {System.IO.Path.GetFileName(path)}"
+                : $"Backup failed: {_model.ActionResult?.Message}";
+        };
+        content.Children.Add(backupFirst);
+        content.Children.Add(backupResult);
         var confirm = new ContentDialog
         {
             XamlRoot = XamlRoot,
