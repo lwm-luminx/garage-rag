@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The MSIX's manifest. msix.ps1 fills the {{...}} fields: the identity (Partner Center's for the
+     Store build; your signing certificate's subject for a direct download), the version and the
+     architecture. -->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:com="http://schemas.microsoft.com/appx/manifest/com/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop com rescap">
+
+  <Identity
+    Name="{{IdentityName}}"
+    Publisher="{{Publisher}}"
+    Version="{{Version}}"
+    ProcessorArchitecture="{{Arch}}" />
+
+  <Properties>
+    <DisplayName>Garage</DisplayName>
+    <PublisherDisplayName>{{PublisherDisplayName}}</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+    <Description>A private, local search and memory over your own documents, code and mail, for you and your AI assistants.</Description>
+  </Properties>
+
+  <Dependencies>
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.17763.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-US" />
+  </Resources>
+
+  <Applications>
+    <Application Id="Garage" Executable="Garage.exe" EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="Garage"
+        Description="A private, local search and memory over your own documents, code and mail."
+        BackgroundColor="transparent"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!-- Launch at sign-in (PackagedStartup in Platform.cs). Off until the person turns it on. -->
+        <desktop:Extension Category="windows.startupTask" Executable="Garage.exe" EntryPoint="Windows.FullTrustApplication">
+          <desktop:StartupTask TaskId="GarageStartup" Enabled="false" DisplayName="Garage" />
+        </desktop:Extension>
+
+        <!-- App notifications (ToastNotifier): a packaged app's AppNotificationManager.Register needs
+             a COM activator Windows can start when a notification is clicked. -->
+        <com:Extension Category="windows.comServer">
+          <com:ComServer>
+            <com:ExeServer Executable="Garage.exe" Arguments="----AppNotificationActivated:" DisplayName="Garage notifications">
+              <com:Class Id="B76B6BEB-79F3-4733-BE4D-74FD7F2BBFC5" />
+            </com:ExeServer>
+          </com:ComServer>
+        </com:Extension>
+        <desktop:Extension Category="windows.toastNotificationActivation">
+          <desktop:ToastNotificationActivation ToastActivatorCLSID="B76B6BEB-79F3-4733-BE4D-74FD7F2BBFC5" />
+        </desktop:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!-- Model downloads and, with Ollama or LM Studio on another machine, embeddings. -->
+    <Capability Name="internetClient" />
+    <!-- A desktop app: Garage reads the folders the person adds and runs its own Postgres and
+         services (windows.md section 6). The Store asks why at submission. -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+</Package>

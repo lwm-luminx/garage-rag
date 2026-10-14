@@ -1,0 +1,49 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+
+  <!-- One download for people who install by hand: the Visual C++ runtime when needed, then Garage.
+       The UpgradeCode never changes, so a newer Garage-Setup.exe replaces an older one. -->
+  <Bundle
+    Name="Garage"
+    Manufacturer="Garage"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="208B98A8-5197-4DE3-81D5-83FAD2439350"
+    IconSourceFile="$(var.IconPath)"
+    AboutUrl="https://garagerag.app"
+    HelpUrl="https://github.com/rickmark/garage-rag/issues">
+
+    <BootstrapperApplication>
+      <bal:WixStandardBootstrapperApplication
+        Theme="hyperlinkLicense"
+        LogoFile="$(var.LogoPath)"
+        LicenseUrl="https://github.com/rickmark/garage-rag/blob/main/LICENSE"
+        ShowVersion="yes"
+        SuppressOptionsUI="yes" />
+    </BootstrapperApplication>
+
+    <!-- The runtime this PC has: msvcp140's version, empty when it is missing. -->
+    <util:FileSearch Id="MsvcpVersionSearch" Path="[System64Folder]msvcp140.dll" Result="version" Variable="MsvcpVersion" />
+
+    <Chain>
+      <!-- Microsoft's own installer, unmodified. Skipped when the runtime is new enough; never removed
+           with Garage (Permanent), since other programs share it. 1638: a newer one is already there. -->
+      <ExePackage
+        Id="VCRedist"
+        SourceFile="$(var.VCRedistPath)"
+        DisplayName="Microsoft Visual C++ Redistributable"
+        PerMachine="yes"
+        Permanent="yes"
+        DetectCondition="MsvcpVersion &gt;= v$(var.VCRuntimeRequired)"
+        InstallArguments="/install /quiet /norestart">
+        <ExitCode Value="1638" Behavior="success" />
+        <ExitCode Value="3010" Behavior="scheduleReboot" />
+      </ExePackage>
+
+      <MsiPackage Id="Garage" SourceFile="$(var.MsiPath)">
+        <!-- The runtime was just installed (or found), even if its files wait for a restart. -->
+        <MsiProperty Name="GARAGE_VCRUNTIME_INSTALLED" Value="1" />
+      </MsiPackage>
+    </Chain>
+  </Bundle>
+</Wix>

@@ -182,6 +182,7 @@ public sealed partial class SourcesPage : Page
             Title = $"Forget deleted files in {slug}?",
             Content = "Garage deletes the documents whose files are no longer there, with their chunks, embeddings and facts. Files that are still there are not touched.",
             PrimaryButtonText = "Forget Deleted Files",
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
             CloseButtonText = Strings.Get("Code_SourcesPage_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
@@ -220,6 +221,7 @@ public sealed partial class SourcesPage : Page
             Title = $"Remove {slug}?",
             Content = $"This deletes its {SourceRowPresentation.Plural("document", documents)} ({documents:N0}), their chunks and every embedding of them. The files themselves are not touched.",
             PrimaryButtonText = Strings.Get("Code_SourcesPage_Remove"),
+            PrimaryButtonStyle = (Style)Application.Current.Resources["DangerButtonStyle"],
             CloseButtonText = Strings.Get("Code_SourcesPage_Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
