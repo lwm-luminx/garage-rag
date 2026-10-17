@@ -1,0 +1,18 @@
+[package]
+name = "garage-text"
+description = "Garage's reader for plain text, Markdown and source code, ported from garage_rag.extract.text, as a plugin."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+garage-plugin.workspace = true
+indexmap.workspace = true
+serde_json.workspace = true
+unicode-normalization.workspace = true
+yaml-rust2.workspace = true
+
+[lints]
+workspace = true

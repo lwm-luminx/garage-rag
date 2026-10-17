@@ -1,0 +1,5 @@
+# The same Rust as Bazel's toolchain (MODULE.bazel, rules_rs), so cargo and Bazel agree.
+[toolchain]
+channel = "1.92.0"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

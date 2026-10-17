@@ -1,0 +1,15 @@
+[package]
+name = "garage-text-plugin"
+description = "The text reader as a plugin process, serving garage.plugin.v1.ExtractorPlugin on a Unix-domain socket."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+garage-plugin = { workspace = true, features = ["grpc"] }
+garage-text.workspace = true
+
+[lints]
+workspace = true

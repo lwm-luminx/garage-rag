@@ -1,0 +1,30 @@
+[package]
+name = "garage-plugin"
+description = "The ingester-to-plugin contract (proto/garage_plugin.proto): its messages, the Plugin trait, the in-process C ABI and, with the grpc feature, the gRPC server on a Unix-domain socket."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[features]
+default = []
+# The gRPC transport: tonic, tokio and the server on a Unix-domain socket. The in-process C ABI
+# leaves it off, so a plugin linked into the ingester carries no networking code.
+grpc = ["dep:tonic", "dep:tonic-prost", "dep:tokio", "dep:tokio-stream"]
+
+[dependencies]
+prost.workspace = true
+tonic = { workspace = true, optional = true }
+tonic-prost = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["io-std", "io-util"] }
+tokio-stream = { workspace = true, optional = true }
+
+[dev-dependencies]
+hyper-util.workspace = true
+tempfile = "3"
+tokio = { workspace = true, features = ["io-std", "io-util"] }
+tower.workspace = true
+
+[lints]
+workspace = true
