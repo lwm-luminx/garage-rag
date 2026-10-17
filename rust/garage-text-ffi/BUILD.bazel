@@ -1,0 +1,23 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+
+# The text reader behind the contract's C ABI (include/garage_text.h), linked statically into the
+# ingester: //macapp/Sources/GaragePlugins wraps it for Swift.
+rust_static_library(
+    name = "garage_text_ffi_static",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_text_ffi",
+    edition = "2024",
+    deps = [
+        "//rust/garage-plugin",
+        "//rust/garage-text",
+    ],
+)
+
+cc_library(
+    name = "garage-text-ffi",
+    hdrs = ["include/garage_text.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [":garage_text_ffi_static"],
+)

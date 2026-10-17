@@ -155,6 +155,25 @@ toolchains.toolchain(
 )
 use_repo(toolchains, "default_rust_toolchains")
 
+# Only the Rust toolchains: the C/C++ toolchain stays apple_support's on macOS and the host's on
+# Linux, so registering rules_rs's @llvm toolchains here would change every C build in the tree.
+register_toolchains("@default_rust_toolchains//:all")
+
+# The crates rust/Cargo.lock pins (docs/plans/rust-plugins.md), resolved for the hosts that build them: the Mac,
+# CI's Linux runners and an Apple silicon devcontainer.
+crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "crates",
+    cargo_lock = "//rust:Cargo.lock",
+    cargo_toml = "//rust:Cargo.toml",
+    platform_triples = [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-unknown-linux-gnu",
+    ],
+)
+use_repo(crate, "crates")
+
 include("//ext/postgres:postgres.MODULE.bazel")
 include("//ext/postgres:postgres19.MODULE.bazel")
 include("//ext/pgvector:pgvector.MODULE.bazel")

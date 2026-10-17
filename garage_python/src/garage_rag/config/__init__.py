@@ -437,6 +437,17 @@ class Settings(BaseModel):
             "still skipped. Off, an image without text is not indexed."
         ),
     )
+    extraction_plugins: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Reader plugins: programs that implement Garage's plugin contract (proto/garage_plugin.proto) for "
+            "document types. Each entry is the path of a plugin program, which Garage starts and stops with "
+            "the ingest, or 'unix:' and the path of a socket a running plugin listens on. A plugin's readers "
+            "take over the extensions they declare, ahead of the built-in ones; plugins listed earlier win. "
+            "A plugin receives each file's contents, never its path, and is reached only over a Unix-domain "
+            "socket. '~' is expanded."
+        ),
+    )
 
     # ---- facts / local generation ---------------------------------------
     fact_model: str = Field(
@@ -680,6 +691,7 @@ SECTIONS: dict[str, dict[str, str]] = {
         "pdf_min_chars_per_page": "pdf_min_chars_per_page",
         "ocr_min_chars": "ocr_min_chars",
         "index_images": "index_images",
+        "plugins": "extraction_plugins",
     },
     "mcp": {
         "host": "mcp_host",

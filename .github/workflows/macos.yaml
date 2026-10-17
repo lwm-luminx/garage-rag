@@ -21,6 +21,7 @@ on:
       - "bazel/**"
       - "tools/**"
       - "proto/**"
+      - "rust/**"
       - "data/**"
       - "**/BUILD.bazel"
       - "**/*.bzl"

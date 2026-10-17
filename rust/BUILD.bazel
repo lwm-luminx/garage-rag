@@ -1,0 +1,6 @@
+# The Cargo workspace is the source of truth; MODULE.bazel's crate.from_cargo resolves its lockfile
+# into @crates, and each crate's BUILD.bazel mirrors its Cargo.toml.
+exports_files([
+    "Cargo.lock",
+    "Cargo.toml",
+])

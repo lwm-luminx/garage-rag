@@ -10,11 +10,16 @@ from __future__ import annotations
 import importlib
 import logging
 from collections.abc import Callable
+from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from garage_rag.config import get_settings
 from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult, NoTextFound, UnsupportedFile
 from garage_rag.extract.placeholder import PlaceholderFile, check_materialized
+
+if TYPE_CHECKING:
+    from garage_rag.extract.plugins import PluginClient, PluginExtractor
 
 log = logging.getLogger(__name__)
 
@@ -230,8 +235,26 @@ def _image(path: Path) -> ExtractResult:
     return extract_image(path)
 
 
+def _plugin_route(path: Path) -> tuple[PluginClient, PluginExtractor] | None:
+    """The configured plugin that takes ``path`` (``extraction.plugins``), if any."""
+    if not get_settings().extraction_plugins:
+        return None
+    from garage_rag.extract import plugins
+
+    found = plugins.registry()
+    return found.route(path) if found is not None else None
+
+
 def extractor_for(path: Path) -> Extractor:
-    """Choose an extractor for ``path``, or raise :class:`UnsupportedFile`."""
+    """Choose an extractor for ``path``, or raise :class:`UnsupportedFile`.
+
+    A configured plugin that declares the file's extension (or, for a file without one, its name)
+    takes it ahead of the built-in extractors.
+    """
+    if (route := _plugin_route(path)) is not None:
+        client, extractor = route
+        return partial(client.extract, extractor)
+
     suffix = path.suffix.lower()
     name = path.name.lower()
 
@@ -283,6 +306,8 @@ def extractor_revision(path: Path) -> str:
     A remembered no-text or failed outcome counts only while this is unchanged, so
     bumping an extractor's ``VERSION`` retries every file it gave up on.
     """
+    if (route := _plugin_route(path)) is not None:
+        return route[1].revision
     try:
         extractor = extractor_for(path)
     except UnsupportedFile:
@@ -295,7 +320,9 @@ def extractor_revision(path: Path) -> str:
 def is_indexable(path: Path) -> bool:
     """Cheap pre-filter for the walker, before any file is opened."""
     suffix = path.suffix.lower()
-    return suffix in INDEXABLE_EXTENSIONS or (not suffix and path.name.lower() in NAMED_CODE_FILES)
+    if suffix in INDEXABLE_EXTENSIONS or (not suffix and path.name.lower() in NAMED_CODE_FILES):
+        return True
+    return _plugin_route(path) is not None
 
 
 def extract(path: Path) -> ExtractResult:

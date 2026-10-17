@@ -203,3 +203,11 @@ config_setting(
     define_values = {"apple.experimental.tree_artifact_outputs": "1"},
     visibility = ["//visibility:public"],
 )
+
+# The Linux host with its C library named, which rules_rs's Rust toolchains need to match a Linux
+# execution platform (.bazelrc's build:linux uses it as both host and target platform).
+platform(
+    name = "linux_gnu",
+    constraint_values = ["@llvm//constraints/libc:gnu.2.28"],
+    parents = ["@platforms//host"],
+)

@@ -6,6 +6,8 @@
 # gazelle:resolve py garage_rag.proto //garage_python/src/garage_rag/proto
 # gazelle:resolve py garage_rag.proto.garage_pb2 //garage_python/src/garage_rag/proto
 # gazelle:resolve py garage_rag.proto.garage_pb2_grpc //garage_python/src/garage_rag/proto
+# gazelle:resolve py garage_rag.proto.garage_plugin_pb2 //garage_python/src/garage_rag/proto
+# gazelle:resolve py garage_rag.proto.garage_plugin_pb2_grpc //garage_python/src/garage_rag/proto
 
 load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@aspect_rules_py//uv:defs.bzl", "gazelle_python_manifest")

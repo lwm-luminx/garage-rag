@@ -10,6 +10,8 @@ name: CI
 #   (console scripts, the packaged SQL and model catalog, `garage init-db`).
 # - `python-freethreaded`: the pytest suite again on free-threaded CPython 3.14t,
 #   informational (continue-on-error) while grpcio and lxml still re-enable the GIL.
+# - `rust`: rustfmt, clippy and cargo test over rust/, the protogen output check,
+#   and the .NET binding's tests against the built library.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
 # - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
 # - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
@@ -80,6 +82,11 @@ jobs:
           sudo apt-get install -y -qq libgit2-dev libtesseract-dev tesseract-ocr-eng pkg-config
           ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
           ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
+      - name: Build the Rust text reader
+        # test_text_plugin holds it to garage_rag.extract.text, over gRPC and the C ABI alike.
+        # rustup installs the version rust/rust-toolchain.toml pins.
+        working-directory: rust
+        run: cargo build --release --locked -p garage-text-plugin -p garage-text-ffi
       - name: pytest, the whole suite (test_postgres.py against the service)
         # Typer forces Rich's terminal mode (ANSI colour, boxed errors) when
         # GITHUB_ACTIONS is set, which breaks the CLI tests' output checks. Bazel's
@@ -90,6 +97,8 @@ jobs:
           # here: job-wide, it breaks actions/checkout's post-job git config cleanup.
           GIT_CONFIG_GLOBAL: /dev/null
           PYTHONPATH: ${{ runner.temp }}/garage_git:${{ runner.temp }}/garage_tesseract
+          GARAGE_TEXT_PLUGIN: ${{ github.workspace }}/rust/target/release/garage-text-plugin
+          GARAGE_TEXT_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_text_ffi.so
 
   python-package:
     name: "Python package: build, check and smoke-test the sdist and wheel"
@@ -195,6 +204,38 @@ jobs:
         env:
           GIT_CONFIG_GLOBAL: /dev/null
           PYTHON_GIL: "0"
+
+  rust:
+    name: "Rust: fmt, clippy and tests (rust/)"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      - name: Install protoc
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: clippy
+        run: cargo clippy --locked --workspace --all-targets --features garage-plugin/grpc -- -D warnings
+      - name: cargo test
+        run: cargo test --locked --workspace --features garage-plugin/grpc
+      - name: The checked-in generated code matches proto/garage_plugin.proto
+        run: |
+          cargo run --locked -p protogen
+          git diff --exit-code -- garage-plugin/src/generated
+      - name: Build the C ABI library
+        run: cargo build --release --locked -p garage-text-ffi
+      - name: .NET binding tests against the built library
+        # From winapp/, so global.json selects the SDK and Microsoft.Testing.Platform.
+        working-directory: winapp
+        run: dotnet test --project tests/Garage.Plugins.Tests/Garage.Plugins.Tests.csproj
+        env:
+          GARAGE_TEXT_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_text_ffi.so
 
   swiftcheck:
     name: "Swift: syntax check (tree-sitter)"
