@@ -869,6 +869,7 @@ py_test(
     srcs = ["test_text_plugin.py"],
     deps = [
         ":conftest",
+        "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/extract",
         "//garage_python/src/garage_rag/proto",
         "@pypi//pytest",
