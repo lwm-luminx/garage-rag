@@ -1,0 +1,56 @@
+# Garage's Rust: the components moved out of Python, and the plugins they host.
+# See docs/plans/rust-plugins.md.
+[workspace]
+resolver = "3"
+members = [
+    "garage-plugin",
+    "garage-text",
+    "garage-text-ffi",
+    "garage-text-plugin",
+    "protogen",
+]
+# protogen needs protoc; everything else builds without it.
+default-members = [
+    "garage-plugin",
+    "garage-text",
+    "garage-text-ffi",
+    "garage-text-plugin",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT"
+repository = "https://github.com/lwm-luminx/garage-rag"
+publish = false
+
+[workspace.dependencies]
+garage-plugin = { path = "garage-plugin" }
+garage-text = { path = "garage-text" }
+indexmap = "2.14"
+prost = "0.14"
+serde_json = { version = "1.0", features = ["preserve_order"] }
+tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net", "signal"] }
+tokio-stream = { version = "0.1", features = ["net"] }
+tonic = { version = "0.14", default-features = false, features = ["codegen", "router", "server", "transport"] }
+tonic-prost = "0.14"
+tonic-prost-build = "0.14"
+unicode-normalization = "0.1.26"
+yaml-rust2 = { version = "0.13", default-features = false }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = "0.5"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+# The prose names Python and its libraries (PyYAML, pathlib) as words, not code.
+doc_markdown = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

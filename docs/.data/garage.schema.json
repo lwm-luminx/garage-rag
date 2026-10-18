@@ -172,6 +172,14 @@
           "type": "boolean",
           "description": "Index pictures as documents: an image with no text becomes a document with one image chunk, and a screenshot or scan gets one beside its text chunks. Image embedding models (SigLIP 2 in the catalog) embed the picture itself; full-text search sees the file's name. Icons and other tiny images are still skipped. Off, an image without text is not indexed.",
           "default": true
+        },
+        "plugins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Reader plugins: programs that implement Garage's plugin contract (proto/garage_plugin.proto) for document types. Each entry is the path of a plugin program, which Garage starts and stops with the ingest, or 'unix:' and the path of a socket a running plugin listens on. A plugin's readers take over the extensions they declare, ahead of the built-in ones; plugins listed earlier win. A plugin receives each file's contents, never its path, and is reached only over a Unix-domain socket. '~' is expanded.",
+          "default": []
         }
       }
     },

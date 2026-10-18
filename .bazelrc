@@ -86,7 +86,8 @@ build:store --platforms=//bazel:store
 # the --platforms above: the presets' `common` copy expands before every `build` line, so the
 # local_signed default would win again.
 build --enable_platform_specific_config
-build:linux --platforms=@platforms//host
+build:linux --platforms=//bazel:linux_gnu
+build:linux --host_platform=//bazel:linux_gnu
 
 # Build against the bundled PostgreSQL 19 beta instead of 18 (see //ext:postgres_version).
 common:pg19 --//ext:postgres_version=19

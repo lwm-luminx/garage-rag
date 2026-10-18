@@ -15,6 +15,7 @@ py_library(
         "office.py",
         "pdf.py",
         "placeholder.py",
+        "plugins.py",
         "quality.py",
         "tesseract.py",
         "text.py",
@@ -24,6 +25,8 @@ py_library(
     deps = [
         "//garage_python/src/garage_rag/config",
         "//garage_python/src/garage_rag/native",
+        "//garage_python/src/garage_rag/proto",
+        "@pypi//grpcio",
         "@pypi//openpyxl",
         "@pypi//pdfplumber",
         "@pypi//pillow",

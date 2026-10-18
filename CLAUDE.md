@@ -141,8 +141,9 @@ database directly rather than parsing Rich tables.
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: the `python` job (ruff and the whole venv pytest suite, with a Postgres service),
     `python-freethreaded` (the same suite on free-threaded CPython 3.14t, informational until the
-    app ships on it), `swiftcheck`, `format`, `gazelle`, `buildifier`, and `winapp-bazel`
-    (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
+    app ships on it), `swiftcheck`, `format`, `gazelle`, `buildifier`, `winapp-bazel`
+    (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app"),
+    and `rust` (rustfmt, clippy, cargo test, the protogen check and the .NET binding's tests).
   - On macOS: `lint`, which analyzes Apple targets.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
@@ -168,6 +169,35 @@ database directly rather than parsing Rich tables.
   `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
   runner's OS and CPU.
+
+### Rust (`rust/`) and reader plugins
+
+Components are moving from Python to Rust one at a time ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md)).
+`rust/` is a Cargo workspace (toolchain pinned in `rust-toolchain.toml`, the same as MODULE.bazel's) that
+Bazel also builds through rules_rs (`crate.from_cargo` over `rust/Cargo.lock`; each crate's `BUILD.bazel`
+mirrors its `Cargo.toml` by hand, and gazelle leaves the folder alone). On Linux, `.bazelrc`'s `build:linux`
+uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains need.
+
+- **The contract.** `proto/garage_plugin.proto` (`garage.plugin.v1.ExtractorPlugin`: `Describe`, `Extract`)
+  is between the ingester and its readers: a file name and bytes in, never a path. It crosses gRPC on a
+  Unix-domain socket (a plugin in its own process) and a C ABI over the serialized messages (a reader
+  linked in). `rust/garage-plugin` has both sides; its generated code is checked in, made by
+  `cargo run -p protogen` (needs `protoc`) after editing the proto, and CI fails when it is stale. Python's
+  stubs are regenerated as for `garage.proto` (below).
+- **The text reader** (`rust/garage-text`) ports `extract/text.py`; `garage-text-plugin` serves it over
+  gRPC and `garage-text-ffi` exports it (`include/garage_text.h`). `tests/test_text_plugin.py` holds it to
+  the Python reader and runs when `GARAGE_TEXT_PLUGIN`/`GARAGE_TEXT_FFI_LIBRARY` name the builds or
+  `rust/target/{release,debug}` has them (`cargo build --release -p garage-text-plugin -p garage-text-ffi`).
+- **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
+  `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
+  the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static
+  library. .NET: `winapp/src/Garage.Plugins` (its tests need `GARAGE_TEXT_FFI_LIBRARY`).
+
+```bash
+cd rust
+cargo fmt --check && cargo clippy --workspace --all-targets --features garage-plugin/grpc -- -D warnings
+cargo test --workspace --features garage-plugin/grpc
+```
 
 ### Windows app (`winapp/`)
 

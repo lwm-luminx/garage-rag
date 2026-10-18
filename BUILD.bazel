@@ -27,6 +27,9 @@
 # repin.py's, so gazelle leaves the folder alone.
 # gazelle:exclude winapp
 
+# rust/ is a Cargo workspace; its BUILD files mirror each Cargo.toml by hand.
+# gazelle:exclude rust
+
 exports_files(
     [
         "README.md",
