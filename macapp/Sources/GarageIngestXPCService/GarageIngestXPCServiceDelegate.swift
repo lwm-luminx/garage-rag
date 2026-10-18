@@ -120,7 +120,7 @@ private func registerIngestCallbacks(on ingestModule: PythonObject) throws {
     }
 }
 
-final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXPCServiceProtocol {
+final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIngestXPCServiceProtocol {
     private let engine = IngestEngine.shared
     private static let workerQueue = DispatchQueue(label: "me.rickmark.garage.ingest.worker", qos: .userInitiated)
 

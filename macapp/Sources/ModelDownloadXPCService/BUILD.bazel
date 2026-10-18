@@ -1,28 +1,23 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
-load("//bazel:framework_linking.bzl", "framework_linked_library")
 
-# Implementation library for ModelDownloadXPCService
+# Implementation library for ModelDownloadXPCService. It runs no Python, so it is built on
+# GarageXPCKit alone and links neither Python.framework nor PythonXPCService.framework.
 swift_library(
     name = "ModelDownloadXPCService_lib",
     srcs = glob(["**/*.swift"]),
     module_name = "ModelDownloadXPCService",
     visibility = ["//visibility:private"],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/ModelDownloadClient",
-        "//macapp/Sources/PythonXPCService",
     ],
 )
 
 # The actual XPC service binary
 macos_xpc_service(
     name = "ModelDownloadXPCService",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-        "//ext/pythonkit:PythonKit",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
-    ],
     bundle_id = "me.rickmark.garage-rag.model-download-xpc",
     bundle_name = "ModelDownloadXPCService",
     codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
@@ -32,26 +27,10 @@ macos_xpc_service(
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
-        "-framework",
-        "PythonXPCService",
-    ],
     minimum_os_version = "14.0",
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":ModelDownloadXPCService_linked",
+        ":ModelDownloadXPCService_lib",
     ],
-)
-
-# The service's library without the static copy of PythonXPCService.framework's code, which it links
-# (see //bazel:framework_linking.bzl).
-framework_linked_library(
-    name = "ModelDownloadXPCService_linked",
-    framework_deps = ["//macapp/Sources/PythonXPCService"],
-    deps = [":ModelDownloadXPCService_lib"],
 )

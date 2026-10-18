@@ -15,6 +15,7 @@ swift_library(
         "//macapp/Sources/GarageApp:GarageApp_lib",
         "//macapp/Sources/GarageLauncher",
         "//macapp/Sources/GarageUpdater",
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/IngestClient",
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",

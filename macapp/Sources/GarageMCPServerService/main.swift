@@ -120,7 +120,7 @@ final class GarageMCPManagedServer: GarageManagedService {
     }
 }
 
-final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServerServiceProtocol {
+final class GarageMCPServerServiceDelegate: GaragePythonXPCServiceBase, GarageMCPServerServiceProtocol {
     private let mcpServer = GarageMCPManagedServer()
 
     init() {

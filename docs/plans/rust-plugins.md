@@ -112,6 +112,23 @@ builds the reader so `test_text_plugin.py` runs.
    the walker's per-file pass. Then the Office and PDF readers, as plugins.
 5. **Third-party notices** for the crates the app links, once the app links them.
 
+## Python-free XPC services
+
+The goal past the readers is XPC services that are Python-free binaries, one service at a time. Each
+step leaves the app working, with the Python reference still there for the services not yet moved.
+
+1. **The services that already run no Python** (model downloads, llama.cpp, image embeddings) still
+   linked Python.framework and PythonXPCService.framework, because the service base class lived
+   there. `GarageXPCKit` is that base without Python: logging, crash handling, self tests, the
+   managed-service host and the peer requirement. `GaragePythonXPCServiceBase` in PythonXPCService adds
+   the interpreter for the services that embed it. ModelDownloadXPCService is the first service built on
+   the kit alone; LlamaXPCService and GarageImageEmbedXPCService follow once the client modules they
+   share with the app (`LlamaClient`, `LlamaEngine`, `ImageEmbedClient`) import the kit instead.
+2. **Embeddings.** The backfill worker in GarageEmbedXPCService, in Rust, over the same gRPC facade.
+3. **Ingest.** The walker, readers, chunking, attribution, the quality gate and the splitters, in Rust,
+   with readers behind the plugin contract above.
+4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
+
 ## Privacy
 
 A plugin sees one file's bytes and returns text. It receives no path, database URL or network

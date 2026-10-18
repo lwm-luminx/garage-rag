@@ -128,7 +128,7 @@ final class GarageGRPCManagedServer: GarageManagedService {
     }
 }
 
-final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProtocol {
+final class GarageXPCServiceDelegate: GaragePythonXPCServiceBase, GarageXPCServiceProtocol {
     private let grpcServer = GarageGRPCManagedServer()
 
     init() {

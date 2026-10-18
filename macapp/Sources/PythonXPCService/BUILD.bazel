@@ -40,16 +40,9 @@ objc_library(
 swift_library(
     name = "PythonXPCService_swift",
     srcs = [
-        "GarageFileLogger.swift",
         "GaragePythonRuntime.swift",
-        "GarageXPCCrashHandler.swift",
-        "GarageXPCOutputCapture.swift",
-        "GarageXPCPeerRequirement.swift",
+        "GaragePythonXPCServiceBase.swift",
         "GarageXPCSelfTests.swift",
-        "GarageXPCServiceBase.swift",
-        "GarageXPCServiceHost.swift",
-        "UTF8StreamDecoder.swift",
-        "XPCSitePathSetup.swift",
         "_Reexport.swift",
     ],
     module_name = "PythonXPCService",
@@ -58,6 +51,7 @@ swift_library(
         ":GaragePythonEmbed",
         ":PythonXPCService_protocol",
         "//ext:PythonKit",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )
 
