@@ -143,6 +143,11 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.BackfillRequest.SerializeToString,
                 response_deserializer=garage__pb2.BackfillStatus.FromString,
                 _registered_method=True)
+        self.EmbedText = channel.unary_unary(
+                '/garage.GarageService/EmbedText',
+                request_serializer=garage__pb2.EmbedTextRequest.SerializeToString,
+                response_deserializer=garage__pb2.EmbedTextResponse.FromString,
+                _registered_method=True)
         self.EnsureLlamaModel = channel.unary_unary(
                 '/garage.GarageService/EnsureLlamaModel',
                 request_serializer=garage__pb2.EnsureLlamaModelRequest.SerializeToString,
@@ -387,6 +392,13 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def EmbedText(self, request, context):
+        """Embed one text with a registered model, for the app's Test an Embedding.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def EnsureLlamaModel(self, request, context):
         """Has LlamaXPCService load a llama_xpc model (over NSXPC) unless it is already resident. For
         processes outside the app's XPC services (the stdio launchers), which cannot reach it themselves.
@@ -625,6 +637,11 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.Backfill,
                     request_deserializer=garage__pb2.BackfillRequest.FromString,
                     response_serializer=garage__pb2.BackfillStatus.SerializeToString,
+            ),
+            'EmbedText': grpc.unary_unary_rpc_method_handler(
+                    servicer.EmbedText,
+                    request_deserializer=garage__pb2.EmbedTextRequest.FromString,
+                    response_serializer=garage__pb2.EmbedTextResponse.SerializeToString,
             ),
             'EnsureLlamaModel': grpc.unary_unary_rpc_method_handler(
                     servicer.EnsureLlamaModel,
@@ -1278,6 +1295,33 @@ class GarageService:
             '/garage.GarageService/Backfill',
             garage__pb2.BackfillRequest.SerializeToString,
             garage__pb2.BackfillStatus.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EmbedText(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/EmbedText',
+            garage__pb2.EmbedTextRequest.SerializeToString,
+            garage__pb2.EmbedTextResponse.FromString,
             options,
             channel_credentials,
             insecure,

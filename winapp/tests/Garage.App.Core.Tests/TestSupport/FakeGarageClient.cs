@@ -54,7 +54,39 @@ internal sealed class FakeGarageClient : GarageService.GarageServiceClient
 
     public Func<EnrichFactsRequest, IEnumerable<EnrichFactsStatus>> OnEnrichFacts { get; set; } = _ => [];
 
+    public Func<ImportSourcesToConfigRequest, ImportSourcesToConfigResponse> OnImportSourcesToConfig { get; set; } = _ => new ImportSourcesToConfigResponse();
+
+    public Func<ReconcileRequest, ReconcileResponse> OnReconcile { get; set; } = r => new ReconcileResponse { Source = r.Source };
+
+    public Func<ClusterFactsRequest, IEnumerable<ClusterFactsStatus>> OnClusterFacts { get; set; } = _ => [];
+
+    public Func<ListFactPromptsRequest, ListFactPromptsResponse> OnListFactPrompts { get; set; } = _ => new ListFactPromptsResponse { ConfiguredJson = "[]" };
+
+    public Func<GraphLabelsRequest, GraphLabelsResponse> OnGraphLabels { get; set; } = _ => new GraphLabelsResponse();
+
+    public Func<FindGraphVerticesRequest, FindGraphVerticesResponse> OnFindGraphVertices { get; set; } = _ => new FindGraphVerticesResponse();
+
+    public Func<GraphNeighborhoodRequest, GraphNeighborhoodResponse> OnGraphNeighborhood { get; set; } = _ => new GraphNeighborhoodResponse();
+
+    public Func<EmbedTextRequest, EmbedTextResponse> OnEmbedText { get; set; } = r => new EmbedTextResponse { Model = r.Model };
+
     public List<object> Requests { get; } = [];
+
+    public override AsyncUnaryCall<ImportSourcesToConfigResponse> ImportSourcesToConfigAsync(ImportSourcesToConfigRequest request, CallOptions options) => Answer(request, OnImportSourcesToConfig);
+
+    public override AsyncUnaryCall<ReconcileResponse> ReconcileAsync(ReconcileRequest request, CallOptions options) => Answer(request, OnReconcile);
+
+    public override AsyncServerStreamingCall<ClusterFactsStatus> ClusterFacts(ClusterFactsRequest request, CallOptions options) => Stream(request, OnClusterFacts, options);
+
+    public override AsyncUnaryCall<ListFactPromptsResponse> ListFactPromptsAsync(ListFactPromptsRequest request, CallOptions options) => Answer(request, OnListFactPrompts);
+
+    public override AsyncUnaryCall<GraphLabelsResponse> GetGraphLabelsAsync(GraphLabelsRequest request, CallOptions options) => Answer(request, OnGraphLabels);
+
+    public override AsyncUnaryCall<FindGraphVerticesResponse> FindGraphVerticesAsync(FindGraphVerticesRequest request, CallOptions options) => Answer(request, OnFindGraphVertices);
+
+    public override AsyncUnaryCall<GraphNeighborhoodResponse> GetGraphNeighborhoodAsync(GraphNeighborhoodRequest request, CallOptions options) => Answer(request, OnGraphNeighborhood);
+
+    public override AsyncUnaryCall<EmbedTextResponse> EmbedTextAsync(EmbedTextRequest request, CallOptions options) => Answer(request, OnEmbedText);
 
     public override AsyncUnaryCall<ListModelsResponse> ListModelsAsync(ListModelsRequest request, CallOptions options) => Answer(request, OnListModels);
 

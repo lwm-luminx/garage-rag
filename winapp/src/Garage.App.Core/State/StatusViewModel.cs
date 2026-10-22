@@ -191,6 +191,25 @@ public sealed partial class StatusViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Restart All (the Mac's): stops what the pipeline is doing, then restarts every service that is
+    /// running, the backend first since the others persist through it. A service switched off (the MCP
+    /// HTTP server) stays off.
+    /// </summary>
+    public async Task RestartAllAsync()
+    {
+        if (_state.Backend.Host is not { } host)
+        {
+            return;
+        }
+        Library.CancelAll();
+        foreach (Garage.App.Core.Services.ServiceProcess service in host.Services.Where(s => s.State != Garage.App.Core.Services.ServiceState.Stopped).ToList())
+        {
+            await host.RestartAsync(service).ConfigureAwait(true);
+        }
+        await _state.RefreshAsync().ConfigureAwait(true);
+    }
+
     /// <summary>Asks every service for its state.</summary>
     public async Task RefreshServicesAsync()
     {

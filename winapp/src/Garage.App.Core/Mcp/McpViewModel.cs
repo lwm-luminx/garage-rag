@@ -113,9 +113,101 @@ public sealed partial class McpViewModel(GarageService.GarageServiceClient clien
         }
     }
 
-    /// <summary>At launch: turns the HTTP server back on when it was on when the app last ran.</summary>
-    public Task RestoreHttpAsync() =>
-        _http is not null && Preferences.Read(HttpEnabledKey, false) ? SetHttpEnabledAsync(true) : Task.CompletedTask;
+    /// <summary>At launch: the remembered port, and the HTTP server back on when it was on when the app last ran.</summary>
+    public Task RestoreHttpAsync()
+    {
+        if (_http is null)
+        {
+            return Task.CompletedTask;
+        }
+        int port = Preferences.Read(PortKey, _http.Port);
+        if (IsValidPort(port))
+        {
+            _http.Port = port;
+        }
+        OnPropertyChanged(nameof(Port));
+        return Preferences.Read(HttpEnabledKey, false) ? SetHttpEnabledAsync(true) : Task.CompletedTask;
+    }
+
+    /// <summary>The preference that keeps the port across launches (the Mac's <c>garage.mcp.port</c>).</summary>
+    public const string PortKey = "mcp.port";
+
+    /// <summary>The HTTP server's port.</summary>
+    public int Port => _http?.Port ?? 8787;
+
+    /// <summary>Whether <paramref name="port"/> can be listened on without administrator rights.</summary>
+    public static bool IsValidPort(int port) => port is >= 1024 and <= 65535;
+
+    /// <summary>A port from the dynamic range, for the page's Random.</summary>
+    public static int RandomPort() => Random.Shared.Next(49152, 65536);
+
+    /// <summary>
+    /// Moves the HTTP server to <paramref name="port"/> and remembers it; a running server restarts
+    /// there, and the registrations at the old address read as out of date until Update rewrites them.
+    /// </summary>
+    public async Task<bool> SetPortAsync(int port)
+    {
+        if (_http is null || !IsValidPort(port))
+        {
+            LastResult = string.Create(System.Globalization.CultureInfo.CurrentCulture, $"{port} is not a port Garage can use: pick one from 1024 to 65535.");
+            return false;
+        }
+        if (port == _http.Port)
+        {
+            return true;
+        }
+        _http.Port = port;
+        Preferences.Write(PortKey, port);
+        OnPropertyChanged(nameof(Port));
+        if (HttpEnabled)
+        {
+            return await RestartHttpAsync().ConfigureAwait(true);
+        }
+        await LoadAsync().ConfigureAwait(true);
+        return true;
+    }
+
+    /// <summary>Stops the HTTP server and starts it again (the Mac's Restart).</summary>
+    public async Task<bool> RestartHttpAsync()
+    {
+        if (_http is null)
+        {
+            return false;
+        }
+        IsSwitchingHttp = true;
+        try
+        {
+            await _http.SetEnabledAsync(false).ConfigureAwait(true);
+            bool ok = await _http.SetEnabledAsync(true).ConfigureAwait(true);
+            HttpEnabled = ok;
+            Preferences.Write(HttpEnabledKey, ok);
+            LastResult = ok ? $"MCP is served at {_http.Url}" : $"The MCP HTTP server did not start: {_http.Service.Error}";
+            await LoadAsync().ConfigureAwait(true);
+            return ok;
+        }
+        finally
+        {
+            IsSwitchingHttp = false;
+        }
+    }
+
+    /// <summary>Connect a Config File…: registers Garage in an MCP config file the page did not find, as stdio.</summary>
+    public Task<OperationResult> ConnectConfigFileAsync(string path) => RunAsync(async token =>
+    {
+        McpInstallResponse installed = await client.McpInstallAsync(
+            new McpInstallRequest { Path = path, Stdio = true, Force = true }, Options(token)).ConfigureAwait(true);
+        return Describe(installed);
+    });
+
+    /// <summary>Check Registrations: reads every assistant's config again and says what it found.</summary>
+    public async Task CheckRegistrationsAsync()
+    {
+        await LoadAsync().ConfigureAwait(true);
+        if (ErrorMessage is null)
+        {
+            LastResult = Summary;
+        }
+    }
 
     /// <summary>Reads which assistants are registered, and at what address.</summary>
     public async Task LoadAsync(CancellationToken cancellationToken = default)

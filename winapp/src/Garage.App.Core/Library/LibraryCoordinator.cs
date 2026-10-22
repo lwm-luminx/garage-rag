@@ -293,8 +293,9 @@ public sealed partial class LibraryCoordinator : ObservableObject, IDisposable
     /// <summary>
     /// Scan &amp; Ingest of one source. It waits in the queue from the start of its scan until its ingest
     /// ends, so Stop (or its row's Cancel) between the two keeps the ingest from starting.
+    /// <paramref name="force"/> (Re-index Everything) reads every file again, changed or not.
     /// </summary>
-    public async Task<bool> ScanAndIngestAsync(string slug, bool includeCode = false)
+    public async Task<bool> ScanAndIngestAsync(string slug, bool includeCode = false, bool force = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(slug);
         if (_ingest.Unavailable is { } why)
@@ -314,7 +315,7 @@ public sealed partial class LibraryCoordinator : ObservableObject, IDisposable
                 return false;
             }
             IngestQueue.Remove(slug);
-            return await IngestOneAsync(slug, includeCode).ConfigureAwait(true);
+            return await IngestOneAsync(slug, includeCode, force).ConfigureAwait(true);
         }
         finally
         {
@@ -616,7 +617,7 @@ public sealed partial class LibraryCoordinator : ObservableObject, IDisposable
         }
     }
 
-    private async Task<bool> IngestOneAsync(string slug, bool includeCode = false)
+    private async Task<bool> IngestOneAsync(string slug, bool includeCode = false, bool force = false)
     {
         IngestingSource = slug;
         IngestSnapshot = null;
@@ -626,7 +627,7 @@ public sealed partial class LibraryCoordinator : ObservableObject, IDisposable
         bool cancelled = false;
         OperationResult result = await Ingester.RunAsync(async (runner, token) =>
         {
-            await foreach (IngestProgress progress in _ingest.IngestAsync(new IngestSourceRequest { Source = slug, IncludeCode = includeCode }, token).ConfigureAwait(true))
+            await foreach (IngestProgress progress in _ingest.IngestAsync(new IngestSourceRequest { Source = slug, IncludeCode = includeCode, Force = force }, token).ConfigureAwait(true))
             {
                 last = SourceIngestSnapshot.From(progress, _cancellingSource == slug || IsCancellingAll);
                 IngestSnapshot = last;

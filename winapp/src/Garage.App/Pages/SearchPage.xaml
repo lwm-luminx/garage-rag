@@ -26,17 +26,20 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="SearchPage_QueryBox" x:Name="QueryBox"
                      KeyDown="OnQueryKeyDown" AutomationProperties.AutomationId="search.query" />
             <ComboBox x:Uid="SearchPage_ModeBox" x:Name="ModeBox" Grid.Column="1" DisplayMemberPath="Title" SelectionChanged="OnModeChanged"
                       MinWidth="150" />
-            <NumberBox x:Uid="SearchPage_LimitBox" x:Name="LimitBox" Grid.Column="2" Header="" Minimum="1" Maximum="100" SpinButtonPlacementMode="Compact"
+            <ComboBox x:Uid="SearchPage_ModelBox" x:Name="ModelBox" Grid.Column="2" SelectionChanged="OnModelChanged" MinWidth="150"
+                      AutomationProperties.AutomationId="search.model" />
+            <NumberBox x:Uid="SearchPage_LimitBox" x:Name="LimitBox" Grid.Column="3" Header="" Minimum="1" Maximum="100" SpinButtonPlacementMode="Compact"
                        ValueChanged="OnLimitChanged" MinWidth="110" />
-            <ToggleButton x:Uid="SearchPage_FiltersToggle" x:Name="FiltersToggle" Grid.Column="3">
+            <ToggleButton x:Uid="SearchPage_FiltersToggle" x:Name="FiltersToggle" Grid.Column="4">
                 <FontIcon Glyph="&#xE71C;" FontSize="14" />
             </ToggleButton>
-            <Button x:Uid="SearchPage_SearchButton" x:Name="SearchButton" Grid.Column="4" Style="{StaticResource AccentButtonStyle}"
+            <Button x:Uid="SearchPage_SearchButton" x:Name="SearchButton" Grid.Column="5" Style="{StaticResource AccentButtonStyle}"
                     Click="OnSearch" AutomationProperties.AutomationId="search.run" />
         </Grid>
 
@@ -98,6 +101,7 @@
                         <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock x:Uid="SearchPage_5" Style="{StaticResource BodyStrongTextBlockStyle}" VerticalAlignment="Center" />
                             <HyperlinkButton x:Uid="SearchPage_6" Click="OnCopyUri" Padding="4,0" />
+                            <HyperlinkButton x:Uid="SearchPage_ShowInExplorer" x:Name="ShowInExplorerLink" Click="OnShowInExplorer" Padding="4,0" />
                         </StackPanel>
                         <TextBlock x:Name="HitUri" TextWrapping="Wrap" IsTextSelectionEnabled="True" FontFamily="Consolas" />
                     </StackPanel>

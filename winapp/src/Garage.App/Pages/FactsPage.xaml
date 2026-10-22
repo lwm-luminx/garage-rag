@@ -9,6 +9,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -25,8 +26,14 @@
                     <ProgressBar x:Name="GleanBar" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <SplitButton x:Uid="FactsPage_DistillButton" x:Name="DistillButton" Click="OnDistill" AutomationProperties.AutomationId="facts.distill">
+                        <SplitButton.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuFlyoutItem x:Uid="FactsPage_RegroupItem" Click="OnRegroup" AutomationProperties.AutomationId="facts.regroup" />
+                            </MenuFlyout>
+                        </SplitButton.Flyout>
+                    </SplitButton>
                     <Button x:Uid="FactsPage_GleanButton" x:Name="GleanButton" Style="{StaticResource AccentButtonStyle}" Click="OnGlean"
-                           
                             AutomationProperties.AutomationId="facts.gleanButton" />
                     <Button x:Uid="FactsPage_StopGleanButton" x:Name="StopGleanButton" Click="OnStopGlean" />
                 </StackPanel>
@@ -39,14 +46,28 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox x:Uid="FactsPage_SearchBox" x:Name="SearchBox" KeyDown="OnSearchKeyDown" AutomationProperties.AutomationId="facts.search" />
             <ComboBox x:Uid="FactsPage_SourceBox" x:Name="SourceBox" Grid.Column="1" SelectionChanged="OnFilterChanged" MinWidth="140" />
             <ComboBox x:Uid="FactsPage_KindBox" x:Name="KindBox" Grid.Column="2" SelectionChanged="OnFilterChanged" MinWidth="160" />
             <ComboBox x:Uid="FactsPage_ClassBox" x:Name="ClassBox" Grid.Column="3" SelectionChanged="OnFilterChanged" MinWidth="140" />
+            <CheckBox x:Uid="FactsPage_GroupBox" x:Name="GroupBox" Grid.Column="4" VerticalAlignment="Bottom" Click="OnGroupChanged"
+                      AutomationProperties.AutomationId="facts.group" />
+            <Button x:Uid="FactsPage_RefreshButton" Grid.Column="5" Click="OnRefresh" VerticalAlignment="Bottom">
+                <FontIcon Glyph="&#xE72C;" FontSize="14" />
+            </Button>
         </Grid>
 
-        <Grid Grid.Row="2" ColumnSpacing="16">
+        <StackPanel Grid.Row="2" Spacing="6">
+            <InfoBar x:Name="DocumentFilterBar" Severity="Informational" IsOpen="False" IsClosable="True" CloseButtonClick="OnClearDocumentFilter"
+                     AutomationProperties.AutomationId="facts.documentFilter" />
+            <InfoBar x:Name="DistilledFilterBar" Severity="Informational" IsOpen="False" IsClosable="True" CloseButtonClick="OnClearDistilledFilter"
+                     AutomationProperties.AutomationId="facts.distilledFilter" />
+        </StackPanel>
+
+        <Grid Grid.Row="3" ColumnSpacing="16">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="2*" />
@@ -59,12 +80,20 @@
             <ListView x:Name="FactsList" SelectionMode="Single" SelectionChanged="OnFactSelected" AutomationProperties.AutomationId="facts.list">
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="facts:FactListItem">
-                        <StackPanel Padding="0,6" Spacing="4">
-                            <TextBlock Text="{x:Bind Fact}" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
-                                <Run Text="{x:Bind FactClass}" /> · <Run Text="{x:Bind DocumentDisplayTitle}" />
-                            </TextBlock>
-                        </StackPanel>
+                        <Grid Padding="0,6" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock Text="{x:Bind Fact}" TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}">
+                                    <Run Text="{x:Bind FactClass}" /> · <Run Text="{x:Bind DocumentDisplayTitle}" />
+                                </TextBlock>
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{x:Bind Badge}" ToolTipService.ToolTip="{x:Bind BadgeHelp}" VerticalAlignment="Top"
+                                       Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" />
+                        </Grid>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
@@ -72,6 +101,7 @@
             <StackPanel x:Name="EmptyPanel" Spacing="8" VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="380">
                 <TextBlock x:Name="EmptyTitle" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" HorizontalAlignment="Center" />
                 <TextBlock x:Name="EmptyDetail" TextWrapping="Wrap" TextAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                <Button x:Uid="FactsPage_RetryButton" x:Name="RetryButton" HorizontalAlignment="Center" Click="OnRefresh" />
             </StackPanel>
 
             <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12" Margin="0,6,0,0">
@@ -83,7 +113,19 @@
             <ScrollViewer Grid.Column="1" Grid.RowSpan="2" x:Name="Inspector">
                 <StackPanel Spacing="12" Padding="0,0,12,0">
                     <TextBlock x:Name="FactText" Style="{StaticResource SubtitleTextBlockStyle}" AutomationProperties.HeadingLevel="Level2" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
-                    <TextBlock x:Name="FactMeta" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock x:Name="FactMeta" Style="{StaticResource CaptionTextBlockStyle}" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Button x:Uid="FactsPage_CopyButton" Click="OnCopyFact" Padding="8,2" />
+                    </StackPanel>
+                    <StackPanel x:Name="DistilledPanel" Spacing="4" AutomationProperties.AutomationId="facts.detail.distilledSection">
+                        <TextBlock x:Name="DistilledTitle" Style="{StaticResource BodyStrongTextBlockStyle}" />
+                        <TextBlock x:Name="DistilledText" TextWrapping="Wrap" IsTextSelectionEnabled="True" AutomationProperties.AutomationId="facts.detail.distilled" />
+                        <TextBlock x:Uid="FactsPage_GeneratedNote" x:Name="GeneratedNote" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <TextBlock x:Name="AgreementText" Style="{StaticResource CaptionTextBlockStyle}" TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.AutomationId="facts.detail.agreement" />
+                        <Button x:Uid="FactsPage_ShowStatementsButton" x:Name="ShowStatementsButton" Click="OnShowStatements" />
+                    </StackPanel>
                     <StackPanel x:Name="GroundingPanel" Spacing="4">
                         <TextBlock x:Uid="FactsPage_2" Style="{StaticResource BodyStrongTextBlockStyle}" />
                         <RichTextBlock x:Name="GroundingText" TextWrapping="Wrap" />
@@ -100,10 +142,18 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </StackPanel>
-                    <StackPanel Spacing="4">
+                    <StackPanel Spacing="6">
                         <TextBlock x:Uid="FactsPage_5" Style="{StaticResource BodyStrongTextBlockStyle}" />
-                        <TextBlock x:Name="DocumentTitle" TextWrapping="Wrap" />
+                        <TextBlock x:Name="DocumentTitle" TextWrapping="Wrap" AutomationProperties.AutomationId="facts.detail.document" />
                         <TextBlock x:Name="DocumentUri" FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button x:Uid="FactsPage_OpenDocumentButton" Click="OnOpenDocument" AutomationProperties.AutomationId="facts.detail.openDocument" />
+                            <Button x:Uid="FactsPage_FromDocumentButton" x:Name="FromDocumentButton" Click="OnFactsFromDocument" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <Button x:Uid="FactsPage_ShowInExplorerButton" x:Name="ShowInExplorerButton" Click="OnShowInExplorer" />
+                            <Button x:Uid="FactsPage_ShowInGraphButton" Click="OnShowInGraph" AutomationProperties.AutomationId="facts.detail.graph" />
+                        </StackPanel>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>

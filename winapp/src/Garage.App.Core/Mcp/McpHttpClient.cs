@@ -131,6 +131,45 @@ public sealed class McpHttpClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// The server's tools (<c>tools/list</c>), in the order it lists them: what the MCP page's Test
+    /// shows and Try It offers. A session the server has dropped is opened again once.
+    /// </summary>
+    /// <exception cref="McpCallException">The server did not answer, or answered with an error.</exception>
+    public async Task<IReadOnlyList<McpToolInfo>> ListToolsAsync(CancellationToken cancellationToken = default)
+    {
+        await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_sessionId is null)
+            {
+                await InitializeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            JsonObject Payload() => new()
+            {
+                ["jsonrpc"] = "2.0",
+                ["id"] = Interlocked.Increment(ref _nextId),
+                ["method"] = "tools/list",
+                ["params"] = new JsonObject(),
+            };
+            JsonObject response;
+            try
+            {
+                response = await SendAsync(Payload(), ToolCallTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            catch (McpCallException ex) when (ex.Message.Contains("session", StringComparison.OrdinalIgnoreCase))
+            {
+                await InitializeAsync(cancellationToken).ConfigureAwait(false);
+                response = await SendAsync(Payload(), ToolCallTimeout, cancellationToken).ConfigureAwait(false);
+            }
+            return McpToolInfo.Parse(response);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
     /// <summary>The text of a <c>tools/call</c> response: its text content joined, else the result as JSON.</summary>
     /// <exception cref="McpCallException">The response is a JSON-RPC error.</exception>
     public static string ToolText(JsonObject response)

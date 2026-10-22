@@ -120,6 +120,36 @@ public sealed partial class SearchViewModel(GarageService.GarageServiceClient cl
     /// <summary>Source choices, "all" first; filled by <see cref="LoadSourcesAsync"/>.</summary>
     public ObservableCollection<string> Sources { get; } = [CorpusTaxonomy.All];
 
+    /// <summary>The Model picker's choices: "" (the default model), then every registered model's slug.</summary>
+    public ObservableCollection<string> Models { get; } = [""];
+
+    /// <summary>"Model: Default" or "Model: bge-m3", as the Mac's model menu reads.</summary>
+    public static string ModelTitle(string model) => string.IsNullOrEmpty(model) ? "Model: Default" : $"Model: {model}";
+
+    /// <summary>Fills <see cref="Models"/> from the registered models; keeps the choice when it is still registered.</summary>
+    public async Task LoadModelsAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            ListModelsResponse response = await client.ListModelsAsync(new ListModelsRequest(),
+                new CallOptions(deadline: DateTime.UtcNow + CallTimeout, cancellationToken: cancellationToken)).ConfigureAwait(true);
+            Models.Clear();
+            Models.Add("");
+            foreach (string slug in response.Models.Select(m => m.Slug).Order(StringComparer.Ordinal))
+            {
+                Models.Add(slug);
+            }
+            if (!Models.Contains(Model))
+            {
+                Model = "";
+            }
+        }
+        catch (RpcException)
+        {
+            // Keep the default.
+        }
+    }
+
     /// <summary>The status bar's text.</summary>
     public string StatusText => IsSearching
         ? "Searching…"

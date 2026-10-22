@@ -263,6 +263,82 @@ public sealed partial class DatabaseViewModel : ObservableObject
         }
     }
 
+    /// <summary>Whether Stop, Start or Restart is in flight.</summary>
+    [ObservableProperty]
+    public partial bool IsSwitchingServer { get; private set; }
+
+    /// <summary>
+    /// The database's connection URL, password included, for Copy Connection URL and Open in Database
+    /// App; null without Garage's own Postgres.
+    /// </summary>
+    public string? ConnectionUrl => Postgres?.DatabaseUrl().Replace("postgresql+psycopg://", "postgresql://", StringComparison.Ordinal);
+
+    /// <summary>
+    /// Stop: stops Postgres (a fast shutdown, as on the Mac). Search, ingest and the MCP server fail
+    /// until it starts again; the pipeline is stopped first so no run is cut off mid-document.
+    /// </summary>
+    public async Task StopServerAsync(CancellationToken cancellationToken = default)
+    {
+        if (Postgres is null)
+        {
+            return;
+        }
+        IsSwitchingServer = true;
+        try
+        {
+            if (BeforeReplace is { } before)
+            {
+                await before().ConfigureAwait(true);
+            }
+            await Postgres.StopAsync(cancellationToken).ConfigureAwait(true);
+            ActionResult = (true, "Postgres is stopped. Search, ingest and the MCP server need it; Start brings it back.");
+        }
+        catch (Exception ex) when (ex is PostgresException or IOException)
+        {
+            ActionResult = (false, ex.Message);
+        }
+        finally
+        {
+            IsSwitchingServer = false;
+            Recompute();
+        }
+    }
+
+    /// <summary>Start: starts Postgres again, then rereads the pages.</summary>
+    public async Task StartServerAsync(CancellationToken cancellationToken = default)
+    {
+        if (Postgres is null)
+        {
+            return;
+        }
+        IsSwitchingServer = true;
+        try
+        {
+            bool started = await Postgres.StartAsync(cancellationToken).ConfigureAwait(true);
+            ActionResult = started ? (true, "Postgres is running.") : (false, Postgres.Status.FailureMessage ?? "Postgres did not start; the Logs page has its log.");
+        }
+        catch (Exception ex) when (ex is PostgresException or IOException)
+        {
+            ActionResult = (false, ex.Message);
+        }
+        finally
+        {
+            IsSwitchingServer = false;
+            if (AfterReplace is { } after)
+            {
+                await after().ConfigureAwait(true);
+            }
+            await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    /// <summary>Restart: Stop, then Start.</summary>
+    public async Task RestartServerAsync(CancellationToken cancellationToken = default)
+    {
+        await StopServerAsync(cancellationToken).ConfigureAwait(true);
+        await StartServerAsync(cancellationToken).ConfigureAwait(true);
+    }
+
     private void Recompute()
     {
         if (Postgres is null)

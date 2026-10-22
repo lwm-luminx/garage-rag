@@ -13,7 +13,7 @@ public sealed class NavigationTests
             [
                 AppSection.Status,
                 AppSection.Sources, AppSection.Models, AppSection.Mcp,
-                AppSection.Documents, AppSection.Facts, AppSection.Search,
+                AppSection.Documents, AppSection.Facts, AppSection.Graph, AppSection.Search,
                 AppSection.Database, AppSection.Logs,
             ],
             AppSections.NavigationOrder);
@@ -24,7 +24,7 @@ public sealed class NavigationTests
     {
         Assert.Equal([SidebarGroup.Configuration, SidebarGroup.Data, SidebarGroup.Advanced], AppSections.Groups);
         Assert.Equal([AppSection.Sources, AppSection.Models, AppSection.Mcp], AppSections.SectionsIn(SidebarGroup.Configuration));
-        Assert.Equal([AppSection.Documents, AppSection.Facts, AppSection.Search], AppSections.SectionsIn(SidebarGroup.Data));
+        Assert.Equal([AppSection.Documents, AppSection.Facts, AppSection.Graph, AppSection.Search], AppSections.SectionsIn(SidebarGroup.Data));
         Assert.Equal([AppSection.Database, AppSection.Logs], AppSections.SectionsIn(SidebarGroup.Advanced));
     }
 
@@ -38,6 +38,7 @@ public sealed class NavigationTests
     [InlineData(AppSection.Mcp, "MCP Server")]
     [InlineData(AppSection.Status, "Status")]
     [InlineData(AppSection.Logs, "Logs")]
+    [InlineData(AppSection.Graph, "Graph")]
     public void Titles_are_spelled_as_on_the_mac(AppSection section, string title) =>
         Assert.Equal(title, section.Title());
 
@@ -46,7 +47,8 @@ public sealed class NavigationTests
     {
         Assert.Equal(AppSection.Status, AppSections.ForShortcut(1));
         Assert.Equal(AppSection.Mcp, AppSections.ForShortcut(4));
-        Assert.Equal(AppSection.Logs, AppSections.ForShortcut(9));
+        // Ten pages, nine digits: Logs, the tenth, has no shortcut.
+        Assert.Equal(AppSection.Database, AppSections.ForShortcut(9));
         Assert.Null(AppSections.ForShortcut(0));
         Assert.Null(AppSections.ForShortcut(10));
     }

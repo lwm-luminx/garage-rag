@@ -241,6 +241,18 @@ internal static class Pickers
         return folder?.Path;
     }
 
+    public static async Task<string?> OpenFileAsync(params string[] extensions)
+    {
+        var picker = new FileOpenPicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary };
+        foreach (string extension in extensions.Length > 0 ? extensions : ["*"])
+        {
+            picker.FileTypeFilter.Add(extension);
+        }
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, App.Current!.MainWindowHandle);
+        StorageFile? file = await picker.PickSingleFileAsync();
+        return file?.Path;
+    }
+
     public static async Task<string?> SaveFileAsync(string suggestedName, string typeName, string extension)
     {
         var picker = new FileSavePicker { SuggestedStartLocation = PickerLocationId.DocumentsLibrary, SuggestedFileName = Path.GetFileNameWithoutExtension(suggestedName) };

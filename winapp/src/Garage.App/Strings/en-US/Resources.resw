@@ -378,18 +378,6 @@
   <data name="SourcesPage_5.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Cancel</value>
   </data>
-  <data name="SourcesPage_6.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Scan</value>
-  </data>
-  <data name="SourcesPage_6.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>Scan: count what it holds</value>
-  </data>
-  <data name="SourcesPage_7.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
-    <value>Remove</value>
-  </data>
-  <data name="SourcesPage_7.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
-    <value>Remove this source and its documents</value>
-  </data>
   <data name="SourcesPage_ScanAllButton.Content" xml:space="preserve">
     <value>Scan All</value>
   </data>
@@ -653,5 +641,482 @@
   </data>
   <data name="ModelsPage_RegisterButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
     <value>Register Model</value>
+  </data>
+  <data name="GraphPage_Title.Text" xml:space="preserve">
+    <value>Graph</value>
+  </data>
+  <data name="GraphPage_SearchBox.PlaceholderText" xml:space="preserve">
+    <value>Find a document, author, fact or statement…</value>
+  </data>
+  <data name="GraphPage_SearchBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Find in the graph</value>
+  </data>
+  <data name="GraphPage_KindBox.Header" xml:space="preserve">
+    <value>Kind</value>
+  </data>
+  <data name="GraphPage_DepthBox.Header" xml:space="preserve">
+    <value>Hops</value>
+  </data>
+  <data name="GraphPage_DepthBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>How far out from the chosen vertex to look</value>
+  </data>
+  <data name="GraphPage_RefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh graph</value>
+  </data>
+  <data name="GraphPage_RefreshButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Reload the graph (F5)</value>
+  </data>
+  <data name="GraphPage_RetryButton.Content" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="GraphPage_Hint.Text" xml:space="preserve">
+    <value>Click a vertex to inspect it, double-click to center on it</value>
+  </data>
+  <data name="GraphPage_CenterBadge.Text" xml:space="preserve">
+    <value>Center</value>
+  </data>
+  <data name="GraphPage_CopyButton.Content" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="GraphPage_CenterButton.Content" xml:space="preserve">
+    <value>Center Here</value>
+  </data>
+  <data name="GraphPage_PropertiesHeader.Text" xml:space="preserve">
+    <value>Properties</value>
+  </data>
+  <data name="GraphPage_InspectorEmpty.Text" xml:space="preserve">
+    <value>Select a vertex to see its properties and connections</value>
+  </data>
+  <data name="FactsPage_DistillButton.Content" xml:space="preserve">
+    <value>Distill Facts</value>
+  </data>
+  <data name="FactsPage_DistillButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Distill facts</value>
+  </data>
+  <data name="FactsPage_DistillButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Group the facts that restate one claim, and have the local model state each claim once</value>
+  </data>
+  <data name="FactsPage_RegroupItem.Text" xml:space="preserve">
+    <value>Regroup All Facts</value>
+  </data>
+  <data name="FactsPage_GroupBox.Content" xml:space="preserve">
+    <value>Group Restatements</value>
+  </data>
+  <data name="FactsPage_GroupBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>List facts that state the same claim once</value>
+  </data>
+  <data name="FactsPage_RefreshButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Refresh facts</value>
+  </data>
+  <data name="FactsPage_RefreshButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Refresh facts (F5)</value>
+  </data>
+  <data name="FactsPage_RetryButton.Content" xml:space="preserve">
+    <value>Retry</value>
+  </data>
+  <data name="FactsPage_CopyButton.Content" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="FactsPage_GeneratedNote.Text" xml:space="preserve">
+    <value>Written by the local model from the statements below; not a quotation.</value>
+  </data>
+  <data name="FactsPage_ShowStatementsButton.Content" xml:space="preserve">
+    <value>Show All Statements</value>
+  </data>
+  <data name="FactsPage_OpenDocumentButton.Content" xml:space="preserve">
+    <value>Open Document</value>
+  </data>
+  <data name="FactsPage_FromDocumentButton.Content" xml:space="preserve">
+    <value>Facts from This Document</value>
+  </data>
+  <data name="FactsPage_ShowInExplorerButton.Content" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="FactsPage_ShowInGraphButton.Content" xml:space="preserve">
+    <value>Show in Graph</value>
+  </data>
+  <data name="FactsPage_ShowInGraphButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Center the Graph page on this fact: its document, and the claim it supports</value>
+  </data>
+  <data name="DocumentsPage_CopyUriButton.Content" xml:space="preserve">
+    <value>Copy URI</value>
+  </data>
+  <data name="DocumentsPage_ShowInExplorerButton.Content" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="DocumentsPage_ShowInGraphButton.Content" xml:space="preserve">
+    <value>Show in Graph</value>
+  </data>
+  <data name="DocumentsPage_ShowInGraphButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Center the Graph page on this document: its chunks, authors and facts</value>
+  </data>
+  <data name="SearchPage_ModelBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search model</value>
+  </data>
+  <data name="SearchPage_ShowInExplorer.Content" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="Code_SourcesPage_Kind" xml:space="preserve">
+    <value>Kind</value>
+  </data>
+  <data name="Code_SourcesPage_KindHelp" xml:space="preserve">
+    <value>A git repository, a SQLite database, mailboxes or a feed, rather than a plain folder.</value>
+  </data>
+  <data name="Code_SourcesPage_Preset" xml:space="preserve">
+    <value>Preset</value>
+  </data>
+  <data name="Code_SourcesPage_ChoosePreset" xml:space="preserve">
+    <value>Choose preset…</value>
+  </data>
+  <data name="Code_SourcesPage_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SourcesPage_MoreButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Source actions</value>
+  </data>
+  <data name="SourcesPage_MoreButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>More for this source</value>
+  </data>
+  <data name="SourcesPage_ScanOnlyItem.Text" xml:space="preserve">
+    <value>Scan Only</value>
+  </data>
+  <data name="SourcesPage_IncludeCodeItem.Text" xml:space="preserve">
+    <value>Ingest Including Code</value>
+  </data>
+  <data name="SourcesPage_ReindexItem.Text" xml:space="preserve">
+    <value>Re-index Everything</value>
+  </data>
+  <data name="SourcesPage_GleanItem.Text" xml:space="preserve">
+    <value>Glean Facts</value>
+  </data>
+  <data name="SourcesPage_CheckDeletedItem.Text" xml:space="preserve">
+    <value>Check for Deleted Files</value>
+  </data>
+  <data name="SourcesPage_ForgetDeletedItem.Text" xml:space="preserve">
+    <value>Forget Deleted Files</value>
+  </data>
+  <data name="SourcesPage_ShowInExplorerItem.Text" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="SourcesPage_EditItem.Text" xml:space="preserve">
+    <value>Edit…</value>
+  </data>
+  <data name="SourcesPage_RemoveItem.Text" xml:space="preserve">
+    <value>Remove Source</value>
+  </data>
+  <data name="McpPage_CopyAddressButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Copy Address</value>
+  </data>
+  <data name="McpPage_CopyAddressButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Copy the server's address</value>
+  </data>
+  <data name="McpPage_PortBox.Header" xml:space="preserve">
+    <value>Port</value>
+  </data>
+  <data name="McpPage_PortBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>The port the HTTP server listens on, on this PC only (127.0.0.1)</value>
+  </data>
+  <data name="McpPage_RandomButton.Content" xml:space="preserve">
+    <value>Random</value>
+  </data>
+  <data name="McpPage_RandomButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Pick an unused-looking port from the dynamic range</value>
+  </data>
+  <data name="McpPage_TestButton.Content" xml:space="preserve">
+    <value>Test</value>
+  </data>
+  <data name="McpPage_TestButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Check that the server answers and list its tools</value>
+  </data>
+  <data name="McpPage_RestartButton.Content" xml:space="preserve">
+    <value>Restart</value>
+  </data>
+  <data name="McpPage_RestartButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop the HTTP server and start it again</value>
+  </data>
+  <data name="McpPage_MoreButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>More for assistants</value>
+  </data>
+  <data name="McpPage_MoreButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="McpPage_LookAgainItem.Text" xml:space="preserve">
+    <value>Look for Assistants Again</value>
+  </data>
+  <data name="McpPage_ConnectFileItem.Text" xml:space="preserve">
+    <value>Connect a Config File…</value>
+  </data>
+  <data name="McpPage_RowMoreButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>More for this assistant</value>
+  </data>
+  <data name="McpPage_RowMoreButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="McpPage_OpenConfigItem.Text" xml:space="preserve">
+    <value>Open Config File</value>
+  </data>
+  <data name="McpPage_ShowConfigItem.Text" xml:space="preserve">
+    <value>Show in Explorer</value>
+  </data>
+  <data name="McpPage_CopyPathItem.Text" xml:space="preserve">
+    <value>Copy Path</value>
+  </data>
+  <data name="McpPage_TryTitle.Text" xml:space="preserve">
+    <value>Try It</value>
+  </data>
+  <data name="McpPage_TryAskItem.Text" xml:space="preserve">
+    <value>Ask the Corpus</value>
+  </data>
+  <data name="McpPage_TryPromptItem.Text" xml:space="preserve">
+    <value>Prompt the Model</value>
+  </data>
+  <data name="McpPage_TryToolItem.Text" xml:space="preserve">
+    <value>Call a Tool</value>
+  </data>
+  <data name="McpPage_TryTokensBox.Header" xml:space="preserve">
+    <value>Up to (tokens)</value>
+  </data>
+  <data name="McpPage_TryTemperature.Header" xml:space="preserve">
+    <value>Temperature</value>
+  </data>
+  <data name="McpPage_TryToolBox.Header" xml:space="preserve">
+    <value>Tool</value>
+  </data>
+  <data name="McpPage_TryQueryBox.PlaceholderText" xml:space="preserve">
+    <value>Search for…</value>
+  </data>
+  <data name="McpPage_TryQueryBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Search for</value>
+  </data>
+  <data name="McpPage_TryDocumentBox.PlaceholderText" xml:space="preserve">
+    <value>Document ID</value>
+  </data>
+  <data name="McpPage_TryDocumentBox.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Document ID</value>
+  </data>
+  <data name="McpPage_TryJsonBox.Header" xml:space="preserve">
+    <value>Arguments (JSON)</value>
+  </data>
+  <data name="McpPage_TryRunButton.Content" xml:space="preserve">
+    <value>Run</value>
+  </data>
+  <data name="McpPage_TryRunButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run (Ctrl+Enter)</value>
+  </data>
+  <data name="McpPage_TryStartServer.Text" xml:space="preserve">
+    <value>Turn on HTTP above to try it.</value>
+  </data>
+  <data name="McpPage_TryCopyButton.Content" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="McpPage_TrySourcesTitle.Text" xml:space="preserve">
+    <value>Sources</value>
+  </data>
+  <data name="DatabasePage_StopButton.Content" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="DatabasePage_StopButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop Postgres. Search, ingest and the MCP server stop with it.</value>
+  </data>
+  <data name="DatabasePage_StartButton.Content" xml:space="preserve">
+    <value>Start</value>
+  </data>
+  <data name="DatabasePage_StartButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Start Postgres</value>
+  </data>
+  <data name="DatabasePage_RestartButton.Content" xml:space="preserve">
+    <value>Restart</value>
+  </data>
+  <data name="DatabasePage_RestartButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop Postgres and start it again</value>
+  </data>
+  <data name="DatabasePage_MoreButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>More database actions</value>
+  </data>
+  <data name="DatabasePage_MoreButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>More</value>
+  </data>
+  <data name="DatabasePage_CopyUrlItem.Text" xml:space="preserve">
+    <value>Copy Connection URL</value>
+  </data>
+  <data name="DatabasePage_CopyUrlItem.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Copy the connection URL, password included</value>
+  </data>
+  <data name="DatabasePage_OpenInAppItem.Text" xml:space="preserve">
+    <value>Open in Database App</value>
+  </data>
+  <data name="DatabasePage_OpenInAppItem.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open the database in the app registered for postgresql:// links</value>
+  </data>
+  <data name="DatabasePage_ShowFolderItem.Text" xml:space="preserve">
+    <value>Show Data Folder in Explorer</value>
+  </data>
+  <data name="DatabasePage_ReapplyItem.Text" xml:space="preserve">
+    <value>Re-apply the Whole Schema</value>
+  </data>
+  <data name="DatabasePage_ReapplyItem.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run every schema file again. They are written to be re-applied, so nothing is lost.</value>
+  </data>
+  <data name="Code_DatabasePage_StopPostgres" xml:space="preserve">
+    <value>Stop Postgres?</value>
+  </data>
+  <data name="Code_DatabasePage_StopPostgresDetail" xml:space="preserve">
+    <value>Search, ingest and the MCP server stop working until it starts again. Anything running is stopped first.</value>
+  </data>
+  <data name="Code_DatabasePage_Stop" xml:space="preserve">
+    <value>Stop</value>
+  </data>
+  <data name="Code_DatabasePage_NoDatabaseApp" xml:space="preserve">
+    <value>No app on this PC opens postgresql:// links. Copy Connection URL and paste it into your database app.</value>
+  </data>
+  <data name="Code_DatabasePage_BackUpFirst" xml:space="preserve">
+    <value>Back Up First…</value>
+  </data>
+  <data name="Code_DatabasePage_BackUpFirstHelp" xml:space="preserve">
+    <value>Save a dump of the database. Restore… on the Database page brings it back after the reset.</value>
+  </data>
+  <data name="ModelsPage_GleanButton.Content" xml:space="preserve">
+    <value>Glean Facts</value>
+  </data>
+  <data name="ModelsPage_GleanButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Run every enabled prompt over every document that has no facts from it yet</value>
+  </data>
+  <data name="ModelsPage_StopGleanButton.Content" xml:space="preserve">
+    <value>Stop Gleaning</value>
+  </data>
+  <data name="ModelsPage_PromptsTitle.Text" xml:space="preserve">
+    <value>Fact Prompts</value>
+  </data>
+  <data name="ModelsPage_NewPromptButton.Content" xml:space="preserve">
+    <value>New Prompt</value>
+  </data>
+  <data name="ModelsPage_EmbeddingTestTitle.Text" xml:space="preserve">
+    <value>Test an Embedding</value>
+  </data>
+  <data name="ModelsPage_EmbeddingTestSubtitle.Text" xml:space="preserve">
+    <value>Embed a sentence and inspect the full vector</value>
+  </data>
+  <data name="ModelsPage_TestModelBox.Header" xml:space="preserve">
+    <value>Model</value>
+  </data>
+  <data name="ModelsPage_TestDimsBox.Header" xml:space="preserve">
+    <value>Dimensions (0: the model's)</value>
+  </data>
+  <data name="ModelsPage_TestDimsBox.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Truncate the vector to this many dimensions (Matryoshka models); 0 keeps the model's own</value>
+  </data>
+  <data name="ModelsPage_TestEmbedButton.Content" xml:space="preserve">
+    <value>Embed</value>
+  </data>
+  <data name="ModelsPage_TestCopyCsvButton.Content" xml:space="preserve">
+    <value>Copy CSV</value>
+  </data>
+  <data name="ModelsPage_TestCopyJsonButton.Content" xml:space="preserve">
+    <value>Copy JSON</value>
+  </data>
+  <data name="Code_ModelsPage_Preset" xml:space="preserve">
+    <value>Preset</value>
+  </data>
+  <data name="Code_ModelsPage_ChoosePreset" xml:space="preserve">
+    <value>Choose from the catalog…</value>
+  </data>
+  <data name="Code_ModelsPage_ModelCard" xml:space="preserve">
+    <value>Model card and license</value>
+  </data>
+  <data name="Code_ModelsPage_NoPrompts" xml:space="preserve">
+    <value>No prompts yet.</value>
+  </data>
+  <data name="Code_ModelsPage_LoadingPrompts" xml:space="preserve">
+    <value>Loading prompts…</value>
+  </data>
+  <data name="Code_ModelsPage_PromptEnabledHelp" xml:space="preserve">
+    <value>Enabled: Glean Facts runs this prompt</value>
+  </data>
+  <data name="Code_ModelsPage_PromptDisabledHelp" xml:space="preserve">
+    <value>Disabled: runs only when asked for by name</value>
+  </data>
+  <data name="Code_ModelsPage_Disabled" xml:space="preserve">
+    <value>DISABLED</value>
+  </data>
+  <data name="Code_ModelsPage_Run" xml:space="preserve">
+    <value>Run</value>
+  </data>
+  <data name="Code_ModelsPage_RunPromptHelp" xml:space="preserve">
+    <value>Glean facts from every document with just this prompt</value>
+  </data>
+  <data name="Code_ModelsPage_Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="Code_ModelsPage_Restore" xml:space="preserve">
+    <value>Restore</value>
+  </data>
+  <data name="Code_ModelsPage_RestoreHelp" xml:space="preserve">
+    <value>Drop the override and use the built-in prompt as shipped</value>
+  </data>
+  <data name="Code_ModelsPage_Delete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="Code_ModelsPage_PromptName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="Code_ModelsPage_BuiltinKeepsName" xml:space="preserve">
+    <value>A built-in prompt keeps its name</value>
+  </data>
+  <data name="Code_ModelsPage_PromptNameHelp" xml:space="preserve">
+    <value>Letters, digits, '.', '_' or '-'</value>
+  </data>
+  <data name="Code_ModelsPage_Enabled" xml:space="preserve">
+    <value>Enabled</value>
+  </data>
+  <data name="Code_ModelsPage_NoneCheckedAll" xml:space="preserve">
+    <value>(none checked = all)</value>
+  </data>
+  <data name="Code_ModelsPage_CorpusClasses" xml:space="preserve">
+    <value>Corpus classes</value>
+  </data>
+  <data name="Code_ModelsPage_PromptSources" xml:space="preserve">
+    <value>Sources</value>
+  </data>
+  <data name="Code_ModelsPage_PromptSourcesPlaceholder" xml:space="preserve">
+    <value>source names, comma-separated; empty = all</value>
+  </data>
+  <data name="Code_ModelsPage_Instructions" xml:space="preserve">
+    <value>Instructions</value>
+  </data>
+  <data name="Code_ModelsPage_Examples" xml:space="preserve">
+    <value>Examples (JSON: text plus the extractions expected from it, each with class, text and optional attributes)</value>
+  </data>
+  <data name="Code_ModelsPage_NewFactPrompt" xml:space="preserve">
+    <value>New Fact Prompt</value>
+  </data>
+  <data name="Code_ModelsPage_EditFactPrompt" xml:space="preserve">
+    <value>Edit Fact Prompt</value>
+  </data>
+  <data name="Code_ModelsPage_Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="Code_ModelsPage_DefaultModel" xml:space="preserve">
+    <value>Default model</value>
+  </data>
+  <data name="StatusPage_RestartAllButton.Content" xml:space="preserve">
+    <value>Restart All</value>
+  </data>
+  <data name="StatusPage_RestartAllButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Stop what is running, then restart every service that is on</value>
+  </data>
+  <data name="LogsPage_DetailsTitle.Text" xml:space="preserve">
+    <value>Details</value>
+  </data>
+  <data name="LogsPage_CloseDetailsButton.[using:Microsoft.UI.Xaml.Automation]AutomationProperties.Name" xml:space="preserve">
+    <value>Close log entry details</value>
+  </data>
+  <data name="LogsPage_CopyTextButton.Content" xml:space="preserve">
+    <value>Copy Text</value>
+  </data>
+  <data name="LogsPage_ReportBugButton.Content" xml:space="preserve">
+    <value>Report a Bug</value>
+  </data>
+  <data name="LogsPage_ReportBugButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
+    <value>Open a bug report with these log lines attached</value>
   </data>
 </root>

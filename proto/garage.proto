@@ -44,6 +44,8 @@ service GarageService {
     rpc SetDefaultModel (SetDefaultModelRequest) returns (SetDefaultModelResponse);
     rpc DropModel (DropModelRequest) returns (DropModelResponse);
     rpc Backfill (BackfillRequest) returns (stream BackfillStatus);
+    // Embed one text with a registered model, for the app's Test an Embedding.
+    rpc EmbedText (EmbedTextRequest) returns (EmbedTextResponse);
     // Has LlamaXPCService load a llama_xpc model (over NSXPC) unless it is already resident. For
     // processes outside the app's XPC services (the stdio launchers), which cannot reach it themselves.
     rpc EnsureLlamaModel (EnsureLlamaModelRequest) returns (EnsureLlamaModelResponse);
@@ -633,6 +635,20 @@ message BackfillStatus {
     int64 remaining = 6;
     int64 batches = 7;
     string message = 8;
+}
+
+message EmbedTextRequest {
+    string text = 1;
+    string model = 2;      // a registered model's slug; empty = the default model
+    int32 dimensions = 3;  // keep only the first this many values, renormalized; 0 = the model's own
+}
+
+message EmbedTextResponse {
+    string model = 1;
+    string provider = 2;
+    string model_ref = 3;
+    int32 native_dims = 4;     // how many values the model gave
+    repeated float vector = 5; // after dimensions, when set
 }
 
 message EnsureLlamaModelRequest {

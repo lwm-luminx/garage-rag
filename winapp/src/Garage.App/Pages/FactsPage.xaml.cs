@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using Garage.App.Core.Corpus;
 using Garage.App.Core.Facts;
+using Garage.App.Core.Graph;
+using Garage.App.Core.Tray;
 using Microsoft.UI.Text;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -11,9 +13,14 @@ using Windows.System;
 
 namespace Garage.App.Pages;
 
-/// <summary>The Facts page (the Mac's <c>FactsView</c>): search, filters, the list with Load More, and grounding.</summary>
+/// <summary>
+/// The Facts page (the Mac's <c>FactsView</c>): search, filters, the list with Load More, and
+/// grounding. Distill Facts groups the facts that restate one claim; Group Restatements then lists
+/// each claim once, and Show All Statements lists one claim's restatements.
+/// </summary>
 public sealed partial class FactsPage : Page
 {
+    private PageModels _pages = null!;
     private FactsViewModel _model = null!;
     private Garage.App.Core.Operations.OperationRunner _runner = null!;
     private Garage.App.Core.State.INotifier _notifier = null!;
@@ -26,10 +33,10 @@ public sealed partial class FactsPage : Page
     protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         ArgumentNullException.ThrowIfNull(e);
-        var pages = (PageModels)e.Parameter;
-        _model = pages.Facts;
-        _runner = pages.State.Facts;
-        _notifier = pages.State.Notifier;
+        _pages = (PageModels)e.Parameter;
+        _model = _pages.Facts;
+        _runner = _pages.State.Facts;
+        _notifier = _pages.State.Notifier;
         _runner.PropertyChanged += OnModelChanged;
         _loading = true;
         SearchBox.Text = _model.SearchText;
@@ -37,6 +44,7 @@ public sealed partial class FactsPage : Page
         ClassBox.ItemsSource = _model.CorpusClasses;
         SourceBox.SelectedItem = _model.Source;
         ClassBox.SelectedItem = _model.CorpusClass;
+        GroupBox.IsChecked = _model.GroupRestatements;
         FillKinds();
         FactsList.ItemsSource = _model.Facts;
         FactsList.SelectedItem = _model.Selected;
@@ -67,7 +75,19 @@ public sealed partial class FactsPage : Page
         _loading = false;
     }
 
+    private async void OnDistill(SplitButton sender, SplitButtonClickEventArgs args) =>
+        await _model.DistillAsync(_runner, full: false, _notifier).ConfigureAwait(true);
+
+    private async void OnRegroup(object sender, RoutedEventArgs e) =>
+        await _model.DistillAsync(_runner, full: true, _notifier).ConfigureAwait(true);
+
     private void OnStopGlean(object sender, RoutedEventArgs e) => _runner.Cancel();
+
+    private async void OnRefresh(object sender, RoutedEventArgs e)
+    {
+        _model.SearchText = SearchBox.Text;
+        await RefreshAsync().ConfigureAwait(true);
+    }
 
     private async Task RefreshAsync()
     {
@@ -102,6 +122,12 @@ public sealed partial class FactsPage : Page
         await RefreshAsync().ConfigureAwait(true);
     }
 
+    private async void OnGroupChanged(object sender, RoutedEventArgs e)
+    {
+        _model.GroupRestatements = GroupBox.IsChecked == true;
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
     private async void OnSearchKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Enter)
@@ -122,23 +148,84 @@ public sealed partial class FactsPage : Page
         }
     }
 
+    private async void OnClearDocumentFilter(InfoBar sender, object args)
+    {
+        _model.DocumentFilter = null;
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private async void OnClearDistilledFilter(InfoBar sender, object args)
+    {
+        _model.DistilledFilter = null;
+        await RefreshAsync().ConfigureAwait(true);
+    }
+
+    private void OnCopyFact(object sender, RoutedEventArgs e) => Clipboard.Copy(_model.Selected?.Fact);
+
+    private async void OnShowStatements(object sender, RoutedEventArgs e)
+    {
+        if (_model.Selected is { DistilledFactId: { } id } fact)
+        {
+            _model.DistilledFilter = new FactsDistilledFilter(id, fact.DistilledStatement);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+    }
+
+    private void OnOpenDocument(object sender, RoutedEventArgs e)
+    {
+        if (_model.Selected is { } fact)
+        {
+            _pages.OpenDocument(fact.DocumentId, fact.DocumentUri);
+        }
+    }
+
+    private async void OnFactsFromDocument(object sender, RoutedEventArgs e)
+    {
+        if (_model.Selected is { } fact)
+        {
+            _model.DocumentFilter = new FactsDocumentFilter(fact.DocumentId, fact.DocumentDisplayTitle);
+            await RefreshAsync().ConfigureAwait(true);
+        }
+    }
+
+    private void OnShowInExplorer(object sender, RoutedEventArgs e) =>
+        Shell.ShowInExplorer(_model.Selected is { } fact ? QuickSearch.FilePathForUri(fact.DocumentUri) : null);
+
+    private void OnShowInGraph(object sender, RoutedEventArgs e)
+    {
+        if (_model.Selected is { } fact)
+        {
+            _pages.ShowInGraph(new GraphFocus("PotentialFact", fact.Id));
+        }
+    }
+
     private void OnModelChanged(object? sender, PropertyChangedEventArgs e) => Show();
 
     private void Show()
     {
-        GleanButton.IsEnabled = !_runner.IsRunning;
-        StopGleanButton.Visibility = Look.VisibleWhen(_runner.IsRunning);
+        bool running = _runner.IsRunning;
+        GleanButton.IsEnabled = !running;
+        DistillButton.IsEnabled = !running;
+        StopGleanButton.Visibility = Look.VisibleWhen(running);
         GleanPanel.Visibility = Look.VisibleIf(_model.GleanProgress);
         GleanText.Text = _model.GleanProgress ?? "";
         GleanBar.IsIndeterminate = _model.GleanFraction is null;
         GleanBar.Value = Look.Percent(_model.GleanFraction);
         CountText.Text = _model.CountText;
         LoadMoreButton.Visibility = _model.CanLoadMore ? Visibility.Visible : Visibility.Collapsed;
+        GroupBox.IsEnabled = _model.DistilledFilter is null;
+
+        DocumentFilterBar.IsOpen = _model.DocumentFilterTitle is not null;
+        DocumentFilterBar.Title = _model.DocumentFilterTitle ?? "";
+        DistilledFilterBar.IsOpen = _model.DistilledFilterTitle is not null;
+        DistilledFilterBar.Title = _model.DistilledFilterTitle ?? "";
+
         if (_model.EmptyState is { } empty)
         {
             EmptyPanel.Visibility = Visibility.Visible;
             EmptyTitle.Text = empty.Title;
             EmptyDetail.Text = empty.Detail;
+            RetryButton.Visibility = Look.VisibleWhen(_model.ErrorMessage is not null);
         }
         else
         {
@@ -152,7 +239,15 @@ public sealed partial class FactsPage : Page
             return;
         }
         FactText.Text = fact.Fact;
-        FactMeta.Text = string.Join(" · ", new[] { fact.FactClass, fact.CorpusClass, fact.ExtractorModel, fact.CreatedAt }.Where(s => s.Length > 0));
+        FactMeta.Text = string.Join(" · ", new[] { fact.FactClass, fact.CorpusClass, fact.Extractor, fact.ExtractorModel, fact.CreatedAt }.Where(s => s.Length > 0));
+
+        DistilledPanel.Visibility = Look.VisibleWhen(fact.HasRestatements);
+        DistilledTitle.Text = fact.StatedTitle;
+        DistilledText.Text = fact.DistilledStatement;
+        GeneratedNote.Visibility = Look.VisibleWhen(fact.DistilledGenerated);
+        AgreementText.Text = fact.AgreementText ?? "";
+        AgreementText.Visibility = Look.VisibleIf(fact.AgreementText);
+        ShowStatementsButton.IsEnabled = fact.DistilledFactId is { } distilled && _model.DistilledFilter?.Id != distilled;
 
         GroundedExcerpt? grounded = fact.Grounded;
         GroundingPanel.Visibility = grounded is null ? Visibility.Collapsed : Visibility.Visible;
@@ -171,6 +266,8 @@ public sealed partial class FactsPage : Page
         AttributesList.ItemsSource = attributes;
         DocumentTitle.Text = $"{fact.DocumentDisplayTitle} ({fact.SourceSlug})";
         DocumentUri.Text = fact.DocumentUri;
+        FromDocumentButton.IsEnabled = _model.DocumentFilter?.Id != fact.DocumentId;
+        ShowInExplorerButton.Visibility = Look.VisibleWhen(QuickSearch.FilePathForUri(fact.DocumentUri) is not null);
     }
 
     private sealed record KindChoice(string Value, string Label);

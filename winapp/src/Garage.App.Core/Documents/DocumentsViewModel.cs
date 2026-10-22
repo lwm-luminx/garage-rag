@@ -32,6 +32,9 @@ public sealed record DocumentListItem(
         string.Create(CultureInfo.CurrentCulture, $"{count:N0} {(count == 1 ? word : word + "s")}");
 }
 
+/// <summary>A document another page asks the Documents page to show: the Mac's <c>DocumentFocus</c>.</summary>
+public sealed record DocumentFocus(long Id, string Uri);
+
 /// <summary>One chunk of a document, in order.</summary>
 public sealed record DocumentChunk(long Id, int Ord, string Text, int TokenCount, string HeadingPath)
 {
@@ -270,6 +273,27 @@ public sealed partial class DocumentsViewModel(GarageService.GarageServiceClient
             _loadingMore = false;
             Notify();
         }
+    }
+
+    /// <summary>A document another page asked to show, consumed when the page appears.</summary>
+    public DocumentFocus? PendingFocus { get; set; }
+
+    /// <summary>
+    /// Shows one document: filters the list by its URI, which finds it however far down the
+    /// unfiltered list it sits, selects it and loads its detail (the Mac's <c>show(_:)</c>).
+    /// </summary>
+    public async Task ShowAsync(DocumentFocus focus, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(focus);
+        PendingFocus = null;
+        SearchText = focus.Uri;
+        Source = CorpusTaxonomy.All;
+        CorpusClass = CorpusTaxonomy.All;
+        TrustTier = CorpusTaxonomy.All;
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        Selected = Documents.FirstOrDefault(d => d.Id == focus.Id)
+            ?? new DocumentListItem(focus.Id, focus.Uri, "", "", "", "", "", 0, 0, 0, "", "");
+        await LoadDetailAsync(cancellationToken).ConfigureAwait(true);
     }
 
     /// <summary>Loads the selected document's detail.</summary>

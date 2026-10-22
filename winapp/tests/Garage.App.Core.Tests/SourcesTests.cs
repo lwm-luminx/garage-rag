@@ -216,6 +216,9 @@ public sealed class SourcesTests
 
         await page.SyncAsync();
         Assert.Contains(client.Requests.OfType<SyncSourcesRequest>(), r => !r.DryRun);
+        // Sources added here are written to garage.json before the file is applied, as on the Mac.
+        int imported = client.Requests.FindIndex(r => r is ImportSourcesToConfigRequest);
+        Assert.True(imported >= 0 && imported < client.Requests.FindIndex(r => r is SyncSourcesRequest { DryRun: false }));
         Assert.Equal(3, client.Requests.OfType<ListSourcesRequest>().Count());
         Assert.Contains("Added notes", runner.Logs.Select(l => l.Text).First(), StringComparison.Ordinal);
     }

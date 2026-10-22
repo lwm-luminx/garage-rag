@@ -218,7 +218,9 @@ public sealed class McpAndSettingsTests
     {
         public Services.ServiceProcess Service { get; } = new("mcp", "pipe", Threading.InlineDispatcher.Instance);
 
-        public Uri Url { get; } = new("http://127.0.0.1:8787/mcp");
+        public Uri Url => new($"http://127.0.0.1:{Port}/mcp");
+
+        public int Port { get; set; } = 8787;
 
         public List<bool> Calls { get; } = [];
 
