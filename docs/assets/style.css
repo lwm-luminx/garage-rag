@@ -1578,42 +1578,61 @@ details .faq-content {
 
 /* Love Wins Media: the band above the header on every page, and the line in the footer */
 .lwm-band {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  min-height: 32px;
-  padding: 0.3rem 1rem;
-  background: linear-gradient(90deg, #be185d 0%, #b45309 100%);
-  color: #ffffff;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1.3;
+  position: relative;
+  background: linear-gradient(90deg, #ec489926, #f59e0b1f);
+  border-bottom: 1px solid var(--line);
   text-align: center;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+}
+
+.lwm-band::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: linear-gradient(90deg, #ec4899, #f59e0b);
+}
+
+.lwm-band a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  color: var(--text-primary);
   text-decoration: none;
 }
 
-.lwm-band:hover,
-.lwm-band:focus-visible {
-  color: #ffffff;
-  text-decoration: underline;
-  text-underline-offset: 2px;
+.lwm-band strong {
+  font-weight: 700;
+  background: linear-gradient(90deg, #db2777, #d97706);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.lwm-band:focus-visible {
-  outline: 2px solid #ffffff;
-  outline-offset: -4px;
+.lwm-band a:hover {
+  color: #b45309;
+}
+
+.lwm-band a:focus-visible {
+  outline-offset: -3px;
 }
 
 .lwm-heart {
   flex: none;
-  fill: currentColor;
+  fill: #ec4899;
 }
 
 @media (prefers-color-scheme: dark) {
-  .lwm-band {
-    background: linear-gradient(90deg, #9d174d 0%, #be185d 45%, #92400e 100%);
+  .lwm-band strong {
+    background-image: linear-gradient(90deg, #f472b6, #fbbf24);
+  }
+  .lwm-band a:hover {
+    color: #fbbf24;
   }
 }
 
