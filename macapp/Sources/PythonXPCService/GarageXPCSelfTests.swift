@@ -1,135 +1,35 @@
 import Foundation
-import OSLog
 import PythonKit
-import PythonXPCService_protocol
+import GarageXPCKit
 
-private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCSelfTests")
-
-/// A single self test executed inside an XPC service after the Python environment has been loaded.
-///
-/// The `run` closure is executed on the Python runtime queue with the GIL held when `requiresPython` is
-/// true, so it may use PythonKit directly. It returns human readable details on success and throws on failure.
-public struct GarageXPCSelfTest: Sendable {
-    public typealias Body = @Sendable () throws -> String
-
-    public let name: String
-    public let testDescription: String
-    public let requiresPython: Bool
-    public let body: Body
-
-    public init(name: String, description: String, requiresPython: Bool = true, body: @escaping Body) {
-        self.name = name
-        self.testDescription = description
-        self.requiresPython = requiresPython
-        self.body = body
-    }
-}
-
-/// Error used by self tests to report a failure with a summary and optional extra details.
-public struct GarageXPCSelfTestFailure: Error, LocalizedError {
-    public let summary: String
-    public let details: String
-
-    public init(_ summary: String, details: String = "") {
-        self.summary = summary
-        self.details = details
+extension GarageXPCSelfTestRunner {
+    /// Runs the tests, those that require Python on the runtime's queue with the GIL held.
+    public static func run(_ tests: [GarageXPCSelfTest], runtime: GaragePythonRuntime) -> [GarageXPCTestResult] {
+        run(tests, runtimeExecutor: pythonExecutor(runtime: runtime))
     }
 
-    public var errorDescription: String? { details.isEmpty ? summary : "\(summary)\n\(details)" }
-}
-
-/// Marker error: the test could not run because a prerequisite (configuration) is missing.
-public struct GarageXPCSelfTestSkipped: Error, LocalizedError {
-    public let reason: String
-    public init(_ reason: String) { self.reason = reason }
-    public var errorDescription: String? { reason }
-}
-
-/// Runs self tests and produces `GarageXPCTestResult` records.
-public enum GarageXPCSelfTestRunner {
-    /// Executes the given tests sequentially. Python-based tests are skipped with a failure result when the
-    /// runtime is not ready so the status page shows *why* nothing else could be verified.
-    public static func run(_ tests: [GarageXPCSelfTest], runtime: GaragePythonRuntime = .shared) -> [GarageXPCTestResult] {
-        var results: [GarageXPCTestResult] = []
-        results.reserveCapacity(tests.count)
-
-        for test in tests {
-            let start = CFAbsoluteTimeGetCurrent()
-            let result: GarageXPCTestResult
-            do {
-                let details: String
-                if test.requiresPython {
-                    details = try runtime.withGIL {
-                        do {
-                            return try test.body()
-                        } catch let failure as GarageXPCSelfTestFailure {
-                            throw failure
-                        } catch let skipped as GarageXPCSelfTestSkipped {
-                            throw skipped
-                        } catch {
-                            // Resolve Python tracebacks while the GIL is still held.
-                            throw GarageXPCSelfTestFailure(error.localizedDescription, details: GaragePythonRuntime.describe(error))
-                        }
-                    }
-                } else {
-                    details = try test.body()
+    /// Runs a test that requires Python with the GIL held, resolving Python tracebacks into its failure.
+    public static func pythonExecutor(runtime: GaragePythonRuntime) -> RuntimeExecutor {
+        { test in
+            try runtime.withGIL {
+                do {
+                    return try test.body()
+                } catch let failure as GarageXPCSelfTestFailure {
+                    throw failure
+                } catch let skipped as GarageXPCSelfTestSkipped {
+                    throw skipped
+                } catch {
+                    // Resolve Python tracebacks while the GIL is still held.
+                    throw GarageXPCSelfTestFailure(error.localizedDescription, details: GaragePythonRuntime.describe(error))
                 }
-                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
-                result = GarageXPCTestResult(
-                    name: test.name,
-                    testDescription: test.testDescription,
-                    status: .passed,
-                    durationMs: elapsed,
-                    summary: "Passed in \(String(format: "%.1f", elapsed))ms",
-                    details: details
-                )
-                logger.info("Self test '\(test.name, privacy: .public)' passed in \(String(format: "%.1f", elapsed), privacy: .public)ms")
-            } catch let skipped as GarageXPCSelfTestSkipped {
-                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
-                result = GarageXPCTestResult(
-                    name: test.name,
-                    testDescription: test.testDescription,
-                    status: .skipped,
-                    durationMs: elapsed,
-                    summary: "Skipped: \(skipped.reason)",
-                    details: skipped.reason
-                )
-                logger.notice("Self test '\(test.name, privacy: .public)' skipped: \(skipped.reason, privacy: .public)")
-            } catch let failure as GarageXPCSelfTestFailure {
-                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
-                result = GarageXPCTestResult(
-                    name: test.name,
-                    testDescription: test.testDescription,
-                    status: .failed,
-                    durationMs: elapsed,
-                    summary: failure.summary,
-                    details: failure.details,
-                    errorMessage: failure.summary
-                )
-                logger.error("Self test '\(test.name, privacy: .public)' failed: \(failure.summary, privacy: .public)\n\(failure.details, privacy: .public)")
-            } catch {
-                let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
-                let message = error.localizedDescription
-                result = GarageXPCTestResult(
-                    name: test.name,
-                    testDescription: test.testDescription,
-                    status: .failed,
-                    durationMs: elapsed,
-                    summary: message,
-                    details: message,
-                    errorMessage: message
-                )
-                logger.error("Self test '\(test.name, privacy: .public)' failed: \(message, privacy: .public)")
             }
-            results.append(result)
         }
-        return results
     }
 }
 
-// MARK: - Standard tests shared by all Python based XPC services
+// MARK: - Standard tests of the embedded interpreter
 
-public enum GarageXPCStandardSelfTests {
+extension GarageXPCStandardSelfTests {
     /// Verifies the interpreter is up, reports version / prefix and that every `sys.path` entry exists.
     public static func pythonRuntime(runtime: GaragePythonRuntime = .shared) -> GarageXPCSelfTest {
         GarageXPCSelfTest(name: "Python Runtime", description: "Interpreter started from the bundled Python.framework with isolated home and sys.path.") {
@@ -378,21 +278,6 @@ public enum GarageXPCStandardSelfTests {
                 throw GarageXPCSelfTestFailure("\(moduleName) is missing: \(missing.joined(separator: ", "))", details: "Loaded from \(file)")
             }
             return "\(moduleName) <- \(file)" + (attributes.isEmpty ? "" : "\nVerified: \(attributes.joined(separator: ", "))")
-        }
-    }
-
-    /// Checks that the log directory is writable (non-Python test).
-    public static func logging(logFileName: String) -> GarageXPCSelfTest {
-        GarageXPCSelfTest(name: "Logging", description: "Log directory is writable and unified logging is configured.", requiresPython: false) {
-            let dir = GarageFileLogger.logsDirectoryURL
-            let probe = dir.appendingPathComponent(".write-probe-\(ProcessInfo.processInfo.processIdentifier)")
-            do {
-                try "ok".write(to: probe, atomically: true, encoding: .utf8)
-                try? FileManager.default.removeItem(at: probe)
-            } catch {
-                throw GarageXPCSelfTestFailure("Log directory is not writable: \(dir.path)", details: error.localizedDescription)
-            }
-            return "Log directory: \(dir.path)\nService log: \(dir.appendingPathComponent(logFileName).path)\nUnified logging subsystem: \(Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag")"
         }
     }
 

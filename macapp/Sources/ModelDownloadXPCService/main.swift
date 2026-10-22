@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 import OSLog
 import ModelDownloadClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.model-download-xpc", category: "ModelDownloadXPCService")
 
@@ -12,8 +12,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
     init() {
         super.init(
             serviceName: "ModelDownloadXPCService",
-            logFileName: "model-download-xpc.log",
-            usesPython: false
+            logFileName: "model-download-xpc.log"
         )
     }
 

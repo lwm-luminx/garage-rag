@@ -1,23 +1,23 @@
 import Foundation
 import Darwin
 import OSLog
-import PythonKit
 import PythonXPCService_protocol
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCServiceBase")
 
-/// Common implementation shared by every Garage XPC helper.
+/// Common implementation shared by every Garage XPC helper, with no Python in it: a service that
+/// embeds Python subclasses `GaragePythonXPCServiceBase` (PythonXPCService), which starts the
+/// interpreter through the runtime hooks below. A service built on this class alone links no Python.
 ///
 /// Start-up sequence (see `bootstrap()`):
 /// 1. crash handlers + stdout/stderr capture (file log in `~/Library/Logs/Garage`, unified logging, XPC streaming),
-/// 2. the XPC listener is resumed immediately so `ping` answers even while Python is still loading,
-/// 3. on the background host thread: resolve the app bundle, start the isolated Python environment,
-/// 4. run the self-test suite (Python runtime, stdlib extensions, site-packages, database, gRPC, service module),
-/// 5. register and start managed background services.
+/// 2. the XPC listener is resumed immediately so `ping` answers even while the runtime is still loading,
+/// 3. on the background host thread: start the service's runtime, if it has one (`startRuntime()`),
+/// 4. register and start managed background services,
+/// 5. run the self-test suite (logging, the runtime's `standardSelfTests()`, `additionalSelfTests()`).
 ///
 /// Subclasses override `additionalSelfTests()`, `registerManagedServices(in:)`, `exportedInterface`
-/// and implement their service specific protocol methods, wrapping Python calls in
-/// `GaragePythonRuntime.shared.withGIL { ... }`.
+/// and implement their service specific protocol methods.
 open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol, GarageFolderAccessReceiverProtocol {
     public enum Lifecycle: String, Sendable {
         case bootstrapping
@@ -28,11 +28,6 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
 
     public let serviceName: String
     public let logFileName: String
-    public let usesPython: Bool
-    /// Third-party modules imported by the "Site Packages" self test.
-    public let requiredPythonModules: [String]
-
-    public let runtime: GaragePythonRuntime
     public let host: GarageXPCServiceHost
     private let launchDate = Date()
 
@@ -47,18 +42,9 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     /// The anonymous listener behind `anonymousListenerEndpoint()`, kept for the life of the process.
     private final var _anonymousListener: NSXPCListener?
 
-    public init(
-        serviceName: String,
-        logFileName: String? = nil,
-        usesPython: Bool = true,
-        requiredPythonModules: [String] = ["grpc", "psycopg", "google.protobuf"],
-        runtime: GaragePythonRuntime = .shared
-    ) {
+    public init(serviceName: String, logFileName: String? = nil) {
         self.serviceName = serviceName
         self.logFileName = logFileName ?? "\(serviceName).log"
-        self.usesPython = usesPython
-        self.requiredPythonModules = requiredPythonModules
-        self.runtime = runtime
         self.host = GarageXPCServiceHost(label: "me.rickmark.garage-rag.\(serviceName).host")
         super.init()
         // Seed configuration from the process environment (launchd passes the app's environment through).
@@ -80,14 +66,41 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     /// Additional service-specific self tests appended to the standard suite.
     open func additionalSelfTests() -> [GarageXPCSelfTest] { [] }
 
-    /// Registers long running components with the host. Called once after Python is ready.
+    /// Registers long running components with the host. Called once, after `startRuntime()`.
     open func registerManagedServices(in host: GarageXPCServiceHost) {}
-
-    /// Called on the host thread once Python is ready (before tests run).
-    open func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {}
 
     /// Called when a client connection has been accepted (after the interface was configured).
     open func didAcceptConnection(_ connection: NSXPCConnection) {}
+
+    // MARK: - Runtime hooks (overridden by GaragePythonXPCServiceBase)
+
+    /// Called by `bootstrap()` before anything else starts, for process-wide setup the runtime needs.
+    open func prepareRuntime() {}
+
+    /// Starts the service's embedded runtime on the host thread, before managed services register.
+    /// Reports a failure through `recordBootstrapError(_:)`.
+    open func startRuntime() {}
+
+    /// False while a runtime the service needs is not running: tests that require it are skipped.
+    open var isRuntimeReady: Bool { true }
+
+    /// Self tests of the runtime, run after the logging test and before `additionalSelfTests()`.
+    open func standardSelfTests() -> [GarageXPCSelfTest] { [] }
+
+    /// Runs one test that requires the runtime. Without a runtime there is nothing to run it in.
+    open var selfTestRuntimeExecutor: GarageXPCSelfTestRunner.RuntimeExecutor? { nil }
+
+    /// The result reported in place of the runtime's tests while it is not ready.
+    open func runtimeUnavailableResult() -> GarageXPCTestResult? { nil }
+
+    /// The runtime's state for the status report. A service without Python reports `notUsed`.
+    open func runtimeStatus() -> GarageXPCPythonStatus { GarageXPCPythonStatus(state: "notUsed") }
+
+    /// What `ping` appends after the lifecycle, such as the interpreter's version.
+    open func pingRuntimeDetail() -> String { "" }
+
+    /// Called after `mergeConfiguration(_:)` stored the options, to pass them to the runtime.
+    open func didMergeConfiguration(_ options: [String: String]) {}
 
     // MARK: - Lifecycle
 
@@ -104,10 +117,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         GarageXPCCrashHandler.install(serviceName: serviceName)
         GarageXPCOutputCapture.shared.configure(serviceName: serviceName, logFileName: logFileName)
         GarageXPCOutputCapture.shared.startCapturing()
-        if usesPython {
-            // Before Python starts, so `os.environ` has it: the llama_xpc provider's socket.
-            GarageSockets.exportLlamaSocket()
-        }
+        prepareRuntime()
 
         let info = ProcessInfo.processInfo
         logger.info("\(self.serviceName, privacy: .public) starting (pid \(info.processIdentifier, privacy: .public), bundle \(Bundle.main.bundleIdentifier ?? "?", privacy: .public), macOS \(info.operatingSystemVersionString, privacy: .public))")
@@ -169,9 +179,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     }
 
     private final func bootstrapOnHostThread() {
-        if usesPython {
-            ensurePythonReady()
-        }
+        startRuntime()
         registerServicesIfNeeded()
         // The self tests run once the managed services have started: some of them check those
         // services (llama's HTTP listener), which would otherwise always fail at launch.
@@ -192,25 +200,17 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         recomputeLifecycle()
     }
 
-    /// Initializes Python if needed (idempotent). Safe to call from any thread.
-    @discardableResult
-    public func ensurePythonReady() -> Bool {
-        guard usesPython else { return true }
-        switch runtime.initializeIfNeeded() {
-        case .success(let env):
-            stateLock.lock()
-            _bootstrapError = nil
-            stateLock.unlock()
-            pythonDidBecomeReady(env)
-            return true
-        case .failure(let error):
-            let message = error.localizedDescription
-            stateLock.lock()
-            _bootstrapError = message
-            stateLock.unlock()
-            GarageXPCOutputCapture.shared.log(level: "ERROR", message: "Python initialization failed: \(message)")
-            return false
-        }
+    /// The error that kept the service from starting, if any. Read by `getServiceInfo`.
+    public var bootstrapError: String? {
+        stateLock.lock(); defer { stateLock.unlock() }
+        return _bootstrapError
+    }
+
+    /// Records (or, with nil, clears) the error that kept the service from starting.
+    public final func recordBootstrapError(_ message: String?) {
+        stateLock.lock()
+        _bootstrapError = message
+        stateLock.unlock()
     }
 
     private final func registerServicesIfNeeded() {
@@ -230,7 +230,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         stateLock.unlock()
 
         let newLifecycle: Lifecycle
-        if usesPython && !runtime.isReady {
+        if !isRuntimeReady {
             newLifecycle = .failed
         } else if bootstrapError != nil {
             newLifecycle = .failed
@@ -272,7 +272,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         return "\(configurationValue(GarageXPCConfigurationKey.grpcHost) ?? "127.0.0.1"):\(port)"
     }
 
-    /// Merges options into the configuration and mirrors well-known keys into `os.environ` for Python code.
+    /// Merges options into the configuration and hands them to the runtime (`didMergeConfiguration(_:)`).
     public func mergeConfiguration(_ options: [String: String]) {
         stateLock.lock()
         for (key, value) in options {
@@ -283,17 +283,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         if let models = options[GarageXPCConfigurationKey.modelsDirectory] {
             setenv(GarageXPCConfigurationKey.modelsDirectory, models, 1)
         }
-        guard usesPython, runtime.isReady, !options.isEmpty else { return }
-        runtime.perform {
-            let os = Python.import("os")
-            for (key, value) in options {
-                if key == GarageXPCConfigurationKey.databaseURL {
-                    os.environ[key] = PythonObject(XPCSitePathSetup.ensurePsycopgDatabaseURL(value))
-                } else {
-                    os.environ[key] = PythonObject(value)
-                }
-            }
-        }
+        didMergeConfiguration(options)
     }
 
     // MARK: - Self tests
@@ -301,24 +291,12 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
     /// The complete self-test suite for this service.
     public func selfTests() -> [GarageXPCSelfTest] {
         var tests: [GarageXPCSelfTest] = [GarageXPCStandardSelfTests.logging(logFileName: logFileName)]
-        if usesPython {
-            tests.append(GarageXPCStandardSelfTests.pythonRuntime(runtime: runtime))
-            tests.append(GarageXPCStandardSelfTests.stdlibExtensions())
-            if !requiredPythonModules.isEmpty {
-                tests.append(GarageXPCStandardSelfTests.sitePackages(modules: requiredPythonModules))
-            }
-            tests.append(GarageXPCStandardSelfTests.libpq(runtime: runtime))
-            tests.append(GarageXPCStandardSelfTests.tlsTrust(runtime: runtime))
-            tests.append(GarageXPCStandardSelfTests.tesseract())
-            tests.append(GarageXPCStandardSelfTests.gitHistory())
-            tests.append(GarageXPCStandardSelfTests.database(urlProvider: { [weak self] in self?.databaseURL }))
-            tests.append(GarageXPCStandardSelfTests.grpcConnection(addressProvider: { [weak self] in self?.grpcTarget }))
-        }
+        tests.append(contentsOf: standardSelfTests())
         tests.append(contentsOf: additionalSelfTests())
         return tests
     }
 
-    /// Runs the suite synchronously (on the calling thread; Python tests hop to the runtime queue) and stores results.
+    /// Runs the suite synchronously (on the calling thread; runtime tests go through `selfTestRuntimeExecutor`) and stores results.
     @discardableResult
     public func performSelfTests() -> [GarageXPCTestResult] {
         stateLock.lock()
@@ -336,24 +314,17 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         }
 
         var results: [GarageXPCTestResult]
-        if usesPython && !runtime.isReady {
-            // Only the non-Python tests can run; report the runtime failure prominently.
-            let status = runtime.statusSnapshot()
-            results = GarageXPCSelfTestRunner.run(selfTests().filter { !$0.requiresPython }, runtime: runtime)
-            results.insert(GarageXPCTestResult(
-                name: "Python Runtime",
-                testDescription: "Interpreter started from the bundled Python.framework with isolated home and sys.path.",
-                status: .failed,
-                durationMs: status.initializationMs ?? 0,
-                summary: "Python environment failed to load",
-                details: status.error ?? "unknown error",
-                errorMessage: status.error
-            ), at: 0)
+        if !isRuntimeReady {
+            // Only the tests that need no runtime can run; report the runtime failure prominently.
+            results = GarageXPCSelfTestRunner.run(selfTests().filter { !$0.requiresPython }, runtimeExecutor: selfTestRuntimeExecutor)
+            if let unavailable = runtimeUnavailableResult() {
+                results.insert(unavailable, at: 0)
+            }
             for test in selfTests() where test.requiresPython {
                 results.append(GarageXPCTestResult(name: test.name, testDescription: test.testDescription, status: .skipped, durationMs: 0, summary: "Skipped: Python runtime unavailable"))
             }
         } else {
-            results = GarageXPCSelfTestRunner.run(selfTests(), runtime: runtime)
+            results = GarageXPCSelfTestRunner.run(selfTests(), runtimeExecutor: selfTestRuntimeExecutor)
         }
 
         stateLock.lock()
@@ -381,9 +352,9 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
                 }
                 return
             }
-            let tests = selfTests().filter { names.contains($0.name) && (!$0.requiresPython || runtime.isReady) }
+            let tests = selfTests().filter { names.contains($0.name) && (!$0.requiresPython || isRuntimeReady) }
             guard !tests.isEmpty else { return }
-            let fresh = GarageXPCSelfTestRunner.run(tests, runtime: runtime)
+            let fresh = GarageXPCSelfTestRunner.run(tests, runtimeExecutor: selfTestRuntimeExecutor)
             stateLock.lock()
             for result in fresh {
                 if let index = _lastTestResults.firstIndex(where: { $0.name == result.name }) {
@@ -422,7 +393,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
             uptimeSeconds: uptime,
             lifecycle: lifecycle.rawValue,
             logFilePath: GarageFileLogger.logFileURL(named: logFileName).path,
-            python: runtime.statusSnapshot(),
+            python: runtimeStatus(),
             services: host.statusSnapshot(),
             tests: tests,
             lastTestRun: lastRun?.timeIntervalSince1970,
@@ -470,18 +441,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
 
     public func ping(with reply: @escaping (String) -> Void) {
         let state = lifecycle
-        var response = "pong from \(serviceName) [\(state.rawValue)]"
-        if usesPython {
-            switch runtime.state {
-            case .ready:
-                response += " python=\(runtime.pythonVersion?.split(separator: " ").first.map(String.init) ?? "ready")"
-            case .starting, .notStarted:
-                response += " python=loading"
-            case .failed(let message):
-                response += " (with warning: \(message.split(separator: "\n").first.map(String.init) ?? message))"
-            }
-        }
-        reply(response)
+        reply("pong from \(serviceName) [\(state.rawValue)]" + pingRuntimeDetail())
     }
 
     public func getServiceInfo(with reply: @escaping (String, Int32, Double, String?) -> Void) {
@@ -491,10 +451,7 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         case .bootstrapping: status = "starting"
         case .degraded: status = "warning: \(lastTestResults.filter { $0.status == .failed }.map { $0.name }.joined(separator: ", ")) failed"
         case .failed:
-            stateLock.lock()
-            let err = _bootstrapError
-            stateLock.unlock()
-            status = "error: \(err ?? runtime.statusSnapshot().error ?? "unknown")"
+            status = "error: \(bootstrapError ?? runtimeStatus().error ?? "unknown")"
         }
         reply(serviceName, ProcessInfo.processInfo.processIdentifier, uptime, status)
     }
@@ -617,32 +574,9 @@ open class GarageXPCServiceBase: NSObject, NSXPCListenerDelegate, GarageCommonXP
         GarageXPCOutputCapture.shared.log(message: "Revoked every folder grant")
         reply(true)
     }
-
-    // MARK: - Helpers for subclasses
-
-    /// Runs `body` with the GIL held and converts Python exceptions into readable error strings.
-    public func withPython<T>(_ body: () throws -> T) -> Result<T, Error> {
-        guard ensurePythonReady() else {
-            stateLock.lock()
-            let message = _bootstrapError ?? "Python runtime unavailable"
-            stateLock.unlock()
-            return .failure(GaragePythonRuntimeError.initializationFailed(code: -1, message: message))
-        }
-        do {
-            return .success(try runtime.withGIL {
-                do {
-                    return try body()
-                } catch {
-                    throw GarageXPCServiceError.python(GaragePythonRuntime.describe(error))
-                }
-            })
-        } catch {
-            return .failure(error)
-        }
-    }
 }
 
-/// Error wrapper used by services when surfacing Python failures over XPC.
+/// Error wrapper used by services when surfacing failures (Python's among them) over XPC.
 public enum GarageXPCServiceError: Error, LocalizedError {
     case python(String)
     case notRunning(String)

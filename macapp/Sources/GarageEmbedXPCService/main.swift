@@ -8,7 +8,7 @@ import PythonKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.embed-xpc", category: "GarageEmbedXPCService")
 
-final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCServiceProtocol {
+final class GarageEmbedXPCServiceDelegate: GaragePythonXPCServiceBase, GarageEmbedXPCServiceProtocol {
     /// Embedding work can take a long time; keep it off the XPC listener thread.
     private static let workerQueue = DispatchQueue(label: "me.rickmark.garage.embed.worker", qos: .userInitiated)
 

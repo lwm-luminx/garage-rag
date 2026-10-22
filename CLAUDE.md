@@ -279,7 +279,7 @@ dotnet format Garage.slnx --verify-no-changes
 
 ### Swift app dev loop
 
-The app is built by Bazel only; there is no SwiftPM manifest. Every Swift module depends on
+The app is built by Bazel only; there is no SwiftPM manifest. Most Swift modules depend on
 `PythonXPCService` (PythonKit plus the CPython embedding shim), which SwiftPM cannot provide.
 
 ```bash
@@ -671,10 +671,18 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   service process paired with a `*Client` module (`IngestClient`, `LlamaClient`,
   `ModelDownloadClient`, `ImageEmbedClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
-  gRPC bridge to the Python `garage_rag` package. Every connection a listener accepts, from the service
-  listener and the anonymous ones, carries `GarageXPCPeerRequirement` (set on the connection in
-  `listener(_:shouldAcceptNewConnection:)`, never on the listener: on `NSXPCListener.service()` that
-  crashes the service at launch): a peer must be Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
+  gRPC bridge to the Python `garage_rag` package.
+  - What every service shares is `GarageXPCKit` (`GarageXPCServiceBase`, self tests, logging, crash
+    handling, the managed-service host, the peer requirement), with no Python in it. A service that
+    embeds Python subclasses `GaragePythonXPCServiceBase` in `PythonXPCService`, which re-exports the kit
+    and links Python.framework.
+  - A service on the kit alone links neither framework, and reports Python as `notUsed`. So far that is
+    `ModelDownloadXPCService`. The services are moving off Python one at a time
+    ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md), "Python-free XPC services").
+  - Every connection a listener accepts, from the service listener and the anonymous ones, carries
+    `GarageXPCPeerRequirement` (set on the connection in `listener(_:shouldAcceptNewConnection:)`, never
+    on the listener: on `NSXPCListener.service()` that crashes the service at launch): a peer must be
+    Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
 - The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
   process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
   sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each

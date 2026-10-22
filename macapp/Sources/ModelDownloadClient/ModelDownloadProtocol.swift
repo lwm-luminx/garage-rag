@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import PythonXPCService_protocol
 
 /// Objective-C compatible protocol for the ModelDownload XPC Service.
 @objc(ModelDownloadXPCServiceProtocol)

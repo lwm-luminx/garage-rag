@@ -1,6 +1,6 @@
 import Foundation
 import CryptoKit
-import PythonXPCService
+import PythonXPCService_protocol
 
 /// Core engine managing model downloads, file system storage, and task tracking.
 public final class ModelDownloaderEngine: NSObject, @unchecked Sendable {

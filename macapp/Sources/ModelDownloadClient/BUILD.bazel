@@ -8,6 +8,6 @@ swift_library(
     module_name = "ModelDownloadClient",
     visibility = ["//visibility:public"],
     deps = [
-        "//macapp/Sources/PythonXPCService",
+        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
     ],
 )

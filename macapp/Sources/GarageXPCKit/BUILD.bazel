@@ -1,0 +1,15 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# What every XPC service shares, with no Python: the service base class, self tests, logging, crash
+# handling, the managed-service host and the peer requirement. A service built on it alone (model
+# downloads) links neither Python.framework nor PythonXPCService.framework, which carries a copy of
+# this library for the services that embed Python (GaragePythonXPCServiceBase).
+swift_library(
+    name = "GarageXPCKit",
+    srcs = glob(["*.swift"]),
+    module_name = "GarageXPCKit",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
+    ],
+)

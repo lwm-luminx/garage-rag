@@ -2,6 +2,7 @@ import Foundation
 import Darwin
 import OSLog
 import GaragePythonEmbed
+import GarageXPCKit
 import PythonKit
 import PythonXPCService_protocol
 

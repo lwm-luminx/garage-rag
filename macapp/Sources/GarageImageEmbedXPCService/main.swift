@@ -24,8 +24,7 @@ final class GarageImageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageImag
         self.engine = engine
         super.init(
             serviceName: "GarageImageEmbedXPCService",
-            logFileName: "image-embed-xpc.log",
-            usesPython: false
+            logFileName: "image-embed-xpc.log"
         )
     }
 

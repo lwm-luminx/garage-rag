@@ -108,8 +108,7 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
         ))
         super.init(
             serviceName: "LlamaXPCService",
-            logFileName: "llama-xpc.log",
-            usesPython: false
+            logFileName: "llama-xpc.log"
         )
     }
 

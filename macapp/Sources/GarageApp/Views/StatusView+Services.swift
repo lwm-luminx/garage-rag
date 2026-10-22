@@ -358,6 +358,10 @@ extension StatusView {
     }
 
     private func pythonLine(_ python: GarageXPCPythonStatus) -> String {
+        // A helper built without Python (GarageXPCKit alone, such as ModelDownloadXPCService).
+        if python.state == "notUsed" {
+            return "Not used"
+        }
         if let error = python.error, !error.isEmpty {
             return "\(python.state): \(error)"
         }
