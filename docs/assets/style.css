@@ -885,6 +885,27 @@ details .faq-content {
   margin-top: 1.25rem;
 }
 
+/* Apple's "Download on the Mac App Store" badge, shown as supplied (Apple's marketing guidelines
+   forbid recoloring or restyling it). Sized to the buttons beside it. */
+.app-store-badge {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.app-store-badge img {
+  height: 2.9rem;
+  width: auto;
+}
+
+.app-store-badge-large img {
+  height: 3.1rem;
+}
+
+.hero-actions:has(.app-store-badge) {
+  align-items: center;
+}
+
 @media (max-width: 720px) {
   .download-panel {
     grid-template-columns: 1fr;
