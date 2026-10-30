@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// How an image embedding model is run: the two Core ML packages, the tokenizer of the text tower,
 /// and the preprocessing both were trained with. Read from the `image_embedding` section of

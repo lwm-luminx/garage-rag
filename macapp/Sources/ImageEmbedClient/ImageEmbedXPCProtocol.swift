@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// The NSXPC interface of `GarageImageEmbedXPCService`, the helper that runs CLIP-style image
 /// embedding models (a Core ML image tower and text tower sharing one space; SigLIP 2 in the

@@ -2,7 +2,7 @@ import Foundation
 import ImageEmbedClient
 import ImageEmbedEngine
 import OSLog
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.image-embed-xpc", category: "GarageImageEmbedXPCService")
 

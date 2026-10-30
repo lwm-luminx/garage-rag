@@ -121,9 +121,10 @@ step leaves the app working, with the Python reference still there for the servi
    linked Python.framework and PythonXPCService.framework, because the service base class lived
    there. `GarageXPCKit` is that base without Python: logging, crash handling, self tests, the
    managed-service host and the peer requirement. `GaragePythonXPCServiceBase` in PythonXPCService adds
-   the interpreter for the services that embed it. ModelDownloadXPCService is the first service built on
-   the kit alone; LlamaXPCService and GarageImageEmbedXPCService follow once the client modules they
-   share with the app (`LlamaClient`, `LlamaEngine`, `ImageEmbedClient`) import the kit instead.
+   the interpreter for the services that embed it. ModelDownloadXPCService was the first service built on
+   the kit alone (#270); LlamaXPCService and GarageImageEmbedXPCService followed, with the client
+   modules they share with the app (`LlamaClient`, `LlamaServiceHost`, `ImageEmbedClient`,
+   `ImageEmbedEngine`) on the kit too.
 2. **Embeddings.** The backfill worker in GarageEmbedXPCService, in Rust, over the same gRPC facade.
 3. **Ingest.** The walker, readers, chunking, attribution, the quality gate and the splitters, in Rust,
    with readers behind the plugin contract above.

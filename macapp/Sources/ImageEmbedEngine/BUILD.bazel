@@ -12,7 +12,7 @@ swift_library(
         "//macapp/Tests:__subpackages__",
     ],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/ImageEmbedClient",
-        "//macapp/Sources/PythonXPCService",
     ],
 )
