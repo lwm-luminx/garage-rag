@@ -9,7 +9,7 @@ testflight_page: true
 
 <div class="hero">
   <h1>Test Garage on TestFlight</h1>
-  <p>The App Store version of Garage 1.5 is in testing. TestFlight, Apple's app for beta software, installs it on your computer and keeps it up to date while it's in testing.</p>
+  {% if site.app_store_live %}<p>Garage 1.5 is on the <a href="{{ site.app_store_url }}" target="_blank" rel="noopener">Mac App Store</a>. TestFlight, Apple's app for beta software, is where test builds of the next version appear before they reach the store.</p>{% else %}<p>The App Store version of Garage 1.5 is in testing. TestFlight, Apple's app for beta software, installs it on your computer and keeps it up to date while it's in testing.</p>{% endif %}
   {% if testflight_open %}
   <div class="hero-actions">
     <a id="testflight-join" href="{{ site.testflight_url }}" class="btn btn-primary btn-large" target="_blank" rel="noopener">Join the beta in TestFlight ↗</a>
@@ -18,8 +18,15 @@ testflight_page: true
   {% endif %}
 </div>
 
+{% if site.app_store_live %}
+<div class="callout callout-success">
+  <div class="callout-title">✅ Garage is on the Mac App Store</div>
+  <p>For the finished version, <a href="{{ site.app_store_url }}" target="_blank" rel="noopener">get Garage on the Mac App Store ↗</a>. Join the beta only if you want to try test builds before they're released.</p>
+</div>
+{% endif %}
+
 {% unless testflight_open %}
-<div class="callout callout-warn">
+<div class="callout callout-warning">
   <div class="callout-title">⏳ The beta isn't open yet</div>
   <p>The invitation link appears on this page when testing opens. Until then, the <a href="{{ '/#download' | relative_url }}">download on this site</a> is the way to run Garage.</p>
 </div>

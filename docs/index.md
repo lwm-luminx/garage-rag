@@ -14,6 +14,8 @@ structured_data:
   image: https://garagerag.app/assets/social-card.png
   screenshot: https://garagerag.app/assets/screenshots/mcp-server-light-1x.png
   license: https://github.com/rickmark/garage-rag
+  sameAs:
+    - https://apps.apple.com/app/id6811306880
   isAccessibleForFree: true
   offers:
     "@type": Offer
@@ -35,7 +37,7 @@ structured_data:
   </div>
   <p class="download-meta" id="download-meta">Apple Silicon · macOS 14 Sonoma or later · notarized installer</p>
   <p class="download-meta">On Windows or Linux? {% if site.windows_alpha_url and site.windows_alpha_url != "" %}<a href="{{ '/windows.html' | relative_url }}">Try the Windows alpha</a>{% else %}<a href="{{ '/windows.html' | relative_url }}">Windows is coming</a>{% endif %}, or <a href="{{ '/linux.html' | relative_url }}">run it on Linux</a> from the command line.</p>
-  {% unless site.app_store_live %}{% if site.testflight_url and site.testflight_url != "" %}<p class="download-meta">Want the Mac App Store version? It's in beta: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight</a>.</p>{% endif %}{% endunless %}
+  {% if site.app_store_live %}<p class="download-meta">Prefer the Mac App Store? <a id="hero-app-store" href="{{ site.app_store_url }}" target="_blank" rel="noopener">Get Garage on the Mac App Store ↗</a></p>{% elsif site.testflight_url and site.testflight_url != "" %}<p class="download-meta">Want the Mac App Store version? It's in beta: <a href="{{ '/testflight.html' | relative_url }}">join the TestFlight</a>.</p>{% endif %}
   <div id="download-alpha" class="hero-strip hero-alpha" hidden>
     <div class="hero-strip-text">
       <strong>🧪 <span id="download-alpha-title">Try the next version</span> <small id="download-alpha-meta"></small></strong>
@@ -194,9 +196,9 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
     <div class="hero-actions download-actions">
       <a id="download-pkg" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-primary"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3v12m0 0-5-5m5 5 5-5M5 20h14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="btn-label">Download installer</span></a>
       <a id="download-release" href="https://github.com/rickmark/garage-rag/releases/latest" class="btn btn-secondary" target="_blank" rel="noopener">All downloads on GitHub ↗</a>
-      {% if site.app_store_live %}<a id="download-app-store" href="https://apps.apple.com/app/id6811306880" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>{% elsif site.testflight_url and site.testflight_url != "" %}<a id="download-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">App Store beta on TestFlight</a>{% endif %}
+      {% if site.app_store_live %}<a id="download-app-store" href="{{ site.app_store_url }}" class="btn btn-secondary" target="_blank" rel="noopener">Mac App Store ↗</a>{% elsif site.testflight_url and site.testflight_url != "" %}<a id="download-testflight" href="{{ '/testflight.html' | relative_url }}" class="btn btn-secondary">App Store beta on TestFlight</a>{% endif %}
     </div>
-    {% if site.app_store_live %}<p><small>Garage is also on the <a href="https://apps.apple.com/app/id6811306880" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
+    {% if site.app_store_live %}<p><small>Garage is also on the <a href="{{ site.app_store_url }}" target="_blank" rel="noopener">Mac App Store</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% else %}<p><small>The Mac App Store version is in beta on <a href="{{ '/testflight.html' | relative_url }}">TestFlight</a>. Both versions share one library on your computer, so you can switch between them without re-indexing. The App Store version gets its updates from the App Store instead of the in-app updater.</small></p>{% endif %}
   </div>
   <div class="download-panel-aside">
     <h4>After installing</h4>
