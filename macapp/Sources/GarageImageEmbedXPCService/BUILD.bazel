@@ -1,7 +1,6 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
-load("//bazel:framework_linking.bzl", "framework_linked_library")
 
 # GarageImageEmbedXPCService: CLIP-style image embedding models (SigLIP 2) on Core ML, reached
 # over NSXPC by the app and, through a handed-over endpoint, by the helpers whose Python embeds
@@ -12,21 +11,16 @@ swift_library(
     module_name = "GarageImageEmbedXPCService",
     visibility = ["//visibility:private"],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/ImageEmbedClient",
         "//macapp/Sources/ImageEmbedEngine",
-        "//macapp/Sources/PythonXPCService",
     ],
 )
 
-# The service binary. It links Python and PythonXPCService.framework like every helper does
-# (the bundle layout test requires it, and the shared base class lives in the framework).
+# The service binary. It is built on GarageXPCKit and links neither Python.framework nor
+# PythonXPCService.framework.
 macos_xpc_service(
     name = "GarageImageEmbedXPCService",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-        "//ext/pythonkit:PythonKit",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
-    ],
     bundle_id = "me.rickmark.garage-rag.image-embed-xpc",
     bundle_name = "GarageImageEmbedXPCService",
     codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
@@ -37,12 +31,6 @@ macos_xpc_service(
     }),
     infoplists = ["Info.plist"],
     linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
-        "-framework",
-        "PythonXPCService",
         "-framework",
         "CoreML",
         "-framework",
@@ -54,14 +42,6 @@ macos_xpc_service(
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":GarageImageEmbedXPCService_linked",
+        ":GarageImageEmbedXPCService_lib",
     ],
-)
-
-# The service's library without the static copy of PythonXPCService.framework's code, which it
-# links (see //bazel:framework_linking.bzl).
-framework_linked_library(
-    name = "GarageImageEmbedXPCService_linked",
-    framework_deps = ["//macapp/Sources/PythonXPCService"],
-    deps = [":GarageImageEmbedXPCService_lib"],
 )

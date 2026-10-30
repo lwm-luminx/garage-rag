@@ -676,8 +676,9 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     handling, the managed-service host, the peer requirement), with no Python in it. A service that
     embeds Python subclasses `GaragePythonXPCServiceBase` in `PythonXPCService`, which re-exports the kit
     and links Python.framework.
-  - A service on the kit alone links neither framework, and reports Python as `notUsed`. So far that is
-    `ModelDownloadXPCService`. The services are moving off Python one at a time
+  - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
+    `ModelDownloadXPCService`, `LlamaXPCService` and `GarageImageEmbedXPCService`, with their client
+    modules (`ModelDownloadClient`, `LlamaClient`, `ImageEmbedClient`). The services are moving off Python one at a time
     ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md), "Python-free XPC services").
   - Every connection a listener accepts, from the service listener and the anonymous ones, carries
     `GarageXPCPeerRequirement` (set on the connection in `listener(_:shouldAcceptNewConnection:)`, never

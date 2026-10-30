@@ -1,7 +1,6 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
-load("//bazel:framework_linking.bzl", "framework_linked_library")
 
 # The UI tests' MockLlamaXPCService stands in for this service under the same bundle identifier,
 # with the same Info.plist and entitlements.
@@ -22,9 +21,9 @@ swift_library(
     module_name = "LlamaXPCService",
     visibility = ["//visibility:private"],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/LlamaEngine",
         "//macapp/Sources/LlamaServiceHost",
-        "//macapp/Sources/PythonXPCService",
     ],
 )
 
@@ -32,11 +31,6 @@ swift_library(
 # //macapp/Sources/LlamaEngine); the app and the client modules never carry the engine.
 macos_xpc_service(
     name = "LlamaXPCService",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-        "//ext/pythonkit:PythonKit",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
-    ],
     bundle_id = "me.rickmark.garage-rag.llama-xpc",
     bundle_name = "LlamaXPCService",
     codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
@@ -46,14 +40,6 @@ macos_xpc_service(
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
-        "-framework",
-        "PythonXPCService",
-    ],
     minimum_os_version = "14.0",
     # The "Embedding Known Answers" self-test: a small nomic-embed-text GGUF and llama.cpp's
     # reference vectors for fixed inputs, in Contents/Resources. :known_answers is empty until
@@ -65,14 +51,6 @@ macos_xpc_service(
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":LlamaXPCService_linked",
+        ":LlamaXPCService_lib",
     ],
-)
-
-# The service's library without the static copy of PythonXPCService.framework's code, which it links
-# (see //bazel:framework_linking.bzl).
-framework_linked_library(
-    name = "LlamaXPCService_linked",
-    framework_deps = ["//macapp/Sources/PythonXPCService"],
-    deps = [":LlamaXPCService_lib"],
 )

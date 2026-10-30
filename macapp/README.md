@@ -9,7 +9,7 @@ Fully self-contained: no Homebrew or system Python required at runtime.
 The app is built by Bazel (via the Aspect CLI, see the [repo README](../README.md)
 and `CLAUDE.md` for the one-time `direnv allow` / `bazel run //tools:bazel_env`
 setup). There is no SwiftPM manifest and no `swift build` / `swift run` path:
-most modules, the client libraries included, depend on `PythonXPCService`,
+most modules depend on `PythonXPCService` (the XPC client libraries use `GarageXPCKit`),
 which in turn needs PythonKit, the CPython embedding shim and the vendored
 Python / Postgres / llama.cpp that only the Bazel build provides. For an IDE
 loop, generate the Xcode project (`aspect run //:xcodeproj`), which carries
@@ -115,8 +115,8 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   manifest and the config JSON schema.
 - `Frameworks/PythonXPCService.framework` — the shared runtime for the
   `XPCServices/*.xpc` helpers listed under `xpc_services` that embed Python
-  (ModelDownloadXPCService, built on `GarageXPCKit` alone, links neither it nor
-  `Python.framework`). Its resources hold
+  (ModelDownloadXPCService, LlamaXPCService and GarageImageEmbedXPCService, built
+  on `GarageXPCKit` alone, link neither it nor `Python.framework`). Its resources hold
   `site-python` (`//macapp/externals:site-python`): the standard library,
   `lib-dynload` and site-packages, used by the CLI and every XPC service, and
   `tessdata/eng.traineddata`. It lives in the framework because a sandboxed XPC service

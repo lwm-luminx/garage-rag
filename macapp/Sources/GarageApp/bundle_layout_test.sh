@@ -161,9 +161,11 @@ else
 fi
 
 # One PythonXPCService.framework, the app's, and no helper or XPC service with its own copy of the
-# framework's code (//bazel:framework_linking.bzl): each links the framework instead. The check
-# looks for the Swift type descriptors of a class from each module the framework carries, and
-# first confirms the framework itself defines them, so a stripped binary cannot pass unchecked.
+# framework's code (//bazel:framework_linking.bzl): each links the framework instead, except the
+# services built on GarageXPCKit alone, which link neither it nor Python.framework and carry no
+# Python. A module's code is recognized by the Swift nominal type descriptors it defines
+# (`$s<module>...Mn`), and the check first confirms the framework itself defines some of each, so a
+# stripped binary cannot pass unchecked.
 copies="$(find "$app" -type d -name PythonXPCService.framework | wc -l | tr -d ' ')"
 if [ "$copies" = "1" ] && [ -d "$app/Contents/Frameworks/PythonXPCService.framework" ]; then
     pass "one PythonXPCService.framework, in Contents/Frameworks"
@@ -171,33 +173,51 @@ else
     fail "expected one PythonXPCService.framework, in Contents/Frameworks; found $copies:"
     find "$app" -type d -name PythonXPCService.framework | sed 's/^/       /'
 fi
-# The descriptors are ones whose mangled names spell the type out: Swift's word substitution
-# shortens a name that repeats its module's words (GarageXPCServiceBase is 06GarageB4BaseCMn).
 # Symbol lists go to grep as here-strings, not through a pipe: `grep -q` exits at the first match,
 # and under pipefail the writer's SIGPIPE would turn that match into a failure.
-descriptors=(
-    '16GarageFileLoggerCMn'
-    '9PythonKit11PyReferenceCMn'
+kit_module='12GarageXPCKit'
+python_modules=('9PythonKit' '16PythonXPCService')
+# The XPC services that run no Python (GarageXPCKit alone).
+python_free_services=(
+    'ModelDownloadXPCService'
+    'LlamaXPCService'
+    'GarageImageEmbedXPCService'
 )
+defines_module() { # symbols module
+    grep -Eq -- "^_?\\\$s$2.*Mn\$" <<<"$1"
+}
 framework_binary="$app/Contents/Frameworks/PythonXPCService.framework/PythonXPCService"
 framework_symbols="$(/usr/bin/nm -U -j "$framework_binary" 2>/dev/null || true)"
-for descriptor in "${descriptors[@]}"; do
-    grep -q -- "$descriptor" <<<"$framework_symbols" \
-        || fail "PythonXPCService.framework does not define $descriptor; the duplicate check below cannot see it"
+for module in "$kit_module" "${python_modules[@]}"; do
+    defines_module "$framework_symbols" "$module" \
+        || fail "PythonXPCService.framework defines no type of $module; the duplicate check below cannot see it"
 done
 for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPCServices/*.xpc/Contents/MacOS/*; do
     [ -f "$binary" ] || continue
     name="${binary#"$app"/Contents/}"
     symbols="$(/usr/bin/nm -U -j "$binary" 2>/dev/null || true)"
-    duplicated=""
-    for descriptor in "${descriptors[@]}"; do
-        if grep -q -- "$descriptor" <<<"$symbols"; then
-            duplicated="$duplicated $descriptor"
+    linked="$(/usr/bin/otool -L "$binary" 2>/dev/null || true)"
+    python_code=""
+    for module in "${python_modules[@]}"; do
+        if defines_module "$symbols" "$module"; then
+            python_code="$python_code $module"
         fi
     done
-    if [ -n "$duplicated" ]; then
-        fail "$name defines what PythonXPCService.framework already carries:$duplicated"
-    elif grep -q -- "PythonXPCService.framework/" <<<"$(/usr/bin/otool -L "$binary" 2>/dev/null || true)"; then
+    python_free=0
+    for service in "${python_free_services[@]}"; do
+        [ "$(basename "$binary")" = "$service" ] && python_free=1
+    done
+    if [ "$python_free" = 1 ]; then
+        if grep -q -- "PythonXPCService.framework/" <<<"$linked" || grep -q -- "Python.framework/" <<<"$linked"; then
+            fail "$name runs no Python but links Python.framework or PythonXPCService.framework"
+        elif [ -n "$python_code" ]; then
+            fail "$name runs no Python but carries Python code:$python_code"
+        else
+            pass "$name is built on GarageXPCKit alone and links no Python"
+        fi
+    elif [ -n "$python_code" ] || defines_module "$symbols" "$kit_module"; then
+        fail "$name defines what PythonXPCService.framework already carries:$python_code"
+    elif grep -q -- "PythonXPCService.framework/" <<<"$linked"; then
         pass "$name links PythonXPCService.framework and carries none of its code"
     else
         fail "$name does not link PythonXPCService.framework"

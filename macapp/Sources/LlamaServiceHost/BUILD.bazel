@@ -13,8 +13,8 @@ swift_library(
         "//macapp/Tests:__subpackages__",
     ],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/LlamaClient",
-        "//macapp/Sources/PythonXPCService",
         "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
     ],
 )

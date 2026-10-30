@@ -1,6 +1,6 @@
 import Foundation
 import LlamaEngine
-import PythonXPCService
+import GarageXPCKit
 
 /// "Embedding Known Answers": loads the bundled nomic-embed-text Q2_K, embeds known inputs through
 /// llama.cpp, compares them with llama.cpp's reference vectors, then unloads it. Only LlamaCppEngine
