@@ -52,7 +52,7 @@
 
     var primary = byId('download-primary');
     var primaryLabel = primary && primary.querySelector('.btn-label');
-    if (primaryLabel && version) { primaryLabel.textContent = 'Download Garage ' + version; }
+    if (primaryLabel && version && !primary.hasAttribute('data-keep-label')) { primaryLabel.textContent = 'Download Garage ' + version; }
 
     var parts = [];
     if (version) { parts.push('Version ' + version); }
@@ -67,7 +67,7 @@
     if (meta) { meta.textContent = parts.join(' · '); }
 
     var detail = byId('download-detail');
-    if (detail) {
+    if (detail && !detail.hasAttribute('data-keep-text')) {
       detail.innerHTML = '';
       detail.appendChild(document.createTextNode(
         'Apple Silicon (M1 and later), macOS 14 Sonoma or later. ' + INSTALLER +
