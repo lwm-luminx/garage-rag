@@ -134,6 +134,8 @@ known-first-party = ["garage_rag"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["error::DeprecationWarning"]
+# pytest-asyncio 1.4 warns while this is unset, and the filter above turns that into an error.
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.ty.src]
 # Generated protobuf stubs are excluded from type checking, as they are from Ruff
