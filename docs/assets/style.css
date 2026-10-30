@@ -902,6 +902,67 @@ details .faq-content {
   height: 3.1rem;
 }
 
+.download-more {
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+/* The installer's button, drawn in the badge's proportions (same height, corner radius and
+   two-line label) so the two read as a pair. Outlined in the site's ink rather than filled,
+   so Apple's badge stays the first choice. */
+.install-badge {
+  --badge-height: 2.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  height: var(--badge-height);
+  min-width: calc(var(--badge-height) * 3.9);
+  padding: 0 0.95rem 0 0.7rem;
+  border: 1px solid var(--text-primary);
+  border-radius: calc(var(--badge-height) * 0.17);
+  background: var(--bg-primary);
+  color: var(--text-primary) !important;
+  text-decoration: none !important;
+  line-height: 1;
+  transition: background-color 0.15s ease;
+}
+
+.install-badge:hover {
+  background: var(--bg-tertiary);
+}
+
+.install-badge-large-size {
+  --badge-height: 3.1rem;
+}
+
+.install-badge-icon {
+  height: 62%;
+  width: auto;
+  flex-shrink: 0;
+}
+
+.install-badge-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.12em;
+  font-size: calc(var(--badge-height) * 0.36);
+}
+
+.install-badge-small {
+  font-size: 0.5em;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.install-badge-large {
+  font-size: 1em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
 .hero-actions:has(.app-store-badge) {
   align-items: center;
 }
