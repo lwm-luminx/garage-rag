@@ -14,7 +14,7 @@
       gtag('config', 'G-85TQVVK80M');
       var analyticsScript = document.createElement('script');
       analyticsScript.defer = true;
-      analyticsScript.src = '{{ '/assets/analytics.js' | relative_url }}';
+      analyticsScript.src = '{{ '/assets/analytics.js' | relative_url }}?v={{ site.time | date: '%s' }}';
       document.head.appendChild(analyticsScript);
     }
   </script>
@@ -30,7 +30,7 @@
   <link rel="icon" type="image/png" href="{{ '/assets/favicon.png' | relative_url }}">
   <link rel="apple-touch-icon" href="{{ '/assets/logo.png' | relative_url }}">
   <link rel="preload" href="{{ '/assets/fonts/IBMPlexSans-Var-latin.woff2' | relative_url }}" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
+  <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}?v={{ site.time | date: '%s' }}">
 </head>
 <body>
 
@@ -123,6 +123,6 @@
       }
     });
   </script>
-  <script src="{{ '/assets/terms.js' | relative_url }}" defer></script>
+  <script src="{{ '/assets/terms.js' | relative_url }}?v={{ site.time | date: '%s' }}" defer></script>
 </body>
 </html>
