@@ -1,6 +1,6 @@
 """docs/appcast.xml is the Sparkle feed Developer ID builds update from.
 
-//macapp/package:publish_appcast writes its entries on a Mac, where the signing key is; these
+garage-enterprise's //macapp/package:publish_appcast writes its entries on a Mac, where the signing key is; these
 tests hold the committed feed to what that script checks, so a hand edit or a feed generated
 some other way cannot ship an entry the app would reject, or offer an arm64-only build to an
 Intel Mac, or point at a download that is not where releases are uploaded.

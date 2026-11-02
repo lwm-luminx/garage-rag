@@ -72,12 +72,9 @@ build:local_signed --platforms=//bazel:local_signed
 # CI runners have no local signing identity (and no Keychain to put one in), so
 # `aspect` runs there with --config=ci and sign ad hoc instead.
 build:ci --platforms=//bazel:adhoc
-build:developer_id --platforms=//bazel:developer_id
-build:appstore --platforms=//bazel:store
-# The App Store build to upload: optimized, which (unlike signing) changes every compile
-# action, so it shares nothing with the fastbuild configs above.
-build:appstore_release --config=appstore --compilation_mode=opt
-build:store --platforms=//bazel:store
+# The signed distributions (Developer ID, App Store) have no config here: their platforms,
+# identities, profiles and release targets live in garage-enterprise, which builds them against
+# this repository's signing seam (bazel/platforms.bzl).
 
 # On a Linux host (the devcontainer, CI's Linux jobs) build for that host: the macOS platforms above
 # have no matching execution platform there, so no test could run. The macOS-only targets are not

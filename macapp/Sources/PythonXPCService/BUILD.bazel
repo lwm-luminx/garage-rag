@@ -3,7 +3,6 @@ load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_swift//swift:swift.bzl", "swift_binary", "swift_library")
 load("//bazel:codesign.bzl", "codesign")
 load("//bazel:macos_framework.bzl", "macos_versioned_framework")
-load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 # Protocol definitions for all XPC services
 swift_library(
@@ -148,10 +147,5 @@ codesign(
     src = ":PythonXPCService_framework",
     out = "PythonXPCService.framework",
     is_framework = True,
-    signing_identity = select({
-        "//bazel:is_developer_id": "Developer ID Application: Richard Penwell (DWVXMLB45Y)",
-        "//bazel:is_store": STORE_IDENTITY,
-        "//conditions:default": "-",
-    }),
     visibility = ["//visibility:public"],
 )

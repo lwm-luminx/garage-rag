@@ -13,7 +13,6 @@ load("@aspect_rules_py//py:defs.bzl", "py_library")
 load("@aspect_rules_py//uv:defs.bzl", "gazelle_python_manifest")
 load("//bazel:codesign.bzl", "codesign")
 load("//bazel:python_site_packages.bzl", "python_site_packages")
-load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 gazelle_python_manifest(
     name = "gazelle_python_manifest",
@@ -46,10 +45,5 @@ codesign(
         "runtime",
     ],
     parent_dir = "site-packages",
-    sign = select({
-        "//bazel:is_developer_id": "Developer ID Application: Richard Penwell (DWVXMLB45Y)",
-        "//bazel:is_store": STORE_IDENTITY,
-        "//conditions:default": "-",
-    }),
     visibility = ["//visibility:public"],
 )

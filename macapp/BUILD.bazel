@@ -4,32 +4,10 @@ load(
     "top_level_target",
     "xcodeproj",
 )
-load("//bazel:macos_application.bzl", "appstore_macos_application", "developer_id_macos_application")
-load("//bazel:provisioning.bzl", "provisioning_profile_slot")
-load("//bazel:xcarchive.bzl", "appstore_xcarchive")
 
 exports_files(
     glob(["*"]),
     visibility = ["//visibility:public"],
-)
-
-# Provisioning profiles the signed configurations embed (see "Provisioning profiles" in
-# README.md for the full table). A file present in this directory is exported above and its slot
-# declares nothing; a slot whose file is missing (a fork, a profile removed to be reissued) stands
-# in for it, failing only the configuration that embeds it, with a message that names the file.
-# The launcher helper bundles' store-configuration profiles are macOS App Development ones, like
-# the app's GarageRAGDevelopmentApp; their Developer ID ones are GarageRAGDevIDCLI and
-# GarageRAGDevIDMCP, named directly in their BUILD files like the app's GarageRAGDeveloperID.
-provisioning_profile_slot(
-    name = "GarageRAGDevelopmentCLI.provisionprofile",
-    bundle_id = "me.rickmark.garage-rag.garage-cli",
-    kind = "macOS App Development",
-)
-
-provisioning_profile_slot(
-    name = "GarageRAGDevelopmentMCP.provisionprofile",
-    bundle_id = "me.rickmark.garage-rag.mcp-server-cli",
-    kind = "macOS App Development",
 )
 
 filegroup(
@@ -38,37 +16,9 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
-developer_id_macos_application(
-    name = "Garage.app",
-    app = "//macapp/Sources/GarageApp:GarageApp",
-    visibility = ["//visibility:public"],
-)
-
-appstore_macos_application(
-    name = "GarageStore.app",
-    app = "//macapp/Sources/GarageApp:GarageApp",
-    visibility = ["//visibility:public"],
-)
-
-appstore_xcarchive(
-    name = "GarageStore.xcarchive",
-    bundle = "//macapp/Sources/GarageApp:GarageApp",
-    visibility = ["//visibility:public"],
-)
-
-# `bazel run //macapp:xcarchive_open` builds the archive, copies it into Xcode's own
-# (writable) Archives directory, and opens it so it shows up in Xcode Organizer ready
-# for distribution/upload — bazel-out itself is read-only, which Xcode's export flow
-# needs to write into.
-# gazelle:exclude open_xcarchive.sh
-sh_binary(
-    name = "xcarchive_open",
-    srcs = ["open_xcarchive.sh"],
-    args = ["$(rootpath :GarageStore.xcarchive)"],
-    data = [":GarageStore.xcarchive"],
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
+# The signed distributions (Developer ID, App Store) are built from garage-enterprise, which wraps
+# //macapp/Sources/GarageApp:GarageApp for its platforms with //bazel:macos_application.bzl and
+# //bazel:xcarchive.bzl and holds the release targets; nothing here signs with a distribution identity.
 
 # `aspect run //:xcodeproj`: rules_xcodeproj's installer plus the Xcode build settings it
 # has no attribute for (see generate_xcodeproj.sh).
@@ -141,13 +91,6 @@ xcodeproj(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "install",
-    actual = "//macapp/package:install",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
 # The launcher helper bundles (Garage.app/Contents/Helpers/garage.app and garage-mcp.app).
 alias(
     name = "garage",
@@ -164,28 +107,6 @@ alias(
 # Primary alias used by the build and tests to reference the main executable.
 alias(
     name = "macapp",
-    # The macOS application binary is produced by the developer_id_macos_application rule above.
     actual = "//macapp/Sources/GarageApp:GarageApp",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "installer",
-    actual = "//macapp/package:GarageInstaller",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "package",
-    actual = "//macapp/package:package",
-    tags = ["manual"],
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "xcarchive",
-    actual = ":GarageStore.xcarchive",
-    tags = ["manual"],
     visibility = ["//visibility:public"],
 )

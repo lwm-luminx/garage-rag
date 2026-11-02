@@ -3,7 +3,7 @@
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@rules_apple//apple/internal:providers.bzl", "new_appleresourceinfo")
 load("//bazel:codesign_test.bzl", _codesign_test = "codesign_test", _codesign_validation_test = "codesign_validation_test", _codesign_verify_test = "codesign_verify_test")
-load("//bazel:signing.bzl", "DEVELOPER_ID_IDENTITY", "LOCAL_SIGNING_IDENTITY", "STORE_IDENTITY", "UNCHAINED_IDENTITIES")
+load("//bazel:signing.bzl", "LOCAL_SIGNING_IDENTITY", "UNCHAINED_IDENTITIES")
 
 codesign_test = _codesign_test
 codesign_verify_test = _codesign_verify_test
@@ -41,11 +41,13 @@ HARDENED_RUNTIME_EXPECTED = select({
 
 # The identity a codesign_test should expect, mirroring the platforms in
 # //bazel:BUILD.bazel. Pass this rather than re-listing the configs at each call
-# site, so a new signing config only has to be taught to one select.
+# site, so a new signing config only has to be taught to one select. Under a signed
+# distribution it is empty, which makes codesign_test read the identity from rules_apple's
+# signing_certificate_name flag, the one the distribution's platform set (platforms.bzl).
 EXPECTED_SIGNING_IDENTITY = select({
-    "//bazel:is_developer_id": DEVELOPER_ID_IDENTITY,
+    "//bazel:is_developer_id": "",
     "//bazel:is_local_signed": LOCAL_SIGNING_IDENTITY,
-    "//bazel:is_store": STORE_IDENTITY,
+    "//bazel:is_store": "",
     "//conditions:default": "-",
 })
 

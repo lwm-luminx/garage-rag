@@ -562,7 +562,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   in the App Group container, `Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp` under the home folder, so the App Store and Developer ID
   builds share one corpus. Both sign the app and its seven XPC services with the team-prefixed group
   (`GarageAppGroup` in `PythonXPCService`); the Developer ID app adds its application identifier
-  and team identifier, backed by the embedded `macapp/GarageRAGDeveloperID.provisionprofile`
+  and team identifier, backed by the Developer ID provisioning profile garage-enterprise embeds
   (`macapp/Sources/GarageApp/GarageDeveloperID.entitlements`), while its XPC services carry only
   the group (`macapp/externals/GarageAppGroup.entitlements`). Unentitled builds (locally signed,
   tests) use `~/Library/Application Support/GarageApp`.
@@ -572,8 +572,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   which copies the item, leaving it for pre-1.5 builds). Any process entitled
   to the group with a profile-backed application identifier reads it without a prompt; a process
   without one (ad-hoc, `local_signed`) gets `errSecMissingEntitlement` and falls back to the login
-  keychain, so local builds work as before. `macapp/README.md` ("The Postgres password",
-  "Provisioning profiles") has the details and the per-configuration profile table.
+  keychain, so local builds work as before. `macapp/README.md` ("The Postgres password") has the
+  details.
 - At launch `GarageDataMigration` renames an older build's per-user folder into the group
   container and leaves a symlink behind. It never copies, deletes or overwrites anything, and it skips a `pgdata` a running postmaster still holds. Unsandboxed
   (Developer ID) builds also keep `~/Library/Application Support/GarageApp` as a link to the group
@@ -604,7 +604,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   terminal and for stdio MCP clients, packaged as helper app bundles in `Contents/Helpers`
   (`garage.app` = `me.rickmark.garage-rag.garage-cli`, `garage-mcp.app` =
   `me.rickmark.garage-rag.mcp-server-cli`; `bazel/launcher_app.bzl`), each with its own
-  entitlements and provisioning profile so it can read the App Group keychain. The stable paths
+  entitlements and, in the signed distributions, provisioning profile so it can read the App Group
+  keychain. The stable paths
   `Contents/MacOS/garage` and `garage-mcp` are symlinks (made by `link_launchers.sh`, the app's
   `ipa_post_processor`; codesign rejects a script in `MacOS` but seals a symlink) to `/bin/sh`
   forwarders in `Resources/launchers` that `exec` the helper by its real path (not Mach-O: a
@@ -649,7 +650,14 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
 - `GarageUpdater` wraps Sparkle (`//ext/sparkle`) for Developer ID builds; App Store builds
   `select()` in an inert backend instead, since Apple rejects self-updating apps, and Sparkle
   never enters that dependency graph. The appcast lives at `docs/appcast.xml` on the Jekyll
-  site; `macapp/README.md` covers the signing-key setup and release flow.
+  site; the signing key and the release flow are garage-enterprise's (`docs/RELEASING.md` there).
+- **Signed builds are not made here.** The Developer ID and App Store builds come from
+  garage-enterprise (Rick, 2026-11-01), which holds the identities, the provisioning profiles, the
+  notarize, upload and appcast targets and their tests. This repository keeps the seam they plug
+  into, `bazel/platforms.bzl`: `signed_macos_platform` sets rules_apple's `signing_certificate_name`,
+  `//bazel:distribution` (`developer_id` | `store`, behind `//bazel:is_developer_id` / `is_store`) and
+  the three provisioning-profile label flags; `codesign` targets name no identity and take the flag's.
+  Builds here are ad hoc (`--config=adhoc`, CI) or locally signed (`--config=local_signed`).
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It
@@ -740,7 +748,7 @@ are dated so a stale one can be spotted.
   "Create a merge commit" (Rick, 2026-09-30). Both branches are ruleset-protected: PR required, no force-push.
 - Required checks (rulesets, 2026-09-27): `python`, `swiftcheck`, `format`, `gazelle`, `buildifier`, `lint`.
   The macOS, Windows, known-answers and free-threaded jobs are not required; the notarized
-  Developer ID build is the release gate. Renaming a required job means updating the ruleset with it.
+  Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job means updating the ruleset with it.
 - A PR that contains merge commits cannot be rebase-merged on GitHub; it needs "Create a merge commit".
 - Stacked PRs: when another branch or open PR already works on the same part of the app, base new work on it
   rather than on `main`/`next`, and name the base in the PR (Rick, 2026-09-24). When stacked PRs merge top-down

@@ -15,9 +15,8 @@ garage_launcher_app(
     bundle_id = "me.rickmark.garage-rag.mcp-server-cli",
     bundle_name = "garage-mcp",
     developer_id_entitlements = ":GarageMCPCLI.developer_id.entitlements",
-    developer_id_profile = "//macapp:GarageRAGDevIDMCP.provisionprofile",
     main = "main.swift",
+    provisioning_profile = "//bazel:garage_mcp_provisioning_profile",
     store_entitlements = ":GarageMCPCLI.entitlements",
-    store_profile = "//macapp:GarageRAGDevelopmentMCP.provisionprofile",
     visibility = ["//visibility:public"],
 )
