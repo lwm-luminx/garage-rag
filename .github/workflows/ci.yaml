@@ -320,5 +320,7 @@ jobs:
           # ext/pythonkit/PythonKit, which the Apple targets compile.
           submodules: true
       - uses: ./.github/actions/setup-aspect
+      # //tools:bazel_env has no sources to lint, and analyzing it fetches cosmopolitan binaries
+      # (bazel_env.bzl -> rules_coreutils -> ape) from hosts outside our control.
       - name: aspect lint //...
-        run: aspect lint --task:name lint -- //...
+        run: aspect lint --task:name lint -- //... -//tools:bazel_env

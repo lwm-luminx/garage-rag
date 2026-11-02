@@ -2,6 +2,10 @@ module(name = "garage_rag")
 
 bazel_dep(name = "rules_multitool", version = "1.11.1")
 bazel_dep(name = "bazel_env.bzl", version = "0.7.2")
+
+# bazel_env.bzl -> rules_coreutils -> ape fetches cosmopolitan's `assimilate` and `sha256sum`. ape 1.0.1 downloads
+# them only from cosmo.zip, which stopped answering on 2026-10-30; 1.1.0 tries the gitlab.arm.com mirror first.
+bazel_dep(name = "ape", version = "1.1.0")
 bazel_dep(name = "bazelrc-preset.bzl", version = "1.9.2")
 
 # buildifier (Starlark formatter) is always available — the `aspect buildifier`
