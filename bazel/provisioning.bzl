@@ -1,9 +1,9 @@
 """Provisioning-profile slots: a label that is the profile when the file is checked in, and a
 build error naming the file when it is not.
 
-The signed configurations (`--config=developer_id`, `--config=appstore`) embed a profile in the
-app and in each launcher helper bundle. The files are not all available at once (each comes from
-the developer portal), and a `select()` branch that names a missing file would break loading for
+The signed distributions (Developer ID, App Store; declared by garage-enterprise, which holds the
+profiles) embed a profile in the app and in each launcher helper bundle. The files are not all
+available at once (each comes from the developer portal), and a `select()` branch that names a missing file would break loading for
 every configuration. A slot keeps the label valid: with the file present it is the exported source
 file; without it, a `manual` genrule that produces the label and fails with a message saying which
 profile to create and where to put it. The default (ad-hoc / locally signed) configuration never

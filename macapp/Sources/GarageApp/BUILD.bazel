@@ -4,15 +4,12 @@ load("//bazel:garage_app.bzl", "garage_macos_application")
 load("//bazel:launcher_app.bzl", "bundle_archive")
 load("//bazel:version.bzl", "macapp_version")
 
-# publish_appcast checks the release key against SUPublicEDKey; test_appcast checks the feed URL.
-# The model UI tests' host app (//bazel:garage_app.bzl, like GarageApp) bundles it too.
+# test_appcast checks the feed URL; garage-enterprise's appcast publishing checks the release key
+# against SUPublicEDKey. The model UI tests' host app (//bazel:garage_app.bzl, like GarageApp)
+# bundles it too.
 exports_files(
     ["Sparkle.plist"],
-    visibility = [
-        "//garage_python/tests:__pkg__",
-        "//macapp/Tests/GarageAppModelUITests:__pkg__",
-        "//macapp/package:__pkg__",
-    ],
+    visibility = ["//visibility:public"],
 )
 
 # The rest of what garage_macos_application bundles from here, for the model UI tests' host app,

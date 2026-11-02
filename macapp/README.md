@@ -43,15 +43,8 @@ xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests -desti
 # MockLlamaXPCService in place of llama.cpp, so no model is downloaded.
 xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppModelUITests -destination 'platform=macOS'
 
-# Distribution: thinned + signed apps and .pkg installers (Developer ID),
-# or an App Store xcarchive
-aspect build //:package                  # //macapp/package:package
-aspect build //:installer                # //macapp/package:GarageInstaller (arm64 .pkg, not notarized)
-aspect run //:install                    # installs the .pkg locally
-aspect run //macapp/package:notarize_all # the release: notarized, stapled zip and .pkg in dist/
-aspect build //macapp:xcarchive          # //macapp:GarageStore.xcarchive
-aspect run //macapp:xcarchive_open       # copies the archive into Xcode's Archives folder and opens it
-aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release  # export, validate, upload to TestFlight
+# Distribution (Developer ID and App Store) is built from garage-enterprise, which holds the
+# signing identities, profiles and release targets; see "Signed builds" below.
 
 # Smoke test of the embedded Python runtime, exactly as the XPC services start it
 aspect run //macapp/Sources/PythonXPCService:python_embed_smoke -- /path/to/Garage.app
@@ -221,99 +214,20 @@ Things worth knowing:
   has no Apple-issued chain, so it cannot notarize and cannot carry hardened
   runtime (library validation rejects its Team ID) — `//bazel:codesign.bzl`
   strips `--options=runtime` for it exactly as it does for ad-hoc. Release
-  builds still go through `--config=developer_id` / `--config=appstore_release`.
+  builds are made from garage-enterprise (see "Signed builds").
 
-### App Store configuration
+### Signed builds
 
-`--config=appstore` signs with **Apple Development** (`STORE_IDENTITY` in `bazel/signing.bzl`) and
-embeds the development profile `macapp/GarageRAGDevelopmentApp.provisionprofile`, so the sandboxed
-store build runs on the Macs that profile lists. An Apple Distribution–signed build with a store
-profile cannot launch locally. Uploading re-signs the archive in Xcode (Organizer → Distribute App)
-with Apple Distribution and the store profiles: `macapp/GarageMacAppConnect.provisionprofile` for
-the app, `macapp/GarageRAGAppStoreCLI.provisionprofile` for `Contents/Helpers/garage.app` and
-`macapp/GarageRAGAppStoreMCP.provisionprofile` for `Contents/Helpers/garage-mcp.app` (one per
-bundle identifier; see "Provisioning profiles" below for how Organizer picks them). Run
-Validate App first so Xcode confirms it re-signs the nested code (Postgres in `Resources/`, the
-site-packages extensions, `Python.framework`, the two helper bundles).
-
-`aspect run //macapp/package:upload_appstore --bazel-flag=--config=appstore_release` does the same
-without Organizer: it exports the archive with `xcodebuild -exportArchive` (manual signing, Apple
-Distribution, the three store profiles, which it installs into Xcode's profile folder first), then
-runs `xcrun altool --validate-app` and `--upload-app`, and leaves the uploaded
-`dist/Garage-<version>-<build>-AppStore.pkg`. `-- --validate-only` stops after validation and
-`-- --export-only` after the export, which needs no credentials. It authenticates with an App Store
-Connect API key (Users and Access → Integrations → Team Keys, role Developer or App Manager), kept
-in the login keychain. It uses the item the `asc` App Store Connect CLI saves for this Mac (account
-`asc:credential:<LocalHostName>`, with the key and issuer IDs in its kind field as
-`asc:metadata:{"key_id":…,"issuer_id":…}`), or one labelled `ASC API Key (<LocalHostName>)`;
-`GARAGE_ASC_KEYCHAIN_ACCOUNT` or `GARAGE_ASC_KEYCHAIN_LABEL` names another. Without one, store it once:
-
-```bash
-security add-generic-password -U -s me.rickmark.garage-rag.asc-api-key \
-    -a <KEY ID> -j <ISSUER ID> -w "$(base64 < AuthKey_<KEY ID>.p8)"
-```
-
-`GARAGE_ASC_KEY_ID`, `GARAGE_ASC_ISSUER_ID` and `GARAGE_ASC_KEY_PATH` (the `.p8`) override the item.
-The export signs with the Apple Distribution and Mac Installer Distribution keys, so the keychain may
-ask once to let `codesign` and `productbuild` use them: answer **Always Allow**. To run a store build on
-another Mac, add that Mac to the development profiles in the developer portal and replace the files.
-
-`--config=appstore` is a fastbuild, so it shares the `//ext` builds (Postgres, ICU, Python,
-llama.cpp, …) with the ad-hoc and Developer ID configs; only the codesign steps differ. Build the
-archive you upload with `--config=appstore_release`, which is the same config plus
-`--compilation_mode=opt` and therefore rebuilds everything optimized.
-
-The store and Developer ID builds share the Postgres password through the App Group keychain (see
-"The Postgres password"), so neither prompts for it. The one remaining prompt is the migration of an
-item an older build left in the login keychain: answer **Always Allow** once, and the item moves.
-
-### Provisioning profiles
-
-The signed configurations embed a provisioning profile in the app and in each launcher helper
-bundle; the profile is what backs the `com.apple.application-identifier` entitlement, and that
-identifier is what the data-protection (App Group) keychain requires. The files live in `macapp/`
-(`exports_files(glob(["*"]))` in `macapp/BUILD.bazel` exports them) and are selected per
-configuration in `Sources/GarageApp/BUILD.bazel` and `bazel/launcher_app.bzl`:
-
-| Bundle | App ID | `--config=developer_id` (Developer ID Application) | `--config=appstore` (macOS App Development) | Upload (Mac App Store, chosen in Xcode) |
-|---|---|---|---|---|
-| `Garage.app` | `me.rickmark.garage-rag` | `GarageRAGDeveloperID.provisionprofile` | `GarageRAGDevelopmentApp.provisionprofile` | `GarageMacAppConnect.provisionprofile` |
-| `Contents/Helpers/garage.app` | `me.rickmark.garage-rag.garage-cli` | `GarageRAGDevIDCLI.provisionprofile` | `GarageRAGDevelopmentCLI.provisionprofile` | `GarageRAGAppStoreCLI.provisionprofile` |
-| `Contents/Helpers/garage-mcp.app` | `me.rickmark.garage-rag.mcp-server-cli` | `GarageRAGDevIDMCP.provisionprofile` | `GarageRAGDevelopmentMCP.provisionprofile` | `GarageRAGAppStoreMCP.provisionprofile` |
-
-Every profile is checked in. The upload column is not part of any Bazel configuration: Xcode
-Organizer re-signs the archive with Apple Distribution and those profiles (see "App Store
-configuration" above), and the three App Store files in `macapp/` are kept for that step only.
-`provisioning_profile_slot` in `macapp/BUILD.bazel` stands in for a missing
-file with a `manual` genrule that fails the configuration embedding it, with a message naming the
-file to add; the default configuration never selects one, so a fork without the profiles still
-builds. Drop the downloaded file in under that name and the slot gives way to the file.
-
-At upload, Organizer walks the nested code and needs a Mac App Store profile per bundle
-identifier: `me.rickmark.garage-rag`, `.garage-cli` and `.mcp-server-cli`. With automatic
-signing it matches them by bundle identifier from the team's profiles (the App IDs must exist in
-the portal with App Groups enabled); with manual signing the Distribute App sheet lists the app
-and each helper and asks for a profile for each: `GarageMacAppConnect` for `Garage.app`,
-`GarageRAGAppStoreCLI` for `garage.app`, `GarageRAGAppStoreMCP` for `garage-mcp.app`.
-`//macapp/package:upload_appstore` writes its `ExportOptions.plist` with the same three in its
-`provisioningProfiles` map, by each file's `UUID` rather than its name, since an older profile of
-the same name for a previous distribution certificate may still be installed; a new helper bundle
-needs a `--profile` there too.
-
-Each helper App ID (developer portal → Identifiers → App IDs, platform macOS) needs the **App
-Groups** capability with `group.me.rickmark.garage-rag` assigned; the portal writes the
-team-prefixed form, `DWVXMLB45Y.group.me.rickmark.garage-rag`, into the profile, which is the
-value the entitlements use for both `com.apple.security.application-groups` and
-`keychain-access-groups`. Every profile then needs: for Developer ID, type *Developer ID
-Application* with the Developer ID certificate; for `--config=appstore`, type *macOS App
-Development* with the Apple Development certificate and this Mac's provisioning UDID (the same list
-`GarageRAGDevelopmentApp` carries); for upload, type *Mac App Store Connect* with the Apple
-Distribution certificate. In Xcode Organizer's Distribute App flow, manual signing asks for a
-profile per bundle, the two helpers included; automatic signing finds them by App ID.
-
-Entitlements must stay within what the profile authorizes, or codesign rejects the build (rules_apple
-validates them against the profile first). `security cms -D -i <profile> | plutil -extract
-Entitlements xml1 -o - -` shows what a profile allows.
+The Developer ID and App Store builds are made from
+[garage-enterprise](https://github.com/lwm-luminx/garage-enterprise), which carries this repository as a
+submodule. This repository's part is the seam, `bazel/platforms.bzl`: a signed distribution is a platform
+that sets rules_apple's `signing_certificate_name`, `//bazel:distribution` (`developer_id` or `store`,
+behind `//bazel:is_developer_id` and `//bazel:is_store`, which pick entitlements, hardened runtime and the
+store-only resources) and the three provisioning-profile label flags for the app and the two launcher
+helper bundles. `//bazel:macos_application.bzl`, `xcarchive.bzl`, `lipo.bzl`, `notarytool.bzl` and
+`pkgbuild.bzl` are the generic rules such a repository instantiates; the identities, the profiles, the
+notarize, upload and appcast scripts and their tests are not here. A fork builds ad hoc or with the local
+identity above without any of them.
 
 ## Why Postgres is built from source
 
@@ -369,9 +283,10 @@ install from 18 to 19 (or back) means dumping and restoring the data folder's
 ## Auto-update (Developer ID only)
 
 Developer ID builds update themselves through [Sparkle](https://sparkle-project.org),
-vendored as a prebuilt framework in `//ext/sparkle`. App Store builds embed no
-Sparkle at all — Apple rejects apps that update themselves — so the whole thing
-is behind `select()`s on `//bazel:is_store`:
+vendored as a prebuilt framework in `//ext/sparkle` (its release tools, `generate_keys`,
+`sign_update` and `generate_appcast`, are there too; garage-enterprise's appcast step runs them).
+App Store builds embed no Sparkle at all — Apple rejects apps that update themselves — so the
+whole thing is behind `select()`s on `//bazel:is_store`:
 
 - `//macapp/Sources/GarageUpdater` compiles `SparkleUpdaterBackend.swift` for
   Developer ID (and local ad-hoc) builds and the inert `AppStoreUpdaterBackend.swift`
@@ -395,117 +310,6 @@ betas off never downgrades anyone.
 
 `publish_appcast --channel beta` tags an entry; without it the entry is on both tracks, as
 1.5 beta 1 is. `test_appcast.py` rejects any other channel, since no build asks for one.
-
-### The signing key
-
-Sparkle verifies every downloaded update against an EdDSA public key baked into
-the app. The pair already exists: the public half is `SUPublicEDKey` in
-`macapp/Sources/GarageApp/Sparkle.plist`, and the private half is in the login
-Keychain of the machine that ran
-
-```bash
-aspect run //ext/sparkle:generate_keys
-```
-
-Back that Keychain item up. It is the only thing that can sign an update the
-shipped app will accept, and it is never committed — losing it means minting a
-new pair and persuading users of the old one to install a new build by hand.
-
-A fork or a fresh checkout that regenerates the pair has to paste the new public
-key into `Sparkle.plist`. Left as `REPLACE_WITH_SPARKLE_PUBLIC_ED_KEY`, the app
-reports "This build was made without a Sparkle signing key" rather than fetching
-a feed it could not verify.
-
-### Cutting a release
-
-Build from an up-to-date `main`. Sparkle decides what is newer by `CFBundleVersion`, which
-`bazel/workspace_status.sh` stamps with the commit count of `HEAD`, so a release built from a
-branch or a stale checkout can come out older than one already in the feed (the publish step
-refuses that). The marketing version is `short_version_string` in
-`macapp/Sources/GarageApp/BUILD.bazel`, and the release tag is `v` plus that version, with a
-pre-release suffix for a beta in the feed (`v1.5-beta.1`).
-
-1. `aspect build //macapp/package:GarageApp` stages and signs the app, producing
-   `bazel-bin/macapp/package/GarageApp.zip`: a zip of `Garage.app`, which is exactly the
-   shape Sparkle wants to download. This is also the step that re-signs Sparkle's nested
-   code (see below).
-2. `aspect run //macapp/package:notarize_all` notarizes and staples, in the order Gatekeeper
-   needs: it notarizes that archive, staples the ticket to `Garage.app`, builds and signs the
-   installer from the stapled app, then notarizes and staples the installer. It writes the
-   release's two files, `dist/Garage-<version>.zip` (the stapled app) and
-   `dist/GarageInstaller_arm64.pkg` (a stapled installer carrying the stapled app, which
-   always installs to `/Applications`). The installer is built by this script rather than by
-   a build action because stapling needs the ticket, so it has to come after notarization;
-   `//macapp/package:GarageInstaller` is an unnotarized installer for local installs only.
-3. Add the release to the feed:
-
-   ```bash
-   aspect run //macapp/package:publish_appcast -- v1.5 --notes path/to/notes.md
-   ```
-
-   `--channel beta` puts the entry on the beta channel (see above). `--notes` is optional; an `.md`, `.html` or `.txt` file is embedded in the entry and shown
-   in Sparkle's update window. It reads the stapled `dist/Garage-<version>.zip` from step 2,
-   and refuses one whose build is not the one in `bazel-bin`. When the key is on another Mac,
-   copy that zip there and run `//macapp/package:sign_appcast -- v1.5 --from Garage-1.5.zip`,
-   which builds nothing and skips only that `bazel-bin` check. Before signing anything the
-   script checks that the archive's version matches the tag, that it is notarized and
-   stapled, arm64 only and newer than every entry
-   already in `docs/appcast.xml`, and that the EdDSA key in the login Keychain is the one
-   `SUPublicEDKey` names. It then runs `//ext/sparkle:generate_appcast` with the
-   `--download-url-prefix` of that tag's GitHub release, which reads the version and
-   architectures from the app, signs the entry with the Keychain key (macOS asks to allow
-   access), and adds `sparkle:hardwareRequirements` `arm64` so Intel Macs are never offered
-   it. The script verifies that entry against the archive and leaves `docs/appcast.xml`
-   updated.
-4. Publish in this order, so the feed never names a download that is not there yet. The
-   site's download buttons (`docs/assets/download.js`) look for an asset named exactly
-   `GarageInstaller_arm64.pkg`, the name step 2 gives the installer:
-
-   ```bash
-   gh release create v1.5 --verify-tag --title "Garage 1.5" --notes-file path/to/notes.md \
-     dist/Garage-1.5.zip dist/GarageInstaller_arm64.pkg
-   git add docs/appcast.xml && git commit -S -m "Add Garage 1.5 to the appcast" && git push
-   ```
-
-   `--verify-tag` makes `gh` refuse to create the release unless the signed `v1.5` tag is
-   already pushed.
-
-   Upload `dist/Garage-<version>.zip` under exactly that name: the entry's signature and
-   length are of that file, and its URL is
-   `https://github.com/rickmark/garage-rag/releases/download/<tag>/Garage-<version>.zip`.
-   GitHub Pages serves the feed at `https://garagerag.app/appcast.xml`, the SUFeedURL.
-5. Once Pages has deployed, check what users will fetch:
-
-   ```bash
-   aspect run //macapp/package:publish_appcast -- --check-live
-   ```
-
-   It downloads the feed from the SUFeedURL and fails on any enclosure that does not resolve.
-
-`garage_python/tests/test_appcast.py` holds the committed feed to the same rules in CI, so a
-hand edit that drops a signature, the arm64 requirement or the release URL fails the build.
-Do not hand-edit entries: generate_appcast also signs the feed as a whole, and an edited
-entry needs re-running it. `//ext/sparkle:sign_update` signs a single archive if you need to
-patch an entry by hand.
-
-Each run publishes one release, because `--download-url-prefix` applies to every archive in
-the directory generate_appcast reads. That also means it builds no delta updates (they need
-the previous release's archive beside the new one), so every user downloads the whole app.
-`//ext/sparkle:binary_delta` is there for when that becomes worth doing.
-
-Sparkle arrives with 1.5 (#34); the feed stays empty until the first Developer ID release is
-published. v1.0 has no update check at all, so its users will have to download 1.5 themselves;
-from 1.5 on, every release reaches them through the feed.
-
-### Why the framework is re-signed
-
-The hardened runtime turns on library validation, so a `Sparkle` dylib still
-carrying the Sparkle Project's Team ID would refuse to load into Garage.
-rules_apple's imported-framework processor re-signs `Sparkle.framework/Versions/B`
-with the embedding app's identity when it bundles it, and `macos_lipo_app`
-re-signs the nested `Updater.app`, the launcher helper bundles in `Contents/Helpers`
-(with the entitlements each carries) and `XPCServices/*.xpc` on the way to
-notarization.
 
 ## Tip jar (App Store only)
 

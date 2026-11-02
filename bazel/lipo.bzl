@@ -1,12 +1,12 @@
 """Rules for staging a macOS application for distribution: prune, thin via lipo, codesign."""
 
-load("//bazel:macos_application.bzl", "developer_id_transition")
+load("//bazel:macos_application.bzl", "platform_transition")
 
 def _macos_lipo_app_impl(ctx):
     if not ctx.target_platform_has_constraint(ctx.attr._macos_constraint[platform_common.ConstraintValueInfo]):
         fail("{} only supports macOS targets".format(ctx.label))
 
-    # A list: `app` is built through the Developer ID transition.
+    # A list: `app` is built through the platform transition.
     app_target = ctx.attr.app[0]
     app_files = app_target[DefaultInfo].files.to_list()
     if not app_files:
@@ -263,9 +263,9 @@ macos_lipo_app = rule(
         "app": attr.label(
             mandatory = True,
             # The app (and everything it signs, like site-packages) must be built for
-            # the Developer ID platform, not whatever the command line selected; without
+            # the distribution's platform, not whatever the command line selected; without
             # this it was signed under the default local identity.
-            cfg = developer_id_transition,
+            cfg = platform_transition,
             doc = "The application target (.zip or .app) to stage.",
         ),
         "arch": attr.string(
@@ -280,9 +280,13 @@ macos_lipo_app = rule(
         "out": attr.output(
             doc = "Output .zip archive containing the thinned and signed .app bundle.",
         ),
+        "platform": attr.label(
+            mandatory = True,
+            doc = "The platform to build the app for (//bazel:platforms.bzl's signed_macos_platform).",
+        ),
         "signing_identity": attr.string(
-            default = "Developer ID Application: Richard Penwell (DWVXMLB45Y)",
-            doc = "Codesigning identity Common Name for Developer ID signing.",
+            mandatory = True,
+            doc = "Codesigning identity Common Name to re-sign the staged app with.",
         ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",

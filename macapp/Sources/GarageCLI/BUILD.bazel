@@ -15,9 +15,8 @@ garage_launcher_app(
     bundle_id = "me.rickmark.garage-rag.garage-cli",
     bundle_name = "garage",
     developer_id_entitlements = ":GarageCLI.developer_id.entitlements",
-    developer_id_profile = "//macapp:GarageRAGDevIDCLI.provisionprofile",
     main = "main.swift",
+    provisioning_profile = "//bazel:garage_cli_provisioning_profile",
     store_entitlements = ":GarageCLI.entitlements",
-    store_profile = "//macapp:GarageRAGDevelopmentCLI.provisionprofile",
     visibility = ["//visibility:public"],
 )

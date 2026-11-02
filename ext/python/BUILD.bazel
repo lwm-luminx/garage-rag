@@ -3,7 +3,6 @@ load("@rules_apple//apple:apple.bzl", "apple_dynamic_framework_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 load("//bazel:codesign.bzl", "EXPECTED_SIGNING_IDENTITY", "HARDENED_RUNTIME_EXPECTED", "STORE_EXPECTED", "codesign", "codesign_test")
-load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 configure_make(
     name = "python_3_14t",
@@ -143,11 +142,6 @@ codesign(
         "//conditions:default": False,
     }),
     is_framework = True,
-    signing_identity = select({
-        "//bazel:is_developer_id": "Developer ID Application: Richard Penwell (DWVXMLB45Y)",
-        "//bazel:is_store": STORE_IDENTITY,
-        "//conditions:default": "-",
-    }),
     visibility = ["//visibility:public"],
 )
 

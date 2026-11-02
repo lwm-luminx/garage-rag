@@ -68,8 +68,7 @@ def garage_launcher_app(
         main,
         store_entitlements,
         developer_id_entitlements,
-        store_profile,
-        developer_id_profile,
+        provisioning_profile,
         visibility = None):
     """Declares a launcher helper bundle, `<name>` (a `macos_application`), and its codesign test.
 
@@ -82,9 +81,9 @@ def garage_launcher_app(
         store_entitlements: Entitlements for `//bazel:is_store` (sandboxed, with the application identifier).
         developer_id_entitlements: Entitlements for `//bazel:is_developer_id` (the application identifier and
             the App Group, not sandboxed).
-        store_profile: Label of the Mac Development provisioning profile for `bundle_id`, embedded by
-            `--config=appstore` (which signs with Apple Development, like the app).
-        developer_id_profile: Label of the Developer ID provisioning profile for `bundle_id`.
+        provisioning_profile: The label flag naming the profile for `bundle_id` under the signed
+            distributions (`//bazel:garage_cli_provisioning_profile`, `..._mcp_...`), which the
+            distribution's platform sets (//bazel:platforms.bzl).
         visibility: Visibility of the `macos_application`.
     """
     swift_library(
@@ -129,12 +128,11 @@ def garage_launcher_app(
         ],
         minimum_os_version = "14.0",
         # Ad-hoc and locally signed builds embed no profile and carry no application identifier; their
-        # launchers keep the password in the login keychain, as before. The signed configurations
-        # embed the profile for `bundle_id`; a missing one fails the build with a message naming
-        # the file (see //bazel:provisioning.bzl).
+        # launchers keep the password in the login keychain, as before. The signed distributions
+        # embed the profile their platform names for `bundle_id`.
         provisioning_profile = select({
-            "//bazel:is_store": store_profile,
-            "//bazel:is_developer_id": developer_id_profile,
+            "//bazel:is_store": provisioning_profile,
+            "//bazel:is_developer_id": provisioning_profile,
             "//conditions:default": None,
         }),
         version = "//macapp/Sources/GarageApp:GarageAppVersion",

@@ -3,8 +3,9 @@
 (Runnable developer tooling — format, lint, gazelle — lives under //tools.)
 """
 
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@bazelrc-preset.bzl", "bazelrc_preset")
-load(":signing.bzl", "DEVELOPER_ID_IDENTITY", "LOCAL_SIGNING_IDENTITY", "STORE_IDENTITY")
+load(":signing.bzl", "LOCAL_SIGNING_IDENTITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -25,35 +26,47 @@ bazelrc_preset(
     doc_link_template = "https://registry.build/flag/bazel?filter={flag}",
 )
 
-# Declared by the platforms below to document their signing intent. Note that
-# the `is_*` config_settings below deliberately do NOT key on these: rules_apple
-# rewrites --platforms to @apple_support//platforms:macos_* underneath every
-# apple_* rule, which erases any constraint_value we set here. Ad-hoc is the
-# default so that a plain `bazel build` never demands a signing identity.
-constraint_setting(
+# The signing seam (see platforms.bzl). This repository declares the ad-hoc and locally signed
+# platforms below; the signed distributions (Developer ID, App Store) are declared by the
+# repository that holds their identities and profiles (garage-enterprise), with
+# `signed_macos_platform`, which sets these flags. A plain `bazel build` never demands a signing
+# identity: the defaults are ad hoc, no distribution, no profile.
+string_flag(
     name = "distribution",
-    default_constraint_value = ":distribution_adhoc",
+    build_setting_default = "none",
+    values = [
+        "none",
+        "developer_id",
+        "store",
+    ],
 )
 
-constraint_value(
-    name = "distribution_adhoc",
-    constraint_setting = ":distribution",
+# The provisioning profiles the signed distributions embed in Garage.app and in the two launcher
+# helper bundles. Only selected under :is_developer_id / :is_store, where the platform sets them;
+# the default never reaches rules_apple.
+label_flag(
+    name = "app_provisioning_profile",
+    build_setting_default = ":no_provisioning_profile",
 )
 
-constraint_value(
-    name = "distribution_developer_id",
-    constraint_setting = ":distribution",
+label_flag(
+    name = "garage_cli_provisioning_profile",
+    build_setting_default = ":no_provisioning_profile",
 )
 
-constraint_value(
-    name = "distribution_store",
-    constraint_setting = ":distribution",
+label_flag(
+    name = "garage_mcp_provisioning_profile",
+    build_setting_default = ":no_provisioning_profile",
 )
 
-# Keyed on the signing identity build setting rather than on the :distribution
-# constraint above, because a build setting survives rules_apple's platform
-# transition while a constraint_value does not. Each platform below sets the
-# flag; everything else falls through to //conditions:default, which is ad-hoc.
+filegroup(
+    name = "no_provisioning_profile",
+    srcs = [],
+)
+
+# Keyed on build settings rather than on a constraint_value, because a build setting survives
+# rules_apple's platform transition (it rewrites --platforms to @apple_support//platforms:macos_*
+# underneath every apple_* rule) while a constraint_value does not.
 config_setting(
     name = "is_adhoc",
     flag_values = {
@@ -74,16 +87,12 @@ config_setting(
 
 config_setting(
     name = "is_developer_id",
-    flag_values = {
-        "@rules_apple//apple/build_settings:signing_certificate_name": DEVELOPER_ID_IDENTITY,
-    },
+    flag_values = {":distribution": "developer_id"},
 )
 
 config_setting(
     name = "is_store",
-    flag_values = {
-        "@rules_apple//apple/build_settings:signing_certificate_name": STORE_IDENTITY,
-    },
+    flag_values = {":distribution": "store"},
 )
 
 # 1. Platform for running adhoc on the local machine
@@ -92,7 +101,6 @@ platform(
     constraint_values = [
         "@platforms//os:macos",
         "@platforms//cpu:aarch64",
-        ":distribution_adhoc",
     ],
     flags = [
         "--apple_platform_type=macos",
@@ -108,11 +116,9 @@ alias(
 # 1b. The same local build, signed with the self-signed certificate from
 # `bazel run //tools/signing:local_identity` so the app keeps one code identity
 # across rebuilds. It differs from :local_adhoc in the signing flag and nothing
-# else — deliberately, including the distribution constraint, which stays at its
-# :distribution_adhoc default. A non-default constraint_value here would make
-# this platform one the host cannot serve as an *execution* platform, and tests
-# resolve a test toolchain against the target platform: that is why
-# `--config=developer_id` cannot run tests, and this config is meant to be one
+# else. Neither platform carries a constraint the host cannot serve as an *execution*
+# platform, and tests resolve a test toolchain against the target platform: that is why
+# the signed distributions' platforms cannot run tests, and this config is meant to be one
 # somebody builds and tests with all day.
 platform(
     name = "local_signed",
@@ -144,54 +150,6 @@ alias(
 alias(
     name = "macos_local",
     actual = ":local_adhoc",
-)
-
-# 2. Platform for the Developer ID build (Apple Silicon only, like every build)
-platform(
-    name = "developer_id",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:aarch64",
-        ":distribution_developer_id",
-    ],
-    flags = [
-        "--apple_platform_type=macos",
-        "--@rules_apple//apple/build_settings:signing_certificate_name=" + DEVELOPER_ID_IDENTITY,
-    ],
-)
-
-alias(
-    name = "macos_developer_id",
-    actual = ":developer_id",
-)
-
-# 3. Platform for distributing via App Store
-platform(
-    name = "store",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:aarch64",
-        ":distribution_store",
-    ],
-    flags = [
-        "--apple_platform_type=macos",
-        "--@rules_apple//apple/build_settings:signing_certificate_name=" + STORE_IDENTITY,
-    ],
-)
-
-alias(
-    name = "appstore",
-    actual = ":store",
-)
-
-alias(
-    name = "macos_appstore",
-    actual = ":store",
-)
-
-alias(
-    name = "distribute_appstore",
-    actual = ":store",
 )
 
 # rules_apple's tree-artifact bundling, which rules_xcodeproj always turns on

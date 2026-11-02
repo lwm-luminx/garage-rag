@@ -76,13 +76,12 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         # the bundle is signed (a symlink is what codesign accepts there; a script is not).
         ipa_post_processor = "//macapp/Sources/GarageApp:link_launchers.sh",
         minimum_os_version = "14.0",
-        # Store builds sign with Apple Development and this development profile, so they run on
-        # registered Macs; Xcode re-signs with Apple Distribution (GarageMacAppConnect) on upload.
-        # Developer ID builds embed the Developer ID profile, which backs the application identifier
-        # in GarageDeveloperID.entitlements (the data-protection keychain refuses one without it).
+        # The signed distributions embed the profile their platform names (//bazel:platforms.bzl):
+        # it backs the application identifier in the entitlements (the data-protection keychain
+        # refuses one without it). Ad-hoc and locally signed builds embed none.
         provisioning_profile = select({
-            "//bazel:is_store": "//macapp:GarageRAGDevelopmentApp.provisionprofile",
-            "//bazel:is_developer_id": "//macapp:GarageRAGDeveloperID.provisionprofile",
+            "//bazel:is_store": "//bazel:app_provisioning_profile",
+            "//bazel:is_developer_id": "//bazel:app_provisioning_profile",
             "//conditions:default": None,
         }),
         version = "//macapp/Sources/GarageApp:GarageAppVersion",

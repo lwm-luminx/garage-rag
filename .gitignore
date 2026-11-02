@@ -32,8 +32,5 @@ user.bazelrc
 .mypy_cache/
 garage_python/dist/
 
-# Release archives staged by //macapp/package:publish_appcast
-/dist/
-
 # Cargo's build output (rust/)
 rust/target/

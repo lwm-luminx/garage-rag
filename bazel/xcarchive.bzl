@@ -1,4 +1,4 @@
-"""Transitioned xcarchive rules and macros.
+"""An .xcarchive of the app built for a signed platform.
 
 The archive is assembled here rather than with rules_apple's `xcarchive`, which
 unpacks the app with Python's zipfile: that writes symlinks out as plain files,
@@ -9,6 +9,7 @@ archived app's signature so a broken one fails the build, not the upload.
 """
 
 load("@rules_apple//apple:providers.bzl", "AppleBundleInfo", "AppleDsymBundleInfo")
+load("//bazel:macos_application.bzl", "platform_transition")
 
 _ASSEMBLE = """set -euo pipefail
 bundle="$1"
@@ -141,21 +142,6 @@ _raw_xcarchive = rule(
     doc = "An .xcarchive of a signed app, assembled with ditto so framework symlinks and signatures survive.",
 )
 
-def _appstore_transition_impl(settings, attr):
-    return {
-        "//command_line_option:platforms": ["//bazel:store"],
-        "//command_line_option:macos_cpus": ["arm64"],
-    }
-
-_appstore_transition = transition(
-    implementation = _appstore_transition_impl,
-    inputs = [],
-    outputs = [
-        "//command_line_option:platforms",
-        "//command_line_option:macos_cpus",
-    ],
-)
-
 def _transition_archive_impl(ctx):
     target = ctx.attr.archive[0]
     providers = [target[DefaultInfo]]
@@ -163,42 +149,48 @@ def _transition_archive_impl(ctx):
         providers.append(target[OutputGroupInfo])
     return providers
 
-appstore_xcarchive_transition = rule(
+_platform_xcarchive = rule(
     implementation = _transition_archive_impl,
     attrs = {
         "archive": attr.label(
-            cfg = _appstore_transition,
+            cfg = platform_transition,
             mandatory = True,
-            doc = "The raw xcarchive target to build with appstore config.",
+            doc = "The raw xcarchive target to build for `platform`.",
+        ),
+        "platform": attr.label(
+            mandatory = True,
+            doc = "The platform to build it for (//bazel:platforms.bzl).",
         ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     },
-    doc = "Builds an xcarchive target with the --config=appstore transition.",
+    doc = "Builds an xcarchive for the given platform.",
 )
 
-def appstore_xcarchive(name, bundle, **kwargs):
-    """Creates an xcarchive target configured for App Store distribution via transition."""
+def platform_xcarchive(name, bundle, platform, **kwargs):
+    """An .xcarchive of `bundle` built for `platform`, as the App Store upload takes it.
+
+    Args:
+        name: The target name.
+        bundle: The signed `macos_application` to archive.
+        platform: The platform to build it for, which signs with a distribution identity that
+            only a release machine has, so the target is `manual` and `//...` never builds it.
+        **kwargs: Passed to the rule (`visibility`, `tags`).
+    """
     raw_name = "_" + name.replace(".", "_") + "_raw"
     _raw_xcarchive(
         name = raw_name,
         bundle = bundle,
         tags = ["manual"],
     )
-
-    # Like the *_macos_application macros: the archive signs with the App Store
-    # identity, which only a release machine has, so `//...` must not build it.
     tags = kwargs.pop("tags", [])
     if "manual" not in tags:
         tags = tags + ["manual"]
-    appstore_xcarchive_transition(
+    _platform_xcarchive(
         name = name,
         archive = ":" + raw_name,
+        platform = platform,
         tags = tags,
         **kwargs
     )
-
-def xcarchive(name, bundle, **kwargs):
-    """Creates an xcarchive target (only supported for App Store configuration)."""
-    appstore_xcarchive(name = name, bundle = bundle, **kwargs)

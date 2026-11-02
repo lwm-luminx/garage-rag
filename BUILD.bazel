@@ -69,26 +69,6 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# 2. Developer ID
-alias(
-    name = "developer_id",
-    actual = "//bazel:developer_id",
-    visibility = ["//visibility:public"],
-)
-
-# 3. Distribute via App Store
-alias(
-    name = "appstore",
-    actual = "//bazel:appstore",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "store",
-    actual = "//bazel:store",
-    visibility = ["//visibility:public"],
-)
-
 alias(
     name = "is_adhoc",
     actual = "//bazel:is_adhoc",
@@ -115,24 +95,6 @@ alias(
 alias(
     name = "macapp",
     actual = "//macapp",
-)
-
-alias(
-    name = "installer",
-    actual = "//macapp:installer",
-    tags = ["manual"],
-)
-
-alias(
-    name = "package",
-    actual = "//macapp:package",
-    tags = ["manual"],
-)
-
-alias(
-    name = "install",
-    actual = "//macapp:install",
-    tags = ["manual"],
 )
 
 alias(
