@@ -25,8 +25,8 @@ Written against `next` at `71af3bd` on 2026-11-02. The schema runs to `018_fact_
 
 ## Goals
 
-- **Name the caller** of every read: the app, each MCP registration, and whatever a transport
-  passes along about a remote client.
+- **Name the caller** of every read: the app, and each MCP registration, proved by a token the
+  registration carries, plus whatever a transport passes along about a remote client.
 - **One extension point** for the policy, loaded the same way as the other seams an extension
   needs (config sections, SQL, gRPC services, egress destinations).
 - **Every read path asks.** Search, document reads, listings, facts, the graph, `rag_ask` and
@@ -81,9 +81,9 @@ like any other module in the site-packages the app bundles, unless it is listed.
 @dataclass(frozen=True)
 class Caller:
     kind: Literal["app", "cli", "mcp"]
-    registration: str | None        # MCP: the registration's name, as McpInstall wrote it
+    registration: Registration | None  # MCP: the registration its token proved, or None
     transport: Literal["grpc", "stdio", "http", "local"]
-    attributes: Mapping[str, str]   # transport facts a policy may use; see below
+    attributes: Mapping[str, str]      # transport facts a policy may use; see below
 ```
 
 Where each one comes from:
@@ -92,30 +92,59 @@ Where each one comes from:
 |---|---|---|
 | The app's pages (gRPC from the app) | `app` | The per-launch gRPC token (`GARAGE_GRPC_TOKEN`), which only the app has |
 | `garage` on a terminal | `cli` | The process itself |
-| An MCP assistant over stdio | `mcp` / its name | `--caller NAME` in the args `McpInstall` writes. A registration with no `--caller` reads as `registration = None` |
-| An MCP assistant over HTTP | `mcp` / resolved by the policy | The request's headers go to `policy.resolve_http_caller(headers)`. With no policy, `registration = None` |
+| An MCP assistant over stdio | `mcp` / its registration | The registration token in `GARAGE_MCP_TOKEN`, from the `env` block `McpInstall` writes into the assistant's config |
+| An MCP assistant over HTTP | `mcp` / its registration | The same kind of token, as `Authorization: Bearer` on each request |
+| `garage-mcp` with no token, or one that matches nothing | `mcp` / `None` | Hand-edited configs, older registrations, a revoked token |
+
+### Registrations carry a token
+
+The registration's token, not its name, decides who the caller is, and so which ACL a policy applies.
+
+- **Minting.** `McpInstall` (the MCP page, the setup assistant, `garage mcp install`) mints a random
+  token for each registration (`gmr_` and 32 random bytes, base64url). It writes the token into that
+  assistant's config and stores only its SHA-256 in a new table, `mcp_registrations` (`id`, `name`,
+  `client`, `transport`, `token_sha256`, `created_at`, `last_seen_at`; `019_mcp_registrations.sql`).
+  The token is never logged, and never shown again after it is written.
+- **Where it goes.** Over stdio it goes in the server entry's `env` block, not in `args`, so it does
+  not show in `ps`. Over HTTP it goes in the entry's headers as a bearer token. One registration
+  has one token, whichever transport it uses.
+- **Checking.** `garage-mcp` hashes the token it was given, at start for stdio and on every request
+  for HTTP, and looks it up. A match gives `Caller.registration`, and stamps `last_seen_at`. The
+  comparison is constant-time.
+- **Revoking.** Uninstall deletes the row, so a copied token stops working at once. The MCP page
+  gets "Reset token", which mints a new one and rewrites the config. Update gives an older
+  registration that has none a token.
+- **With no policy installed,** a missing or unknown token is served exactly as today, so nothing
+  breaks. With a policy installed, the policy decides what `registration = None` sees, and it
+  should see little.
+- **Other clients of the HTTP endpoint,** such as a tunnelling connector, get a registration of their
+  own, minted the same way. Garage Door's connector is one.
 
 `attributes` is where a transport passes facts without Garage interpreting them. The HTTP server
 passes the request headers named by `policy.caller_headers()` and no others. That is how a
 tunnelling connector on the Mac can tell a policy which remote client is calling. Garage does not
-know or care what a door is.
+know or care what a door is. The policy honours such attributes only from registrations it trusts
+to set them.
 
-**What a caller name is worth.** Software running as the same user can start `garage-mcp --caller
-anything` or edit an assistant's config. A stdio name is a label for an honest assistant, not proof.
-HTTP callers can be authenticated, because a policy may require a token there. The policy is told
-the transport so it can weigh this, and `docs/privacy.md` will say it plainly.
+**What a token is worth.** It proves which registration a caller holds, not which program is
+running. Software running as the same user can read an assistant's config file and present that
+assistant's token. It can then get what that assistant gets, but it cannot pick another
+registration's rights, and it can never become `app`. The alternative was a name passed as an
+argument, which any process could set to anything. The token sits in a file the user's
+assistant already trusts with its own secrets. A keychain cannot hold it instead, because the
+assistant starts `garage-mcp` from its config with no way to unlock anything. `docs/privacy.md`
+will say this plainly.
 
-**Preview as.** gRPC read requests gain an optional `caller` field (a serialized `Caller`). The
-server honours it only from the app's token, so the app can show what another caller would get.
-From anyone else the field is refused with `PERMISSION_DENIED`.
+**Preview as.** gRPC read requests gain an optional `caller` field (a registration id, or `app`).
+The server honours it only from the app's token, so the app can show what another caller would
+get. From anyone else the field is refused with `PERMISSION_DENIED`.
 
 ## The access policy interface
 
 ```python
 class AccessPolicy(Protocol):
-    # Callers
+    # Callers (registrations are authenticated by Garage before the policy sees them)
     def caller_headers(self) -> Collection[str]: ...
-    def resolve_http_caller(self, headers: Mapping[str, str]) -> Caller: ...
 
     # Reads
     def search_filter(self, session: Session, caller: Caller) -> SqlFilter | None: ...
@@ -173,18 +202,19 @@ The app gets two seams, both empty in this repository:
 - **Preview as** on the Search page appears only when the backend reports a policy
   (`GetStatus.access_policy`, the policy's name), and lists the callers the policy offers.
 
-The MCP page writes `--caller <registration>` into new stdio registrations, and Update adds it to
-older ones. This happens whether or not a policy is installed, since it costs nothing and lets a
-policy installed later tell assistants apart.
+The MCP page mints a token for every registration, as described in
+[Registrations carry a token](#registrations-carry-a-token), and shows "Reset token" beside each.
+This happens whether or not a policy is installed, so a policy installed later can tell assistants
+apart without re-registering them.
 
 ## Order of work
 
 | Step | Contents |
 |---|---|
-| **H1** | `extensions.py` with the registry, `Caller`, `NullPolicy`, `--caller` and its plumbing through MCP and gRPC |
+| **H1** | `extensions.py` with the registry, `Caller`, `NullPolicy`, registration tokens (`mcp_registrations`, minting in `McpInstall`, checking in `garage-mcp`) and the `Caller` plumbing through MCP and gRPC |
 | **H2** | `search_filter` and `visible_document_ids` on every read path, the path test and the hide-one-document test, plus the Postgres checks |
 | **H3** | Lifecycle events, `register_schema_dir`, `register_config_section`, `register_grpc_servicer` |
-| **H4** | The app's seams: the sidebar label flag, Preview as, and `--caller` on the MCP page |
+| **H4** | The app's seams: the sidebar label flag, Preview as, and Reset token on the MCP page |
 
 ## Decisions to confirm
 
@@ -194,4 +224,5 @@ policy installed later tell assistants apart.
 2. **One policy at most**, rather than several combined. Combining policies (all must allow) is
    easy to add later. Defining how two policies' SQL fragments and lifecycle state interact is not
    worth doing before there is a second policy.
-3. **`--caller` written for every registration**, even with no policy installed.
+3. **A token for every registration**, even with no policy installed. A missing or unknown token is
+   still served as today until a policy says otherwise.
