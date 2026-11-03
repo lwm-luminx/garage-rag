@@ -84,6 +84,7 @@ def rust():
         "garage_ingest_attribute",
         "garage_ingest_git_history",
         "garage_ingest_ingest_one",
+        "garage_ingest_ingest_source",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -1206,3 +1207,196 @@ def test_an_unreachable_facade_is_reported(tmp_path):
     library.garage_ingest_string_free(result)
     assert status == 1
     assert "absent.sock" in reply["error"]
+
+
+# --- a whole source, through GarageService ------------------------------------------------------
+
+
+class _Run(_Facade):
+    """GarageService's ingest calls for whole runs, written down by source; ``run_id`` names each."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__()
+        self.root = root
+        self.stats: dict[str, dict] = {}
+        self.slugs: dict[int, str] = {}
+
+    def _record_run(self, slug: str, request, context) -> None:
+        self.tokens.add(dict(context.invocation_metadata()).get("x-garage-token"))
+        call = type(request)()
+        call.CopyFrom(request)
+        if hasattr(call, "run_id"):
+            call.run_id = 0
+        if hasattr(call, "source_slug"):
+            call.source_slug = ""
+        if getattr(call, "details_json", ""):
+            call.details_json = json.dumps(json.loads(call.details_json), sort_keys=True)
+        self.requests.setdefault(slug, []).append(call)
+
+    def BeginIngestSession(self, request, context):
+        run_id = len(self.slugs) + 1
+        self.slugs[run_id] = request.source_slug
+        self._record_run(request.source_slug, request, context)
+        return garage_pb2.BeginIngestSessionResponse(
+            source_id=7,
+            slug=request.source_slug,
+            root=str(self.root),
+            default_class="document",
+            default_trust="authored",
+            run_id=run_id,
+            kind="filesystem",
+        )
+
+    def PersistScan(self, request, context):
+        self._record_run(request.source_slug, request, context)
+        return garage_pb2.PersistScanResponse(success=True)
+
+    def CheckDocumentStat(self, request, context):
+        self._record(request, context)
+        return garage_pb2.CheckDocumentStatResponse(**self.stats.get(request.uri, {"exists": False}))
+
+    def FinalizeIngestSession(self, request, context):
+        self._record_run(self.slugs[request.run_id], request, context)
+        return garage_pb2.FinalizeIngestSessionResponse(success=True)
+
+
+_RUN_METHODS = ("BeginIngestSession", "PersistScan", "CheckDocumentStat", "PersistDocument", "FinalizeIngestSession")
+
+_TREE = {
+    "Notes/a.md": {"read": _document(_PROSE, title="A")},
+    "Notes/b.md": {"read": {"no_text": "empty"}},
+    "Notes/c.txt": {"read": {"failed": "broken"}},
+    "Notes/settled.md": {"read": _document(_PROSE)},
+    "Reference/paper.pdf": {"read": _document(_PROSE, "prose", author_hints=["Grace Hopper"])},
+    "Cloud/far.md": {"local": False, "read": None},
+    "Mail/hello.eml": {"read": _document("Hello there.", "conversation", author_hints=["grace@navy.mil"])},
+    "Projects/engine/main.py": {"read": _document(_CODE, "code")},
+    "Logs/run.txt": {"read": _document(_LOG, "prose")},
+}
+
+_SCAN = {"item_count": 9, "item_type": "files", "duration_seconds": 0.5, "details": {"by_extension": {".md": 4}}}
+
+SOURCE_CASES = {
+    "the whole tree": {},
+    "with code": {"include_code": True},
+    "forced": {"force": True},
+    "a limit": {"limit": 3},
+    "cancelled": {"cancel_after": 2},
+    "an unreadable root": {
+        "scan": {**_SCAN, "item_count": 0, "details": {"root_problem": "gone"}, "error": "root is gone"}
+    },
+}
+
+
+@pytest.fixture
+def run_facade(monkeypatch, tmp_path):
+    """GarageService on a Unix socket, its ingest calls answered by a :class:`_Run` over ``tmp_path / "src"``."""
+    recorder = _Run(tmp_path / "src")
+    for name in _RUN_METHODS:
+        monkeypatch.setattr(service.GarageRpcServicer, name, lambda self, r, c, _n=name: getattr(recorder, _n)(r, c))
+    monkeypatch.setenv("GARAGE_GRPC_TOKEN", "launch-token")
+    socket = tmp_path / "grpc.sock"
+    server, _ = service.create_grpc_server(socket_path=str(socket))
+    server.start()
+    yield recorder, socket, GarageClient(socket_path=str(socket), in_process=False)
+    server.stop(0)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", SOURCE_CASES.values(), ids=SOURCE_CASES.keys())
+def test_sources_are_ingested_the_same(rust, monkeypatch, run_facade, case):
+    """``garage_ingest_ingest_source`` sends GarageService what ``_ingest_source`` sends, call for call."""
+    recorder, socket, client = run_facade
+    root = recorder.root
+    for relative in _TREE:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"bytes of {relative}")
+    settled = str(root / "Notes" / "settled.md")
+    recorder.stats[settled] = {
+        "exists": True,
+        "byte_size": (root / "Notes" / "settled.md").stat().st_size,
+        "mtime": (root / "Notes" / "settled.md").stat().st_mtime,
+        "state": "OK",
+        "content_sha256": "c" * 64,
+    }
+    scan = case.get("scan", _SCAN)
+    settings = config.Settings()
+    readers = {str(root / relative): _python_read(file["read"], root / relative) for relative, file in _TREE.items()}
+
+    def ensure_local(path, _budget):
+        if not _TREE[path.relative_to(root).as_posix()].get("local", True):
+            raise PlaceholderFile(path)
+
+    monkeypatch.setattr(pipeline, "ensure_local", ensure_local)
+    monkeypatch.setattr(pipeline, "file_sha256", lambda _path: bytes.fromhex(TEXT_HASH))
+    monkeypatch.setattr(pipeline, "extract", lambda path: readers[str(path)](path))
+    monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
+    monkeypatch.setattr(chunking, "get_settings", lambda: settings)
+    monkeypatch.setattr(pipeline.SelfIdentity, "from_settings", classmethod(lambda cls: _owner()))
+    monkeypatch.setattr(
+        pipeline,
+        "scan_source",
+        lambda source, include_code=False: SimpleNamespace(
+            item_count=scan["item_count"],
+            item_type=scan["item_type"],
+            duration_seconds=scan["duration_seconds"],
+            details=scan["details"],
+            error=scan.get("error"),
+        ),
+    )
+
+    progress: list[dict] = []
+    asked = 0
+
+    def is_cancelled() -> bool:
+        nonlocal asked
+        asked += 1
+        return "cancel_after" in case and asked > case["cancel_after"]
+
+    unavailable = None
+    try:
+        counters, _, _ = pipeline._ingest_source(
+            source_slug="python",
+            gateway=GrpcIngestStorageGateway(client),
+            include_code=case.get("include_code", False),
+            limit=case.get("limit"),
+            force=case.get("force", False),
+            progress=lambda _c, _b, *, phase, current_item=None, **_: progress.append(
+                {"phase": phase, "current_item": current_item}
+            ),
+            is_cancelled=is_cancelled,
+        )
+    except walker.SourceUnavailable as error:
+        unavailable = str(error)
+
+    port = rust(
+        "garage_ingest_ingest_source",
+        {
+            "facade": {"socket": str(socket), "token": "launch-token", "source_slug": "rust"},
+            "scan": scan,
+            "files": {
+                relative: {"source_sha256": TEXT_HASH} | {k: v for k, v in file.items() if v is not None}
+                for relative, file in _TREE.items()
+            },
+            "include_code": case.get("include_code", False),
+            "limit": case.get("limit"),
+            "cancel_after": case.get("cancel_after"),
+            "force": case.get("force", False),
+            "self": OWNER,
+            "repos": {},
+        },
+    )
+
+    assert "error" not in port
+    # Settings are left at their defaults on both sides, so this holds the two sets of defaults together too.
+    assert recorder.requests["rust"] == recorder.requests["python"]
+    assert port["progress"] == progress
+    if unavailable is not None:
+        assert port["unavailable"] == unavailable
+    else:
+        python = {
+            name: getattr(counters, name)
+            for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
+        }
+        assert port["counters"] == python
+    assert recorder.tokens == {"launch-token"}

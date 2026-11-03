@@ -210,8 +210,11 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `//ext/libgit2`, Cargo finds it with `pkg-config` or `GARAGE_LIBGIT2_DIR`, so a Cargo build needs libgit2
   installed; `test_git_history.py` holds it to `git` beside the other readers) and the per-file decisions of
   the loop (`ingest/pipeline.py`'s `ingest_one`, behind `FileHost` and `Storage` traits, with
-  `extract/contact_names.py` for authors' names), persisting through `GrpcStorage` (`facade.rs`, the
-  `GrpcIngestStorageGateway` port: `CheckDocumentStat` and one `PersistDocument` per call). `garage-ingest-ffi`
+  `extract/contact_names.py` for authors' names) and the loop over a walked source (`_ingest_source`, in
+  `source.rs`, with the scan's outcome handed in until the scanners are ported and Messages sources left to
+  Python), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
+  `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds them to Python
   when `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it, the facade calls against
   `create_grpc_server` as `test_embed_worker.py` does. Nothing calls them yet.

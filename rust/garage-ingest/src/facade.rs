@@ -3,15 +3,17 @@
 //! [`GrpcStorage`] is `ingest/gateway.py`'s `GrpcIngestStorageGateway`: each [`Storage`] call is one
 //! `PersistDocument` with the same action and fields, and a session begins with
 //! `BeginIngestSession`, asks `CheckDocumentStat` before each file and ends with
-//! `FinalizeIngestSession`.
+//! `FinalizeIngestSession`, with the scan stored between by `PersistScan`.
 
 use garage_facade::FacadeError;
 use garage_facade::proto::{
     BeginIngestSessionRequest, BeginIngestSessionResponse, CheckDocumentStatRequest, DocumentAuthorPayload,
-    DocumentChunkPayload, FinalizeIngestSessionRequest, PersistDocumentRequest,
+    DocumentChunkPayload, FinalizeIngestSessionRequest, PersistDocumentRequest, PersistScanRequest,
 };
+use serde_json::Value;
 
 use crate::pipeline::{Counters, DocumentPayload, ExistingStat, Storage};
+use crate::source::{ScanSummary, SourceStorage};
 
 pub use garage_facade::{Connection, GrpcTarget};
 
@@ -63,8 +65,8 @@ impl GrpcStorage {
         &self,
         completed: bool,
         counters: &Counters,
-        materialized: i64,
-        materialized_bytes: i64,
+        materialized: u64,
+        materialized_bytes: u64,
     ) -> Result<(), FacadeError> {
         let count = |value: u64| i64::try_from(value).unwrap_or(i64::MAX);
         let request = FinalizeIngestSessionRequest {
@@ -75,11 +77,29 @@ impl GrpcStorage {
             skipped_count: count(counters.skipped),
             failed_count: count(counters.failed),
             placeholder_count: count(counters.placeholders),
-            materialized_count: materialized,
-            materialized_bytes,
+            materialized_count: count(materialized),
+            materialized_bytes: count(materialized_bytes),
             errors: counters.errors.clone(),
         };
         self.connection.call(|mut client| async move { client.finalize_ingest_session(request).await })?;
+        Ok(())
+    }
+
+    /// Stores the scan's outcome: `PersistScan`.
+    ///
+    /// # Errors
+    ///
+    /// The call's failure.
+    pub fn persist_scan(&self, scan: &ScanSummary) -> Result<(), FacadeError> {
+        let request = PersistScanRequest {
+            source_slug: self.source_slug.clone(),
+            item_count: i64::try_from(scan.item_count).unwrap_or(i64::MAX),
+            item_type: scan.item_type.clone(),
+            duration_seconds: scan.duration_seconds,
+            details_json: Value::Object(scan.details.clone()).to_string(),
+            error: scan.error.clone().unwrap_or_default(),
+        };
+        self.connection.call(|mut client| async move { client.persist_scan(request).await })?;
         Ok(())
     }
 
@@ -239,5 +259,26 @@ impl Storage for GrpcStorage {
             ..action(uri, "replace")
         })?;
         Ok(usize::try_from(written).unwrap_or_default())
+    }
+}
+
+impl SourceStorage for GrpcStorage {
+    fn check_stat(&mut self, uri: &str) -> Result<ExistingStat, String> {
+        GrpcStorage::check_stat(self, uri).map_err(|error| error.to_string())
+    }
+
+    fn persist_scan(&mut self, scan: &ScanSummary) -> Result<(), String> {
+        GrpcStorage::persist_scan(self, scan).map_err(|error| error.to_string())
+    }
+
+    fn finalize(
+        &mut self,
+        completed: bool,
+        counters: &Counters,
+        materialized: u64,
+        materialized_bytes: u64,
+    ) -> Result<(), String> {
+        GrpcStorage::finalize(self, completed, counters, materialized, materialized_bytes)
+            .map_err(|error| error.to_string())
     }
 }

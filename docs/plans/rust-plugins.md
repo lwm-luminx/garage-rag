@@ -143,8 +143,11 @@ step leaves the app working, with the Python reference still there for the servi
    ingest loop (`ingest_one`: which facade call each file ends in and how the counters move, behind a
    `FileHost` for reading and a `Storage` for the facade), which persist through GarageService's facade
    (`GrpcStorage`, sending the requests `GrpcIngestStorageGateway` sends, on the client `rust/garage-facade`
-   shares with the embed worker). `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds
-   them to Python. Next: the source loop, the scanners and Messages conversations, then the service itself.
+   shares with the embed worker), and the loop over a walked source (`_ingest_source`: the scan stored, each
+   file decided, cancellation, the limit, and a run finalized as complete only when the walk ran out).
+   `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds them to Python, whole runs
+   included, request for request against GarageService. Next: the scanners and Messages conversations, the
+   readers the host hands files to, then the service itself.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy
