@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from garage_rag.proto.garage_pb2 import ChunkEmbeddingItem, UpdateEmbeddingsRequest
+from garage_rag.proto.garage_pb2 import BackfillDistilledRequest, ChunkEmbeddingItem, UpdateEmbeddingsRequest
 from garage_rag.service.client import GarageClient
 
 
@@ -116,3 +116,20 @@ def test_dedicated_rpc_update_embeddings_db_error_propagates():
         pytest.raises(RuntimeError, match="connection refused"),
     ):
         client.update_embeddings(req)
+
+
+def test_dedicated_rpc_backfill_distilled_reports_the_count():
+    """BackfillDistilled runs the distilled-fact step of a backfill for the model the worker embedded."""
+    client = GarageClient(in_process=True)
+
+    def distil(session, model, state):
+        state.distilled = 3
+
+    with (
+        patch("garage_rag.db.engine.session_scope"),
+        patch("garage_rag.db.emb_tables.get_model", return_value=object()) as get_model,
+        patch("garage_rag.embed.ollama.backfill_distilled", side_effect=distil),
+    ):
+        res = client.backfill_distilled(BackfillDistilledRequest(model_slug="bge-m3"))
+    assert res.distilled == 3
+    assert get_model.call_args.args[1] == "bge-m3"

@@ -82,6 +82,9 @@ service GarageService {
     rpc FinalizeIngestSession (FinalizeIngestSessionRequest) returns (FinalizeIngestSessionResponse);
     rpc GetEmbeddingBatches (GetEmbeddingBatchesRequest) returns (GetEmbeddingBatchesResponse);
     rpc UpdateEmbeddings (UpdateEmbeddingsRequest) returns (UpdateEmbeddingsResponse);
+    // After a worker has embedded a model's chunks: give its distilled facts their vectors, the
+    // mean of their representatives' (nothing is embedded, so nothing is sent anywhere).
+    rpc BackfillDistilled (BackfillDistilledRequest) returns (BackfillDistilledResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,6 +1004,9 @@ message GetEmbeddingBatchesResponse {
     // text | image. For an image model each chunk's `text` is the path of the image
     // file to embed, not text.
     string modality = 12;
+    // Communication chunks left out of total_pending because the model's provider is not on
+    // this machine; they stay pending for it.
+    int64 withheld = 13;
 }
 
 message ChunkEmbeddingItem {
@@ -1017,4 +1023,12 @@ message UpdateEmbeddingsResponse {
     bool success = 1;
     int32 count = 2;
     string error = 3;
+}
+
+message BackfillDistilledRequest {
+    string model_slug = 1;
+}
+
+message BackfillDistilledResponse {
+    int64 distilled = 1;  // distilled facts given a vector
 }

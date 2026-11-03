@@ -31,6 +31,8 @@ import grpc
 from garage_rag.proto.garage_pb2 import (
     AddSourceRequest,
     AddSourceResponse,
+    BackfillDistilledRequest,
+    BackfillDistilledResponse,
     BackfillRequest,
     BackfillStatus,
     BeginIngestSessionRequest,
@@ -1604,6 +1606,7 @@ class GarageRpcServicer(GarageServiceServicer):
             local = provider_is_local(model.provider or "")
             modality = model_modality(model)
             pending_total = count_pending(session, model, include_communications=local)
+            withheld = 0 if local else count_pending(session, model) - pending_total
 
             fetch_limit = request.batch_size if request.batch_size > 0 else 64
             if request.limit > 0 and request.limit < fetch_limit:
@@ -1632,6 +1635,7 @@ class GarageRpcServicer(GarageServiceServicer):
                 chunks=chunk_items,
                 has_more=has_more,
                 modality=modality,
+                withheld=withheld,
             )
 
     @_grpc_errors
@@ -1653,6 +1657,21 @@ class GarageRpcServicer(GarageServiceServicer):
                 session, model, [(item.chunk_id, list(item.vector)) for item in request.embeddings], replace=True
             )
             return UpdateEmbeddingsResponse(success=True, count=count)
+
+    @_grpc_errors
+    def BackfillDistilled(
+        self, request: BackfillDistilledRequest, context: grpc.ServicerContext
+    ) -> BackfillDistilledResponse:
+        """Give the model's distilled facts their vectors, once a worker has embedded its chunks."""
+        from garage_rag.db.emb_tables import get_model
+        from garage_rag.db.engine import session_scope
+        from garage_rag.embed.ollama import BackfillProgress, backfill_distilled
+
+        with session_scope() as session:
+            model = get_model(session, request.model_slug or None)
+            state = BackfillProgress()
+            backfill_distilled(session, model, state)
+            return BackfillDistilledResponse(distilled=state.distilled)
 
 
 # Largest request the server accepts.

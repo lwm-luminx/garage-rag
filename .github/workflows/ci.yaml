@@ -82,11 +82,12 @@ jobs:
           sudo apt-get install -y -qq libgit2-dev libtesseract-dev tesseract-ocr-eng pkg-config
           ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
           ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
-      - name: Build the Rust text reader
-        # test_text_plugin holds it to garage_rag.extract.text, over gRPC and the C ABI alike.
+      - name: Build the Rust text reader and embed worker
+        # test_text_plugin holds the reader to garage_rag.extract.text, over gRPC and the C ABI
+        # alike; test_embed_worker runs the worker against this GarageService.
         # rustup installs the version rust/rust-toolchain.toml pins.
         working-directory: rust
-        run: cargo build --release --locked -p garage-text-plugin -p garage-text-ffi
+        run: cargo build --release --locked -p garage-text-plugin -p garage-text-ffi -p garage-embed-ffi
       - name: pytest, the whole suite (test_postgres.py against the service)
         # Typer forces Rich's terminal mode (ANSI colour, boxed errors) when
         # GITHUB_ACTIONS is set, which breaks the CLI tests' output checks. Bazel's
@@ -99,6 +100,7 @@ jobs:
           PYTHONPATH: ${{ runner.temp }}/garage_git:${{ runner.temp }}/garage_tesseract
           GARAGE_TEXT_PLUGIN: ${{ github.workspace }}/rust/target/release/garage-text-plugin
           GARAGE_TEXT_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_text_ffi.so
+          GARAGE_EMBED_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_embed_ffi.so
 
   python-package:
     name: "Python package: build, check and smoke-test the sdist and wheel"
@@ -224,10 +226,10 @@ jobs:
         run: cargo clippy --locked --workspace --all-targets --features garage-plugin/grpc -- -D warnings
       - name: cargo test
         run: cargo test --locked --workspace --features garage-plugin/grpc
-      - name: The checked-in generated code matches proto/garage_plugin.proto
+      - name: The checked-in generated code matches proto/
         run: |
           cargo run --locked -p protogen
-          git diff --exit-code -- garage-plugin/src/generated
+          git diff --exit-code -- garage-plugin/src/generated garage-embed/src/generated
       - name: Build the C ABI library
         run: cargo build --release --locked -p garage-text-ffi
       - name: .NET binding tests against the built library

@@ -1,6 +1,6 @@
 [package]
 name = "protogen"
-description = "Regenerates garage-plugin's checked-in code from proto/garage_plugin.proto (needs protoc)."
+description = "Regenerates the checked-in code of garage-plugin and garage-embed from proto/ (needs protoc)."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
