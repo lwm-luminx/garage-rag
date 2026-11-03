@@ -76,7 +76,7 @@ pub struct FileCandidate {
 }
 
 impl FileCandidate {
-    fn name(&self) -> String {
+    pub(crate) fn name(&self) -> String {
         self.path.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default()
     }
 
@@ -342,7 +342,7 @@ impl Default for IngestSettings {
             max_chunks_per_document: 1500,
             chunk_size: 1000,
             chunk_overlap: 150,
-            code_chunk_size: 1500,
+            code_chunk_size: 1200,
             code_chunk_overlap: 100,
         }
     }
