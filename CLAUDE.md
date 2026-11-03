@@ -176,7 +176,8 @@ Components are moving from Python to Rust one at a time ([docs/plans/rust-plugin
 `rust/` is a Cargo workspace (toolchain pinned in `rust-toolchain.toml`, the same as MODULE.bazel's) that
 Bazel also builds through rules_rs (`crate.from_cargo` over `rust/Cargo.lock`; each crate's `BUILD.bazel`
 mirrors its `Cargo.toml` by hand, and gazelle leaves the folder alone). On Linux, `.bazelrc`'s `build:linux`
-uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains need.
+uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains need. On macOS, `build:macos`
+turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-objcopy strips.
 
 - **The contract.** `proto/garage_plugin.proto` (`garage.plugin.v1.ExtractorPlugin`: `Describe`, `Extract`)
   is between the ingester and its readers: a file name and bytes in, never a path. It crosses gRPC on a
@@ -230,6 +231,15 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
   GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
   neither it keeps the Python loop.
+- **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
+  rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
+  header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
+  `garage-text-ffi` and `garage-embed-ffi`; add a crate to `CRATES` in `rust/headergen/src/main.rs`.
+- **UniFFI** (pilot, [docs/plans/uniffi.md](docs/plans/uniffi.md)): `rust/garage-embed-uniffi` is the embed worker
+  with typed records, errors and an `EmbedHost` protocol, beside its C ABI. `rust/uniffi-bindgen` (no
+  `cargo-metadata`, so it runs in Bazel's sandbox) generates the bindings; `//rust/garage-embed-uniffi:GarageEmbedUniFFI`
+  is the Swift module, and CI's rust job runs `tests/python_roundtrip.py` over the generated Python bindings.
+  Rust calling Swift-only APIs goes through swift-rs (`ext/swift_rs`, `garage-ocr`'s `vision-documents`).
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static

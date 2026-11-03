@@ -1,0 +1,69 @@
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+_DEPS = [
+    "//rust/garage-embed",
+    "@crates//:uniffi",
+]
+
+# The embed worker with UniFFI's scaffolding (docs/plans/uniffi.md), beside garage-embed-ffi's C ABI.
+rust_static_library(
+    name = "garage_embed_uniffi_static",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_embed_uniffi",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+# UniFFI's Swift bindings, read from the built library's metadata: the Swift API, and the C header
+# and module map it imports.
+genrule(
+    name = "swift_bindings",
+    srcs = [":garage_embed_uniffi_static"],
+    outs = [
+        "generated/garage_embed.swift",
+        "generated/garage_embedFFI.h",
+        "generated/garage_embedFFI.modulemap",
+    ],
+    cmd = "$(execpath //rust/uniffi-bindgen) generate --library $(execpath :garage_embed_uniffi_static) " +
+          "--language swift --no-format --out-dir $(RULEDIR)/generated",
+    target_compatible_with = ["@platforms//os:macos"],
+    tools = ["//rust/uniffi-bindgen"],
+)
+
+# The header as the Clang module the generated Swift imports (`garage_embedFFI`), with the library.
+objc_library(
+    name = "garage_embedFFI",
+    hdrs = ["generated/garage_embedFFI.h"],
+    includes = ["generated"],
+    module_name = "garage_embedFFI",
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [":garage_embed_uniffi_static"],
+)
+
+# `import GarageEmbedUniFFI`: backfill, models and embedTexts, and the EmbedHost protocol a host
+# implements.
+swift_library(
+    name = "GarageEmbedUniFFI",
+    srcs = ["generated/garage_embed.swift"],
+    module_name = "GarageEmbedUniFFI",
+    target_compatible_with = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+    deps = [":garage_embedFFI"],
+)
+
+rust_library(
+    name = "garage_embed_uniffi_lib",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_embed_uniffi",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+rust_test(
+    name = "garage-embed-uniffi-test",
+    crate = ":garage_embed_uniffi_lib",
+)

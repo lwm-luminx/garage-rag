@@ -5,24 +5,30 @@ resolver = "3"
 members = [
     "garage-embed",
     "garage-embed-ffi",
+    "garage-embed-uniffi",
     "garage-facade",
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
+    "garage-ocr",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
+    "headergen",
     "protogen",
+    "uniffi-bindgen",
 ]
 # protogen needs protoc; everything else builds without it.
 default-members = [
     "garage-embed",
     "garage-embed-ffi",
+    "garage-embed-uniffi",
     "garage-facade",
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
+    "garage-ocr",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
@@ -60,6 +66,8 @@ unicode-normalization = "0.1.26"
 yaml-rust2 = { version = "0.13", default-features = false }
 hyper-util = { version = "0.1", features = ["tokio"] }
 tower = "0.5"
+# The XPC hosts' bindings (docs/plans/uniffi.md). uniffi-bindgen must stay on the same version.
+uniffi = { version = "0.32", default-features = false }
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"

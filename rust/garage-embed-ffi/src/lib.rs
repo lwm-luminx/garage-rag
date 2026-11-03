@@ -19,32 +19,49 @@ use serde_json::{Map, Value, json};
 
 /// The call succeeded; the result is its JSON.
 pub const GARAGE_EMBED_OK: i32 = 0;
-/// The request was not valid JSON of the expected shape, or a pointer was null.
+/// The request was not JSON of the expected shape, or a pointer was null: {"error"}.
 pub const GARAGE_EMBED_BAD_REQUEST: i32 = 1;
-/// The worker panicked. The process is unharmed.
+/// The worker panicked: {"error"}. The process is unharmed.
 pub const GARAGE_EMBED_PANIC: i32 = 2;
-/// The work failed: the facade, a provider's setup, or (for `garage_embed_texts`) the embedding.
+/// The work failed (GarageService, a provider's setup, the embedding): {"error"}.
 pub const GARAGE_EMBED_FAILED: i32 = 3;
-/// The model named does not exist, or none is registered.
+/// The model named does not exist, or none is registered: {"error"}.
 pub const GARAGE_EMBED_NOT_FOUND: i32 = 4;
-/// The host asked the backfill to stop.
+/// The host's `cancelled` said to stop: {"error"}.
 pub const GARAGE_EMBED_CANCELLED: i32 = 5;
 
-/// A host call: `request` is JSON; returns 0 and sets `*reply` to JSON, or nonzero and sets it to
-/// the reason. `*reply` (when set) is freed with the host's `release`.
-pub type HostCall = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *mut *mut c_char) -> i32>;
+/// A host call: `request` is JSON. Returns 0 and sets `*reply` to JSON, or nonzero and sets
+/// `*reply` to the reason (or leaves it NULL). The worker frees `*reply` with the host's `release`.
+pub type HostCall =
+    Option<unsafe extern "C" fn(context: *mut c_void, request: *const c_char, reply: *mut *mut c_char) -> i32>;
 
-/// The process the worker runs in. See `garage_embed.h` for each member.
+/// The process the worker runs in. Any member but `http` and `release` may be NULL.
 #[repr(C)]
 pub struct GarageEmbedHost {
+    /// Passed back as the first argument of every call.
     pub context: *mut c_void,
+    /// An HTTP request to a model server, already approved by the worker's egress rules:
+    /// {"backend": "ollama" | "lmstudio" | "llama_xpc", "method", "url", "path",
+    ///  "headers": [[name, value], ...], "body": string, "timeout": seconds}
+    /// -> {"status": int, "body": string}. Send it to exactly `url`: no proxy, and a redirect is
+    /// the reply, never followed. A llama_xpc request may go over the host's own connection to
+    /// LlamaXPCService instead (`path` is the route). Nonzero only when no reply came.
     pub http: HostCall,
+    /// {"model"}: LlamaXPCService said the model is not loaded; load it. Reply: what was done.
     pub ensure_llama_model: HostCall,
+    /// {"model", "paths": [...]} -> {"vectors": [[...], ...]}: an image model's image tower over
+    /// the files at `paths`, which the host reads.
     pub embed_images: HostCall,
+    /// {"model", "texts": [...]} -> {"vectors": [[...], ...]}: an image model's text tower.
     pub embed_image_texts: HostCall,
-    pub release: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
-    pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
-    pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
+    /// Frees a reply one of the calls above set.
+    pub release: Option<unsafe extern "C" fn(context: *mut c_void, reply: *mut c_char)>,
+    /// One step of a backfill, as a BackfillStatus: {"model_slug", "phase" (complete | skipped |
+    /// started | progress | finished), "total", "embedded", "failed", "remaining", "batches",
+    /// "message"}.
+    pub progress: Option<unsafe extern "C" fn(context: *mut c_void, event: *const c_char)>,
+    /// Whether to stop; asked between batches.
+    pub cancelled: Option<unsafe extern "C" fn(context: *mut c_void) -> bool>,
 }
 
 /// [`GarageEmbedHost`] behind the worker's [`Host`] trait.
@@ -338,7 +355,14 @@ unsafe fn entry(request: *const c_char, host: *const GarageEmbedHost, result: *m
     status
 }
 
-/// Embeds the chunks each model (or the one named) has no vectors for, through GarageService.
+/// Embeds the chunks each model (or the one named) has no vectors for:
+/// {"grpc": {"socket": path} | {"host", "port"}, plus "token": the per-launch GARAGE_GRPC_TOKEN},
+///  "settings": {"ollama_host", "lmstudio_host", "llama_host", "lmstudio_api_token", "batch_size"}
+///              or "service" (the backend's embedding.* through GetSetting; the LM Studio token from
+///              GARAGE_LMSTUDIO_API_TOKEN or the file embedding.lmstudio_api_token_file names),
+///  "lmstudio_api_token": LM Studio's token, over whatever "settings" found (optional; a secret),
+///  "model": slug (absent or "*": every model), "batch_size", "limit", "skip_verify"}
+/// -> {"outcomes": [each model's complete | skipped | finished event]}.
 ///
 /// # Safety
 ///
@@ -355,7 +379,8 @@ pub unsafe extern "C" fn garage_embed_backfill(
     unsafe { entry(request, host, result, run_backfill) }
 }
 
-/// Lists the models GarageService has registered (a self test of the worker's connection).
+/// Lists the models GarageService has registered, which also shows the worker reaches it:
+/// {"grpc": {...}} as for garage_embed_backfill -> {"models": [{"slug", "provider", "model_ref", "dims"}]}.
 ///
 /// # Safety
 ///
@@ -370,7 +395,8 @@ pub unsafe extern "C" fn garage_embed_models(
     unsafe { entry(request, host, result, run_models) }
 }
 
-/// Embeds a few texts with one provider and model, for a self test.
+/// Embeds a few texts with one provider, for a self test:
+/// {"provider", "model_ref", "texts": [...], "settings": {...}} -> {"vectors": [[...], ...]}.
 ///
 /// # Safety
 ///

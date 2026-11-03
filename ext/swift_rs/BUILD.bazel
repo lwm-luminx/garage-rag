@@ -1,0 +1,14 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# swift-rs's Swift half (SRData, SRString, SRObject and the retain/release entry points its Rust half
+# calls), vendored from https://github.com/Brendonovich/swift-rs at tag 1.0.9 (src-swift/lib.swift,
+# unchanged; MIT OR Apache-2.0). Bazel builds it here; a Cargo build gets the same package through
+# SwiftPM (rust/garage-ocr/swift/Package.swift). Keep the version equal to the swift-rs crate's in
+# rust/Cargo.lock. Not shipped in the app yet, so not in THIRD_PARTY_NOTICES.
+swift_library(
+    name = "SwiftRs",
+    srcs = ["src-swift/lib.swift"],
+    module_name = "SwiftRs",
+    target_compatible_with = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+)

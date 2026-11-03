@@ -163,6 +163,13 @@ use_repo(toolchains, "default_rust_toolchains")
 # Linux, so registering rules_rs's @llvm toolchains here would change every C build in the tree.
 register_toolchains("@default_rust_toolchains//:all")
 
+# The rules_rust that rules_rs builds Rust with: its own pinned archive, made by this extension, not the
+# BCR module of that name, which other modules bring in and which none of our Rust rules use. Naming it
+# here lets .bazelrc set its flags as @rules_rust//rust/settings:..., rather than by a canonical name
+# that changes with rules_rs releases.
+rules_rust = use_extension("@rules_rs//rs:rules_rust.bzl", "rules_rust")
+use_repo(rules_rust, "rules_rust")
+
 # The crates rust/Cargo.lock pins (docs/plans/rust-plugins.md), resolved for the hosts that build them: the Mac,
 # CI's Linux runners and an Apple silicon devcontainer.
 crate = use_extension("@rules_rs//rs:extensions.bzl", "crate")
