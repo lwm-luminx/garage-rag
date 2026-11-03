@@ -84,6 +84,12 @@ class Caller:
     registration: Registration | None  # MCP: the registration its token proved, or None
     transport: Literal["grpc", "stdio", "http", "local"]
     attributes: Mapping[str, str]      # transport facts a policy may use; see below
+
+@dataclass(frozen=True)
+class Registration:
+    id: str          # stable, minted with the registration, never reused; survives Reset token
+    name: str        # display only; may be renamed
+    client: str      # 'claude-desktop', 'cursor', 'garage-door', ...
 ```
 
 Where each one comes from:
@@ -102,17 +108,22 @@ The registration's token, not its name, decides who the caller is, and so which 
 
 - **Minting.** `McpInstall` (the MCP page, the setup assistant, `garage mcp install`) mints a random
   token for each registration (`gmr_` and 32 random bytes, base64url). It writes the token into that
-  assistant's config and stores only its SHA-256 in a new table, `mcp_registrations` (`id`, `name`,
+  assistant's config and stores only its SHA-256 in a new table, `mcp_registrations` (`id`, a random
+  identifier that is never reused, `name`,
   `client`, `transport`, `token_sha256`, `created_at`, `last_seen_at`; `019_mcp_registrations.sql`).
   The token is never logged, and never shown again after it is written.
 - **Where it goes.** Over stdio it goes in the server entry's `env` block, not in `args`, so it does
   not show in `ps`. Over HTTP it goes in the entry's headers as a bearer token. One registration
   has one token, whichever transport it uses.
+- **Where it lives.** Today that is the corpus database. Under v2's several corpora it moves to the
+  catalog database, so an extension must hold the id as a value it checks, never as a foreign key
+  into `mcp_registrations`.
 - **Checking.** `garage-mcp` hashes the token it was given, at start for stdio and on every request
   for HTTP, and looks it up. A match gives `Caller.registration`, and stamps `last_seen_at`. The
   comparison is constant-time.
-- **Revoking.** Uninstall deletes the row, so a copied token stops working at once. The MCP page
-  gets "Reset token", which mints a new one and rewrites the config. Update gives an older
+- **Revoking.** Uninstall deletes the row and fires `on_registration_removed`, so a copied token
+  stops working at once. The MCP page gets "Reset token", which mints a new one and rewrites the
+  config, keeping the registration's id. Update gives an older
   registration that has none a token.
 - **With no policy installed,** a missing or unknown token is served exactly as today, so nothing
   breaks. With a policy installed, the policy decides what `registration = None` sees, and it
@@ -155,6 +166,7 @@ class AccessPolicy(Protocol):
     def on_document_deleted(self, session: Session, document_id: int) -> None: ...
     def on_chunks_embedded(self, session: Session, model_slug: str, chunk_ids: Sequence[int]) -> None: ...
     def on_models_changed(self, session: Session) -> None: ...       # after commit
+    def on_registration_removed(self, registration_id: str) -> None: ...  # after Uninstall commits
 ```
 
 `SqlFilter` is a SQL fragment over the aliases the search already uses (`d` for documents, `c` for
@@ -183,6 +195,7 @@ so the null case stays one branch in one place.
 | `ingest/gateway.py:replace_document`, document deletion | `on_document_replaced` / `on_document_deleted`, inside the document's transaction |
 | `embed/ollama.py:store_vectors` (and the facade's `UpdateEmbeddings`) | `on_chunks_embedded`, inside the batch's transaction |
 | Model register, drop, set default | `on_models_changed` |
+| MCP Uninstall | `on_registration_removed` |
 
 `tests/test_access_paths.py` holds this table as data. It walks every `@mcp.tool()` and every
 `GarageService` handler and fails on a read path that is not listed with its hook, and on a lifecycle
