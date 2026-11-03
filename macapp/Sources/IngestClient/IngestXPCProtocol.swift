@@ -41,14 +41,6 @@ public protocol GarageIngestXPCServiceProtocol: GarageCommonXPCServiceProtocol, 
     func setDatabaseURL(_ databaseUrl: String, lmStudioApiToken: String?, with reply: @escaping (Bool, String?) -> Void)
 }
 
-/// Objective-C protocol for Embed XPC Service communication. It receives the LlamaXPCService
-/// endpoint because embedding with a llama_xpc model loads it on demand, and the
-/// GarageImageEmbedXPCService endpoint because the embed worker embeds image models there.
-@objc(GarageEmbedXPCServiceProtocol)
-public protocol GarageEmbedXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol, GarageImageEmbedEndpointReceiverProtocol {
-    func embedTexts(_ texts: [String], model: String?, with reply: @escaping (Bool, String?) -> Void)
-}
-
 public enum IngestXPCConstants {
     public static let serviceName = "me.rickmark.garage-rag.ingest-xpc"
 }

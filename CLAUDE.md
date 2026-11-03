@@ -194,7 +194,11 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   carries each model-server request (`Host::http`; `llama_xpc` may go over NSXPC) after the worker's
   `egress` module, a port of `net/egress.py`'s destination rules, has approved it. `garage-embed-ffi`
   exports it as JSON over a C ABI (`include/garage_embed.h`); `tests/test_embed_worker.py` runs it against
-  `create_grpc_server` when `GARAGE_EMBED_FFI_LIBRARY` names the build or `rust/target` has it.
+  `create_grpc_server` when `GARAGE_EMBED_FFI_LIBRARY` names the build or `rust/target` has it. With
+  `"settings": "service"` it reads the backend's own `embedding.*` through `GetSetting`. GarageEmbedXPCService
+  runs it (`macapp/Sources/GarageEmbedWorker` is the Swift host: llama_xpc over NSXPC, Ollama and LM Studio
+  over a proxy-less URLSession that returns redirects, image models over NSXPC), and the app's Backfill goes
+  there (`EmbedClient`), not to the Python backend's `Backfill` RPC, which the CLI still uses.
 - **Ingest** (`rust/garage-ingest`) ports the pipeline a piece at a time: so far the walker (`ingest/walker.py`,
   its rules as data in `WalkPolicy`, held to Python's tables), the quality gate (`extract/quality.py`, with
   Python's `str` character classes so every metric matches), chunking (`ingest/chunking.py` over
@@ -655,7 +659,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   default changes), and loads the facts model only for a distillation run, unloading it afterwards
   unless it is also the search model (`AppState+LlamaModels.swift`). Other models load on demand and
   stay until the Models page's Unload. The on-demand loads run in garage-xpc, embed-xpc and
-  mcp-server-xpc, which cannot look up a sibling XPC service by name: the app's `LlamaEndpointBroker`
+  mcp-server-xpc (embed-xpc through `LlamaModelLoaderCore`, the loader without its Python bridge), which cannot look up a sibling XPC service by name: the app's `LlamaEndpointBroker`
   (in `XPCServiceManager`) fetches the endpoint of LlamaXPCService's anonymous listener
   (`getListenerEndpoint`) and hands it to each (`setLlamaEndpoint`, `GarageLlamaEndpointStore`),
   again whenever either side's connection is lost; until then loads fail with "endpoint not handed over yet".
@@ -693,7 +697,7 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   test still skipped is named in the Status page's row ("7 passed, 1 skipped (Model File)").
 - Each `*XPCService` (`GarageEmbedXPCService`, `GarageIngestXPCService`, `LlamaXPCService`,
   `ModelDownloadXPCService`, `GarageImageEmbedXPCService`, `PythonXPCService`, …) is a separate XPC
-  service process paired with a `*Client` module (`IngestClient`, `LlamaClient`,
+  service process paired with a `*Client` module (`IngestClient`, `EmbedClient`, `LlamaClient`,
   `ModelDownloadClient`, `ImageEmbedClient`, `MCPServerClient`) — this
   is the isolation boundary between the SwiftUI app and long-running/native work, distinct from the
   gRPC bridge to the Python `garage_rag` package.
@@ -702,15 +706,19 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     embeds Python subclasses `GaragePythonXPCServiceBase` in `PythonXPCService`, which re-exports the kit
     and links Python.framework.
   - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
-    `ModelDownloadXPCService`, `LlamaXPCService` and `GarageImageEmbedXPCService`, with their client
-    modules (`ModelDownloadClient`, `LlamaClient`, `ImageEmbedClient`). The services are moving off Python one at a time
+    `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService` and
+    `GarageEmbedXPCService` (the Rust embed worker), with their client modules (`ModelDownloadClient`,
+    `LlamaClient`, `ImageEmbedClient`, `EmbedClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
+    a Python-free core (`LlamaModelLoaderCore`, `ImageEmbedBridgeCore`) plus the C entry points handed to
+    Python, which re-export the core. The services are moving off Python one at a time
     ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md), "Python-free XPC services").
   - Every connection a listener accepts, from the service listener and the anonymous ones, carries
     `GarageXPCPeerRequirement` (set on the connection in `listener(_:shouldAcceptNewConnection:)`, never
     on the listener: on `NSXPCListener.service()` that crashes the service at launch): a peer must be
     Apple-signed with the service's own team. A process signed without a team (ad hoc, tests) checks nothing.
-- The sandboxed (App Store) app hosts `GarageIngestXPCService` and `GarageXPCService` in its own
-  process (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
+- The sandboxed (App Store) app hosts `GarageIngestXPCService`, `GarageXPCService` and
+  `GarageEmbedXPCService` (whose image models read image files) in its own process
+  (`InProcessServiceHost`), because only the app can read the folders the user granted: a URL
   sent over NSXPC arrives in a separately sandboxed service without its sandbox extension. Each
   service's delegate lives in a `*Core` library the app links, and the app registers an anonymous
   listener for it with `GarageInProcessServices`; every connection is made with

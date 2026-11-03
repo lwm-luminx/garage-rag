@@ -1,14 +1,29 @@
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
+# ImageEmbedBridgeCore: reaches GarageImageEmbedXPCService over NSXPC through the listener endpoint
+# the app hands a helper (GarageImageEmbedEndpointStore), with no Python. GarageEmbedXPCService's
+# Rust embed worker embeds with image models through it.
+swift_library(
+    name = "ImageEmbedBridgeCore",
+    srcs = glob(["Core/*.swift"]),
+    module_name = "ImageEmbedBridgeCore",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageXPCKit",
+        "//macapp/Sources/ImageEmbedClient",
+    ],
+)
+
 # ImageEmbedBridge: lets the Python embedded in a helper XPC service embed with the app's image
-# models. Hands Python two C entry points (describe, embed) that call GarageImageEmbedXPCService
-# over NSXPC through the listener endpoint the app hands over (GarageImageEmbedEndpointStore).
+# models. Hands Python two C entry points (describe, embed) that go through ImageEmbedBridgeCore,
+# which it re-exports.
 swift_library(
     name = "ImageEmbedBridge",
-    srcs = glob(["**/*.swift"]),
+    srcs = glob(["*.swift"]),
     module_name = "ImageEmbedBridge",
     visibility = ["//visibility:public"],
     deps = [
+        ":ImageEmbedBridgeCore",
         "//macapp/Sources/ImageEmbedClient",
         "//macapp/Sources/PythonXPCService",
     ],

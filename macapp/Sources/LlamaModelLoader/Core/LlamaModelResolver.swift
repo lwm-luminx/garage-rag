@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// The settings a llama.cpp model is loaded with when nobody chose others: the Models page's
 /// Load button and every on-demand load use these, so a model loads the same way from either.

@@ -65,10 +65,17 @@ typedef struct GarageEmbedHost {
 
 // Embeds the chunks each model (or the one named) has no vectors for:
 // {"grpc": {"socket": path} | {"host", "port"}, plus "token": the per-launch GARAGE_GRPC_TOKEN},
-//  "settings": {"ollama_host", "lmstudio_host", "llama_host", "lmstudio_api_token", "batch_size"},
+//  "settings": {"ollama_host", "lmstudio_host", "llama_host", "lmstudio_api_token", "batch_size"}
+//              or "service" (the backend's embedding.* through GetSetting; the LM Studio token from
+//              GARAGE_LMSTUDIO_API_TOKEN or the file embedding.lmstudio_api_token_file names),
+//  "lmstudio_api_token": LM Studio's token, over whatever "settings" found (optional; a secret),
 //  "model": slug (absent or "*": every model), "batch_size", "limit", "skip_verify"}
 // -> {"outcomes": [each model's complete | skipped | finished event]}.
 int32_t garage_embed_backfill(const char *request, const GarageEmbedHost *host, char **result);
+
+// Lists the models GarageService has registered, which also shows the worker reaches it:
+// {"grpc": {...}} as for garage_embed_backfill -> {"models": [{"slug", "provider", "model_ref", "dims"}]}.
+int32_t garage_embed_models(const char *request, const GarageEmbedHost *host, char **result);
 
 // Embeds a few texts with one provider, for a self test:
 // {"provider", "model_ref", "texts": [...], "settings": {...}} -> {"vectors": [[...], ...]}.

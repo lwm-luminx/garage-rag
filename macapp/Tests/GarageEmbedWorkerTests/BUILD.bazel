@@ -1,0 +1,24 @@
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "GarageEmbedWorkerTests_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]),
+    module_name = "GarageEmbedWorkerTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageEmbedWorker",
+        "//macapp/Sources/ImageEmbedBridge:ImageEmbedBridgeCore",
+        "//macapp/Sources/ImageEmbedClient",
+    ],
+)
+
+macos_unit_test(
+    name = "GarageEmbedWorkerTests",
+    bundle_id = "me.rickmark.garage-rag.GarageEmbedWorkerTests",
+    bundle_name = "GarageEmbedWorkerTests",
+    minimum_os_version = "14.0",
+    visibility = ["//visibility:public"],
+    deps = [":GarageEmbedWorkerTests_lib"],
+)

@@ -1,6 +1,7 @@
 import XCTest
 import LlamaClient
 @testable import LlamaModelLoader
+@testable import LlamaModelLoaderCore
 import LlamaServiceHost
 import LlamaTestSupport
 import PythonXPCService

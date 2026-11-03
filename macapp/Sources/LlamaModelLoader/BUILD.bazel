@@ -1,16 +1,31 @@
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
-# LlamaModelLoader: loads llama_xpc models on demand over NSXPC (LlamaXPCService `ensureModel`).
-# Resolves a model's slug to its downloaded GGUF and load settings (shared with the Models page),
-# deduplicates concurrent loads, and hands the embedded Python a C entry point to call through ctypes.
-# LlamaInferenceBridge hands it two more, so llama_xpc requests go over NSXPC instead of HTTP.
+# LlamaModelLoaderCore: loads llama_xpc models on demand over NSXPC (LlamaXPCService `ensureModel`)
+# and sends llama-server requests over NSXPC (`LlamaServerRequests`), with no Python. Resolves a
+# model's slug to its downloaded GGUF and load settings (shared with the Models page) and
+# deduplicates concurrent loads. GarageEmbedXPCService's Rust embed worker reaches LlamaXPCService
+# through it.
+swift_library(
+    name = "LlamaModelLoaderCore",
+    srcs = glob(["Core/*.swift"]),
+    module_name = "LlamaModelLoaderCore",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageXPCKit",
+        "//macapp/Sources/LlamaClient",
+    ],
+)
+
+# LlamaModelLoader: the core plus the C entry points handed to the Python embedded in a helper
+# (LlamaModelLoaderBridge for loads, LlamaInferenceBridge for llama_xpc requests over NSXPC instead
+# of HTTP). Re-exports LlamaModelLoaderCore.
 swift_library(
     name = "LlamaModelLoader",
-    srcs = glob(["**/*.swift"]),
+    srcs = glob(["*.swift"]),
     module_name = "LlamaModelLoader",
     visibility = ["//visibility:public"],
     deps = [
-        "//macapp/Sources/LlamaClient",
+        ":LlamaModelLoaderCore",
         "//macapp/Sources/PythonXPCService",
     ],
 )

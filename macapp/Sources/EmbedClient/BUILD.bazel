@@ -1,0 +1,13 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# EmbedClient: GarageEmbedXPCService's XPC protocol, its models and its Swift client, with no
+# Python. The @objc protocols live in the same module as the client so each is registered once.
+swift_library(
+    name = "EmbedClient",
+    srcs = glob(["**/*.swift"]),
+    module_name = "EmbedClient",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageXPCKit",
+    ],
+)

@@ -3,6 +3,7 @@ import Foundation
 import SwiftUI
 import Combine
 import OSLog
+import EmbedClient
 import GarageUpdater
 import IngestClient
 import PythonXPCService
@@ -1165,26 +1166,51 @@ final class AppState: ObservableObject {
         return "\(failures.count) sources failed: \(failures.map(\.slug).joined(separator: ", "))"
     }
 
-    /// Embeds pending chunks for `model` (nil = every registered model) on the backfill
-    /// runner, logging each progress step the server streams back.
+    /// Embeds pending chunks for `model` (nil = every registered model) on the backfill runner,
+    /// logging each step. The work runs in GarageEmbedXPCService's Rust embed worker, which reaches
+    /// the database through the backend: the backend is started first, and the service is handed
+    /// its address and token before each run. Cancelling the runner stops the worker at its next
+    /// batch.
     @discardableResult
     func runBackfill(model: String? = nil) async -> Bool {
         let grpc = self.grpc
+        let embed = EmbedClient()
         backfillProgress = nil
         let result = await backfill.run { runner in
-            _ = try await grpc.backfill(model: model) { status in
-                if !status.message.isEmpty {
-                    runner.appendLog(status.message)
-                }
-                // "started" and "progress" carry the model's counts; the per-model outcomes end it.
-                if status.phase == "started" || status.phase == "progress" {
-                    self.backfillProgress = BackfillProgress(
-                        model: status.modelSlug,
-                        embedded: Int(status.embedded),
-                        total: Int(status.total)
-                    )
+            if grpc.status != .running {
+                try await grpc.start()
+            }
+            try await embed.updateConfiguration(try grpc.helperConfiguration())
+            // Steps arrive on an XPC queue; a stream keeps them in order on the main actor.
+            let (events, continuation) = AsyncStream<EmbedBackfillEvent>.makeStream()
+            let consumer = Task { @MainActor in
+                for await event in events {
+                    if !event.message.isEmpty {
+                        runner.appendLog(event.message)
+                    }
+                    // "started" and "progress" carry the model's counts; the per-model outcomes end it.
+                    if event.phase == "started" || event.phase == "progress" {
+                        self.backfillProgress = BackfillProgress(model: event.modelSlug, embedded: event.embedded, total: event.total)
+                    }
                 }
             }
+            do {
+                _ = try await withTaskCancellationHandler {
+                    try await embed.backfill(EmbedBackfillRequest(model: model)) { continuation.yield($0) }
+                } onCancel: {
+                    Task { try? await embed.cancelBackfill() }
+                }
+            } catch let error as EmbedBackfillError where error.status == .cancelled {
+                continuation.finish()
+                await consumer.value
+                throw CancellationError()
+            } catch {
+                continuation.finish()
+                await consumer.value
+                throw error
+            }
+            continuation.finish()
+            await consumer.value
             return ""
         }
         backfillProgress = nil

@@ -12,7 +12,8 @@ use std::sync::Arc;
 
 use garage_embed::provider;
 use garage_embed::{
-    BackfillError, BackfillEvent, BackfillOptions, GrpcFacade, GrpcTarget, Host, HttpRequest, HttpResponse, Settings,
+    BackfillError, BackfillEvent, BackfillOptions, Facade, GrpcFacade, GrpcTarget, Host, HttpRequest, HttpResponse,
+    Settings,
 };
 use serde_json::{Map, Value, json};
 
@@ -228,7 +229,17 @@ fn run_backfill(request: &Map<String, Value>, host: &Arc<dyn Host>) -> (i32, Val
         Ok(facade) => facade,
         Err(error) => return (GARAGE_EMBED_FAILED, json!({ "error": error.to_string() })),
     };
-    match garage_embed::backfill(&facade, &settings_of(request), host, &options) {
+    // "service": the backend's own settings, so the worker and Python never disagree.
+    let mut settings = if request.get("settings").and_then(Value::as_str) == Some("service") {
+        Settings::from_service(|name| facade.get_setting(name))
+    } else {
+        settings_of(request)
+    };
+    // The app keeps LM Studio's token in its Keychain and hands it over with the request.
+    if let Some(token) = request.get("lmstudio_api_token").and_then(Value::as_str).filter(|token| !token.is_empty()) {
+        settings.lmstudio_api_token = Some(token.to_string());
+    }
+    match garage_embed::backfill(&facade, &settings, host, &options) {
         Ok(outcomes) => (GARAGE_EMBED_OK, json!({ "outcomes": outcomes.iter().map(event_json).collect::<Vec<_>>() })),
         Err(error) => {
             let status = match error {
@@ -257,6 +268,28 @@ fn run_texts(request: &Map<String, Value>, host: &Arc<dyn Host>) -> (i32, Value)
         };
     match embedder.embed(&texts) {
         Ok(vectors) => (GARAGE_EMBED_OK, json!({ "vectors": vectors })),
+        Err(error) => (GARAGE_EMBED_FAILED, json!({ "error": error.to_string() })),
+    }
+}
+
+/// The status and result JSON of a models request: what GarageService has registered, which also
+/// shows the worker reaches it with the token it was given.
+fn run_models(request: &Map<String, Value>, _host: &Arc<dyn Host>) -> (i32, Value) {
+    let (target, token) = match grpc_target(request) {
+        Ok(target) => target,
+        Err(message) => return (GARAGE_EMBED_BAD_REQUEST, json!({ "error": message })),
+    };
+    let models = GrpcFacade::connect(&target, token.as_deref()).and_then(|facade| facade.list_models());
+    match models {
+        Ok(models) => {
+            let models: Vec<Value> = models
+                .iter()
+                .map(|model| {
+                    json!({ "slug": model.slug, "provider": model.provider, "model_ref": model.model_ref, "dims": model.dims })
+                })
+                .collect();
+            (GARAGE_EMBED_OK, json!({ "models": models }))
+        }
         Err(error) => (GARAGE_EMBED_FAILED, json!({ "error": error.to_string() })),
     }
 }
@@ -320,6 +353,21 @@ pub unsafe extern "C" fn garage_embed_backfill(
 ) -> i32 {
     // SAFETY: the caller's contract is the function's.
     unsafe { entry(request, host, result, run_backfill) }
+}
+
+/// Lists the models GarageService has registered (a self test of the worker's connection).
+///
+/// # Safety
+///
+/// As for [`garage_embed_backfill`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_embed_models(
+    request: *const c_char,
+    host: *const GarageEmbedHost,
+    result: *mut *mut c_char,
+) -> i32 {
+    // SAFETY: the caller's contract is the function's.
+    unsafe { entry(request, host, result, run_models) }
 }
 
 /// Embeds a few texts with one provider and model, for a self test.

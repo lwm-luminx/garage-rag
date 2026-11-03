@@ -1,0 +1,28 @@
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# The Rust embed worker's C ABI as a Clang module, as //macapp/Sources/GaragePlugins:GarageTextFFI
+# does for the text reader. The static library comes along through deps.
+objc_library(
+    name = "GarageEmbedFFI",
+    hdrs = ["GarageEmbedFFI/GarageEmbedFFI.h"],
+    includes = ["GarageEmbedFFI"],
+    module_name = "GarageEmbedFFI",
+    visibility = ["//visibility:private"],
+    deps = ["//rust/garage-embed-ffi"],
+)
+
+# Swift's side of the embed worker (rust/garage-embed): runs a backfill over the GarageService
+# facade and carries the worker's model-server requests (llama_xpc over NSXPC, Ollama and LM Studio
+# over URLSession, image models over NSXPC). No Python.
+swift_library(
+    name = "GarageEmbedWorker",
+    srcs = glob(["*.swift"]),
+    module_name = "GarageEmbedWorker",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":GarageEmbedFFI",
+        "//macapp/Sources/ImageEmbedBridge:ImageEmbedBridgeCore",
+        "//macapp/Sources/LlamaModelLoader:LlamaModelLoaderCore",
+    ],
+)
