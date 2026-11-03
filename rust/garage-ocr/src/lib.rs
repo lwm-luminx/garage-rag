@@ -7,6 +7,8 @@
 //!   in-process, on the Neural Engine. The system framework decodes the picture itself, HEIC included.
 //! - [`tesseract::Tesseract`] (the `tesseract` feature): Tesseract's C API, linked at build time
 //!   (`//ext/tesseract` statically under Bazel), for the Windows CLI and Linux.
+//! - `vision_documents::VisionDocuments` (macOS 26, the `vision-documents` feature): Vision's
+//!   Swift-only `RecognizeDocumentsRequest`, called through swift-rs, answering paragraphs and tables.
 //! - [`HostEngine`]: recognition the host supplies, such as a vision-language model served by an XPC
 //!   service, behind the same trait.
 //!
@@ -19,10 +21,14 @@
 
 use std::fmt;
 
+#[cfg(any(test, all(feature = "vision-documents", target_os = "macos")))]
+mod document_reply;
 #[cfg(feature = "tesseract")]
 pub mod tesseract;
 #[cfg(all(feature = "vision", target_os = "macos"))]
 pub mod vision;
+#[cfg(all(feature = "vision-documents", target_os = "macos"))]
+pub mod vision_documents;
 
 /// A run of recognized text: a word (Tesseract) or a line (Vision).
 #[derive(Clone, Debug, PartialEq)]

@@ -78,8 +78,8 @@ There are two trade-offs:
   `extractor_version` records the revision, not the OS build, so an OS update does not re-read the
   corpus. Pictures read after an update may differ slightly from those read before it.
 - macOS 26 adds `RecognizeDocumentsRequest`, which also returns paragraphs, lists and tables. It is
-  Swift-only, so Rust cannot call it directly. It could reach the reader later as a host engine (see
-  below), through the Swift host.
+  Swift-only, so objc2-vision cannot reach it. `garage-ocr`'s `vision-documents` feature calls it
+  through [swift-rs](https://github.com/Brendonovich/swift-rs) (see the prototype below).
 
 ### ocrs
 
@@ -145,6 +145,13 @@ host's closure sends the bytes over NSXPC and returns the spans.
   `//ext/leptonica`.
 - `vision::Vision` is `VNRecognizeTextRequest` through `objc2-vision`. Each call runs inside an
   autorelease pool, and the engine holds only its settings, so it is `Send`.
+- `vision_documents::VisionDocuments` (the `vision-documents` feature, macOS 26) calls the Swift-only
+  `RecognizeDocumentsRequest` through swift-rs: `swift/Sources/GarageOCRDocuments` exports
+  `garage_ocr_recognize_document` with `@_cdecl`, taking an `SRData` and returning JSON in an `SRString`,
+  and `swift!` declares it in Rust. It answers paragraphs, then tables as Markdown. A Cargo build links
+  the Swift package through swift-rs's `SwiftLinker`; Bazel builds the same source as
+  `//rust/garage-ocr:GarageOCRDocuments` over swift-rs's Swift half, vendored in `ext/swift_rs`. It
+  compiles to `nil` (engine unavailable) with an SDK older than macOS 26's.
 - `HostEngine` wraps a closure, for an engine in another process.
 - `default_engine()` returns Vision on macOS and Tesseract elsewhere.
 - `examples/ocr-compare.rs` runs every engine built in over a folder of pictures. It prints, per

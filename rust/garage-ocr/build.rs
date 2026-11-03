@@ -1,4 +1,5 @@
-//! Finds libtesseract for a Cargo build with the `tesseract` feature. Bazel links `//ext/tesseract` and
+//! Links the Swift half of the `vision-documents` feature on macOS, and finds libtesseract for a
+//! Cargo build with the `tesseract` feature. Bazel links `//ext/tesseract` and
 //! `//ext/leptonica` (static, no codecs) and runs none of this.
 //!
 //! - `GARAGE_TESSERACT_DIR` names a folder holding `libtesseract.a` and `libleptonica.a` (as the two
@@ -11,6 +12,12 @@ use std::process::Command;
 fn main() {
     println!("cargo:rerun-if-env-changed=GARAGE_TESSERACT_DIR");
     println!("cargo:rerun-if-env-changed=PKG_CONFIG_PATH");
+    #[cfg(feature = "vision-documents")]
+    if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        // Builds swift/ with SwiftPM and links it, with the Swift runtime. 14.0: the app's minimum.
+        println!("cargo:rerun-if-changed=swift");
+        swift_rs::SwiftLinker::new("14.0").with_package("GarageOCRDocuments", "swift").link();
+    }
     if env::var_os("CARGO_FEATURE_TESSERACT").is_none() {
         return;
     }

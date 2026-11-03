@@ -14,6 +14,9 @@ default = ["tesseract", "vision"]
 tesseract = ["dep:image"]
 # Apple Vision's VNRecognizeTextRequest, in-process. Only has an effect on macOS.
 vision = []
+# Vision's Swift-only RecognizeDocumentsRequest (macOS 26) through swift-rs: links the Swift package in
+# swift/ (Cargo, through SwiftLinker in build.rs) or //rust/garage-ocr:GarageOCRDocuments (Bazel).
+vision-documents = ["vision", "dep:swift-rs", "dep:serde_json"]
 
 [dependencies]
 # Reads a picture's size from its header, without decoding it (HEIC included).
@@ -23,7 +26,15 @@ image = { version = "0.25", optional = true, default-features = false, features 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSError", "NSString", "NSValue"] }
+serde_json = { workspace = true, optional = true }
+swift-rs = { version = "1.0.9", optional = true }
 objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNRequestRevisionProviding", "VNTypes"] }
+
+[build-dependencies]
+swift-rs = { version = "1.0.9", optional = true, features = ["build"] }
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [[example]]
 name = "ocr-compare"
