@@ -1,10 +1,12 @@
 //! The ingest pieces' C ABI, declared in `include/garage_ingest.h`: each call takes a JSON request
 //! and fills `result` with JSON, which Swift, .NET and Python's ctypes read without generated code.
 
+use std::collections::BTreeMap;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
+use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::{
     Budget, ContentKind, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats, Walked,
 };
@@ -212,6 +214,99 @@ fn ensure_local(request: &Map<String, Value>) -> Outcome {
     }))
 }
 
+/// The repositories a request supplies, standing in for reading their history.
+struct SuppliedRepos(BTreeMap<PathBuf, RepoAttribution>);
+
+impl GitHistory for SuppliedRepos {
+    fn repository(&self, root: &Path) -> Option<RepoAttribution> {
+        self.0.get(root).cloned()
+    }
+}
+
+fn strings(value: Option<&Value>, what: &str) -> Result<Vec<String>, String> {
+    let Some(value) = value else { return Ok(Vec::new()) };
+    value
+        .as_array()
+        .ok_or_else(|| format!("\"{what}\" is not a list"))?
+        .iter()
+        .map(|item| item.as_str().map(str::to_owned).ok_or_else(|| format!("\"{what}\" holds a non-string")))
+        .collect()
+}
+
+fn repos(value: Option<&Value>) -> Result<SuppliedRepos, String> {
+    let mut repos = BTreeMap::new();
+    let Some(value) = value else { return Ok(SuppliedRepos(repos)) };
+    for (root, repo) in value.as_object().ok_or("\"repos\" is not an object")? {
+        let remote = repo.get("remote").and_then(Value::as_str).map(str::to_owned);
+        let mut by_path = BTreeMap::new();
+        if let Some(paths) = repo.get("by_path").and_then(Value::as_object) {
+            for (relative, tallies) in paths {
+                let tallies = tallies
+                    .as_array()
+                    .ok_or("a by_path entry is not a list")?
+                    .iter()
+                    .map(|tally| {
+                        let name = tally[0].as_str().ok_or("a tally has no name")?;
+                        let email = tally[1].as_str().ok_or("a tally has no email")?;
+                        let commits = tally[2].as_u64().ok_or("a tally has no commit count")?;
+                        Ok(AuthorTally { name: name.to_owned(), email: email.to_owned(), commits })
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                by_path.insert(relative.clone(), tallies);
+            }
+        }
+        repos.insert(PathBuf::from(root), RepoAttribution { remote, by_path });
+    }
+    Ok(SuppliedRepos(repos))
+}
+
+fn attribute(request: &Map<String, Value>) -> Outcome {
+    let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
+    let root = request.get("source_root").and_then(Value::as_str).ok_or("the request has no \"source_root\" string")?;
+    let default = request.get("default_trust").and_then(Value::as_str).unwrap_or("authored");
+    let default_trust = TrustTier::parse(default).ok_or_else(|| format!("{default:?} is not a trust tier"))?;
+    let hints = strings(request.get("author_hints"), "author_hints")?;
+    let owner = request.get("self").and_then(Value::as_object);
+    let name = owner.and_then(|owner| owner.get("name")).and_then(Value::as_str).unwrap_or_default();
+    let pairs = strings(owner.and_then(|owner| owner.get("identities")), "self.identities")?
+        .into_iter()
+        .filter_map(|raw| {
+            let (kind, value) = raw.split_once(':')?;
+            Some((kind.trim().to_owned(), value.trim().to_owned())).filter(|(_, value)| !value.is_empty())
+        })
+        .collect::<Vec<_>>();
+    let identity = SelfIdentity::new(name, &pairs);
+    let communication = request.get("communication").and_then(Value::as_bool).unwrap_or(false);
+    let repos = repos(request.get("repos"))?;
+    let signals = Signals {
+        source_root: Path::new(root),
+        default_trust,
+        author_hints: &hints,
+        identity: &identity,
+        communication,
+    };
+    let attribution = garage_ingest::attribution::resolve(Path::new(path), &signals, &repos);
+    let authors: Vec<Value> = attribution
+        .authors
+        .iter()
+        .map(|author| {
+            json!({
+                "name": author.name,
+                "email": author.email,
+                "role": author.role.as_str(),
+                "confidence": author.confidence,
+                "evidence": author.evidence,
+            })
+        })
+        .collect();
+    Ok(json!({
+        "trust": attribution.trust.as_str(),
+        "authors": authors,
+        "evidence": attribution.evidence,
+        "meta": attribution.meta,
+    }))
+}
+
 /// The default walk policy: `{}` -> `{"exclude_dirs": [...], ..., "max_file_bytes": n}`.
 ///
 /// # Safety
@@ -254,6 +349,19 @@ pub unsafe extern "C" fn garage_ingest_root_problem(request: *const c_char, resu
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, assess)
+}
+
+/// Attributes a file: `{"path", "source_root", "default_trust", "author_hints"?, "communication"?,
+/// "self"?: {"name", "identities": ["git_email:...", ...]}, "repos"?: {"<root>": {"remote",
+/// "by_path": {"<relative>": [[name, email, commits], ...]}}}}` -> `{"trust", "authors": [{"name",
+/// "email", "role", "confidence", "evidence"}], "evidence", "meta"}`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_attribute(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, attribute)
 }
 
 /// Makes a file local if it is a cloud placeholder, within a budget: `{"path", "budget"?: {"enabled",

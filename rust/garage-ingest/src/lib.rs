@@ -2,20 +2,24 @@
 //! (docs/plans/rust-plugins.md). So far: the file walker ([`walk`]), with the rules it applies as
 //! data ([`policy`]) and the cloud placeholder check it makes ([`placeholder`]), and the quality
 //! gate that rejects machine-generated text ([`quality`]), chunking ([`chunking`], over the
-//! splitters in [`splitters`]), and the budgeted download of cloud placeholders ([`materialize`]).
+//! splitters in [`splitters`]), the budgeted download of cloud placeholders ([`materialize`]), and
+//! attribution ([`attribution`], with Python's sender parsing in [`parseaddr`]).
 //!
 //! Python's modules are the specification; `garage_python/tests/test_ingest_rust.py` holds each
 //! piece to its Python original through `garage-ingest-ffi`.
 
+pub mod attribution;
 pub mod chunking;
 pub mod fnmatch;
 pub mod materialize;
+pub mod parseaddr;
 pub mod placeholder;
 pub mod policy;
 pub mod quality;
 pub mod splitters;
 pub mod walk;
 
+pub use attribution::{Attribution, GitHistory, SelfIdentity, TrustTier};
 pub use chunking::{ContentKind, TextChunk, chunk_text};
 pub use materialize::{Budget, Materializer, Outcome};
 pub use policy::WalkPolicy;

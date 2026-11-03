@@ -29,7 +29,10 @@ from types import SimpleNamespace
 import pytest
 
 from garage_rag import config
+from garage_rag.attribute import git as git_attribution
+from garage_rag.attribute import resolver
 from garage_rag.attribute.pathrules import EXCLUDED_PREFIXES
+from garage_rag.db.models import TrustTier
 from garage_rag.extract import dispatch, quality
 from garage_rag.extract.base import ContentKind
 from garage_rag.extract.placeholder import PlaceholderFile
@@ -69,6 +72,7 @@ def rust():
         "garage_ingest_assess",
         "garage_ingest_chunk",
         "garage_ingest_ensure_local",
+        "garage_ingest_attribute",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -507,3 +511,206 @@ def test_budget_summaries_read_the_same(rust, tmp_path, counts):
     budget = {"files_done": files, "bytes_done": size, "deferred": deferred, "failed": failed}
     port = rust("garage_ingest_ensure_local", {"path": str(tmp_path / "missing"), "budget": budget})
     assert port["budget"]["summary"] == materialize.MaterializationBudget(**budget).summary()
+
+
+# --- attribution --------------------------------------------------------------------------------
+
+OWNER = {"name": "Ada Lovelace", "identities": ["git_email:Ada@Example.com", "git_name:ada-l"]}
+
+
+def _owner() -> resolver.SelfIdentity:
+    pairs = [tuple(part.strip() for part in raw.split(":", 1)) for raw in OWNER["identities"]]
+    return resolver.SelfIdentity(OWNER["name"], pairs)
+
+
+def _python_attribution(path: Path, root: Path, *, trust="authored", hints=(), communication=False) -> dict:
+    decided = resolver.resolve(
+        path,
+        root,
+        source_default_trust=TrustTier(trust),
+        author_hints=list(hints),
+        self_identity=_owner(),
+        communication=communication,
+    )
+    return {
+        "trust": str(decided.trust),
+        "authors": [
+            {
+                "name": author.name,
+                "email": author.email,
+                "role": str(author.role),
+                "confidence": author.confidence,
+                "evidence": author.evidence,
+            }
+            for author in decided.authors
+        ],
+        "evidence": decided.evidence,
+        "meta": decided.meta,
+    }
+
+
+def _rust_attribution(rust, path: Path, root: Path, *, trust="authored", hints=(), communication=False, repos=None):
+    request = {
+        "path": str(path),
+        "source_root": str(root),
+        "default_trust": trust,
+        "author_hints": list(hints),
+        "communication": communication,
+        "self": OWNER,
+        "repos": repos or {},
+    }
+    return rust("garage_ingest_attribute", request)
+
+
+PATHS = [
+    "Reference/a.pdf",
+    "Reference/deep/b.pdf",
+    "Documents/Paper/Reference/c.pdf",
+    "Documents/Paper/draft.md",
+    "Documents/Research/r.md",
+    "Documents/Reference/x.txt",
+    "x/Army Field Manuals/fm.pdf",
+    "a/b/Documentation/d.md",
+    "Datasheets/top.pdf",
+    "lab/Datasheets/chip.pdf",
+    "lib/Manuals/m.pdf",
+    "Books/b.epub",
+    "shelf/Books/b.epub",
+    "Papers/p.pdf",
+    "x/Specs/s.md",
+    "x/RFCs/rfc1.txt",
+    "Personal/diary.md",
+    "Projects/engine/main.py",
+    "Projects/engine/node_modules/left-pad/index.js",
+    "Projects/engine/vendor/lib.c",
+    "Notes/today.md",
+    "Notes/sub/deeper.md",
+    "misc/references/r.md",
+    "misc/PAPERS/r.md",
+    "misc/Book/r.md",
+    "misc/r.md",
+    "r.md",
+    "Library/site-packages/x.py",
+    "Personal/Reference/mine.md",
+]
+
+
+@pytest.mark.parametrize("trust", ["authored", "reference", "received"])
+@pytest.mark.parametrize("relative", PATHS)
+def test_paths_are_attributed_the_same(rust, tmp_path, relative, trust):
+    path = tmp_path / relative
+    assert _rust_attribution(rust, path, tmp_path, trust=trust) == _python_attribution(path, tmp_path, trust=trust)
+
+
+def test_a_path_outside_the_root_is_judged_by_its_name(rust, tmp_path):
+    root = tmp_path / "root"
+    for path in (tmp_path / "Reference" / "x.pdf", tmp_path / "elsewhere" / "Notes" / "n.md", Path("/")):
+        assert _rust_attribution(rust, path, root) == _python_attribution(path, root)
+
+
+HINTS = [
+    ["Grace Hopper"],
+    ["Ada Lovelace"],
+    ["ada lovelace", "Grace Hopper"],
+    ["ADA-L"],
+    ["One", "Two", "Three", "Four", "Five", "Six", "Seven"],
+]
+
+
+@pytest.mark.parametrize("hints", HINTS)
+@pytest.mark.parametrize("relative", ["Reference/p.pdf", "Notes/n.md", "misc/m.md"])
+def test_metadata_is_weighed_the_same(rust, tmp_path, hints, relative):
+    path = tmp_path / relative
+    assert _rust_attribution(rust, path, tmp_path, hints=hints) == _python_attribution(path, tmp_path, hints=hints)
+
+
+SENDERS = [
+    "Ada Lovelace <ada@example.com>",
+    "ADA@EXAMPLE.COM",
+    "Grace Hopper <grace@navy.mil>",
+    '"Hopper, Grace" <grace@navy.mil>',
+    "grace@navy.mil (Grace Hopper)",
+    "Grace (Admiral) <grace@navy.mil>",
+    "Grace <grace@navy.mil>, Bob <bob@x>",
+    "Mr. Bob <bob@x>",
+    "  Bob  <  bob@x  >  ",
+    "Bob <bob@x",
+    '"unterminated <bob@x>',
+    "bob@x@y",
+    "Bob <>",
+    "<>",
+    "",
+    "Zoë Ångström <zoe@example.org>",
+    "=?utf-8?q?Ad=C3=A1?= <a@x>",
+    "group: a@x, b@y;",
+    "Bob <bob@[127.0.0.1]>",
+    "Bob ((nested)) <bob@x>",
+    "Bob (unbalanced <bob@x>",
+    'Bob \\"quoted\\" <bob@x>',
+    "bob . smith @ example . com",
+    "<@route,@r2:bob@x>",
+    "Bob <bob@x> trailing",
+    "ada at example",
+]
+
+
+@pytest.mark.parametrize("sender", SENDERS)
+def test_senders_are_read_the_same(rust, tmp_path, sender):
+    path = tmp_path / "Mail" / "1.eml"
+    hints = [sender, "Second <second@x>"] if sender.startswith("Bob") else [sender]
+    port = _rust_attribution(rust, path, tmp_path, hints=hints, communication=True)
+    assert port == _python_attribution(path, tmp_path, hints=hints, communication=True)
+
+
+def test_random_senders_are_read_the_same(rust, tmp_path):
+    rng = random.Random(1815)
+    alphabet = 'ab .@<>(),:;"\\[]\t'
+    path = tmp_path / "1.eml"
+    for _ in range(3000):
+        sender = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 14)))
+        port = _rust_attribution(rust, path, tmp_path, hints=[sender], communication=True)
+        assert port == _python_attribution(path, tmp_path, hints=[sender], communication=True), repr(sender)
+
+
+REMOTES = [
+    "https://github.com/grace/engine.git",
+    "ssh://git@github.com:22/grace/engine",
+    "git@github.com:grace/engine.git",
+    "github.com/grace/engine",
+    "engine",
+    "file:///srv/git/engine.git",
+    "https://host/",
+    None,
+]
+
+
+@pytest.mark.parametrize("remote", REMOTES)
+@pytest.mark.parametrize(
+    "tallies",
+    [
+        [("Grace", "grace@navy.mil", 3)],
+        [("Grace", "grace@navy.mil", 15), ("Ada", "ada@example.com", 1)],
+        [("Bob", "b@x", 2), ("Ada", "", 2), ("Al", "al@x", 2)] + [(f"P{n}", f"p{n}@x", 1) for n in range(8)],
+        [("ada-l", "other@x", 1), ("Grace", "grace@navy.mil", 2)],
+        [("Zed", "z@x", 1), ("Amy", "a@x", 1)],
+    ],
+)
+def test_git_history_is_weighed_the_same(rust, tmp_path, monkeypatch, remote, tallies):
+    repo = tmp_path / "engine"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "src").mkdir()
+    tracked = repo / "src" / "main.rs"
+    tracked.write_text("fn main() {}")
+    history = git_attribution.RepoAttribution(root=repo, remote=remote)
+    history.by_path = {
+        "src/main.rs": {
+            (name, email.lower()): git_attribution.AuthorTally(name=name, email=email, commits=commits)
+            for name, email, commits in tallies
+        }
+    }
+    monkeypatch.setattr(resolver, "cached_repo_attribution", lambda root, max_commits=None: history)
+    repos = {str(repo): {"remote": remote, "by_path": {"src/main.rs": [list(t) for t in tallies]}}}
+
+    for path in (tracked, repo / "src" / "untracked.rs", repo / "Reference" / "x.pdf"):
+        port = _rust_attribution(rust, path, tmp_path, repos=repos)
+        assert port == _python_attribution(path, tmp_path), path

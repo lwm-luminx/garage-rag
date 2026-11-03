@@ -57,6 +57,16 @@ int32_t garage_ingest_assess(const char *request, char **result);
 // Offsets are in characters (Unicode code points), null when the chunk was not found in the text.
 int32_t garage_ingest_chunk(const char *request, char **result);
 
+// Attributes a file as garage_rag.attribute.resolver.resolve does:
+//   {"path", "source_root", "default_trust": "authored" | "reference" | "received",
+//    "author_hints": [...],                 // embedded authors, or a message's senders
+//    "communication": false,               // true: hints are senders
+//    "self": {"name", "identities": ["git_email:ada@example.com", ...]},
+//    "repos": {"<repo root>": {"remote": "...", "by_path": {"<relative>": [[name, email, commits]]}}}}
+// -> {"trust", "authors": [{"name", "email", "role", "confidence", "evidence"}], "evidence", "meta"}
+// The caller reads git history; a repository missing from "repos" has none.
+int32_t garage_ingest_attribute(const char *request, char **result);
+
 // Makes a cloud placeholder local within a budget, as garage_rag.ingest.materialize.ensure_local does:
 //   {"path", "budget": {"enabled", "max_files", "max_bytes", "timeout_seconds",   // 0 = unlimited
 //                       "files_done", "bytes_done", "deferred", "failed"}}       // the run so far
