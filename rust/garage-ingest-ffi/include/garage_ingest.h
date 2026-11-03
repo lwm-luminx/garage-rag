@@ -110,7 +110,9 @@ int32_t garage_ingest_ingest_one(const char *request, char **result);
 // {"socket", or "host" and "port"; "token", "source_slug"}): BeginIngestSession, PersistScan, each file's
 // CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The source is scanned as garage_ingest_scan
 // does unless the request states the outcome ("scan"). What each file reads ("files", by path under the root,
-// as for garage_ingest_ingest_one) comes with the request. The reply holds the run id, counters, walk stats,
+// as for garage_ingest_ingest_one) comes with the request. A Messages source (BeginIngestSession's kind "sqlite")
+// is read thread by thread from each chat.db under the root, with the names contacts shared stated as
+// "shared_names": {"<directory>": [[handle, name], ...]}. The reply holds the run id, counters, walk stats,
 // whether the walk completed and the progress reports, or "unavailable" when the root cannot be read and "error" when a run-wide call failed.
 int32_t garage_ingest_ingest_source(const char *request, char **result);
 
@@ -133,11 +135,15 @@ typedef struct GarageIngestHost {
     // "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors"},
     // "budget": {... as garage_ingest_ensure_local's}}.
     void (*progress)(void *context, const char *event);
-    // Whether to stop; asked before each file.
+    // Whether to stop; asked before each file or Messages thread.
     bool (*cancelled)(void *context);
+    // For a Messages source: the names iMessage contacts shared, beside a chat.db. The request is
+    // {"directory"}; the reply {"names": [[handle, name], ...]} (garage_rag.ingest.host_read's
+    // shared_names_for_host). May be null; a null member or a failed call means no shared names.
+    GarageIngestHostCall shared_names;
 } GarageIngestHost;
 
-// Runs one walked source as garage_ingest_ingest_source does, reading each file through `host`: the
+// Runs one source as garage_ingest_ingest_source does, reading each file through `host`: the
 // same request without "files" and "cancel_after", plus "budget" (as for garage_ingest_ensure_local).
 // The library makes placeholders local within the budget (on its own thread; this thread's reads of
 // dataless files are refused) and hashes each file's bytes itself. The reply holds the run id,

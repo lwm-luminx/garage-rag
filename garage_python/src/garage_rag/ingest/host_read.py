@@ -13,6 +13,10 @@ the same read:
 * ``{"failed": reason}`` for a reader's failure (:class:`ExtractionError`, :class:`OSError`), which
   is remembered with the file;
 * ``{"raised": reason}`` for anything else, which the run notes and records as seen.
+
+For a Messages source the loop reads ``chat.db`` itself and asks the host only for the names
+iMessage contacts shared, which :func:`shared_names_for_host` reads from the ``NickNameCache``
+beside it.
 """
 
 from __future__ import annotations
@@ -23,6 +27,7 @@ from pathlib import Path
 
 from garage_rag.extract.base import ExtractionError, ExtractResult, NoTextFound
 from garage_rag.extract.dispatch import extract
+from garage_rag.extract.nicknames import read_shared_names
 from garage_rag.extract.placeholder import PlaceholderFile
 from garage_rag.ingest.materialize import refused_dataless_read
 
@@ -67,4 +72,14 @@ def read_for_host_json(path: str) -> str:
     return json.dumps(read_for_host(path))
 
 
-__all__ = ["read_for_host", "read_for_host_json"]
+def shared_names_for_host(directory: Path | str) -> dict:
+    """``{"names": [[handle, name], ...]}``: the names shared with the owner, beside a Messages database."""
+    return {"names": [[handle, name] for handle, name in read_shared_names(Path(directory))]}
+
+
+def shared_names_for_host_json(directory: str) -> str:
+    """:func:`shared_names_for_host` as a JSON string."""
+    return json.dumps(shared_names_for_host(directory))
+
+
+__all__ = ["read_for_host", "read_for_host_json", "shared_names_for_host", "shared_names_for_host_json"]

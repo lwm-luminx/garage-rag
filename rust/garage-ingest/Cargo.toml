@@ -11,6 +11,7 @@ publish.workspace = true
 garage-facade.workspace = true
 garage-git.workspace = true
 libc.workspace = true
+messages-markdown.workspace = true
 regex.workspace = true
 serde_json.workspace = true
 

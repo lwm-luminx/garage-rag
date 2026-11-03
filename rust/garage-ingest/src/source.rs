@@ -1,7 +1,7 @@
 //! The loop over one walked source: `ingest/pipeline.py`'s `_ingest_source`.
 //!
-//! The scan's outcome is handed in (the caller runs [`crate::scanner`] or states one), and a Messages database
-//! (`sqlite` sources, `ingest/conversations.py`) is not walked, so it is not run here. Everything
+//! The scan's outcome is handed in (the caller runs [`crate::scanner`] or states one). A Messages database
+//! (`sqlite` sources) is not walked: its threads are read by [`crate::conversations`]. Everything
 //! else follows Python: a root problem fails the run before anything is stored; the scan is stored;
 //! each candidate the walk yields is counted, decided by [`ingest_one`] and reported; a file whose
 //! storage call fails is noted and recorded as seen, so reconcile does not take it for deleted; the
@@ -12,6 +12,7 @@ use std::ops::ControlFlow;
 
 use serde_json::{Map, Value};
 
+use crate::conversations::ingest_messages_source;
 use crate::pipeline::{Context, Counters, ExistingStat, FileCandidate, FileHost, Storage, ingest_one};
 use crate::walk::{WalkOptions, WalkStats, Walked, default_exclude_prefixes, walk_while};
 
@@ -93,6 +94,12 @@ pub trait SourceHost: FileHost {
     fn materialized(&self) -> (u64, u64) {
         (0, 0)
     }
+
+    /// The names iMessage contacts shared, as `(handle, name)`, from the `NickNameCache` beside a Messages
+    /// database in `directory` (`extract/nicknames.py`'s `read_shared_names`); none by default.
+    fn shared_names(&mut self, _directory: &std::path::Path) -> Vec<(String, String)> {
+        Vec::new()
+    }
 }
 
 /// A run that reached its end.
@@ -132,6 +139,8 @@ pub struct SourceOptions {
     pub include_code: bool,
     /// Stop after this many files.
     pub limit: Option<u64>,
+    /// A Messages (`sqlite`) source: its databases are read thread by thread, not walked.
+    pub messages: bool,
 }
 
 /// `st_mtime` as Python's walker hands it on: through `datetime.fromtimestamp(..., UTC).timestamp()`,
@@ -184,6 +193,15 @@ pub fn ingest_source(
     }
     storage.persist_scan(scan).map_err(SourceError::Storage)?;
     host.progress("scan", None, &run.counters);
+
+    if options.messages {
+        run.completed = ingest_messages_source(host, storage, context, options.limit, &mut run.counters);
+        finalize(storage, host, &run)?;
+        if host.cancelled() {
+            host.progress("cancelled", None, &run.counters);
+        }
+        return Ok(run);
+    }
 
     let root = &context.source.root;
     let walk_options =
@@ -354,7 +372,7 @@ mod tests {
             policy: &policy,
             force: false,
         };
-        ingest_source(host, storage, &context, scan, &SourceOptions { include_code: false, limit })
+        ingest_source(host, storage, &context, scan, &SourceOptions { include_code: false, limit, messages: false })
     }
 
     #[test]

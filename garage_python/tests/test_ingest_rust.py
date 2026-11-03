@@ -23,6 +23,7 @@ import json
 import os
 import random
 import shutil
+import sqlite3
 import string
 import subprocess
 import sys
@@ -1220,6 +1221,7 @@ class _Run(_Facade):
     def __init__(self, root: Path) -> None:
         super().__init__()
         self.root = root
+        self.kind = "filesystem"
         self.stats: dict[str, dict] = {}
         self.slugs: dict[int, str] = {}
 
@@ -1248,7 +1250,7 @@ class _Run(_Facade):
             default_class="document",
             default_trust="authored",
             run_id=run_id,
-            kind="filesystem",
+            kind=self.kind,
         )
 
     def PersistScan(self, request, context):
@@ -1423,11 +1425,15 @@ class _IngestHost(ctypes.Structure):
         ("release", _Release),
         ("progress", _Progress),
         ("cancelled", _Cancelled),
+        ("shared_names", _HostCall),
     )
 
 
-def _run_source(request: dict, *, read, progress, cancelled) -> dict:
-    """``garage_ingest_run_source`` with a host whose ``read`` answers ``read(path)``."""
+def _run_source(request: dict, *, read, progress, cancelled, shared_names=None) -> dict:
+    """``garage_ingest_run_source`` with a host whose ``read`` answers ``read(path)``.
+
+    ``shared_names(directory)`` answers the host's ``shared_names``; without it the member is null.
+    """
     assert LIBRARY is not None
     library = ctypes.CDLL(str(LIBRARY))
     library.garage_ingest_run_source.argtypes = [
@@ -1448,12 +1454,20 @@ def _run_source(request: dict, *, read, progress, cancelled) -> dict:
     def on_release(_context, pointer):
         del replies[pointer]
 
+    def on_shared_names(_context, raw, reply):
+        assert shared_names is not None
+        buffer = ctypes.create_string_buffer(json.dumps(shared_names(json.loads(raw)["directory"])).encode())
+        replies[ctypes.addressof(buffer)] = buffer
+        reply[0] = ctypes.addressof(buffer)
+        return 0
+
     host = _IngestHost(
         None,
         _HostCall(on_read),
         _Release(on_release),
         _Progress(lambda _context, event: progress(json.loads(event))),
         _Cancelled(lambda _context: cancelled()),
+        _HostCall(on_shared_names) if shared_names is not None else _HostCall(),
     )
     result = ctypes.c_void_p()
     status = library.garage_ingest_run_source(json.dumps(request).encode(), ctypes.byref(host), ctypes.byref(result))
@@ -1568,6 +1582,159 @@ def test_sources_run_through_the_host_the_same(rust, monkeypatch, run_facade, ca
         for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
     }
     assert port["counters"] == python
+    assert recorder.tokens == {"launch-token"}
+
+
+# --- a Messages source -------------------------------------------------------------------------
+
+MESSAGES_CASES = {
+    "every thread": {},
+    "forced": {"force": True},
+    "small chunks": {"settings": {"chunk_size": 120}},
+    "a limit": {"limit": 7},
+    "cancelled": {"cancel_after": 5},
+    "some threads unchanged": {"settled": True},
+    "no contacts": {"contacts": False},
+    "no database": {"folder": "empty"},
+    "no folder": {"folder": "missing"},
+}
+
+
+@pytest.fixture(scope="module")
+def fake_messages_folder(tmp_path_factory):
+    pytest.importorskip("faker")
+    from fake_messages import build_messages_folder
+
+    return build_messages_folder(tmp_path_factory.mktemp("Messages"), seed=7, people=30, threads=40)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", MESSAGES_CASES.values(), ids=MESSAGES_CASES.keys())
+def test_messages_sources_are_ingested_the_same(rust, monkeypatch, run_facade, fake_messages_folder, case):
+    """A Messages source, read through ``messages-markdown`` in Rust, sends what ``_ingest_source`` sends.
+
+    Both Rust entry points run it: ``garage_ingest_ingest_source`` with the shared names stated, and
+    ``garage_ingest_run_source`` asking its host for them through ``shared_names_for_host``.
+    """
+    from garage_rag.extract.nicknames import read_shared_names
+    from garage_rag.ingest import conversations
+    from garage_rag.ingest.host_read import shared_names_for_host
+
+    recorder, socket, client = run_facade
+    recorder.kind = "sqlite"
+    fake = fake_messages_folder
+    folder = case.get("folder")
+    if folder == "empty":
+        recorder.root.mkdir()
+        nicknames = sqlite3.connect(recorder.root / "nicknames.db")
+        nicknames.execute("CREATE TABLE nickname (id INTEGER PRIMARY KEY, name TEXT)")
+        nicknames.commit()
+        nicknames.close()
+    elif folder is None:
+        recorder.root = fake.chat_db.parent
+    root = recorder.root
+
+    settings = config.Settings(**case.get("settings", {}))
+    for module in (pipeline, chunking, scanner, conversations):
+        monkeypatch.setattr(module, "get_settings", lambda: settings)
+    monkeypatch.setattr(pipeline.SelfIdentity, "from_settings", classmethod(lambda cls: _owner()))
+    contacts = list(fake.contacts) if case.get("contacts", True) else []
+
+    def python_run(slug: str, progress: list[dict]):
+        asked = 0
+
+        def is_cancelled() -> bool:
+            nonlocal asked
+            asked += 1
+            return "cancel_after" in case and asked > case["cancel_after"]
+
+        try:
+            counters, _, _ = pipeline._ingest_source(
+                source_slug=slug,
+                gateway=GrpcIngestStorageGateway(client),
+                limit=case.get("limit"),
+                force=case.get("force", False),
+                progress=lambda _c, _b, *, phase, current_item=None, **_: progress.append(
+                    {"phase": phase, "current_item": current_item}
+                ),
+                is_cancelled=is_cancelled,
+                contact_names=ContactNames(contacts),
+            )
+        except walker.SourceUnavailable as error:
+            return str(error)
+        return {
+            name: getattr(counters, name)
+            for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
+        }
+
+    if case.get("settled"):
+        python_run("prime", [])
+        written = [call for call in recorder.requests["prime"] if isinstance(call, garage_pb2.PersistDocumentRequest)]
+        for index, document in enumerate(written):
+            if index % 2 == 0:
+                recorder.stats[document.uri] = {
+                    "exists": True,
+                    "content_sha256": document.content_sha256,
+                    "chunker": document.chunker,
+                    "state": "OK",
+                }
+
+    python_progress: list[dict] = []
+    python = python_run("python", python_progress)
+
+    request = {
+        "include_code": False,
+        "limit": case.get("limit"),
+        "force": case.get("force", False),
+        "settings": case.get("settings"),
+        "self": OWNER,
+        "repos": {},
+        "contact_names": contacts,
+    }
+    stated = rust(
+        "garage_ingest_ingest_source",
+        request
+        | {
+            "facade": {"socket": str(socket), "token": "launch-token", "source_slug": "stated"},
+            "cancel_after": case.get("cancel_after"),
+            "shared_names": {str(root): [list(pair) for pair in read_shared_names(root)]} if root.exists() else {},
+        },
+    )
+
+    asked = 0
+
+    def cancelled() -> bool:
+        nonlocal asked
+        asked += 1
+        return "cancel_after" in case and asked > case["cancel_after"]
+
+    hosted_progress: list[dict] = []
+    hosted = _run_source(
+        request | {"facade": {"socket": str(socket), "token": "launch-token", "source_slug": "hosted"}},
+        read=lambda path: pytest.fail(f"a Messages source read {path} as a file"),
+        progress=hosted_progress.append,
+        cancelled=cancelled,
+        shared_names=shared_names_for_host,
+    )
+
+    assert "error" not in stated
+    assert "error" not in hosted
+    assert recorder.requests["stated"] == recorder.requests["python"]
+    assert recorder.requests["hosted"] == recorder.requests["python"]
+    assert stated["progress"] == python_progress
+    assert [{"phase": e["phase"], "current_item": e["current_item"]} for e in hosted_progress] == python_progress
+    if isinstance(python, str):
+        assert stated["unavailable"] == hosted["unavailable"] == python
+    else:
+        assert stated["counters"] == hosted["counters"] == python
+    if folder is None and not case:
+        # The run reached every thread, wrote each one, and filed its messages by direction and sender.
+        calls = recorder.requests["python"]
+        documents = [call for call in calls if isinstance(call, garage_pb2.PersistDocumentRequest)]
+        assert len(documents) == python["indexed"] > 0
+        assert {chunk.direction for call in documents for chunk in call.chunks} == {"sent", "received"}
+    if case.get("settled"):
+        assert python["skipped"] > 0 and python["indexed"] > 0
     assert recorder.tokens == {"launch-token"}
 
 

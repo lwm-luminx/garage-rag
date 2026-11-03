@@ -595,6 +595,7 @@ fn ingest_one(request: &Map<String, Value>) -> Outcome {
 struct StatedFiles {
     root: PathBuf,
     files: Map<String, Value>,
+    shared_names: Map<String, Value>,
     cancel_after: Option<u64>,
     asked: u64,
     progress: Vec<Value>,
@@ -636,6 +637,23 @@ impl SourceHost for StatedFiles {
     fn progress(&mut self, phase: &str, current_item: Option<&str>, _: &Counters) {
         self.progress.push(json!({ "phase": phase, "current_item": current_item }));
     }
+
+    fn shared_names(&mut self, directory: &Path) -> Vec<(String, String)> {
+        name_pairs(self.shared_names.get(&directory.to_string_lossy().into_owned()))
+    }
+}
+
+/// `[[handle, name], ...]` as pairs; anything else is skipped.
+fn name_pairs(value: Option<&Value>) -> Vec<(String, String)> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|pair| match pair.as_array().map(Vec::as_slice) {
+            Some([Value::String(handle), Value::String(name)]) => Some((handle.clone(), name.clone())),
+            _ => None,
+        })
+        .collect()
 }
 
 fn scan_summary(value: Option<&Value>) -> Result<ScanSummary, String> {
@@ -682,9 +700,10 @@ fn scan(request: &Map<String, Value>) -> Outcome {
 fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let cancel_after = request.get("cancel_after").and_then(Value::as_u64);
     let files = request.get("files").and_then(Value::as_object).cloned().unwrap_or_default();
+    let shared_names = request.get("shared_names").and_then(Value::as_object).cloned().unwrap_or_default();
     run_source_with(
         request,
-        |root| StatedFiles { root, files, cancel_after, asked: 0, progress: Vec::new() },
+        |root| StatedFiles { root, files, shared_names, cancel_after, asked: 0, progress: Vec::new() },
         |host, reply| {
             reply.insert("progress".to_owned(), Value::Array(host.progress));
         },
@@ -705,6 +724,7 @@ fn run_source_with<H: SourceHost>(
     let options = SourceOptions {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
+        messages: false,
     };
     let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
@@ -727,27 +747,18 @@ fn run_source_with<H: SourceHost>(
     let source = source_info(Some(&json!({
         "root": session.root, "default_class": session.default_class, "default_trust": session.default_trust,
     })))?;
-    let scan = match scan_given {
-        Some(scan) => scan_summary(Some(scan))?,
-        // A Messages database is not run here (below), so it is not scanned either.
-        None if session.kind == "sqlite" => ScanSummary::default(),
-        None => {
-            let options = ScanOptions {
-                include_code: options.include_code,
-                policy: &policy,
-                read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
-            };
-            scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
-        }
+    let scan = if let Some(scan) = scan_given {
+        scan_summary(Some(scan))?
+    } else {
+        let options = ScanOptions {
+            include_code: options.include_code,
+            policy: &policy,
+            read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
+        };
+        scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
     };
     let mut storage = GrpcStorage::new(connection, session.run_id, slug);
-    if session.kind == "sqlite" {
-        // A Messages database is read conversation by conversation, which is not ported yet.
-        storage.finalize(false, &Counters::default(), 0, 0).map_err(|error| error.to_string())?;
-        return Ok(
-            json!({ "run_id": session.run_id, "error": "a sqlite source is not walked; its conversations are read in Python" }),
-        );
-    }
+    let options = SourceOptions { messages: session.kind == "sqlite", ..options };
     let context = Context {
         source: &source,
         identity: &identity,
@@ -791,6 +802,7 @@ pub struct GarageIngestHost {
     pub release: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
     pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
+    pub shared_names: HostCall,
 }
 
 /// A run's files read through the host's readers: placeholders made local within the budget and
@@ -801,9 +813,9 @@ struct ReadingHost {
 }
 
 impl ReadingHost {
-    /// Calls the host's `read`; its reply, or why there is none.
-    fn call_read(&self, request: &Value) -> Result<String, String> {
-        let function = self.host.read.ok_or("the host offers no read")?;
+    /// Calls one of the host's functions; its reply, or why there is none.
+    fn call(&self, function: HostCall, what: &str, request: &Value) -> Result<String, String> {
+        let function = function.ok_or_else(|| format!("the host offers no {what}"))?;
         let request = CString::new(request.to_string()).map_err(|_| "a path held a NUL byte".to_owned())?;
         let mut reply: *mut c_char = std::ptr::null_mut();
         // SAFETY: the host's contract (garage_ingest.h).
@@ -822,7 +834,7 @@ impl ReadingHost {
         if status == 0 {
             Ok(text)
         } else {
-            Err(if text.is_empty() { format!("the host's read failed ({status})") } else { text })
+            Err(if text.is_empty() { format!("the host's {what} failed ({status})") } else { text })
         }
     }
 }
@@ -843,7 +855,7 @@ impl FileHost for ReadingHost {
             "size": candidate.size,
             "mtime": candidate.mtime,
         });
-        let reply = match self.call_read(&request) {
+        let reply = match self.call(self.host.read, "read", &request) {
             Ok(reply) => reply,
             Err(error) => return ReadOutcome::Raised(error),
         };
@@ -880,6 +892,16 @@ impl SourceHost for ReadingHost {
 
     fn materialized(&self) -> (u64, u64) {
         (self.budget.files_done, self.budget.bytes_done)
+    }
+
+    fn shared_names(&mut self, directory: &Path) -> Vec<(String, String)> {
+        if self.host.shared_names.is_none() {
+            return Vec::new();
+        }
+        let request = json!({ "directory": directory.to_string_lossy() });
+        // Names are a nicety: a host that cannot read them leaves the handles as they are.
+        let reply = self.call(self.host.shared_names, "shared_names", &request).unwrap_or_default();
+        name_pairs(serde_json::from_str::<Value>(&reply).ok().as_ref().and_then(|reply| reply.get("names")))
     }
 }
 

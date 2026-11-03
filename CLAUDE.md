@@ -211,7 +211,9 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   installed; `test_git_history.py` holds it to `git` beside the other readers) and the per-file decisions of
   the loop (`ingest/pipeline.py`'s `ingest_one`, behind `FileHost` and `Storage` traits, with
   `extract/contact_names.py` for authors' names) and the loop over a walked source (`_ingest_source`, in
-  `source.rs`, with Messages sources left to Python) and the scanners that count a source first
+  `source.rs`; a Messages source is read thread by thread in `conversations.rs`, the glue of
+  `ingest/conversations.py` over the FOSS `messages-markdown` crate, a Cargo git dependency on
+  `lwm-luminx/markdown-extract` that bundles its own SQLite) and the scanners that count a source first
   (`ingest/scanner.py`, in `scanner.rs`: feeds read as expat would, in `feed.rs`, and databases through the
   system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
@@ -220,7 +222,9 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   when `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it, the facade calls against
   `create_grpc_server` as `test_embed_worker.py` does. `garage_ingest_run_source` runs a whole source with each
   file's text read through a host callback (`ingest/host_read.py`'s `read_for_host` is the reply, so the readers
-  can stay Python until each is ported); `test_ingest_rust.py` holds it to `_ingest_source`. Nothing calls them yet.
+  can stay Python until each is ported; for a Messages source the host gives only the names contacts shared,
+  `shared_names_for_host`); `test_ingest_rust.py` holds it to `_ingest_source`, Messages runs over
+  `fake_messages.py` included. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static

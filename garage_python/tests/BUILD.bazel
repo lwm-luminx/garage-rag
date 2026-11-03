@@ -412,6 +412,7 @@ py_test(
         "//garage_python/src/garage_rag/ingest",
         "//garage_python/src/garage_rag/proto",
         "//garage_python/src/garage_rag/service",
+        "//garage_python/tests:fake_messages",
         "@pypi//pytest",
     ],
 )
