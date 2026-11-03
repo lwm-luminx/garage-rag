@@ -9,10 +9,12 @@ use std::sync::OnceLock;
 
 use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::contact_names::ContactNames;
+use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
 };
+use garage_ingest::source::{self, ScanSummary, SourceError, SourceHost, SourceOptions};
 use garage_ingest::{
     Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
     Walked,
@@ -293,32 +295,44 @@ impl FileHost for StatedFile {
 struct RecordedCalls(Vec<Value>);
 
 impl Storage for RecordedCalls {
-    fn record_seen(&mut self, uri: &str) {
+    fn record_seen(&mut self, uri: &str) -> Result<(), String> {
         self.0.push(json!({ "method": "record_seen", "uri": uri }));
+        Ok(())
     }
 
-    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) {
+    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) -> Result<(), String> {
         self.0.push(
             json!({ "method": "record_placeholder", "uri": uri, "mtime": mtime, "title": title, "reason": reason }),
         );
+        Ok(())
     }
 
-    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) -> Result<(), String> {
         self.0.push(json!({
             "method": "record_no_text", "uri": uri, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256,
         }));
+        Ok(())
     }
 
-    fn record_extract_failed(&mut self, uri: &str, error: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+    fn record_extract_failed(
+        &mut self,
+        uri: &str,
+        error: &str,
+        byte_size: u64,
+        mtime: f64,
+        source_sha256: &str,
+    ) -> Result<(), String> {
         self.0.push(json!({
             "method": "record_extract_failed", "uri": uri, "error": error, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256,
         }));
+        Ok(())
     }
 
-    fn record_rejected(&mut self, uri: &str) {
+    fn record_rejected(&mut self, uri: &str) -> Result<(), String> {
         self.0.push(json!({ "method": "record_rejected", "uri": uri }));
+        Ok(())
     }
 
     fn refresh_metadata(
@@ -329,14 +343,15 @@ impl Storage for RecordedCalls {
         source_sha256: &str,
         corpus_class: &str,
         trust_tier: &str,
-    ) {
+    ) -> Result<(), String> {
         self.0.push(json!({
             "method": "refresh_metadata", "uri": uri, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256, "corpus_class": corpus_class, "trust_tier": trust_tier,
         }));
+        Ok(())
     }
 
-    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> usize {
+    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> Result<usize, String> {
         let written = document.chunks.len();
         let authors: Vec<Value> = document
             .authors
@@ -369,7 +384,7 @@ impl Storage for RecordedCalls {
             "content": document.content, "meta": document.meta, "corpus_class": document.corpus_class,
             "trust_tier": document.trust_tier, "authors": authors, "chunks": chunks,
         }));
-        written
+        Ok(written)
     }
 }
 
@@ -505,8 +520,20 @@ fn counters_json(counters: &Counters) -> Value {
     })
 }
 
+/// `"facade": {"socket" | "host" and "port", "token", "run_id", "source_slug"}`: GarageService to persist through.
+fn facade_storage(value: &Value) -> Result<GrpcStorage, String> {
+    let object = value.as_object().ok_or("\"facade\" is not an object")?;
+    let target = facade_target(object)?;
+    let token = object.get("token").and_then(Value::as_str);
+    let run_id = object.get("run_id").and_then(Value::as_i64).ok_or("\"facade\" has no \"run_id\"")?;
+    let slug = object.get("source_slug").and_then(Value::as_str).ok_or("\"facade\" has no \"source_slug\"")?;
+    let connection = Connection::connect(&target, token).map_err(|error| error.to_string())?;
+    Ok(GrpcStorage::new(connection, run_id, slug))
+}
+
+/// With `"facade"`, the stat comes from `CheckDocumentStat` and each call goes to GarageService;
+/// otherwise the calls are written down and returned.
 fn ingest_one(request: &Map<String, Value>) -> Outcome {
-    let existing = existing_stat(request.get("existing"))?;
     let candidate = file_candidate(request.get("candidate"))?;
     let mut host = StatedFile {
         local: request.get("local").and_then(Value::as_bool).unwrap_or(true),
@@ -538,10 +565,172 @@ fn ingest_one(request: &Map<String, Value>) -> Outcome {
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut storage = RecordedCalls::default();
     let mut counters = Counters::default();
-    pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters);
-    Ok(json!({ "calls": storage.0, "counters": counters_json(&counters) }))
+    let mut reply = Map::new();
+    let outcome = if let Some(facade) = request.get("facade").filter(|facade| !facade.is_null()) {
+        let mut storage = facade_storage(facade)?;
+        let existing = storage.check_stat(&candidate.uri).map_err(|error| error.to_string())?;
+        pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters)
+    } else {
+        let existing = existing_stat(request.get("existing"))?;
+        let mut storage = RecordedCalls::default();
+        let outcome = pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters);
+        reply.insert("calls".to_owned(), Value::Array(storage.0));
+        outcome
+    };
+    reply.insert("counters".to_owned(), counters_json(&counters));
+    if let Err(error) = outcome {
+        reply.insert("error".to_owned(), Value::String(error));
+    }
+    Ok(Value::Object(reply))
+}
+
+/// The files a run's walk finds, as the request says each reads: `"files": {"<path under the root>": {"local"?,
+/// "source_sha256"?, "read"}}`, answering `is_cancelled` after `"cancel_after"` files and writing down each
+/// progress report.
+struct StatedFiles {
+    root: PathBuf,
+    files: Map<String, Value>,
+    cancel_after: Option<u64>,
+    asked: u64,
+    progress: Vec<Value>,
+}
+
+impl StatedFiles {
+    fn stated(&self, candidate: &FileCandidate) -> Option<&Map<String, Value>> {
+        let relative = candidate.path.strip_prefix(&self.root).ok()?;
+        let key = relative.components().map(|part| part.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+        self.files.get(&key).and_then(Value::as_object)
+    }
+}
+
+impl FileHost for StatedFiles {
+    fn ensure_local(&mut self, candidate: &FileCandidate) -> bool {
+        self.stated(candidate).and_then(|file| file.get("local")).and_then(Value::as_bool).unwrap_or(true)
+    }
+
+    fn source_sha256(&mut self, candidate: &FileCandidate) -> Option<String> {
+        self.stated(candidate).and_then(|file| file.get("source_sha256")).and_then(Value::as_str).map(str::to_owned)
+    }
+
+    fn read(&mut self, candidate: &FileCandidate) -> ReadOutcome {
+        let stated = self.stated(candidate).and_then(|file| file.get("read"));
+        match read_outcome(stated) {
+            Ok(Some(outcome)) => outcome,
+            Ok(None) => ReadOutcome::Failed(format!("the request states no read for {}", candidate.uri)),
+            Err(error) => ReadOutcome::Failed(error),
+        }
+    }
+}
+
+impl SourceHost for StatedFiles {
+    fn cancelled(&mut self) -> bool {
+        self.asked += 1;
+        self.cancel_after.is_some_and(|after| self.asked > after)
+    }
+
+    fn progress(&mut self, phase: &str, current_item: Option<&str>, _: &Counters) {
+        self.progress.push(json!({ "phase": phase, "current_item": current_item }));
+    }
+}
+
+fn scan_summary(value: Option<&Value>) -> Result<ScanSummary, String> {
+    let object = value.and_then(Value::as_object).ok_or("the request has no \"scan\" object")?;
+    Ok(ScanSummary {
+        item_count: object.get("item_count").and_then(Value::as_u64).unwrap_or(0),
+        item_type: text_field(object, "item_type"),
+        duration_seconds: object.get("duration_seconds").and_then(Value::as_f64).unwrap_or(0.0),
+        details: object.get("details").and_then(Value::as_object).cloned().unwrap_or_default(),
+        error: optional_text(object, "error").filter(|error| !error.is_empty()),
+    })
+}
+
+fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
+    if let Some(socket) = object.get("socket").and_then(Value::as_str) {
+        return Ok(GrpcTarget::Socket(PathBuf::from(socket)));
+    }
+    let port = object
+        .get("port")
+        .and_then(Value::as_u64)
+        .and_then(|port| u16::try_from(port).ok())
+        .ok_or("\"facade\" names neither a socket nor a port")?;
+    Ok(GrpcTarget::Tcp { host: object.get("host").and_then(Value::as_str).unwrap_or("127.0.0.1").to_owned(), port })
+}
+
+/// Runs one walked source through GarageService: `BeginIngestSession`, then [`source::ingest_source`].
+fn ingest_source(request: &Map<String, Value>) -> Outcome {
+    let facade = request.get("facade").and_then(Value::as_object).ok_or("the request has no \"facade\" object")?;
+    let slug = facade.get("source_slug").and_then(Value::as_str).ok_or("\"facade\" has no \"source_slug\"")?;
+    let connection = Connection::connect(&facade_target(facade)?, facade.get("token").and_then(Value::as_str))
+        .map_err(|error| error.to_string())?;
+    let options = SourceOptions {
+        include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
+        limit: request.get("limit").and_then(Value::as_u64),
+    };
+    let scan = scan_summary(request.get("scan"))?;
+    let settings = ingest_settings(request.get("settings"))?;
+    let identity = identity(request)?;
+    let names = contact_names(request.get("contact_names"))?;
+    let policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    let supplied;
+    let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
+        library_history()
+    } else {
+        supplied = repos(request.get("repos"))?;
+        &supplied
+    };
+
+    let session = facade::begin_session(&connection, slug, options.include_code).map_err(|error| error.to_string())?;
+    let source = source_info(Some(&json!({
+        "root": session.root, "default_class": session.default_class, "default_trust": session.default_trust,
+    })))?;
+    let mut storage = GrpcStorage::new(connection, session.run_id, slug);
+    if session.kind == "sqlite" {
+        // A Messages database is read conversation by conversation, which is not ported yet.
+        storage.finalize(false, &Counters::default(), 0, 0).map_err(|error| error.to_string())?;
+        return Ok(
+            json!({ "run_id": session.run_id, "error": "a sqlite source is not walked; its conversations are read in Python" }),
+        );
+    }
+    let context = Context {
+        source: &source,
+        identity: &identity,
+        git,
+        contact_names: names.as_ref(),
+        settings: &settings,
+        policy: &policy,
+        force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
+    };
+    let mut host = StatedFiles {
+        root: garage_ingest::walk::expand_home(&source.root),
+        files: request.get("files").and_then(Value::as_object).cloned().unwrap_or_default(),
+        cancel_after: request.get("cancel_after").and_then(Value::as_u64),
+        asked: 0,
+        progress: Vec::new(),
+    };
+    let mut reply = Map::new();
+    reply.insert("run_id".to_owned(), json!(session.run_id));
+    match source::ingest_source(&mut host, &mut storage, &context, &scan, &options) {
+        Ok(run) => {
+            let stats: Map<String, Value> =
+                run.walk_stats.fields().iter().map(|&(name, count)| (name.to_owned(), json!(count))).collect();
+            reply.insert("counters".to_owned(), counters_json(&run.counters));
+            reply.insert("walk_stats".to_owned(), Value::Object(stats));
+            reply.insert("completed".to_owned(), json!(run.completed));
+        }
+        Err(SourceError::Unavailable(problem)) => {
+            reply.insert("unavailable".to_owned(), Value::String(problem));
+        }
+        Err(SourceError::Storage(error)) => {
+            reply.insert("error".to_owned(), Value::String(error));
+        }
+    }
+    reply.insert("progress".to_owned(), Value::Array(host.progress));
+    Ok(Value::Object(reply))
 }
 
 /// The owner: `"self": {"name", "identities": ["kind:value", ...]}`.
@@ -752,6 +941,23 @@ pub unsafe extern "C" fn garage_ingest_git_remote(request: *const c_char, result
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, git_tracked)
+}
+
+/// Runs one walked source, as `ingest/pipeline.py`'s `_ingest_source` does, through GarageService:
+/// `{"facade": {"socket" | "host" and "port", "token"?, "source_slug"}, "scan": {"item_count", "item_type",
+/// "duration_seconds", "details", "error"}, "files": {"<path under the root>": {"local"?, "source_sha256"?,
+/// "read"}}, "include_code"?, "limit"?, "cancel_after"?, "force"?, "settings"?, "self"?, "contact_names"?,
+/// "repos"?, "read_git"?, "policy"?}` -> `{"run_id", "counters", "walk_stats", "completed", "progress"}`, with
+/// `"unavailable"` in place of the counters when the scan found the root unreadable and `"error"` when a
+/// run-wide call failed. The scan is stated until the scanners are ported, and each file's read is stated
+/// as for [`garage_ingest_ingest_one`]; `"cancel_after"` cancels the run after that many files.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, ingest_source)
 }
 
 /// Decides what ingest does with one file, as `ingest/pipeline.py`'s `ingest_one` does, from what the

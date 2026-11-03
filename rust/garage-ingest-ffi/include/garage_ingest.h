@@ -95,8 +95,18 @@ int32_t garage_ingest_git_tracked(const char *request, char **result);
 // local ("local"), its bytes' hash ("source_sha256") and what its reader made of it ("read": a
 // document, "no_text", "placeholder" or "failed"), with the settings, source, owner, contact names and
 // git history ("repos" or "read_git") attribution reads. The reply is the facade calls Python makes, in
-// order ({"calls": [{"method", ...}]}), and the counters they move.
+// order ({"calls": [{"method", ...}]}), and the counters they move. With "facade" ({"socket", or "host" and
+// "port"; "token", "run_id", "source_slug"}) the stat comes from GarageService's CheckDocumentStat and each
+// call is made there as PersistDocument; the reply is then the counters, with "error" when a call failed.
 int32_t garage_ingest_ingest_one(const char *request, char **result);
+
+// Runs one walked source (garage_rag.ingest.pipeline._ingest_source) through GarageService ("facade":
+// {"socket", or "host" and "port"; "token", "source_slug"}): BeginIngestSession, PersistScan, each file's
+// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The scan's outcome ("scan") and what each
+// file reads ("files", by path under the root, as for garage_ingest_ingest_one) come with the request. The
+// reply holds the run id, counters, walk stats, whether the walk completed and the progress reports, or
+// "unavailable" when the root cannot be read and "error" when a run-wide call failed.
+int32_t garage_ingest_ingest_source(const char *request, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);

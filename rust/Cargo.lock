@@ -202,13 +202,8 @@ dependencies = [
 name = "garage-embed"
 version = "0.1.0"
 dependencies = [
- "hyper-util",
- "prost",
+ "garage-facade",
  "serde_json",
- "tokio",
- "tonic",
- "tonic-prost",
- "tower",
 ]
 
 [[package]]
@@ -220,6 +215,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-facade"
+version = "0.1.0"
+dependencies = [
+ "hyper-util",
+ "prost",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tower",
+]
+
+[[package]]
 name = "garage-git"
 version = "0.1.0"
 
@@ -227,6 +234,7 @@ version = "0.1.0"
 name = "garage-ingest"
 version = "0.1.0"
 dependencies = [
+ "garage-facade",
  "garage-git",
  "libc",
  "regex",

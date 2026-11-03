@@ -1,0 +1,19 @@
+[package]
+name = "garage-facade"
+description = "GarageService's database facade as the Rust workers reach it: the generated client and a blocking connection over its Unix socket or a loopback port."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hyper-util.workspace = true
+prost.workspace = true
+tokio.workspace = true
+tonic = { workspace = true, features = ["channel"] }
+tonic-prost.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true
