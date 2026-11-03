@@ -579,7 +579,8 @@ checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 [[package]]
 name = "messages-markdown"
 version = "0.1.0"
-source = "git+https://github.com/lwm-luminx/markdown-extract?rev=7966d745c4672b45978b2143159a0e1ceaa9f6a2#7966d745c4672b45978b2143159a0e1ceaa9f6a2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aedf0a4bb75b389e087beb8acfcc49329c3479af08a4d82a345d1eafd20f5823"
 dependencies = [
  "rusqlite",
  "unicode-normalization",

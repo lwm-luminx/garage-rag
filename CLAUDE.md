@@ -212,8 +212,8 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   the loop (`ingest/pipeline.py`'s `ingest_one`, behind `FileHost` and `Storage` traits, with
   `extract/contact_names.py` for authors' names) and the loop over a walked source (`_ingest_source`, in
   `source.rs`; a Messages source is read thread by thread in `conversations.rs`, the glue of
-  `ingest/conversations.py` over the FOSS `messages-markdown` crate, a Cargo git dependency on
-  `lwm-luminx/markdown-extract` that bundles its own SQLite) and the scanners that count a source first
+  `ingest/conversations.py` over the FOSS `messages-markdown` crate (crates.io, from
+  `lwm-luminx/markdown-extract`, which bundles its own SQLite)) and the scanners that count a source first
   (`ingest/scanner.py`, in `scanner.rs`: feeds read as expat would, in `feed.rs`, and databases through the
   system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
