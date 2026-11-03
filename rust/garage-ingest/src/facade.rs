@@ -232,7 +232,8 @@ impl Storage for GrpcStorage {
                 heading_path: chunk.heading_path.unwrap_or_default(),
                 chunk_sha256: chunk.chunk_sha256,
                 chunker: chunk.chunker,
-                ..DocumentChunkPayload::default()
+                direction: chunk.direction.unwrap_or_default(),
+                sender: chunk.sender.unwrap_or_default(),
             })
             .collect();
         let meta_json = if document.meta.is_empty() {

@@ -46,6 +46,8 @@ garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"
 libc = "0.2"
+# Apple Messages' chat.db, thread by thread: the FOSS markdown-extract crates (docs/plans/rust-plugins.md).
+messages-markdown = "0.1.0"
 prost = "0.14"
 regex = "1.13"
 serde_json = { version = "1.0", features = ["preserve_order"] }

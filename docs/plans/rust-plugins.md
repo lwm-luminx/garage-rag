@@ -154,7 +154,9 @@ step leaves the app working, with the Python reference still there for the servi
    service can move its loop to Rust while the readers are still Python and drop Python as each reader gets
    a Rust port. The PDF, Office, mail and Messages readers come from standalone FOSS crates
    (`markdown-extract`), with Garage keeping the glue: Messages is a container read thread by thread, not a
-   one-file reader. Next: the service's Swift host on `garage_ingest_run_source`, then the readers.
+   one-file reader, and is the first one in: `conversations.rs` stores each thread from `messages-markdown`
+   as `ingest/conversations.py` does, its host supplying only the names contacts shared. Containers like
+   PST are read the same way, streamed item by item, since a source may sit on slow storage (NFS, SMB). Next: the service's Swift host on `garage_ingest_run_source`, then the readers.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy

@@ -187,6 +187,10 @@ pub struct ChunkPayload {
     pub chunk_sha256: String,
     /// The chunker.
     pub chunker: String,
+    /// A message chunk's `chunks.direction`: `sent` or `received`.
+    pub direction: Option<String>,
+    /// A message chunk's `chunks.sender`: `me` or the handle that wrote it.
+    pub sender: Option<String>,
 }
 
 /// A document to write (`replace_document`'s arguments).
@@ -621,6 +625,8 @@ pub fn ingest_one(
             chunk_sha256: sha256_hex(chunk.text.as_bytes()),
             chunker: chunk.chunker,
             text: chunk.text,
+            direction: None,
+            sender: None,
         })
         .collect();
     let document = DocumentPayload {

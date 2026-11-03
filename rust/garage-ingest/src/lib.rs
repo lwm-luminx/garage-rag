@@ -6,6 +6,7 @@
 //! attribution ([`attribution`], with Python's sender parsing in [`parseaddr`] and git history read
 //! through libgit2 in [`history`]), and the per-file decisions of the ingest loop ([`pipeline`], with
 //! message handles named through [`contact_names`]), and the loop over a walked source ([`source`]),
+//! with a Messages source read thread by thread ([`conversations`], over the `messages-markdown` crate),
 //! persisting through GarageService ([`facade`]).
 //!
 //! Python's modules are the specification; `garage_python/tests/test_ingest_rust.py` holds each
@@ -14,6 +15,7 @@
 pub mod attribution;
 pub mod chunking;
 pub mod contact_names;
+pub mod conversations;
 pub mod facade;
 pub mod feed;
 pub mod fnmatch;
