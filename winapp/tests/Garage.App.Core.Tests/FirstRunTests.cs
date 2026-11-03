@@ -494,8 +494,9 @@ public sealed class FirstRunTests
         bool finished = false;
         walk.Coordinator.Finished += (_, _) => finished = true;
         walk.Coordinator.Begin();
-        await Until(() => !walk.Coordinator.IsActive);
-        Assert.True(finished);
+        // Finish clears IsActive before it raises Finished, on the readiness task's thread, so wait for the event.
+        await Until(() => finished);
+        Assert.False(walk.Coordinator.IsActive);
         Assert.True(walk.Coordinator.HasCompleted);
     }
 
