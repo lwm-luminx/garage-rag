@@ -9,4 +9,5 @@ The short version:
 - **Python changes** need no Bazel or Mac: `cd garage_python && uv sync` (on Linux or Windows, `uv venv --python 3.14 .venv && uv pip install -e '.[dev]'`), then `.venv/bin/pytest`, `.venv/bin/ruff format` and `.venv/bin/ruff check`.
 - **Everything else** builds with Bazel through the Aspect CLI: `aspect build //...`, `aspect test //...`. [`CLAUDE.md`](CLAUDE.md) is the detailed map of the build, the tests and the architecture.
 - **Privacy is load-bearing.** Only `net/egress.py` opens outbound connections, there are no cloud AI SDKs, and communications never leave the machine. See [`docs/privacy.md`](docs/privacy.md).
+- **Plans before code.** Larger changes start as a plan in [`docs/plans/`](docs/plans/), published at [garagerag.app/plans](https://garagerag.app/plans/). Plan pull requests are labelled `plan` and merged on a light read so they're public for review and comment; merging one publishes the proposal, it doesn't approve the code. Code pull requests link the plan they implement and need CI green.
 - Open pull requests against `main`, with tests. Contributions are licensed under the [MIT license](LICENSE).
