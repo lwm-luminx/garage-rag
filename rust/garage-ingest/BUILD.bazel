@@ -14,7 +14,6 @@ rust_library(
         "@crates//:libc",
         "@crates//:regex",
         "@crates//:serde_json",
-        "@crates//:sha2",
     ],
 )
 

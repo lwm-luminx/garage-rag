@@ -376,12 +376,7 @@ pub fn kind_name(kind: ContentKind) -> &'static str {
 /// `sha256_text`, hex.
 #[must_use]
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    use sha2::{Digest, Sha256};
-    use std::fmt::Write as _;
-    Sha256::digest(bytes).iter().fold(String::with_capacity(64), |mut hex, byte| {
-        let _ = write!(hex, "{byte:02x}");
-        hex
-    })
+    crate::sha256::hex_digest(bytes)
 }
 
 /// `name_authors`: authors named after one of their own handles take the contact's name.

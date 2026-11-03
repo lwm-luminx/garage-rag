@@ -21,6 +21,7 @@ pub mod pipeline;
 pub mod placeholder;
 pub mod policy;
 pub mod quality;
+pub mod sha256;
 pub mod splitters;
 pub mod walk;
 
