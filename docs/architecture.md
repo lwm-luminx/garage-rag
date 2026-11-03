@@ -207,8 +207,12 @@ Run `garage enrich-facts --prompt entities` and inspect the `facts` rows it
 produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
 building schema on top of what a given local model actually extracts.
 
-Only the local part of LangExtract is used, vendored as
-`enrich/langextract` (prompting, chunking, parsing and alignment). Upstream's
+Only the local part of LangExtract is used (prompting, chunking, parsing and
+alignment): `langextract_rs`, a Rust port published as
+[langextract-rs](https://github.com/lwm-luminx/langextract-rs), when it is
+installed, and otherwise the Python subset vendored as `enrich/langextract`.
+Both send the same prompts and return the same extractions
+(`tests/test_langextract_rs.py`). Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
 OpenAI, is not vendored, and a cloud model id is refused with an error. The
 model is always `facts_language_model(...)`, a `LocalLanguageModel`
