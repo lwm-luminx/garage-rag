@@ -234,6 +234,8 @@ jobs:
         run: |
           cargo run --locked -p protogen
           git diff --exit-code -- garage-plugin/src/generated garage-facade/src/generated
+      - name: The checked-in C headers match the Rust (cbindgen)
+        run: cargo run --locked -p headergen -- --check
       - name: Build the C ABI library
         run: cargo build --release --locked -p garage-text-ffi
       - name: .NET binding tests against the built library
