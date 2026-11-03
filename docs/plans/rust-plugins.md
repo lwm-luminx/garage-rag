@@ -130,7 +130,11 @@ step leaves the app working, with the Python reference still there for the servi
    `UpdateEmbeddings` and a new `BackfillDistilled`, with the model servers reached through its host
    after a port of the egress guard's destination rules. `garage-embed-ffi` is its C ABI.
 3. **Ingest.** The walker, readers, chunking, attribution, the quality gate and the splitters, in Rust,
-   with readers behind the plugin contract above.
+   with readers behind the plugin contract above. `rust/garage-ingest` starts it with the walker
+   (`ingest/walker.py`: pruning, the cloud placeholder check, `root_problem`), its rules as data
+   (`WalkPolicy`, held to Python's tables) and the quality gate (`extract/quality.py`, to the same
+   metrics). `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds both to
+   Python. Next: materializing placeholders, the splitters and attribution, then the service itself.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy

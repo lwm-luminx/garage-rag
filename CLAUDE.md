@@ -195,6 +195,11 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `egress` module, a port of `net/egress.py`'s destination rules, has approved it. `garage-embed-ffi`
   exports it as JSON over a C ABI (`include/garage_embed.h`); `tests/test_embed_worker.py` runs it against
   `create_grpc_server` when `GARAGE_EMBED_FFI_LIBRARY` names the build or `rust/target` has it.
+- **Ingest** (`rust/garage-ingest`) ports the pipeline a piece at a time: so far the walker (`ingest/walker.py`,
+  its rules as data in `WalkPolicy`, held to Python's tables) and the quality gate (`extract/quality.py`, with
+  Python's `str` character classes so every metric matches). `garage-ingest-ffi` exports them as JSON over a C
+  ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds both to Python when
+  `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static
