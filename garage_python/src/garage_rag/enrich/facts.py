@@ -6,7 +6,10 @@ Uses LangExtract (https://github.com/google/langextract) against a local model
 project, document content never leaves the machine.
 
 Only the part of LangExtract that runs prompts through a caller-built model is
-used, vendored as :mod:`garage_rag.enrich.langextract`. Upstream's
+used: ``langextract_rs`` (`langextract-rs <https://github.com/lwm-luminx/langextract-rs>`_,
+a Rust port held to upstream by parity tests) where it is installed, otherwise the
+Python subset vendored as :mod:`garage_rag.enrich.langextract`; both take the same
+arguments and return the same extractions (``tests/test_langextract_rs.py``). Upstream's
 ``lx.extract(model_id=...)`` chose a backend by regex on the model name, sending
 ``gemini*`` to Google's API and ``gpt-*``/``o1*`` to OpenAI; that routing and
 those backends are not vendored, so there is no code path to a cloud model. The
@@ -64,13 +67,30 @@ from sqlalchemy.orm import Session
 from garage_rag.config import get_settings
 from garage_rag.config.fact_prompts import EffectivePrompt, effective_prompts
 from garage_rag.db.models import Chunk, CorpusClass, Document, Fact, FactRun
-from garage_rag.enrich import langextract as lx
 from garage_rag.enrich.local_provider import LocalLanguageModel
 from garage_rag.inference import Backend, BackendKind, InferenceClient
 from garage_rag.net import egress
 from garage_rag.xpc.llama_xpc import LlamaXPCClient
 
 log = logging.getLogger(__name__)
+
+
+def _langextract():
+    """``langextract_rs`` when it is installed, else the vendored Python subset.
+
+    Neither makes a request of its own: both only call the model they are given.
+    """
+    try:
+        import langextract_rs  # gazelle:ignore langextract_rs
+
+        return langextract_rs
+    except ImportError:
+        from garage_rag.enrich import langextract
+
+        return langextract
+
+
+lx = _langextract()
 
 # Function-level fallbacks for direct callers of :func:`extract_facts`. The
 # CLI and the ``EnrichFacts`` RPC do not use these: they take the model and

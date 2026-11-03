@@ -89,6 +89,19 @@ py_test(
 )
 
 py_test(
+    name = "test_langextract_rs",
+    srcs = ["test_langextract_rs.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/enrich/langextract",
+        "//garage_python/src/garage_rag/inference",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_migrate",
     srcs = ["test_migrate.py"],
     # sql_dir() must resolve to the committed DDL, so the files are needed at test time.

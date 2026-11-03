@@ -429,7 +429,9 @@ sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ qua
   (`tools/garage_git/build_extension.sh`).
 - **Store** — chunks are model-agnostic; see the schema section below.
 - **Distill facts** (`enrich/facts.py`, `garage enrich-facts`, `EnrichFacts` RPC) — optional
-  post-ingest pass: LangExtract (only its local part, vendored as `enrich/langextract`), driven
+  post-ingest pass: LangExtract's extraction loop (`langextract_rs`, the FOSS Rust port
+  `lwm-luminx/langextract-rs`, when installed, else the local part vendored as `enrich/langextract`;
+  `tests/test_langextract_rs.py` holds the two to the same prompts and extractions), driven
   through Garage's own `LocalLanguageModel` (`enrich/local_provider.py`) against the local server
   `facts.provider` names, distills each document into atomic, span-grounded `facts` rows; every
   fact also gets its own `chunks` row (`chunks.fact_id`, `chunker = 'facts:...'`), so the ordinary
