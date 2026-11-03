@@ -236,6 +236,13 @@ jobs:
           git diff --exit-code -- garage-plugin/src/generated garage-facade/src/generated
       - name: The checked-in C headers match the Rust (cbindgen)
         run: cargo run --locked -p headergen -- --check
+      - name: UniFFI's Python bindings call the embed worker and back
+        run: |
+          cargo build --locked -p garage-embed-uniffi -p uniffi-bindgen
+          target/debug/uniffi-bindgen generate --library target/debug/libgarage_embed_uniffi.so \
+            --language python --no-format --out-dir "$RUNNER_TEMP/uniffi"
+          cp target/debug/libgarage_embed_uniffi.so "$RUNNER_TEMP/uniffi/"
+          python3 garage-embed-uniffi/tests/python_roundtrip.py "$RUNNER_TEMP/uniffi"
       - name: Build the C ABI library
         run: cargo build --release --locked -p garage-text-ffi
       - name: .NET binding tests against the built library

@@ -229,6 +229,11 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
   `garage-text-ffi` and `garage-embed-ffi`; add a crate to `CRATES` in `rust/headergen/src/main.rs`.
+- **UniFFI** (pilot, [docs/plans/uniffi.md](docs/plans/uniffi.md)): `rust/garage-embed-uniffi` is the embed worker
+  with typed records, errors and an `EmbedHost` protocol, beside its C ABI. `rust/uniffi-bindgen` (no
+  `cargo-metadata`, so it runs in Bazel's sandbox) generates the bindings; `//rust/garage-embed-uniffi:GarageEmbedUniFFI`
+  is the Swift module, and CI's rust job runs `tests/python_roundtrip.py` over the generated Python bindings.
+  Rust calling Swift-only APIs goes through swift-rs (`ext/swift_rs`, `garage-ocr`'s `vision-documents`).
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static
