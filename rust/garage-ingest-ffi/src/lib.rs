@@ -9,6 +9,7 @@ use std::sync::OnceLock;
 
 use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::contact_names::ContactNames;
+use garage_ingest::facade::{Connection, GrpcStorage, GrpcTarget};
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
@@ -293,32 +294,44 @@ impl FileHost for StatedFile {
 struct RecordedCalls(Vec<Value>);
 
 impl Storage for RecordedCalls {
-    fn record_seen(&mut self, uri: &str) {
+    fn record_seen(&mut self, uri: &str) -> Result<(), String> {
         self.0.push(json!({ "method": "record_seen", "uri": uri }));
+        Ok(())
     }
 
-    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) {
+    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) -> Result<(), String> {
         self.0.push(
             json!({ "method": "record_placeholder", "uri": uri, "mtime": mtime, "title": title, "reason": reason }),
         );
+        Ok(())
     }
 
-    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) -> Result<(), String> {
         self.0.push(json!({
             "method": "record_no_text", "uri": uri, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256,
         }));
+        Ok(())
     }
 
-    fn record_extract_failed(&mut self, uri: &str, error: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+    fn record_extract_failed(
+        &mut self,
+        uri: &str,
+        error: &str,
+        byte_size: u64,
+        mtime: f64,
+        source_sha256: &str,
+    ) -> Result<(), String> {
         self.0.push(json!({
             "method": "record_extract_failed", "uri": uri, "error": error, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256,
         }));
+        Ok(())
     }
 
-    fn record_rejected(&mut self, uri: &str) {
+    fn record_rejected(&mut self, uri: &str) -> Result<(), String> {
         self.0.push(json!({ "method": "record_rejected", "uri": uri }));
+        Ok(())
     }
 
     fn refresh_metadata(
@@ -329,14 +342,15 @@ impl Storage for RecordedCalls {
         source_sha256: &str,
         corpus_class: &str,
         trust_tier: &str,
-    ) {
+    ) -> Result<(), String> {
         self.0.push(json!({
             "method": "refresh_metadata", "uri": uri, "byte_size": byte_size, "mtime": mtime,
             "source_sha256": source_sha256, "corpus_class": corpus_class, "trust_tier": trust_tier,
         }));
+        Ok(())
     }
 
-    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> usize {
+    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> Result<usize, String> {
         let written = document.chunks.len();
         let authors: Vec<Value> = document
             .authors
@@ -369,7 +383,7 @@ impl Storage for RecordedCalls {
             "content": document.content, "meta": document.meta, "corpus_class": document.corpus_class,
             "trust_tier": document.trust_tier, "authors": authors, "chunks": chunks,
         }));
-        written
+        Ok(written)
     }
 }
 
@@ -505,8 +519,29 @@ fn counters_json(counters: &Counters) -> Value {
     })
 }
 
+/// `"facade": {"socket" | "host" and "port", "token", "run_id", "source_slug"}`: GarageService to persist through.
+fn facade_storage(value: &Value) -> Result<GrpcStorage, String> {
+    let object = value.as_object().ok_or("\"facade\" is not an object")?;
+    let target = if let Some(socket) = object.get("socket").and_then(Value::as_str) {
+        GrpcTarget::Socket(PathBuf::from(socket))
+    } else {
+        let port = object
+            .get("port")
+            .and_then(Value::as_u64)
+            .and_then(|port| u16::try_from(port).ok())
+            .ok_or("\"facade\" names neither a socket nor a port")?;
+        GrpcTarget::Tcp { host: object.get("host").and_then(Value::as_str).unwrap_or("127.0.0.1").to_owned(), port }
+    };
+    let token = object.get("token").and_then(Value::as_str);
+    let run_id = object.get("run_id").and_then(Value::as_i64).ok_or("\"facade\" has no \"run_id\"")?;
+    let slug = object.get("source_slug").and_then(Value::as_str).ok_or("\"facade\" has no \"source_slug\"")?;
+    let connection = Connection::connect(&target, token).map_err(|error| error.to_string())?;
+    Ok(GrpcStorage::new(connection, run_id, slug))
+}
+
+/// With `"facade"`, the stat comes from `CheckDocumentStat` and each call goes to GarageService;
+/// otherwise the calls are written down and returned.
 fn ingest_one(request: &Map<String, Value>) -> Outcome {
-    let existing = existing_stat(request.get("existing"))?;
     let candidate = file_candidate(request.get("candidate"))?;
     let mut host = StatedFile {
         local: request.get("local").and_then(Value::as_bool).unwrap_or(true),
@@ -538,10 +573,24 @@ fn ingest_one(request: &Map<String, Value>) -> Outcome {
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut storage = RecordedCalls::default();
     let mut counters = Counters::default();
-    pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters);
-    Ok(json!({ "calls": storage.0, "counters": counters_json(&counters) }))
+    let mut reply = Map::new();
+    let outcome = if let Some(facade) = request.get("facade").filter(|facade| !facade.is_null()) {
+        let mut storage = facade_storage(facade)?;
+        let existing = storage.check_stat(&candidate.uri).map_err(|error| error.to_string())?;
+        pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters)
+    } else {
+        let existing = existing_stat(request.get("existing"))?;
+        let mut storage = RecordedCalls::default();
+        let outcome = pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters);
+        reply.insert("calls".to_owned(), Value::Array(storage.0));
+        outcome
+    };
+    reply.insert("counters".to_owned(), counters_json(&counters));
+    if let Err(error) = outcome {
+        reply.insert("error".to_owned(), Value::String(error));
+    }
+    Ok(Value::Object(reply))
 }
 
 /// The owner: `"self": {"name", "identities": ["kind:value", ...]}`.

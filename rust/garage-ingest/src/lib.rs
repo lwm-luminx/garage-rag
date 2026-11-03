@@ -13,6 +13,7 @@
 pub mod attribution;
 pub mod chunking;
 pub mod contact_names;
+pub mod facade;
 pub mod fnmatch;
 pub mod history;
 pub mod materialize;

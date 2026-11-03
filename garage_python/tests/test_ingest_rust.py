@@ -42,7 +42,10 @@ from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult,
 from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.placeholder import PlaceholderFile
 from garage_rag.ingest import chunking, classify, materialize, pipeline, splitters, walker
-from garage_rag.ingest.gateway import ExistingDocStat, SourceContext
+from garage_rag.ingest.gateway import ExistingDocStat, GrpcIngestStorageGateway, SourceContext
+from garage_rag.proto import garage_pb2
+from garage_rag.service import server as service
+from garage_rag.service.client import GarageClient
 
 REPO = Path(__file__).resolve().parents[2]
 CORPUS = Path(__file__).parent / "corpora" / "second-brain-os"
@@ -893,7 +896,8 @@ def _python_read(read: dict | None, path: Path):
     return extract
 
 
-def _ingest_both(rust, monkeypatch, tmp_path, case: dict) -> tuple[dict, dict]:
+def _ingest_both(rust, monkeypatch, tmp_path, case: dict, *, gateway=None, facade=None) -> tuple[dict, dict]:
+    """``case`` through both ports; with ``gateway`` and ``facade``, both persist through GarageService."""
     root = tmp_path / "src"
     path = root / case.get("relative", "Notes/note.md")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -932,7 +936,7 @@ def _ingest_both(rust, monkeypatch, tmp_path, case: dict) -> tuple[dict, dict]:
         mtime=datetime.fromtimestamp(case.get("mtime", MTIME), UTC),
         placeholder=case.get("placeholder", False),
     )
-    gateway = _RecordingGateway(case.get("existing"))
+    gateway = gateway or _RecordingGateway(case.get("existing"))
     counters = pipeline.IngestCounters()
     names = None
     if contacts is not None:
@@ -950,7 +954,7 @@ def _ingest_both(rust, monkeypatch, tmp_path, case: dict) -> tuple[dict, dict]:
         contact_names=names,
     )
     python = {
-        "calls": gateway.calls,
+        "calls": getattr(gateway, "calls", []),
         "counters": {
             name: getattr(counters, name)
             for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
@@ -991,7 +995,11 @@ def _ingest_both(rust, monkeypatch, tmp_path, case: dict) -> tuple[dict, dict]:
         "repos": {},
         "force": case.get("force", False),
     }
-    return python, rust("garage_ingest_ingest_one", request)
+    if facade is not None:
+        request["facade"] = facade
+    reply = rust("garage_ingest_ingest_one", request)
+    reply.setdefault("calls", [])
+    return python, reply
 
 
 _PROSE = "# Notes\n\n" + "\n\n".join(f"Paragraph {n} says something about the garage." * 6 for n in range(12))
@@ -1111,3 +1119,90 @@ def test_unchanged_text_keeps_its_chunks_the_same(rust, monkeypatch, tmp_path, n
     python, port = _ingest_both(rust, monkeypatch, tmp_path / "again", {**case, "existing": existing})
     assert python["calls"][0]["method"] == "refresh_metadata"
     assert port == python
+
+
+# --- the same file, persisted through GarageService ---------------------------------------------
+
+
+class _Facade:
+    """GarageService's two per-file calls, written down by source, answering with ``existing``."""
+
+    def __init__(self) -> None:
+        self.existing: dict | None = None
+        self.requests: dict[str, list[dict]] = {}
+        self.tokens: set[str | None] = set()
+
+    def _record(self, request, context) -> None:
+        self.tokens.add(dict(context.invocation_metadata()).get("x-garage-token"))
+        call = type(request)()
+        call.CopyFrom(request)
+        slug = call.source_slug
+        call.source_slug = ""
+        if isinstance(call, garage_pb2.PersistDocumentRequest):
+            call.run_id = 0
+            if call.meta_json:
+                # The two serializers space JSON differently; what is stored is the parsed object.
+                call.meta_json = json.dumps(json.loads(call.meta_json), sort_keys=True)
+        self.requests.setdefault(slug, []).append(call)
+
+    def CheckDocumentStat(self, request, context):
+        self._record(request, context)
+        return garage_pb2.CheckDocumentStatResponse(**(self.existing or {"exists": False}))
+
+    def PersistDocument(self, request, context):
+        self._record(request, context)
+        return garage_pb2.PersistDocumentResponse(success=True, chunks_written=len(request.chunks))
+
+
+@pytest.fixture
+def facade(monkeypatch, tmp_path):
+    """GarageService on a Unix socket, its per-file calls answered by a :class:`_Facade`."""
+    recorder = _Facade()
+    for name in ("CheckDocumentStat", "PersistDocument"):
+        monkeypatch.setattr(service.GarageRpcServicer, name, lambda self, r, c, _n=name: getattr(recorder, _n)(r, c))
+    monkeypatch.setenv("GARAGE_GRPC_TOKEN", "launch-token")
+    socket = tmp_path / "grpc.sock"
+    server, _ = service.create_grpc_server(socket_path=str(socket))
+    server.start()
+    client = GarageClient(socket_path=str(socket), in_process=False)
+    yield recorder, socket, client
+    server.stop(0)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", INGEST_CASES.values(), ids=INGEST_CASES.keys())
+def test_files_are_persisted_the_same_over_the_facade(rust, monkeypatch, tmp_path, facade, case):
+    """``GrpcStorage`` sends GarageService what ``GrpcIngestStorageGateway`` sends, call for call."""
+    recorder, socket, client = facade
+    recorder.existing = case.get("existing")
+    python, port = _ingest_both(
+        rust,
+        monkeypatch,
+        tmp_path / "corpus",
+        case,
+        gateway=GrpcIngestStorageGateway(client),
+        facade={"socket": str(socket), "token": "launch-token", "run_id": 2, "source_slug": "rust"},
+    )
+    assert "error" not in port
+    assert port["counters"] == python["counters"]
+    assert recorder.requests["rust"] == recorder.requests["src"]
+    assert isinstance(recorder.requests["src"][0], garage_pb2.CheckDocumentStatRequest)
+    assert recorder.tokens == {"launch-token"}
+
+
+def test_an_unreachable_facade_is_reported(tmp_path):
+    """A facade that cannot be reached fails the request, naming where it looked."""
+    request = {
+        "candidate": {"path": str(tmp_path / "note.md")},
+        "source": {"root": str(tmp_path)},
+        "facade": {"socket": str(tmp_path / "absent.sock"), "run_id": 1, "source_slug": "src"},
+    }
+    result = ctypes.c_void_p()
+    library = ctypes.CDLL(str(LIBRARY))
+    library.garage_ingest_ingest_one.argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
+    status = library.garage_ingest_ingest_one(json.dumps(request).encode(), ctypes.byref(result))
+    reply = json.loads(ctypes.string_at(result.value).decode())
+    library.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
+    library.garage_ingest_string_free(result)
+    assert status == 1
+    assert "absent.sock" in reply["error"]

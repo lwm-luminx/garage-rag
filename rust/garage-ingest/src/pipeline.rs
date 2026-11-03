@@ -222,19 +222,51 @@ pub struct DocumentPayload {
 }
 
 /// The facade calls ingest makes for one file (`IngestStorageGateway`'s `record_*`,
-/// `refresh_metadata` and `replace_document`). The run and source are the storage's own.
+/// `refresh_metadata` and `replace_document`). The run and source are the storage's own. A call
+/// that fails says why; ingest stops that file there, as Python's gateway raising does.
 pub trait Storage {
     /// `record_seen`.
-    fn record_seen(&mut self, uri: &str);
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn record_seen(&mut self, uri: &str) -> Result<(), String>;
     /// `record_placeholder`.
-    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str);
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) -> Result<(), String>;
     /// `record_no_text`.
-    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str);
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) -> Result<(), String>;
     /// `record_extract_failed`.
-    fn record_extract_failed(&mut self, uri: &str, error: &str, byte_size: u64, mtime: f64, source_sha256: &str);
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn record_extract_failed(
+        &mut self,
+        uri: &str,
+        error: &str,
+        byte_size: u64,
+        mtime: f64,
+        source_sha256: &str,
+    ) -> Result<(), String>;
     /// `record_rejected`.
-    fn record_rejected(&mut self, uri: &str);
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn record_rejected(&mut self, uri: &str) -> Result<(), String>;
     /// `refresh_metadata`; empty class and trust leave the row's own.
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
     fn refresh_metadata(
         &mut self,
         uri: &str,
@@ -243,9 +275,13 @@ pub trait Storage {
         source_sha256: &str,
         corpus_class: &str,
         trust_tier: &str,
-    );
+    ) -> Result<(), String>;
     /// `replace_document`: the chunks written.
-    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> usize;
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> Result<usize, String>;
 }
 
 /// `IngestCounters`.
@@ -398,12 +434,16 @@ pub fn name_authors(authors: Vec<AuthorPayload>, contact_names: Option<&ContactN
         .collect()
 }
 
-fn placeholder(storage: &mut dyn Storage, candidate: &FileCandidate, counters: &mut Counters) {
+fn placeholder(storage: &mut dyn Storage, candidate: &FileCandidate, counters: &mut Counters) -> Result<(), String> {
     counters.placeholders += 1;
-    storage.record_placeholder(&candidate.uri, candidate.mtime, &candidate.stem(), "not materialized");
+    storage.record_placeholder(&candidate.uri, candidate.mtime, &candidate.stem(), "not materialized")
 }
 
 /// `ingest_one`: indexes one file, replacing any previous version of it.
+///
+/// # Errors
+///
+/// A storage call's failure; the counters then hold what happened before it.
 #[allow(clippy::too_many_lines)]
 pub fn ingest_one(
     host: &mut dyn FileHost,
@@ -412,7 +452,7 @@ pub fn ingest_one(
     candidate: &FileCandidate,
     context: &Context<'_>,
     counters: &mut Counters,
-) {
+) -> Result<(), String> {
     let force = context.force;
     let extension = candidate.suffix();
 
@@ -422,13 +462,11 @@ pub fn ingest_one(
         extension == ".eml" && existing.has_indexed_content() && !existing.chunker.starts_with("conversation:");
     if !force && existing.is_settled() && candidate.stat_matches(existing) && !retired {
         counters.skipped += 1;
-        storage.record_seen(&candidate.uri);
-        return;
+        return storage.record_seen(&candidate.uri);
     }
 
     if !host.ensure_local(candidate) {
-        placeholder(storage, candidate, counters);
-        return;
+        return placeholder(storage, candidate, counters);
     }
 
     // Step 2: unchanged bytes.
@@ -439,12 +477,11 @@ pub fn ingest_one(
         && existing.is_settled()
     {
         counters.skipped += 1;
-        match existing.state.to_uppercase().as_str() {
+        return match existing.state.to_uppercase().as_str() {
             "NO_TEXT" => storage.record_no_text(&candidate.uri, candidate.size, candidate.mtime, hash),
             "FAILED" => storage.record_seen(&candidate.uri),
             _ => storage.refresh_metadata(&candidate.uri, candidate.size, candidate.mtime, hash, "", ""),
-        }
-        return;
+        };
     }
     let raw_hash_or_empty = raw_hash.clone().unwrap_or_default();
 
@@ -453,17 +490,18 @@ pub fn ingest_one(
         ReadOutcome::Document(result) => result,
         ReadOutcome::NoText(_) => {
             counters.rejected += 1;
-            storage.record_no_text(&candidate.uri, candidate.size, candidate.mtime, &raw_hash_or_empty);
-            return;
+            return storage.record_no_text(&candidate.uri, candidate.size, candidate.mtime, &raw_hash_or_empty);
         }
-        ReadOutcome::Placeholder => {
-            placeholder(storage, candidate, counters);
-            return;
-        }
+        ReadOutcome::Placeholder => return placeholder(storage, candidate, counters),
         ReadOutcome::Failed(error) => {
             counters.note_error(format!("{}: {error}", candidate.name()));
-            storage.record_extract_failed(&candidate.uri, &error, candidate.size, candidate.mtime, &raw_hash_or_empty);
-            return;
+            return storage.record_extract_failed(
+                &candidate.uri,
+                &error,
+                candidate.size,
+                candidate.mtime,
+                &raw_hash_or_empty,
+            );
         }
     };
     let settings = context.settings;
@@ -474,8 +512,7 @@ pub fn ingest_one(
         && assess(&result.text, crate::quality::SAMPLE_CHARS).machine_generated
     {
         counters.rejected += 1;
-        storage.record_rejected(&candidate.uri);
-        return;
+        return storage.record_rejected(&candidate.uri);
     }
 
     let content_hash = sha256_hex(result.text.as_bytes());
@@ -488,14 +525,12 @@ pub fn ingest_one(
         Ok(chunks) => chunks,
         Err(error) => {
             counters.note_error(format!("{}: {error}", candidate.name()));
-            storage.record_seen(&candidate.uri);
-            return;
+            return storage.record_seen(&candidate.uri);
         }
     };
     if chunks.is_empty() {
         counters.rejected += 1;
-        storage.record_rejected(&candidate.uri);
-        return;
+        return storage.record_rejected(&candidate.uri);
     }
     if settings.index_images && IMAGE_EXTENSIONS.contains(&extension.as_str()) && result.kind != ContentKind::Image {
         // A screenshot or scan: its text is chunked above, and one image chunk lets an image
@@ -535,9 +570,9 @@ pub fn ingest_one(
             &raw_hash_or_empty,
             corpus_class,
             attribution.trust.as_str(),
-        );
+        )?;
         counters.skipped += 1;
-        return;
+        return Ok(());
     }
 
     // Step 5: replace.
@@ -601,7 +636,8 @@ pub fn ingest_one(
         authors,
         chunks,
     };
-    let written = storage.replace_document(&candidate.uri, document);
+    let written = storage.replace_document(&candidate.uri, document)?;
     counters.chunks_written += written as u64;
     counters.indexed += 1;
+    Ok(())
 }

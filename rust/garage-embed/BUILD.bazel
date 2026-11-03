@@ -2,7 +2,7 @@ load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
 # The embed worker, ported from garage_rag/ops/backfill.py: chunks through the GarageService
-# facade (src/generated, made by //rust/protogen), model servers through its host.
+# facade (//rust/garage-facade), model servers through its host.
 rust_library(
     name = "garage-embed",
     srcs = glob(["src/**/*.rs"]),
@@ -10,13 +10,8 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
-        "@crates//:hyper-util",
-        "@crates//:prost",
+        "//rust/garage-facade",
         "@crates//:serde_json",
-        "@crates//:tokio",
-        "@crates//:tonic",
-        "@crates//:tonic-prost",
-        "@crates//:tower",
     ],
 )
 

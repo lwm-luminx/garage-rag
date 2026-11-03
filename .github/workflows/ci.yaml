@@ -232,7 +232,7 @@ jobs:
       - name: The checked-in generated code matches proto/
         run: |
           cargo run --locked -p protogen
-          git diff --exit-code -- garage-plugin/src/generated garage-embed/src/generated
+          git diff --exit-code -- garage-plugin/src/generated garage-facade/src/generated
       - name: Build the C ABI library
         run: cargo build --release --locked -p garage-text-ffi
       - name: .NET binding tests against the built library
