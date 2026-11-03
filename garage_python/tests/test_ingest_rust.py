@@ -1222,6 +1222,8 @@ class _Run(_Facade):
         super().__init__()
         self.root = root
         self.kind = "filesystem"
+        self.roots: dict[str, Path] = {}
+        self.sources: list[tuple[str, bool]] = []
         self.stats: dict[str, dict] = {}
         self.slugs: dict[int, str] = {}
 
@@ -1246,11 +1248,17 @@ class _Run(_Facade):
         return garage_pb2.BeginIngestSessionResponse(
             source_id=7,
             slug=request.source_slug,
-            root=str(self.root),
+            root=str(self.roots.get(request.source_slug, self.root)),
             default_class="document",
             default_trust="authored",
             run_id=run_id,
             kind=self.kind,
+        )
+
+    def ListSources(self, request, context):
+        self.tokens.add(dict(context.invocation_metadata()).get("x-garage-token"))
+        return garage_pb2.ListSourcesResponse(
+            sources=[garage_pb2.SourceInfo(slug=slug, enabled=enabled) for slug, enabled in self.sources]
         )
 
     def PersistScan(self, request, context):
@@ -1266,7 +1274,14 @@ class _Run(_Facade):
         return garage_pb2.FinalizeIngestSessionResponse(success=True)
 
 
-_RUN_METHODS = ("BeginIngestSession", "PersistScan", "CheckDocumentStat", "PersistDocument", "FinalizeIngestSession")
+_RUN_METHODS = (
+    "BeginIngestSession",
+    "ListSources",
+    "PersistScan",
+    "CheckDocumentStat",
+    "PersistDocument",
+    "FinalizeIngestSession",
+)
 
 _TREE = {
     "Notes/a.md": {"read": _document(_PROSE, title="A")},
@@ -1429,19 +1444,18 @@ class _IngestHost(ctypes.Structure):
     )
 
 
-def _run_source(request: dict, *, read, progress, cancelled, shared_names=None) -> dict:
+def _run_source(
+    request: dict, *, read, progress, cancelled, shared_names=None, entry="garage_ingest_run_source"
+) -> dict:
     """``garage_ingest_run_source`` with a host whose ``read`` answers ``read(path)``.
 
     ``shared_names(directory)`` answers the host's ``shared_names``; without it the member is null.
     """
     assert LIBRARY is not None
     library = ctypes.CDLL(str(LIBRARY))
-    library.garage_ingest_run_source.argtypes = [
-        ctypes.c_char_p,
-        ctypes.POINTER(_IngestHost),
-        ctypes.POINTER(ctypes.c_void_p),
-    ]
-    library.garage_ingest_run_source.restype = ctypes.c_int32
+    function = getattr(library, entry)
+    function.argtypes = [ctypes.c_char_p, ctypes.POINTER(_IngestHost), ctypes.POINTER(ctypes.c_void_p)]
+    function.restype = ctypes.c_int32
     library.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
     replies: dict[int, ctypes.Array] = {}
 
@@ -1470,7 +1484,7 @@ def _run_source(request: dict, *, read, progress, cancelled, shared_names=None) 
         _HostCall(on_shared_names) if shared_names is not None else _HostCall(),
     )
     result = ctypes.c_void_p()
-    status = library.garage_ingest_run_source(json.dumps(request).encode(), ctypes.byref(host), ctypes.byref(result))
+    status = function(json.dumps(request).encode(), ctypes.byref(host), ctypes.byref(result))
     try:
         reply = json.loads(ctypes.string_at(result.value).decode())
     finally:
@@ -1735,6 +1749,102 @@ def test_messages_sources_are_ingested_the_same(rust, monkeypatch, run_facade, f
         assert {chunk.direction for call in documents for chunk in call.chunks} == {"sent", "received"}
     if case.get("settled"):
         assert python["skipped"] > 0 and python["indexed"] > 0
+    assert recorder.tokens == {"launch-token"}
+
+
+# --- the ingest service's run ---------------------------------------------------------------------
+
+SERVICE_CASES = {
+    "one source": {},
+    "every enabled source": {"source": "*", "sources": [("notes", True), ("off", False), ("more", True)]},
+    "no enabled source": {"source": "*", "sources": [("off", False)]},
+    "a limit": {"limit": 3},
+    "cancelled": {"cancel_at": 4},
+    "cancelled between sources": {"source": "*", "sources": [("notes", True), ("more", True)], "cancel_at": 13},
+    "an unreadable root": {"source": "*", "sources": [("gone", True), ("notes", True)], "missing": "gone"},
+    "forced, with code": {"force": True, "include_code": True},
+}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", SERVICE_CASES.values(), ids=SERVICE_CASES.keys())
+def test_the_service_run_matches_ingest_xpc(rust, monkeypatch, run_facade, case):
+    """``garage_ingest_run`` sends GarageService and the app what ``ingest_xpc`` sends, event for event.
+
+    The settings come from GarageService (``GetSetting``) on the Rust side and from the process's own on
+    Python's, the same object here, so non-default chunking and an owner show both read them.
+    """
+    import garage_rag.ingest as ingest_module
+    from garage_rag.ingest.host_read import read_for_host
+
+    recorder, socket, client = run_facade
+    root = recorder.root
+    for relative in _HOST_TREE:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"bytes of {relative}")
+    recorder.sources = case.get("sources", [])
+    if "missing" in case:
+        recorder.roots[case["missing"]] = root.parent / "gone"
+    settings = config.Settings(
+        chunk_size=400,
+        chunk_overlap=40,
+        self_name=OWNER["name"],
+        self_identities=OWNER["identities"],
+        materialize_limit=5,
+    )
+    monkeypatch.setattr(config, "_settings", settings)
+    readers = {
+        str(root / relative): _raises(file["raise"]) if "raise" in file else _python_read(file["read"], root / relative)
+        for relative, file in _HOST_TREE.items()
+    }
+    monkeypatch.setattr(pipeline, "extract", lambda path: readers[str(path)](path))
+    source = case.get("source", "notes")
+    options = {
+        "include_code": case.get("include_code", False),
+        "limit": case.get("limit"),
+        "force": case.get("force", False),
+    }
+
+    python_events: list[dict] = []
+
+    def on_python_event(event) -> None:
+        python_events.append(event.to_dict())
+        if len(python_events) == case.get("cancel_at"):
+            ingest_module.cancel_ingest()
+
+    python_error = None
+    try:
+        ingest_module.ingest_xpc(source, on_python_event, gateway=GrpcIngestStorageGateway(client), **options)
+    except Exception as error:  # noqa: BLE001 - the run's failure is what is compared
+        python_error = str(error)
+    finally:
+        ingest_module.reset_ingest_cancel()
+    python_requests = recorder.requests
+    recorder.requests, recorder.slugs = {}, {}
+
+    rust_events: list[dict] = []
+
+    def on_rust_event(event: dict) -> None:
+        rust_events.append(event)
+
+    port = _run_source(
+        {
+            "facade": {"socket": str(socket), "token": "launch-token"},
+            "source": source,
+            "settings": "service",
+            **options,
+        },
+        read=lambda path: read_for_host(path, reader=readers[path]),
+        progress=on_rust_event,
+        cancelled=lambda: len(rust_events) >= case.get("cancel_at", 10**9),
+        entry="garage_ingest_run",
+    )
+
+    assert rust_events == python_events
+    assert recorder.requests == python_requests
+    assert port.get("error") == python_error
+    if source == "notes" and not case:
+        assert any(event["phase"] == "complete" and event["indexed"] > 0 for event in rust_events)
     assert recorder.tokens == {"launch-token"}
 
 
