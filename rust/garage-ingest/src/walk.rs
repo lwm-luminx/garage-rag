@@ -100,7 +100,7 @@ pub fn is_dependency_path(path: &str, policy: &WalkPolicy) -> bool {
 }
 
 /// `path` below `root` as a POSIX path (`"."` for the root itself), or None outside it.
-fn relative_posix(path: &Path, root: &Path) -> Option<String> {
+pub(crate) fn relative_posix(path: &Path, root: &Path) -> Option<String> {
     let relative = path.strip_prefix(root).ok()?;
     let parts: Vec<String> = relative
         .components()
@@ -132,7 +132,7 @@ pub fn is_git_dir(dirnames: &[String], filenames: &[String]) -> bool {
         && dirnames.iter().any(|name| name == "refs")
 }
 
-fn is_hidden(name: &str) -> bool {
+pub(crate) fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
 
@@ -295,15 +295,15 @@ fn mtime(metadata: &Metadata) -> f64 {
         .map_or(0.0, |since| since.as_secs_f64())
 }
 
-struct Listing {
+pub(crate) struct Listing {
     /// Directory names, each with whether it is a symlink (listed, never entered).
-    dirs: Vec<(String, bool)>,
-    files: Vec<String>,
+    pub(crate) dirs: Vec<(String, bool)>,
+    pub(crate) files: Vec<String>,
 }
 
 /// One directory's entries, split as `os.walk` splits them: an entry is a directory when it is
 /// one after following a symlink.
-fn list(dir: &Path) -> io::Result<Listing> {
+pub(crate) fn list(dir: &Path) -> io::Result<Listing> {
     let mut listing = Listing { dirs: Vec::new(), files: Vec::new() };
     for entry in fs::read_dir(dir)? {
         let entry = entry?;

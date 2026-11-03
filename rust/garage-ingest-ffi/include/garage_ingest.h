@@ -13,6 +13,7 @@
 #ifndef GARAGE_INGEST_H
 #define GARAGE_INGEST_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -45,6 +46,11 @@ int32_t garage_ingest_walk(const char *request, char **result);
 
 // Why a root cannot be walked: {"root"} -> {"problem": "path does not exist: ..." | null}.
 int32_t garage_ingest_root_problem(const char *request, char **result);
+
+// Counts a source's items (garage_rag.ingest.scanner.scan_source): {"root", "kind": "filesystem" | "git" |
+// "sqlite" | "maildir" | "feed", "source_slug", "include_code", "read_git": true, "policy"} ->
+// {"source_slug", "kind", "root", "item_count", "item_type", "details", "duration_seconds", "error"}.
+int32_t garage_ingest_scan(const char *request, char **result);
 
 // The quality gate: {"text", "sample_chars": 65536} ->
 // {"machine_generated", "reasons": [...], "reason_text", "metrics": {"lines", ...}}.
@@ -102,11 +108,42 @@ int32_t garage_ingest_ingest_one(const char *request, char **result);
 
 // Runs one walked source (garage_rag.ingest.pipeline._ingest_source) through GarageService ("facade":
 // {"socket", or "host" and "port"; "token", "source_slug"}): BeginIngestSession, PersistScan, each file's
-// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The scan's outcome ("scan") and what each
-// file reads ("files", by path under the root, as for garage_ingest_ingest_one) come with the request. The
-// reply holds the run id, counters, walk stats, whether the walk completed and the progress reports, or
-// "unavailable" when the root cannot be read and "error" when a run-wide call failed.
+// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The source is scanned as garage_ingest_scan
+// does unless the request states the outcome ("scan"). What each file reads ("files", by path under the root,
+// as for garage_ingest_ingest_one) comes with the request. The reply holds the run id, counters, walk stats,
+// whether the walk completed and the progress reports, or "unavailable" when the root cannot be read and "error" when a run-wide call failed.
 int32_t garage_ingest_ingest_source(const char *request, char **result);
+
+// A host call: `request` is JSON. Returns 0 and sets `*reply` to JSON, or nonzero and sets `*reply`
+// to the reason (or leaves it NULL). The library frees `*reply` with the host's `release`.
+typedef int32_t (*GarageIngestHostCall)(void *context, const char *request, char **reply);
+
+// The process garage_ingest_run_source reads files in. `read` and `release` are required.
+typedef struct GarageIngestHost {
+    void *context;
+    // One file's text: {"path", "uri", "size", "mtime"} -> {"document": {"text", "kind", "extractor",
+    // "extractor_version", "title", "lang", "meta", "author_hints"}} | {"no_text": reason} |
+    // {"placeholder": true} | {"failed": reason} | {"raised": reason}, as
+    // garage_rag.ingest.host_read.read_for_host answers. "failed" is remembered with the file;
+    // "raised" (or a nonzero return) is noted and the file recorded as seen.
+    GarageIngestHostCall read;
+    // Frees a reply `read` set.
+    void (*release)(void *context, char *reply);
+    // A progress report: {"phase": "scan" | "ingest" | "cancelled", "current_item", "counters": {"seen",
+    // "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors"},
+    // "budget": {... as garage_ingest_ensure_local's}}.
+    void (*progress)(void *context, const char *event);
+    // Whether to stop; asked before each file.
+    bool (*cancelled)(void *context);
+} GarageIngestHost;
+
+// Runs one walked source as garage_ingest_ingest_source does, reading each file through `host`: the
+// same request without "files" and "cancel_after", plus "budget" (as for garage_ingest_ensure_local).
+// The library makes placeholders local within the budget (on its own thread; this thread's reads of
+// dataless files are refused) and hashes each file's bytes itself. The reply holds the run id,
+// counters, walk stats, whether the walk completed and the budget at the end, or "unavailable" /
+// "error" as for garage_ingest_ingest_source. The host's functions are called on this thread only.
+int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *host, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);

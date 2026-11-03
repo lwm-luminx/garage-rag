@@ -2,7 +2,8 @@ load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
 # The ingest pipeline's pieces moved out of Python (garage_rag/ingest, extract/quality.py and
-# attribute/), with git history read through //rust/garage-git.
+# attribute/ and ingest/scanner.py), with git history read through //rust/garage-git and SQLite from the
+# system (macOS ships it).
 rust_library(
     name = "garage-ingest",
     srcs = glob(["src/**/*.rs"]),

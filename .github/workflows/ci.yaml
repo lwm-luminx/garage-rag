@@ -79,7 +79,7 @@ jobs:
         # reports, and test_tesseract reads through _garage_tesseract and the ctypes path alike.
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgit2-dev libtesseract-dev tesseract-ocr-eng pkg-config
+          sudo apt-get install -y -qq libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng pkg-config
           ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
           ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
       - name: Build the Rust text reader, embed worker and ingest pieces
@@ -220,9 +220,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: winapp/global.json
-      - name: Install protoc and libgit2
-        # garage-git links libgit2, found through pkg-config.
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler libgit2-dev pkg-config
+      - name: Install protoc, libgit2 and SQLite
+        # garage-git links libgit2, found through pkg-config; garage-ingest links the system SQLite.
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler libgit2-dev libsqlite3-dev pkg-config
       - name: rustfmt
         run: cargo fmt --check
       - name: clippy

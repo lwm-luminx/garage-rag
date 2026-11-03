@@ -136,6 +136,9 @@ pub enum ReadOutcome {
     Placeholder,
     /// The reader failed (`ExtractionError`, `OSError`).
     Failed(String),
+    /// The reader raised anything else. [`ingest_one`] returns it as its error, so the run notes the
+    /// file and records it as seen, as `_ingest_source`'s handler does.
+    Raised(String),
 }
 
 /// Reading a file: the host's.
@@ -493,6 +496,7 @@ pub fn ingest_one(
             return storage.record_no_text(&candidate.uri, candidate.size, candidate.mtime, &raw_hash_or_empty);
         }
         ReadOutcome::Placeholder => return placeholder(storage, candidate, counters),
+        ReadOutcome::Raised(error) => return Err(error),
         ReadOutcome::Failed(error) => {
             counters.note_error(format!("{}: {error}", candidate.name()));
             return storage.record_extract_failed(

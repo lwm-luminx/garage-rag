@@ -41,7 +41,7 @@ from garage_rag.extract import dispatch, quality
 from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult, NoTextFound
 from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.placeholder import PlaceholderFile
-from garage_rag.ingest import chunking, classify, materialize, pipeline, splitters, walker
+from garage_rag.ingest import chunking, classify, materialize, pipeline, scanner, splitters, walker
 from garage_rag.ingest.gateway import ExistingDocStat, GrpcIngestStorageGateway, SourceContext
 from garage_rag.proto import garage_pb2
 from garage_rag.service import server as service
@@ -85,6 +85,7 @@ def rust():
         "garage_ingest_git_history",
         "garage_ingest_ingest_one",
         "garage_ingest_ingest_source",
+        "garage_ingest_scan",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -922,6 +923,7 @@ def _ingest_both(rust, monkeypatch, tmp_path, case: dict, *, gateway=None, facad
     monkeypatch.setattr(pipeline, "extract", _python_read(case.get("read"), path))
     monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
     monkeypatch.setattr(chunking, "get_settings", lambda: settings)
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
 
     source = SourceContext(
         source_id=1,
@@ -1227,6 +1229,8 @@ class _Run(_Facade):
         call.CopyFrom(request)
         if hasattr(call, "run_id"):
             call.run_id = 0
+        if hasattr(call, "duration_seconds"):
+            call.duration_seconds = 0
         if hasattr(call, "source_slug"):
             call.source_slug = ""
         if getattr(call, "details_json", ""):
@@ -1285,6 +1289,7 @@ SOURCE_CASES = {
     "an unreadable root": {
         "scan": {**_SCAN, "item_count": 0, "details": {"root_problem": "gone"}, "error": "root is gone"}
     },
+    "scanned by each side": {"scan": None},
 }
 
 
@@ -1333,17 +1338,18 @@ def test_sources_are_ingested_the_same(rust, monkeypatch, run_facade, case):
     monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
     monkeypatch.setattr(chunking, "get_settings", lambda: settings)
     monkeypatch.setattr(pipeline.SelfIdentity, "from_settings", classmethod(lambda cls: _owner()))
-    monkeypatch.setattr(
-        pipeline,
-        "scan_source",
-        lambda source, include_code=False: SimpleNamespace(
-            item_count=scan["item_count"],
-            item_type=scan["item_type"],
-            duration_seconds=scan["duration_seconds"],
-            details=scan["details"],
-            error=scan.get("error"),
-        ),
-    )
+    if scan is not None:
+        monkeypatch.setattr(
+            pipeline,
+            "scan_source",
+            lambda source, include_code=False: SimpleNamespace(
+                item_count=scan["item_count"],
+                item_type=scan["item_type"],
+                duration_seconds=scan["duration_seconds"],
+                details=scan["details"],
+                error=scan.get("error"),
+            ),
+        )
 
     progress: list[dict] = []
     asked = 0
@@ -1400,3 +1406,369 @@ def test_sources_are_ingested_the_same(rust, monkeypatch, run_facade, case):
         }
         assert port["counters"] == python
     assert recorder.tokens == {"launch-token"}
+
+
+# --- a whole source, reading through the host -----------------------------------------------------
+
+_HostCall = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p))
+_Release = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+_Progress = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_char_p)
+_Cancelled = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p)
+
+
+class _IngestHost(ctypes.Structure):
+    _fields_ = (
+        ("context", ctypes.c_void_p),
+        ("read", _HostCall),
+        ("release", _Release),
+        ("progress", _Progress),
+        ("cancelled", _Cancelled),
+    )
+
+
+def _run_source(request: dict, *, read, progress, cancelled) -> dict:
+    """``garage_ingest_run_source`` with a host whose ``read`` answers ``read(path)``."""
+    assert LIBRARY is not None
+    library = ctypes.CDLL(str(LIBRARY))
+    library.garage_ingest_run_source.argtypes = [
+        ctypes.c_char_p,
+        ctypes.POINTER(_IngestHost),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    library.garage_ingest_run_source.restype = ctypes.c_int32
+    library.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
+    replies: dict[int, ctypes.Array] = {}
+
+    def on_read(_context, raw, reply):
+        buffer = ctypes.create_string_buffer(json.dumps(read(json.loads(raw)["path"])).encode())
+        replies[ctypes.addressof(buffer)] = buffer
+        reply[0] = ctypes.addressof(buffer)
+        return 0
+
+    def on_release(_context, pointer):
+        del replies[pointer]
+
+    host = _IngestHost(
+        None,
+        _HostCall(on_read),
+        _Release(on_release),
+        _Progress(lambda _context, event: progress(json.loads(event))),
+        _Cancelled(lambda _context: cancelled()),
+    )
+    result = ctypes.c_void_p()
+    status = library.garage_ingest_run_source(json.dumps(request).encode(), ctypes.byref(host), ctypes.byref(result))
+    try:
+        reply = json.loads(ctypes.string_at(result.value).decode())
+    finally:
+        library.garage_ingest_string_free(result)
+    assert status == 0, reply
+    assert not replies, "every read reply was released"
+    return reply
+
+
+def _raises(message: str):
+    def extract(_path):
+        raise ValueError(message)
+
+    return extract
+
+
+_HOST_TREE = {
+    **{relative: file for relative, file in _TREE.items() if file.get("local", True)},
+    "Cloud/gone.md": {"read": {"placeholder": True}},
+    "Notes/odd.md": {"raise": "a reader's bug"},
+}
+
+HOST_CASES = {
+    "the whole tree": {},
+    "with code": {"include_code": True},
+    "forced": {"force": True},
+    "a limit": {"limit": 3},
+    "cancelled": {"cancel_after": 2},
+}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", HOST_CASES.values(), ids=HOST_CASES.keys())
+def test_sources_run_through_the_host_the_same(rust, monkeypatch, run_facade, case):
+    """``garage_ingest_run_source``, reading through ``read_for_host``, sends what ``_ingest_source`` sends.
+
+    The files are real and local, so both sides hash and materialize them for themselves.
+    """
+    from garage_rag.ingest.host_read import read_for_host
+
+    recorder, socket, client = run_facade
+    root = recorder.root
+    for relative in _HOST_TREE:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"bytes of {relative}")
+    settled = root / "Notes" / "settled.md"
+    recorder.stats[str(settled)] = {
+        "exists": True,
+        "byte_size": settled.stat().st_size,
+        "mtime": settled.stat().st_mtime,
+        "state": "OK",
+        "content_sha256": "c" * 64,
+    }
+    settings = config.Settings()
+    readers = {
+        str(root / relative): _raises(file["raise"]) if "raise" in file else _python_read(file["read"], root / relative)
+        for relative, file in _HOST_TREE.items()
+    }
+    monkeypatch.setattr(pipeline, "extract", lambda path: readers[str(path)](path))
+    monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
+    monkeypatch.setattr(chunking, "get_settings", lambda: settings)
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    monkeypatch.setattr(pipeline.SelfIdentity, "from_settings", classmethod(lambda cls: _owner()))
+
+    def cancelling():
+        asked = 0
+
+        def is_cancelled() -> bool:
+            nonlocal asked
+            asked += 1
+            return "cancel_after" in case and asked > case["cancel_after"]
+
+        return is_cancelled
+
+    python_progress: list[dict] = []
+    counters, _, _ = pipeline._ingest_source(
+        source_slug="python",
+        gateway=GrpcIngestStorageGateway(client),
+        include_code=case.get("include_code", False),
+        limit=case.get("limit"),
+        force=case.get("force", False),
+        progress=lambda _c, _b, *, phase, current_item=None, **_: python_progress.append(
+            {"phase": phase, "current_item": current_item}
+        ),
+        is_cancelled=cancelling(),
+    )
+
+    rust_progress: list[dict] = []
+    port = _run_source(
+        {
+            "facade": {"socket": str(socket), "token": "launch-token", "source_slug": "rust"},
+            "include_code": case.get("include_code", False),
+            "limit": case.get("limit"),
+            "force": case.get("force", False),
+            "self": OWNER,
+            "repos": {},
+        },
+        read=lambda path: read_for_host(path, reader=readers[path]),
+        progress=rust_progress.append,
+        cancelled=cancelling(),
+    )
+
+    assert "error" not in port
+    assert recorder.requests["rust"] == recorder.requests["python"]
+    assert [{"phase": e["phase"], "current_item": e["current_item"]} for e in rust_progress] == python_progress
+    assert rust_progress[-1]["counters"] == port["counters"]
+    python = {
+        name: getattr(counters, name)
+        for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
+    }
+    assert port["counters"] == python
+    assert recorder.tokens == {"launch-token"}
+
+
+# --- the scanners -------------------------------------------------------------------------------
+
+_FEEDS = {
+    "rss.xml": '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>t</title>'
+    "<item><title>a &amp; b</title></item><item/><item><description><![CDATA[<p>x</p>]]></description></item>"
+    "</channel></rss>",
+    "atom.atom": '<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>1</title></entry><entry/></feed>',
+    "prefixed.xml": '<a:feed xmlns:a="urn:a"><a:entry/><a:LineItem/><a:entryway/></a:feed>',
+    "unbound.rss": "<rss><dc:item/><item/></rss>",
+    "nbsp.rss": "<rss><item>a&nbsp;b</item><item/><ENTRY></rss>",
+    # <subentry/> counts only when expat takes the document, so each case shows which reading answered.
+    "declared.xml": '<!DOCTYPE rss [<!ENTITY nbsp "&#160;"><!ELEMENT rss ANY>]>'
+    "<rss><item>&nbsp;</item><subentry/></rss>",
+    "external.xml": '<!DOCTYPE rss SYSTEM "rss.dtd"><rss><item>&copy;</item><item/><subentry/></rss>',
+    "cdata-only.xml": "<a><![CDATA[<item>]]><!-- <entry> --></a>",
+    "bad-comment.xml": "<a><!-- a -- b --><item/><subentry/></a>",
+    "trailing-dash.xml": "<r><!-- x ---><item/><subentry/></r>",
+    "late-decl.xml": '\n<?xml version="1.0"?><r><item/><subentry/></r>',
+    "bom.xml": "﻿<rss><item/><subentry/></rss>",
+    "two-roots.xml": "<item/><subentry/>",
+    "junk.xml": "<rss><item/><subentry/></rss>trailing",
+    "mismatch.xml": "<rss><item><subentry/></rss></item>",
+    "attrs.xml": "<rss a='1' b=\"2\"><item x='&lt;'/><item x='<'/><subentry/></rss>",
+    "attrs-ok.xml": "<rss a='1'\tb=\"&amp;'\"><item x='&#x3c;'/><subentry/></rss>",
+    "no-space-attr.xml": "<r a='1'b='2'><item/><subentry/></r>",
+    "unquoted.xml": "<r a=1><item/><subentry/></r>",
+    "dup-attr.xml": "<rss a='1' a='2'><item/><subentry/></rss>",
+    "ns-dup.xml": '<r xmlns:p="u" xmlns:q="u"><item p:a="1" q:a="2"/><subentry/></r>',
+    "xml-prefix.xml": "<r xml:lang='en'><item/><subentry/></r>",
+    "empty-ns.xml": "<r xmlns:p=''><item/><subentry/></r>",
+    "default-ns-reset.xml": "<r xmlns='u'><s xmlns=''><item/><subentry/></s></r>",
+    "charref.xml": "<r><item>&#x41;&#65;</item><item>&#0;</item><subentry/></r>",
+    "charref-ok.xml": "<r><item>&#x41;&#65;&#x1F600;</item><subentry/></r>",
+    "cdata-text.xml": "<r>a ]]> b<item/><subentry/></r>",
+    "lt-text.xml": "<r>a < b<item/><subentry/></r>",
+    "unicode-name.xml": "<r><éntry/><item/><subentry/></r>",
+    "pi.xml": "<?style x?><r><?php echo 1 ?><entry/><subentry/></r><!-- end -->",
+    "xml-pi.xml": "<r><?xml-stylesheet href='a'?><?XML x?><item/><subentry/></r>",
+    "empty.feed": "",
+    "html.xml": "<html><body><p>Lineitem <b>entry</b></p><br></body></html>",
+    "items.json": '{"version": "https://jsonfeed.org/version/1", "items": [{"id": 1}, {"id": 2}]}',
+    "not-feed.json": '{"items": "nope", "entries": [1]}',
+    "broken.json": '{"items": [1, 2}',
+    "list.json": "[1, 2, 3]",
+    "spaced.json": '  \n {"items": []}  \n',
+    "crlf.xml": "<rss>\r\n<item/>\r<item/>\r\n<subentry/></rss>",
+    "control.xml": "<rss><item>\x01</item><subentry/></rss>",
+    "decl-standalone.xml": '<?xml version="1.0" standalone="yes"?><rss><item/><subentry/></rss>',
+    "decl-bad.xml": '<?xml encoding="UTF-8"?><rss><item/><subentry/></rss>',
+    "colon-tag.xml": "<r><a:b:item xmlns:a='u'/><subentry/></r>",
+    "README.md": "<item/>",
+}
+
+
+def _scan_tree(root: Path) -> None:
+    files = {
+        "Notes/a.md": "alpha",
+        "Notes/empty.md": "",
+        "Notes/big.txt": "x" * (LIMIT + 1),
+        "Notes/deep/b.txt": "beta",
+        "Notes/.hidden.md": "skip",
+        "Notes/ps.txt": "diagnostic",
+        "Notes/photo.raw": "unknown",
+        "Code/main.py": "print()",
+        "Code/Makefile": "all:",
+        "Code/README": "docs",
+        "node_modules/pkg/readme.md": "skip",
+        ".cache/c.md": "skip",
+        "sysdiagnose_2026/d.txt": "skip",
+        "mirror.git/HEAD": "ref",
+        "mirror.git/objects/e.txt": "skip",
+        "mirror.git/refs/f.txt": "skip",
+        "venv/lib/python3.14/site-packages/g.md": "skip",
+        "Mail/INBOX/cur/1:2,S": "m",
+        "Mail/INBOX/new/2": "m",
+        "Mail/INBOX/tmp/.3": "m",
+        "Mail/Archive/a.emlx": "m",
+        "Mail/Archive/b.EML": "m",
+        "Mail/Archive/notes.txt": "m",
+        "Mail/.Trash/cur/4": "m",
+    }
+    for relative, text in files.items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(text)
+    (root / "Linked").symlink_to(root / "Notes")
+    (root / "Notes" / "dangling.md").symlink_to(root / "nowhere.md")
+    feeds = root / "Feeds"
+    for name, text in _FEEDS.items():
+        (feeds / name).parent.mkdir(parents=True, exist_ok=True)
+        (feeds / name).write_bytes(text.encode())
+    (feeds / ".hidden.rss").write_text("<item/>")
+    (feeds / "latin1.xml").write_bytes(b"<rss><item>caf\xe9</item><item/></rss>")
+    (feeds / ".sub").mkdir()
+    (feeds / ".sub" / "x.rss").write_text("<item/>")
+    dropbox = root / "Dropbox"
+    for relative in ("Library/a.md", "Objects/b.md", "Work/c.md", "Work/Library/d.md"):
+        (dropbox / relative).parent.mkdir(parents=True, exist_ok=True)
+        (dropbox / relative).write_text("dropbox")
+
+
+def _databases(root: Path) -> None:
+    import sqlite3
+
+    root.mkdir(parents=True, exist_ok=True)
+    plain = sqlite3.connect(root / "plain.db")
+    plain.executescript(
+        'CREATE TABLE t (x); INSERT INTO t VALUES (1), (2); CREATE TABLE "we""ird" (y);'
+        'INSERT INTO "we""ird" VALUES (3);'
+    )
+    plain.commit()
+    plain.close()
+    (root / "Messages").mkdir()
+    chat = sqlite3.connect(root / "Messages" / "chat.db")
+    chat.executescript(
+        "CREATE TABLE chat (x); CREATE TABLE message (x); CREATE TABLE handle (x);"
+        "INSERT INTO chat VALUES (1), (2); INSERT INTO message VALUES (1), (2), (3);"
+    )
+    chat.commit()
+    chat.close()
+    (root / "junk.sqlite").write_text("not a database")
+    (root / "plain.db-wal").write_text("")
+    (root / "Cache.SQLITE3").write_bytes(b"")
+    (root / ".hidden").mkdir()
+    (root / ".hidden" / "h.db").write_text("")
+
+
+def _git_repo(root: Path) -> None:
+    root.mkdir(parents=True)
+    who = {"GIT_AUTHOR_NAME": "A", "GIT_AUTHOR_EMAIL": "a@x", "GIT_COMMITTER_NAME": "A", "GIT_COMMITTER_EMAIL": "a@x"}
+    env = {**os.environ, **who}
+    for name in ("README.md", "notes.md", "tool.py"):
+        (root / name).write_text(name)
+    subprocess.run(["git", "init", "-q", str(root)], check=True, env=env)
+    subprocess.run(["git", "-C", str(root), "add", "README.md", "tool.py"], check=True, env=env)
+    subprocess.run(["git", "-C", str(root), "-c", "commit.gpgsign=false", "commit", "-qm", "x"], check=True, env=env)
+
+
+SCAN_CASES = {
+    "a tree": ("filesystem", "tree", {}),
+    "a tree with code": ("filesystem", "tree", {"include_code": True}),
+    "a Dropbox": ("filesystem", "tree/Dropbox", {}),
+    "one document": ("filesystem", "tree/Notes/a.md", {}),
+    "one code file": ("filesystem", "tree/Code/main.py", {}),
+    "one code file with code": ("filesystem", "tree/Code/main.py", {"include_code": True}),
+    "inside a git directory": ("filesystem", "repo/.git", {}),
+    "a missing root": ("filesystem", "gone", {}),
+    "an unknown kind": ("photos", "tree/Notes", {}),
+    "a git repository": ("git", "repo", {}),
+    "a git repository with code": ("git", "repo", {"include_code": True}),
+    "git that is not a repository": ("git", "tree/Notes", {}),
+    "databases": ("sqlite", "db", {}),
+    "one database": ("sqlite", "db/plain.db", {}),
+    "a missing database": ("sqlite", "db/gone.db", {}),
+    "mail": ("maildir", "tree/Mail", {}),
+    "a missing mailbox": ("maildir", "gone", {}),
+    "feeds": ("feed", "tree/Feeds", {}),
+    "one feed": ("feed", "tree/Feeds/rss.xml", {}),
+}
+
+
+@pytest.fixture(scope="module")
+def scan_root(tmp_path_factory):
+    root = tmp_path_factory.mktemp("scan")
+    _scan_tree(root / "tree")
+    _databases(root / "db")
+    _git_repo(root / "repo")
+    return root
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the trees use symlinks")
+@pytest.mark.parametrize("case", SCAN_CASES.values(), ids=SCAN_CASES.keys())
+def test_sources_are_scanned_the_same(rust, monkeypatch, scan_root, case):
+    """``garage_ingest_scan`` counts what ``scanner.scan_source`` counts, with the same details."""
+    kind, relative, options = case
+    root = scan_root / relative
+    monkeypatch.setattr(scanner, "get_settings", lambda: SimpleNamespace(max_file_bytes=LIMIT))
+    source = SimpleNamespace(slug="s", kind=kind, root=root)
+    python = scanner.scan_source(source, include_code=options.get("include_code", False)).to_dict()
+    port = rust(
+        "garage_ingest_scan",
+        {
+            "root": str(root),
+            "kind": kind,
+            "source_slug": "s",
+            "include_code": options.get("include_code", False),
+            "read_git": git_attribution.git_reader() is not None,
+            "policy": {"max_file_bytes": LIMIT},
+        },
+    )
+    python.pop("duration_seconds")
+    port.pop("duration_seconds")
+    assert port == python
+
+
+@pytest.mark.parametrize("name", sorted(_FEEDS), ids=sorted(_FEEDS))
+def test_feeds_are_counted_the_same(rust, tmp_path, monkeypatch, name):
+    """Each feed file, alone, counts as ``_count_feed_items`` counts it: whether expat takes it decides how."""
+    path = tmp_path / "one.feed"
+    path.write_bytes(_FEEDS[name].encode())
+    port = rust("garage_ingest_scan", {"root": str(path), "kind": "feed"})
+    assert port["item_count"] == scanner._count_feed_items(path)

@@ -9,6 +9,7 @@ py_library(
         "classify.py",
         "conversations.py",
         "gateway.py",
+        "host_read.py",
         "materialize.py",
         "pipeline.py",
         "reconcile.py",

@@ -2,7 +2,7 @@
 //! and fills `result` with JSON, which Swift, .NET and Python's ctypes read without generated code.
 
 use std::collections::BTreeMap;
-use std::ffi::{CStr, CString, c_char};
+use std::ffi::{CStr, CString, c_char, c_void};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -14,6 +14,7 @@ use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
 };
+use garage_ingest::scanner::{ScanOptions, Ticker, scan_source};
 use garage_ingest::source::{self, ScanSummary, SourceError, SourceHost, SourceOptions};
 use garage_ingest::{
     Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
@@ -449,7 +450,10 @@ fn read_outcome(value: Option<&Value>) -> Result<Option<ReadOutcome>, String> {
     if let Some(error) = object.get("failed") {
         return Ok(Some(ReadOutcome::Failed(error.as_str().unwrap_or_default().to_owned())));
     }
-    Err("\"read\" is not one of document, no_text, placeholder or failed".to_owned())
+    if let Some(error) = object.get("raised") {
+        return Ok(Some(ReadOutcome::Raised(error.as_str().unwrap_or_default().to_owned())));
+    }
+    Err("\"read\" is not one of document, no_text, placeholder, failed or raised".to_owned())
 }
 
 fn ingest_settings(value: Option<&Value>) -> Result<IngestSettings, String> {
@@ -657,8 +661,43 @@ fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
     Ok(GrpcTarget::Tcp { host: object.get("host").and_then(Value::as_str).unwrap_or("127.0.0.1").to_owned(), port })
 }
 
-/// Runs one walked source through GarageService: `BeginIngestSession`, then [`source::ingest_source`].
+/// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does.
+fn scan(request: &Map<String, Value>) -> Outcome {
+    let policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    let options = ScanOptions {
+        include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
+        policy: &policy,
+        read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(true),
+    };
+    let slug = request.get("source_slug").and_then(Value::as_str).unwrap_or_default();
+    let kind = request.get("kind").and_then(Value::as_str).unwrap_or("filesystem");
+    Ok(scan_source(slug, kind, Path::new(&root(request)?), &options, &mut Ticker::new(None)).to_json())
+}
+
+/// Runs one walked source through GarageService with the files the request states.
 fn ingest_source(request: &Map<String, Value>) -> Outcome {
+    let cancel_after = request.get("cancel_after").and_then(Value::as_u64);
+    let files = request.get("files").and_then(Value::as_object).cloned().unwrap_or_default();
+    run_source_with(
+        request,
+        |root| StatedFiles { root, files, cancel_after, asked: 0, progress: Vec::new() },
+        |host, reply| {
+            reply.insert("progress".to_owned(), Value::Array(host.progress));
+        },
+    )
+}
+
+/// `BeginIngestSession`, the scan, then [`source::ingest_source`] with the host `make_host` builds for
+/// the source's root; `finish` adds what the host has to say to the reply.
+fn run_source_with<H: SourceHost>(
+    request: &Map<String, Value>,
+    make_host: impl FnOnce(PathBuf) -> H,
+    finish: impl FnOnce(H, &mut Map<String, Value>),
+) -> Outcome {
     let facade = request.get("facade").and_then(Value::as_object).ok_or("the request has no \"facade\" object")?;
     let slug = facade.get("source_slug").and_then(Value::as_str).ok_or("\"facade\" has no \"source_slug\"")?;
     let connection = Connection::connect(&facade_target(facade)?, facade.get("token").and_then(Value::as_str))
@@ -667,7 +706,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
     };
-    let scan = scan_summary(request.get("scan"))?;
+    let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
@@ -688,6 +727,19 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let source = source_info(Some(&json!({
         "root": session.root, "default_class": session.default_class, "default_trust": session.default_trust,
     })))?;
+    let scan = match scan_given {
+        Some(scan) => scan_summary(Some(scan))?,
+        // A Messages database is not run here (below), so it is not scanned either.
+        None if session.kind == "sqlite" => ScanSummary::default(),
+        None => {
+            let options = ScanOptions {
+                include_code: options.include_code,
+                policy: &policy,
+                read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
+            };
+            scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
+        }
+    };
     let mut storage = GrpcStorage::new(connection, session.run_id, slug);
     if session.kind == "sqlite" {
         // A Messages database is read conversation by conversation, which is not ported yet.
@@ -705,13 +757,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut host = StatedFiles {
-        root: garage_ingest::walk::expand_home(&source.root),
-        files: request.get("files").and_then(Value::as_object).cloned().unwrap_or_default(),
-        cancel_after: request.get("cancel_after").and_then(Value::as_u64),
-        asked: 0,
-        progress: Vec::new(),
-    };
+    let mut host = make_host(garage_ingest::walk::expand_home(&source.root));
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
     match source::ingest_source(&mut host, &mut storage, &context, &scan, &options) {
@@ -729,8 +775,126 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
             reply.insert("error".to_owned(), Value::String(error));
         }
     }
-    reply.insert("progress".to_owned(), Value::Array(host.progress));
+    finish(host, &mut reply);
     Ok(Value::Object(reply))
+}
+
+/// A host function: `request` is JSON; returns 0 and sets `*reply` to JSON, or nonzero and sets it
+/// to the reason (or leaves it null). `*reply` is freed with the host's `release`.
+pub type HostCall = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *mut *mut c_char) -> i32>;
+
+/// The process a run reads files in. See `garage_ingest.h` for each member.
+#[repr(C)]
+pub struct GarageIngestHost {
+    pub context: *mut c_void,
+    pub read: HostCall,
+    pub release: Option<unsafe extern "C" fn(*mut c_void, *mut c_char)>,
+    pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
+    pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
+}
+
+/// A run's files read through the host's readers: placeholders made local within the budget and
+/// the bytes hashed here, the text read by the host.
+struct ReadingHost {
+    host: GarageIngestHost,
+    budget: Budget,
+}
+
+impl ReadingHost {
+    /// Calls the host's `read`; its reply, or why there is none.
+    fn call_read(&self, request: &Value) -> Result<String, String> {
+        let function = self.host.read.ok_or("the host offers no read")?;
+        let request = CString::new(request.to_string()).map_err(|_| "a path held a NUL byte".to_owned())?;
+        let mut reply: *mut c_char = std::ptr::null_mut();
+        // SAFETY: the host's contract (garage_ingest.h).
+        let status = unsafe { function(self.host.context, request.as_ptr(), &raw mut reply) };
+        let text = if reply.is_null() {
+            String::new()
+        } else {
+            // SAFETY: a non-null reply is a NUL-terminated string the host owns until released.
+            let text = unsafe { CStr::from_ptr(reply) }.to_string_lossy().into_owned();
+            if let Some(release) = self.host.release {
+                // SAFETY: the reply came from this host and is released once.
+                unsafe { release(self.host.context, reply) };
+            }
+            text
+        };
+        if status == 0 {
+            Ok(text)
+        } else {
+            Err(if text.is_empty() { format!("the host's read failed ({status})") } else { text })
+        }
+    }
+}
+
+impl FileHost for ReadingHost {
+    fn ensure_local(&mut self, candidate: &FileCandidate) -> bool {
+        matches!(Materializer::shared().ensure_local(&candidate.path, &mut self.budget), Materialized::Local)
+    }
+
+    fn source_sha256(&mut self, candidate: &FileCandidate) -> Option<String> {
+        garage_ingest::sha256::file_hex_digest(&candidate.path).ok()
+    }
+
+    fn read(&mut self, candidate: &FileCandidate) -> ReadOutcome {
+        let request = json!({
+            "path": candidate.path.to_string_lossy(),
+            "uri": candidate.uri,
+            "size": candidate.size,
+            "mtime": candidate.mtime,
+        });
+        let reply = match self.call_read(&request) {
+            Ok(reply) => reply,
+            Err(error) => return ReadOutcome::Raised(error),
+        };
+        let reply = match serde_json::from_str::<Value>(&reply) {
+            Ok(reply) => reply,
+            Err(error) => return ReadOutcome::Raised(format!("the host's read replied with bad JSON: {error}")),
+        };
+        match read_outcome(Some(&reply)) {
+            Ok(Some(outcome)) => outcome,
+            Ok(None) => ReadOutcome::Raised("the host's read replied with null".to_owned()),
+            Err(error) => ReadOutcome::Raised(error),
+        }
+    }
+}
+
+impl SourceHost for ReadingHost {
+    fn cancelled(&mut self) -> bool {
+        // SAFETY: the host's contract (garage_ingest.h).
+        self.host.cancelled.is_some_and(|cancelled| unsafe { cancelled(self.host.context) })
+    }
+
+    fn progress(&mut self, phase: &str, current_item: Option<&str>, counters: &Counters) {
+        let Some(progress) = self.host.progress else { return };
+        let event = json!({
+            "phase": phase,
+            "current_item": current_item,
+            "counters": counters_json(counters),
+            "budget": budget_json(&self.budget),
+        });
+        let Ok(event) = CString::new(event.to_string()) else { return };
+        // SAFETY: the host's contract (garage_ingest.h); the event lives through the call.
+        unsafe { progress(self.host.context, event.as_ptr()) };
+    }
+
+    fn materialized(&self) -> (u64, u64) {
+        (self.budget.files_done, self.budget.bytes_done)
+    }
+}
+
+/// Runs one walked source through GarageService, reading each file through the host.
+fn run_source(request: &Map<String, Value>, host: GarageIngestHost) -> Outcome {
+    let budget = budget_from(request)?;
+    // Only the materialize thread may start a download; a read here of a dataless file fails instead.
+    let _policy = garage_ingest::materialize::refusing_dataless_reads();
+    run_source_with(
+        request,
+        |_root| ReadingHost { host, budget },
+        |host, reply| {
+            reply.insert("budget".to_owned(), budget_json(&host.budget));
+        },
+    )
 }
 
 /// The owner: `"self": {"name", "identities": ["kind:value", ...]}`.
@@ -943,14 +1107,28 @@ pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, resul
     call(request, result, git_tracked)
 }
 
+/// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does: `{"root", "kind"?:
+/// "filesystem" | "git" | "sqlite" | "maildir" | "feed", "source_slug"?, "include_code"?, "read_git"?: true,
+/// "policy"?}` -> `{"source_slug", "kind", "root", "item_count", "item_type", "details", "duration_seconds",
+/// "error"}`. With `"read_git": false` a git source's `tracked_files` detail is left out.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_scan(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, scan)
+}
+
 /// Runs one walked source, as `ingest/pipeline.py`'s `_ingest_source` does, through GarageService:
 /// `{"facade": {"socket" | "host" and "port", "token"?, "source_slug"}, "scan": {"item_count", "item_type",
 /// "duration_seconds", "details", "error"}, "files": {"<path under the root>": {"local"?, "source_sha256"?,
 /// "read"}}, "include_code"?, "limit"?, "cancel_after"?, "force"?, "settings"?, "self"?, "contact_names"?,
 /// "repos"?, "read_git"?, "policy"?}` -> `{"run_id", "counters", "walk_stats", "completed", "progress"}`, with
 /// `"unavailable"` in place of the counters when the scan found the root unreadable and `"error"` when a
-/// run-wide call failed. The scan is stated until the scanners are ported, and each file's read is stated
-/// as for [`garage_ingest_ingest_one`]; `"cancel_after"` cancels the run after that many files.
+/// run-wide call failed. Without `"scan"` the source is scanned here as [`garage_ingest_scan`] does. Each
+/// file's read is stated as for [`garage_ingest_ingest_one`]; `"cancel_after"` cancels the run after that
+/// many files.
 ///
 /// # Safety
 ///
@@ -958,6 +1136,31 @@ pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, resul
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, ingest_source)
+}
+
+/// Runs one walked source, as [`garage_ingest_ingest_source`] does, reading each file through `host`:
+/// the request is the same without `"files"` and `"cancel_after"`, plus the materialize `"budget"` (as for
+/// [`garage_ingest_ensure_local`]). Placeholders are made local within the budget and the bytes are hashed
+/// here; the host's `read` reads the text. Progress and cancellation go through the host. The reply holds
+/// `"budget"` (as it stands at the end) in place of `"progress"`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`], and `host` points to a valid [`GarageIngestHost`] whose functions may be
+/// called on this thread until the call returns.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_run_source(
+    request: *const c_char,
+    host: *const GarageIngestHost,
+    result: *mut *mut c_char,
+) -> i32 {
+    call(request, result, |request| {
+        if host.is_null() {
+            return Err("the host pointer was null".to_owned());
+        }
+        // SAFETY: the caller passes a valid host, which the library only reads.
+        run_source(request, unsafe { std::ptr::read(host) })
+    })
 }
 
 /// Decides what ingest does with one file, as `ingest/pipeline.py`'s `ingest_one` does, from what the

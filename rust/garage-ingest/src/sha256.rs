@@ -105,45 +105,110 @@ fn compress(state: &mut [u32; 8], block: &[u8]) {
     }
 }
 
+/// A digest fed in pieces, for a file read a block at a time (`base.file_sha256`).
+#[derive(Clone, Debug)]
+pub struct Hasher {
+    state: [u32; 8],
+    pending: [u8; 64],
+    pending_len: usize,
+    length: u64,
+}
+
+impl Default for Hasher {
+    fn default() -> Self {
+        Self { state: H0, pending: [0; 64], pending_len: 0, length: 0 }
+    }
+}
+
+impl Hasher {
+    /// Adds `bytes`.
+    pub fn update(&mut self, mut bytes: &[u8]) {
+        self.length = self.length.wrapping_add(bytes.len() as u64);
+        if self.pending_len > 0 {
+            let take = bytes.len().min(64 - self.pending_len);
+            self.pending[self.pending_len..self.pending_len + take].copy_from_slice(&bytes[..take]);
+            self.pending_len += take;
+            bytes = &bytes[take..];
+            if self.pending_len < 64 {
+                return;
+            }
+            let block = self.pending;
+            compress(&mut self.state, &block);
+            self.pending_len = 0;
+        }
+        let mut blocks = bytes.chunks_exact(64);
+        for block in &mut blocks {
+            compress(&mut self.state, block);
+        }
+        let rest = blocks.remainder();
+        self.pending[..rest.len()].copy_from_slice(rest);
+        self.pending_len = rest.len();
+    }
+
+    /// The digest of everything added.
+    #[must_use]
+    pub fn finish(mut self) -> [u8; 32] {
+        let rest = self.pending_len;
+        let mut tail = [0u8; 128];
+        tail[..rest].copy_from_slice(&self.pending[..rest]);
+        tail[rest] = 0x80;
+        let length = if rest < 56 { 64 } else { 128 };
+        tail[length - 8..length].copy_from_slice(&self.length.wrapping_mul(8).to_be_bytes());
+        for block in tail[..length].chunks_exact(64) {
+            compress(&mut self.state, block);
+        }
+        let mut out = [0u8; 32];
+        for (bytes, word) in out.chunks_exact_mut(4).zip(self.state) {
+            bytes.copy_from_slice(&word.to_be_bytes());
+        }
+        out
+    }
+}
+
 /// The SHA-256 digest of `bytes`.
 #[must_use]
 pub fn digest(bytes: &[u8]) -> [u8; 32] {
-    let mut state = H0;
-    let mut blocks = bytes.chunks_exact(64);
-    for block in &mut blocks {
-        compress(&mut state, block);
+    let mut hasher = Hasher::default();
+    hasher.update(bytes);
+    hasher.finish()
+}
+
+/// The digest of a file's bytes, as lowercase hex, read a megabyte at a time (`base.file_sha256`).
+///
+/// # Errors
+///
+/// The file could not be opened or read.
+pub fn file_hex_digest(path: &std::path::Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Hasher::default();
+    let mut block = vec![0u8; 1 << 20];
+    loop {
+        let read = match file.read(&mut block) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error),
+        };
+        hasher.update(&block[..read]);
     }
-    let rest = blocks.remainder();
-    let mut tail = [0u8; 128];
-    tail[..rest.len()].copy_from_slice(rest);
-    tail[rest.len()] = 0x80;
-    let length = if rest.len() < 56 { 64 } else { 128 };
-    let bits = (bytes.len() as u64).wrapping_mul(8);
-    tail[length - 8..length].copy_from_slice(&bits.to_be_bytes());
-    for block in tail[..length].chunks_exact(64) {
-        compress(&mut state, block);
-    }
-    let mut out = [0u8; 32];
-    for (bytes, word) in out.chunks_exact_mut(4).zip(state) {
-        bytes.copy_from_slice(&word.to_be_bytes());
-    }
-    out
+    Ok(hex(&hasher.finish()))
 }
 
 /// The digest of `bytes`, as lowercase hex.
 #[must_use]
 pub fn hex_digest(bytes: &[u8]) -> String {
+    hex(&digest(bytes))
+}
+
+fn hex(digest: &[u8; 32]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    digest(bytes)
-        .iter()
-        .flat_map(|byte| [HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 15)]])
-        .map(char::from)
-        .collect()
+    digest.iter().flat_map(|byte| [HEX[usize::from(byte >> 4)], HEX[usize::from(byte & 15)]]).map(char::from).collect()
 }
 
 #[cfg(test)]
 mod tests {
-    use super::hex_digest;
+    use super::{Hasher, digest, hex_digest};
 
     #[test]
     fn known_answers() {
@@ -159,6 +224,18 @@ mod tests {
         );
         for length in 50..140 {
             assert_eq!(hex_digest(&vec![b'x'; length]).len(), 64);
+        }
+    }
+
+    #[test]
+    fn pieces_hash_as_the_whole() {
+        let bytes: Vec<u8> = (0..1000_u32).map(|n| (n * 7 % 251) as u8).collect();
+        for step in [1, 3, 63, 64, 65, 200, 1000] {
+            let mut hasher = Hasher::default();
+            for piece in bytes.chunks(step) {
+                hasher.update(piece);
+            }
+            assert_eq!(hasher.finish(), digest(&bytes), "pieces of {step}");
         }
     }
 }
