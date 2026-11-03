@@ -199,6 +199,11 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   runs it (`macapp/Sources/GarageEmbedWorker` is the Swift host: llama_xpc over NSXPC, Ollama and LM Studio
   over a proxy-less URLSession that returns redirects, image models over NSXPC), and the app's Backfill goes
   there (`EmbedClient`), not to the Python backend's `Backfill` RPC, which the CLI still uses.
+- **Ingest** (`rust/garage-ingest`) ports the pipeline a piece at a time: so far the walker (`ingest/walker.py`,
+  its rules as data in `WalkPolicy`, held to Python's tables) and the quality gate (`extract/quality.py`, with
+  Python's `str` character classes so every metric matches). `garage-ingest-ffi` exports them as JSON over a C
+  ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds both to Python when
+  `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static
