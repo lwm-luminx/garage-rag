@@ -1,5 +1,5 @@
-// Garage's ingest pieces in Rust, linked in-process: the file walker and the quality gate, ported
-// from garage_rag.ingest.walker and garage_rag.extract.quality.
+// Garage's ingest pieces in Rust, linked in-process: the file walker, the quality gate and chunking,
+// ported from garage_rag.ingest.walker, garage_rag.extract.quality and garage_rag.ingest.chunking.
 //
 // Each call takes a NUL-terminated UTF-8 JSON request and sets `*result` to a JSON string the
 // library owns; free it with garage_ingest_string_free. A status other than GARAGE_INGEST_OK means
@@ -48,6 +48,33 @@ int32_t garage_ingest_root_problem(const char *request, char **result);
 // The quality gate: {"text", "sample_chars": 65536} ->
 // {"machine_generated", "reasons": [...], "reason_text", "metrics": {"lines", ...}}.
 int32_t garage_ingest_assess(const char *request, char **result);
+
+// Chunks a document's text as garage_rag.ingest.chunking does:
+//   {"text", "kind": "prose" | "markdown" | "code" | "tabular" | "conversation" | "image",
+//    "extension": ".py",                  // for code: picks the language's separators
+//    "size": 1000, "overlap": 100}        // chunk_size/chunk_overlap, or the code_ ones for code
+// -> {"chunks": [{"ord", "text", "chunker", "heading_path", "char_start", "char_end"}]}
+// Offsets are in characters (Unicode code points), null when the chunk was not found in the text.
+int32_t garage_ingest_chunk(const char *request, char **result);
+
+// Attributes a file as garage_rag.attribute.resolver.resolve does:
+//   {"path", "source_root", "default_trust": "authored" | "reference" | "received",
+//    "author_hints": [...],                 // embedded authors, or a message's senders
+//    "communication": false,               // true: hints are senders
+//    "self": {"name", "identities": ["git_email:ada@example.com", ...]},
+//    "repos": {"<repo root>": {"remote": "...", "by_path": {"<relative>": [[name, email, commits]]}}}}
+// -> {"trust", "authors": [{"name", "email", "role", "confidence", "evidence"}], "evidence", "meta"}
+// The caller reads git history; a repository missing from "repos" has none.
+int32_t garage_ingest_attribute(const char *request, char **result);
+
+// Makes a cloud placeholder local within a budget, as garage_rag.ingest.materialize.ensure_local does:
+//   {"path", "budget": {"enabled", "max_files", "max_bytes", "timeout_seconds",   // 0 = unlimited
+//                       "files_done", "bytes_done", "deferred", "failed"}}       // the run so far
+// -> {"outcome": "local" | "deferred" | "failed", "message": "..." | null,
+//     "budget": {... the same fields, updated, "exhausted", "summary"}, "stalled": n}
+// Pass the returned budget to the next call. The download runs on its own thread with macOS's
+// dataless-file policy on; a read past its timeout is left running and counted in "stalled".
+int32_t garage_ingest_ensure_local(const char *request, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);

@@ -401,6 +401,8 @@ py_test(
 py_test(
     name = "test_ingest_rust",
     srcs = ["test_ingest_rust.py"],
+    # The chunking golden test's cases, loaded from its file.
+    data = ["test_chunking_golden.py"],  # keep
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/attribute",
