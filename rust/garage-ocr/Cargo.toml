@@ -1,0 +1,33 @@
+[package]
+name = "garage-ocr"
+description = "Text from pictures, behind one engine trait: Apple Vision on the Mac, Tesseract (linked statically from //ext/tesseract) elsewhere, or an engine the host supplies, such as a vision model in an XPC service."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[features]
+default = ["tesseract", "vision"]
+# Tesseract through its C API (capi.h), linked at build time: //ext/tesseract statically, or pkg-config.
+tesseract = ["dep:image"]
+# Apple Vision's VNRecognizeTextRequest, in-process. Only has an effect on macOS.
+vision = []
+
+[dependencies]
+# Reads a picture's size from its header, without decoding it (HEIC included).
+imagesize = "0.15"
+image = { version = "0.25", optional = true, default-features = false, features = ["bmp", "gif", "jpeg", "png", "tiff", "webp"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSData", "NSDictionary", "NSEnumerator", "NSError", "NSString", "NSValue"] }
+objc2-vision = { version = "0.3", default-features = false, features = ["std", "VNObservation", "VNRecognizeTextRequest", "VNRequest", "VNRequestHandler", "VNRequestRevisionProviding", "VNTypes"] }
+
+[[example]]
+name = "ocr-compare"
+required-features = ["tesseract"]
+
+[lints]
+workspace = true

@@ -1,0 +1,50 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# //ext/tesseract over //ext/leptonica (static, no codecs: the pixels come decoded), with the C++ runtime
+# they need, as //ext/python links them into _garage_tesseract. Cargo builds find libtesseract in build.rs.
+cc_library(
+    name = "tesseract_linked",
+    linkopts = select({
+        "@platforms//os:macos": ["-lc++"],
+        "//conditions:default": ["-lstdc++"],
+    }),
+    deps = [
+        "//ext/leptonica",
+        "//ext/tesseract",
+    ],
+)
+
+# Text from pictures behind one engine trait: Vision on the Mac (the objc2 crates link the system
+# framework), Tesseract elsewhere, or an engine the host supplies.
+rust_library(
+    name = "garage-ocr",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = glob(["testdata/**"]),
+    crate_features = [
+        "tesseract",
+        "vision",
+    ],
+    crate_name = "garage_ocr",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":tesseract_linked",
+        "@crates//:image",
+        "@crates//:imagesize",
+    ] + select({
+        "@platforms//os:macos": [
+            "@crates//:objc2",
+            "@crates//:objc2-foundation",
+            "@crates//:objc2-vision",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# The Tesseract tests skip when no tessdata is found (TESSDATA_PREFIX); the policy tests always run.
+rust_test(
+    name = "garage-ocr-test",
+    crate = ":garage-ocr",
+)
