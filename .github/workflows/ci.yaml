@@ -308,8 +308,11 @@ jobs:
         run: >-
           bazel test //winapp/... --test_output=errors
           --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo"
+      # Pushes to main save; pull requests restore main's entry and save nothing, because
+      # their entries are readable only by themselves and count against the repository's
+      # 10 GB cache quota, where they evict macos.yaml's (see its "Caches" comment).
       - name: Save Bazel caches
-        if: always() && steps.bazel-cache.outputs.cache-primary-key != ''
+        if: always() && github.event_name != 'pull_request' && steps.bazel-cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@v4
         with:
           path: |
