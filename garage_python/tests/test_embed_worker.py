@@ -27,6 +27,7 @@ from garage_rag.proto.garage_pb2 import (
     BackfillDistilledResponse,
     EmbeddingChunkItem,
     GetEmbeddingBatchesResponse,
+    GetSettingResponse,
     ListModelsResponse,
     ModelInfo,
     UpdateEmbeddingsResponse,
@@ -77,8 +78,16 @@ class _Host(ctypes.Structure):
 class Corpus:
     """The facade's four methods over chunks in memory: chunk id -> (text, is a communication)."""
 
-    def __init__(self, chunks: dict[int, tuple[str, bool]], *, dims: int = 3, local: bool = True) -> None:
+    def __init__(
+        self,
+        chunks: dict[int, tuple[str, bool]],
+        *,
+        dims: int = 3,
+        local: bool = True,
+        settings: dict[str, object] | None = None,
+    ) -> None:
         self.chunks = chunks
+        self.settings = settings or {}
         self.dims = dims
         self.local = local
         self.stored: dict[int, list[float]] = {}
@@ -123,6 +132,10 @@ class Corpus:
             self.stored[item.chunk_id] = list(item.vector)
         return UpdateEmbeddingsResponse(success=True, count=len(request.embeddings))
 
+    def GetSetting(self, request, context):
+        self._record(context)
+        return GetSettingResponse(name=request.name, value_json=json.dumps(self.settings.get(request.name)))
+
     def BackfillDistilled(self, request, context):
         self._record(context)
         self.distilled.append(request.model_slug)
@@ -135,7 +148,7 @@ def serve(monkeypatch, tmp_path):
     servers = []
 
     def start(corpus: Corpus) -> Path:
-        for name in ("ListModels", "GetEmbeddingBatches", "UpdateEmbeddings", "BackfillDistilled"):
+        for name in ("ListModels", "GetEmbeddingBatches", "UpdateEmbeddings", "BackfillDistilled", "GetSetting"):
             monkeypatch.setattr(service.GarageRpcServicer, name, lambda self, r, c, _n=name: getattr(corpus, _n)(r, c))
         monkeypatch.setenv("GARAGE_GRPC_TOKEN", "launch-token")
         socket = tmp_path / "grpc.sock"
@@ -149,7 +162,14 @@ def serve(monkeypatch, tmp_path):
         server.stop(0)
 
 
-def _backfill(socket: Path, *, token: str = "launch-token", dims: int = 3, **request) -> tuple[int, dict, list[dict]]:
+def _backfill(
+    socket: Path,
+    *,
+    token: str = "launch-token",
+    dims: int = 3,
+    url: str = "http://localhost:11434/api/embed",
+    **request,
+) -> tuple[int, dict, list[dict]]:
     """Runs ``garage_embed_backfill`` with an Ollama that embeds a text as ``[len, 0, ...]``."""
     library = ctypes.CDLL(str(LIBRARY))
     library.garage_embed_backfill.argtypes = [ctypes.c_char_p, ctypes.POINTER(_Host), ctypes.POINTER(ctypes.c_void_p)]
@@ -167,7 +187,7 @@ def _backfill(socket: Path, *, token: str = "launch-token", dims: int = 3, **req
 
     def http(_context, raw, out):
         asked = json.loads(raw)
-        assert (asked["backend"], asked["url"]) == ("ollama", "http://localhost:11434/api/embed")
+        assert (asked["backend"], asked["url"]) == ("ollama", url)
         inputs = json.loads(asked["body"])["input"]
         vectors = [[float(len(text))] + [0.0] * (dims - 1) for text in inputs]
         reply_with(out, json.dumps({"status": 200, "body": json.dumps({"embeddings": vectors})}))
@@ -187,7 +207,7 @@ def _backfill(socket: Path, *, token: str = "launch-token", dims: int = 3, **req
         _PROGRESS(lambda _context, event: events.append(json.loads(event))),
         _CANCELLED(),
     )
-    payload = {"grpc": {"socket": str(socket), "token": token}, "settings": {"batch_size": 2}, **request}
+    payload = {"grpc": {"socket": str(socket), "token": token}, "settings": {"batch_size": 2}} | request
     result = ctypes.c_void_p()
     status = library.garage_embed_backfill(json.dumps(payload).encode(), ctypes.byref(host), ctypes.byref(result))
     try:
@@ -249,3 +269,32 @@ def test_an_unknown_model_is_not_found(serve):
     status, outcome, _ = _backfill(serve(Corpus({})), model="other")
     assert status == 4, outcome
     assert "no model 'other' registered" in outcome["error"]
+
+
+def test_the_backends_settings_are_read_through_the_facade(serve):
+    settings = {"embedding.ollama_host": "http://127.0.0.1:11555", "embedding.batch_size": 3}
+    corpus = Corpus({cid: ("x", False) for cid in range(1, 5)}, settings=settings)
+    status, outcome, events = _backfill(serve(corpus), url="http://127.0.0.1:11555/api/embed", settings="service")
+    assert status == 0, outcome
+    assert sorted(corpus.stored) == [1, 2, 3, 4]
+    assert [e["message"] for e in events if e["phase"] == "progress"] == ["m: 3/4 (1 batches)", "m: 4/4 (2 batches)"]
+
+
+def test_the_models_call_lists_what_the_facade_registered(serve):
+    corpus = Corpus({})
+    socket = serve(corpus)
+    library = ctypes.CDLL(str(LIBRARY))
+    library.garage_embed_models.argtypes = [ctypes.c_char_p, ctypes.POINTER(_Host), ctypes.POINTER(ctypes.c_void_p)]
+    library.garage_embed_models.restype = ctypes.c_int32
+    library.garage_embed_string_free.argtypes = [ctypes.c_void_p]
+    host = _Host(None, _CALL(), _CALL(), _CALL(), _CALL(), _RELEASE(), _PROGRESS(), _CANCELLED())
+    request = json.dumps({"grpc": {"socket": str(socket), "token": "launch-token"}}).encode()
+    result = ctypes.c_void_p()
+    status = library.garage_embed_models(request, ctypes.byref(host), ctypes.byref(result))
+    try:
+        outcome = json.loads(ctypes.string_at(result.value))
+    finally:
+        library.garage_embed_string_free(result)
+    assert status == 0, outcome
+    assert outcome == {"models": [{"slug": "m", "provider": "ollama", "model_ref": "nomic", "dims": 3}]}
+    assert corpus.tokens == ["launch-token"]

@@ -1,7 +1,7 @@
 import Foundation
+import GarageXPCKit
 import LlamaClient
 import OSLog
-import PythonXPCService
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "LlamaModelLoader")
 

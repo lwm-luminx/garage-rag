@@ -1,5 +1,7 @@
+import EmbedClient
 import Foundation
 import OSLog
+import GarageEmbedXPCServiceCore
 import GarageIngestXPCServiceCore
 import GarageXPCServiceCore
 import IngestClient
@@ -12,9 +14,10 @@ private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickm
 /// A folder the user grants in the App Store build is readable only by the app: the grant cannot be
 /// handed to a separately sandboxed XPC service. So when sandboxed, the app hosts the ingest service
 /// (Scan & Ingest) and GarageXPCService (the gRPC host behind Scan, AddSource and McpInstall) itself,
-/// in the same Python it links through PythonXPCService.framework, and every connection to them reaches
-/// these copies. The embed, MCP, llama and download services still run as their own helpers; they
-/// never touch user files. The Developer ID build is not sandboxed and keeps every service out of process.
+/// in the same Python it links through PythonXPCService.framework, and the embed service (whose image
+/// models read the image files of granted folders), and every connection to them reaches these
+/// copies. The MCP, llama, image and download services still run as their own helpers; they never
+/// touch user files. The Developer ID build is not sandboxed and keeps every service out of process.
 enum InProcessServiceHost {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var delegates: [GarageXPCServiceBase] = []
@@ -24,6 +27,7 @@ enum InProcessServiceHost {
         [
             (IngestXPCConstants.serviceName, makeGarageIngestXPCServiceDelegate),
             (GarageXPCConstants.serviceName, makeGarageXPCServiceDelegate),
+            (EmbedXPCConstants.serviceName, makeGarageEmbedXPCServiceDelegate),
         ]
     }
 

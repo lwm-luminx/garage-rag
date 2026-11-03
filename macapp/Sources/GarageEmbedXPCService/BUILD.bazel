@@ -1,30 +1,40 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
-load("//bazel:framework_linking.bzl", "framework_linked_library")
+
+# The service's delegate: the Rust embed worker (//rust/garage-embed-ffi, linked statically) and
+# its host. The sandboxed app links it too and hosts one in its own process
+# (GarageInProcessServices), since image models read files only the app can read.
+swift_library(
+    name = "GarageEmbedXPCServiceCore",
+    srcs = ["GarageEmbedXPCServiceDelegate.swift"],
+    module_name = "GarageEmbedXPCServiceCore",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/EmbedClient",
+        "//macapp/Sources/GarageEmbedWorker",
+        "//macapp/Sources/GarageXPCKit",
+        "//macapp/Sources/ImageEmbedBridge:ImageEmbedBridgeCore",
+        "//macapp/Sources/LlamaModelLoader:LlamaModelLoaderCore",
+    ],
+)
 
 # Implementation library for GarageEmbedXPCService
 swift_library(
     name = "GarageEmbedXPCService_lib",
-    srcs = glob(["**/*.swift"]),
+    srcs = ["main.swift"],
     module_name = "GarageEmbedXPCService",
     visibility = ["//visibility:private"],
     deps = [
-        "//macapp/Sources/ImageEmbedBridge",
-        "//macapp/Sources/IngestClient",
-        "//macapp/Sources/LlamaModelLoader",
-        "//macapp/Sources/PythonXPCService",
+        ":GarageEmbedXPCServiceCore",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )
 
-# The actual XPC service binary
+# The service binary. It is built on GarageXPCKit and links neither Python.framework nor
+# PythonXPCService.framework.
 macos_xpc_service(
     name = "GarageEmbedXPCService",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-        "//ext/pythonkit:PythonKit",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
-    ],
     bundle_id = "me.rickmark.garage-rag.embed-xpc",
     bundle_name = "GarageEmbedXPCService",
     codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
@@ -34,26 +44,10 @@ macos_xpc_service(
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
-        "-framework",
-        "PythonXPCService",
-    ],
     minimum_os_version = "14.0",
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":GarageEmbedXPCService_linked",
+        ":GarageEmbedXPCService_lib",
     ],
-)
-
-# The service's library without the static copy of PythonXPCService.framework's code, which it links
-# (see //bazel:framework_linking.bzl).
-framework_linked_library(
-    name = "GarageEmbedXPCService_linked",
-    framework_deps = ["//macapp/Sources/PythonXPCService"],
-    deps = [":GarageEmbedXPCService_lib"],
 )

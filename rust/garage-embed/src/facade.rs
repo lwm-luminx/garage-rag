@@ -14,8 +14,8 @@ use tonic::transport::{Channel, Endpoint, Uri};
 
 use crate::proto::garage_service_client::GarageServiceClient;
 use crate::proto::{
-    BackfillDistilledRequest, GetEmbeddingBatchesRequest, GetEmbeddingBatchesResponse, ListModelsRequest, ModelInfo,
-    UpdateEmbeddingsRequest, UpdateEmbeddingsResponse,
+    BackfillDistilledRequest, GetEmbeddingBatchesRequest, GetEmbeddingBatchesResponse, GetSettingRequest,
+    ListModelsRequest, ModelInfo, UpdateEmbeddingsRequest, UpdateEmbeddingsResponse,
 };
 
 /// The largest message either side sends (`service.server.MAX_REQUEST_BYTES`).
@@ -138,6 +138,20 @@ impl GrpcFacade {
             .max_decoding_message_size(MAX_MESSAGE_BYTES)
             .max_encoding_message_size(MAX_MESSAGE_BYTES);
         Ok(Self { runtime, client })
+    }
+
+    /// One setting the backend runs with (`GetSetting`, SECTION.KEY as `garage.json` names it),
+    /// decoded from its JSON.
+    ///
+    /// # Errors
+    ///
+    /// The call's own failure (an unknown key is `NotFound` or `Failed`), or a reply that is not JSON.
+    pub fn get_setting(&self, name: &str) -> Result<serde_json::Value, FacadeError> {
+        let mut client = self.client.clone();
+        let request = GetSettingRequest { name: name.to_string() };
+        let reply = self.runtime.block_on(client.get_setting(request))?.into_inner();
+        serde_json::from_str(&reply.value_json)
+            .map_err(|error| FacadeError::Failed(format!("{name}: GarageService answered with no JSON: {error}")))
     }
 }
 

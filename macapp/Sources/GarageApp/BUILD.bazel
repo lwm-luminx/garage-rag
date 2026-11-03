@@ -52,6 +52,8 @@ swift_library(
     module_name = "GarageApp",
     visibility = ["//visibility:public"],
     deps = [
+        "//macapp/Sources/EmbedClient",
+        "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCServiceCore",
         "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
         "//macapp/Sources/GarageXPCService:GarageXPCServiceCore",

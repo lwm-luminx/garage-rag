@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import Darwin
+import EmbedClient
 import IngestClient
 import ModelDownloadClient
 import ImageEmbedClient
@@ -350,7 +351,7 @@ public final class XPCServiceManager: ObservableObject {
             id: "embed-xpc",
             name: "Text Embeddings Helper",
             bundleId: "me.rickmark.garage-rag.embed-xpc",
-            serviceDescription: "Computes vector embeddings and coordinates batch text embedding models via PythonKit."
+            serviceDescription: "Embeds the chunks each model lacks with the Rust embed worker, through the Garage backend."
         ),
         XPCServiceInfo(
             id: "llama-xpc",
