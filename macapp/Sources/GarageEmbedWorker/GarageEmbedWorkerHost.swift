@@ -32,7 +32,7 @@ public final class GarageEmbedWorkerHost: @unchecked Sendable {
         ensureLlamaModel: @escaping @Sendable (String) -> Result<String, Error> = GarageEmbedWorkerHost.loadOnDemand,
         images: ImageEmbedAccess.Service? = .handedOverEndpoint(),
         readImage: @escaping @Sendable (String) throws -> Data = { try Data(contentsOf: URL(fileURLWithPath: $0)) },
-        send: @escaping HTTPSend = GarageEmbedHTTP.send,
+        send: @escaping HTTPSend = { GarageEmbedHTTP.send($0) },
         progress: @escaping @Sendable (GarageEmbedWorker.Event) -> Void = { _ in },
         isCancelled: @escaping @Sendable () -> Bool = { false }
     ) {
