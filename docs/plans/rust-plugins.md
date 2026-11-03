@@ -149,7 +149,12 @@ step leaves the app working, with the Python reference still there for the servi
    databases and Messages threads, mail folders and feeds, with each feed read as expat reads it so the same
    documents fall back to the same pattern). `garage-ingest-ffi` is their C ABI, and
    `tests/test_ingest_rust.py` holds them to Python, whole runs included, request for request against
-   GarageService. Next: Messages conversations, the readers the host hands files to, then the service itself.
+   GarageService. `garage_ingest_run_source` runs a source with the loop, the budget and the hashing in Rust
+   and each file's text read through the host (`ingest/host_read.py`'s `read_for_host` is the reply), so the
+   service can move its loop to Rust while the readers are still Python and drop Python as each reader gets
+   a Rust port. The PDF, Office, mail and Messages readers come from standalone FOSS crates
+   (`markdown-extract`), with Garage keeping the glue: Messages is a container read thread by thread, not a
+   one-file reader. Next: the service's Swift host on `garage_ingest_run_source`, then the readers.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy

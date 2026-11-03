@@ -218,7 +218,9 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds them to Python
   when `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it, the facade calls against
-  `create_grpc_server` as `test_embed_worker.py` does. Nothing calls them yet.
+  `create_grpc_server` as `test_embed_worker.py` does. `garage_ingest_run_source` runs a whole source with each
+  file's text read through a host callback (`ingest/host_read.py`'s `read_for_host` is the reply, so the readers
+  can stay Python until each is ported); `test_ingest_rust.py` holds it to `_ingest_source`. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static

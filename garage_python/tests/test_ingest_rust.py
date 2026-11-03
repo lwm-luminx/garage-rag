@@ -1408,6 +1408,169 @@ def test_sources_are_ingested_the_same(rust, monkeypatch, run_facade, case):
     assert recorder.tokens == {"launch-token"}
 
 
+# --- a whole source, reading through the host -----------------------------------------------------
+
+_HostCall = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p))
+_Release = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p)
+_Progress = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_char_p)
+_Cancelled = ctypes.CFUNCTYPE(ctypes.c_bool, ctypes.c_void_p)
+
+
+class _IngestHost(ctypes.Structure):
+    _fields_ = (
+        ("context", ctypes.c_void_p),
+        ("read", _HostCall),
+        ("release", _Release),
+        ("progress", _Progress),
+        ("cancelled", _Cancelled),
+    )
+
+
+def _run_source(request: dict, *, read, progress, cancelled) -> dict:
+    """``garage_ingest_run_source`` with a host whose ``read`` answers ``read(path)``."""
+    assert LIBRARY is not None
+    library = ctypes.CDLL(str(LIBRARY))
+    library.garage_ingest_run_source.argtypes = [
+        ctypes.c_char_p,
+        ctypes.POINTER(_IngestHost),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    library.garage_ingest_run_source.restype = ctypes.c_int32
+    library.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
+    replies: dict[int, ctypes.Array] = {}
+
+    def on_read(_context, raw, reply):
+        buffer = ctypes.create_string_buffer(json.dumps(read(json.loads(raw)["path"])).encode())
+        replies[ctypes.addressof(buffer)] = buffer
+        reply[0] = ctypes.addressof(buffer)
+        return 0
+
+    def on_release(_context, pointer):
+        del replies[pointer]
+
+    host = _IngestHost(
+        None,
+        _HostCall(on_read),
+        _Release(on_release),
+        _Progress(lambda _context, event: progress(json.loads(event))),
+        _Cancelled(lambda _context: cancelled()),
+    )
+    result = ctypes.c_void_p()
+    status = library.garage_ingest_run_source(json.dumps(request).encode(), ctypes.byref(host), ctypes.byref(result))
+    try:
+        reply = json.loads(ctypes.string_at(result.value).decode())
+    finally:
+        library.garage_ingest_string_free(result)
+    assert status == 0, reply
+    assert not replies, "every read reply was released"
+    return reply
+
+
+def _raises(message: str):
+    def extract(_path):
+        raise ValueError(message)
+
+    return extract
+
+
+_HOST_TREE = {
+    **{relative: file for relative, file in _TREE.items() if file.get("local", True)},
+    "Cloud/gone.md": {"read": {"placeholder": True}},
+    "Notes/odd.md": {"raise": "a reader's bug"},
+}
+
+HOST_CASES = {
+    "the whole tree": {},
+    "with code": {"include_code": True},
+    "forced": {"force": True},
+    "a limit": {"limit": 3},
+    "cancelled": {"cancel_after": 2},
+}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+@pytest.mark.parametrize("case", HOST_CASES.values(), ids=HOST_CASES.keys())
+def test_sources_run_through_the_host_the_same(rust, monkeypatch, run_facade, case):
+    """``garage_ingest_run_source``, reading through ``read_for_host``, sends what ``_ingest_source`` sends.
+
+    The files are real and local, so both sides hash and materialize them for themselves.
+    """
+    from garage_rag.ingest.host_read import read_for_host
+
+    recorder, socket, client = run_facade
+    root = recorder.root
+    for relative in _HOST_TREE:
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(f"bytes of {relative}")
+    settled = root / "Notes" / "settled.md"
+    recorder.stats[str(settled)] = {
+        "exists": True,
+        "byte_size": settled.stat().st_size,
+        "mtime": settled.stat().st_mtime,
+        "state": "OK",
+        "content_sha256": "c" * 64,
+    }
+    settings = config.Settings()
+    readers = {
+        str(root / relative): _raises(file["raise"]) if "raise" in file else _python_read(file["read"], root / relative)
+        for relative, file in _HOST_TREE.items()
+    }
+    monkeypatch.setattr(pipeline, "extract", lambda path: readers[str(path)](path))
+    monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
+    monkeypatch.setattr(chunking, "get_settings", lambda: settings)
+    monkeypatch.setattr(scanner, "get_settings", lambda: settings)
+    monkeypatch.setattr(pipeline.SelfIdentity, "from_settings", classmethod(lambda cls: _owner()))
+
+    def cancelling():
+        asked = 0
+
+        def is_cancelled() -> bool:
+            nonlocal asked
+            asked += 1
+            return "cancel_after" in case and asked > case["cancel_after"]
+
+        return is_cancelled
+
+    python_progress: list[dict] = []
+    counters, _, _ = pipeline._ingest_source(
+        source_slug="python",
+        gateway=GrpcIngestStorageGateway(client),
+        include_code=case.get("include_code", False),
+        limit=case.get("limit"),
+        force=case.get("force", False),
+        progress=lambda _c, _b, *, phase, current_item=None, **_: python_progress.append(
+            {"phase": phase, "current_item": current_item}
+        ),
+        is_cancelled=cancelling(),
+    )
+
+    rust_progress: list[dict] = []
+    port = _run_source(
+        {
+            "facade": {"socket": str(socket), "token": "launch-token", "source_slug": "rust"},
+            "include_code": case.get("include_code", False),
+            "limit": case.get("limit"),
+            "force": case.get("force", False),
+            "self": OWNER,
+            "repos": {},
+        },
+        read=lambda path: read_for_host(path, reader=readers[path]),
+        progress=rust_progress.append,
+        cancelled=cancelling(),
+    )
+
+    assert "error" not in port
+    assert recorder.requests["rust"] == recorder.requests["python"]
+    assert [{"phase": e["phase"], "current_item": e["current_item"]} for e in rust_progress] == python_progress
+    assert rust_progress[-1]["counters"] == port["counters"]
+    python = {
+        name: getattr(counters, name)
+        for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
+    }
+    assert port["counters"] == python
+    assert recorder.tokens == {"launch-token"}
+
+
 # --- the scanners -------------------------------------------------------------------------------
 
 _FEEDS = {
