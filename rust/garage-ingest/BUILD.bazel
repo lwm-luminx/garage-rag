@@ -1,8 +1,8 @@
 load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
-# The ingest pipeline's pieces moved out of Python: the walker (garage_rag/ingest/walker.py) and the
-# quality gate (garage_rag/extract/quality.py).
+# The ingest pipeline's pieces moved out of Python (garage_rag/ingest, extract/quality.py and
+# attribute/), with git history read through //rust/garage-git.
 rust_library(
     name = "garage-ingest",
     srcs = glob(["src/**/*.rs"]),
@@ -10,6 +10,7 @@ rust_library(
     edition = "2024",
     visibility = ["//visibility:public"],
     deps = [
+        "//rust/garage-git",
         "@crates//:libc",
         "@crates//:regex",
         "@crates//:serde_json",

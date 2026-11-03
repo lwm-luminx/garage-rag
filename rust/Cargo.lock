@@ -220,9 +220,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-git"
+version = "0.1.0"
+
+[[package]]
 name = "garage-ingest"
 version = "0.1.0"
 dependencies = [
+ "garage-git",
  "libc",
  "regex",
  "serde_json",
@@ -232,6 +237,7 @@ dependencies = [
 name = "garage-ingest-ffi"
 version = "0.1.0"
 dependencies = [
+ "garage-git",
  "garage-ingest",
  "serde_json",
 ]

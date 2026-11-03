@@ -5,10 +5,12 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::{
-    Budget, ContentKind, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats, Walked,
+    Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
+    Walked,
 };
 use serde_json::{Map, Value, json};
 
@@ -277,7 +279,14 @@ fn attribute(request: &Map<String, Value>) -> Outcome {
         .collect::<Vec<_>>();
     let identity = SelfIdentity::new(name, &pairs);
     let communication = request.get("communication").and_then(Value::as_bool).unwrap_or(false);
-    let repos = repos(request.get("repos"))?;
+    let supplied;
+    let repos: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
+        static HISTORY: OnceLock<LibGitHistory> = OnceLock::new();
+        HISTORY.get_or_init(LibGitHistory::new)
+    } else {
+        supplied = repos(request.get("repos"))?;
+        &supplied
+    };
     let signals = Signals {
         source_root: Path::new(root),
         default_trust,
@@ -285,7 +294,7 @@ fn attribute(request: &Map<String, Value>) -> Outcome {
         identity: &identity,
         communication,
     };
-    let attribution = garage_ingest::attribution::resolve(Path::new(path), &signals, &repos);
+    let attribution = garage_ingest::attribution::resolve(Path::new(path), &signals, repos);
     let authors: Vec<Value> = attribution
         .authors
         .iter()
@@ -305,6 +314,36 @@ fn attribute(request: &Map<String, Value>) -> Outcome {
         "evidence": attribution.evidence,
         "meta": attribution.meta,
     }))
+}
+
+fn git_history(request: &Map<String, Value>) -> Outcome {
+    let root = root(request)?;
+    let max_commits = match request.get("max_commits") {
+        None | Some(Value::Null) => None,
+        Some(value) => Some(
+            value
+                .as_u64()
+                .and_then(|max| usize::try_from(max).ok())
+                .ok_or("\"max_commits\" is not a non-negative integer")?,
+        ),
+    };
+    let commits = garage_git::commit_paths(&root, max_commits).map_err(|error| error.to_string())?;
+    let commits: Vec<Value> =
+        commits.into_iter().map(|commit| json!([commit.name, commit.email, commit.paths])).collect();
+    Ok(json!({ "commits": commits }))
+}
+
+fn git_remote(request: &Map<String, Value>) -> Outcome {
+    let root = root(request)?;
+    let name = request.get("name").and_then(Value::as_str).unwrap_or("origin");
+    let url = garage_git::remote_url(&root, name).map_err(|error| error.to_string())?;
+    Ok(json!({ "url": url }))
+}
+
+fn git_tracked(request: &Map<String, Value>) -> Outcome {
+    let root = root(request)?;
+    let count = garage_git::index_entry_count(&root).map_err(|error| error.to_string())?;
+    Ok(json!({ "count": count }))
 }
 
 /// The default walk policy: `{}` -> `{"exclude_dirs": [...], ..., "max_file_bytes": n}`.
@@ -353,8 +392,10 @@ pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *m
 
 /// Attributes a file: `{"path", "source_root", "default_trust", "author_hints"?, "communication"?,
 /// "self"?: {"name", "identities": ["git_email:...", ...]}, "repos"?: {"<root>": {"remote",
-/// "by_path": {"<relative>": [[name, email, commits], ...]}}}}` -> `{"trust", "authors": [{"name",
-/// "email", "role", "confidence", "evidence"}], "evidence", "meta"}`.
+/// "by_path": {"<relative>": [[name, email, commits], ...]}}}, "read_git"?: false}` -> `{"trust",
+/// "authors": [{"name", "email", "role", "confidence", "evidence"}], "evidence", "meta"}`. With
+/// `"read_git": true` the library reads each repository's history itself, once per process, and
+/// `"repos"` is ignored.
 ///
 /// # Safety
 ///
@@ -387,6 +428,38 @@ pub unsafe extern "C" fn garage_ingest_ensure_local(request: *const c_char, resu
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn garage_ingest_chunk(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, chunk)
+}
+
+/// A repository's history, as `git log --no-merges --no-renames --name-only` reports it with
+/// `.mailmap` applied: `{"root", "max_commits"?}` -> `{"commits": [[name, email, [path, ...]], ...]}`,
+/// newest first. A repository libgit2 cannot read answers BAD_REQUEST with its error.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_git_history(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, git_history)
+}
+
+/// A remote's configured URL: `{"root", "name"?: "origin"}` -> `{"url": string | null}`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_git_remote(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, git_remote)
+}
+
+/// The tracked files `git ls-files` lists: `{"root"}` -> `{"count"}`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, git_tracked)
 }
 
 /// Frees a string this library returned. Null is ignored.
