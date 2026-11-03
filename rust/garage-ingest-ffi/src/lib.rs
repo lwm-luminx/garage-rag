@@ -22,6 +22,8 @@ use garage_ingest::{
 };
 use serde_json::{Map, Value, json};
 
+mod service;
+
 /// The call succeeded; the result is its JSON.
 pub const GARAGE_INGEST_OK: i32 = 0;
 /// The request was not valid JSON of the expected shape, or a pointer was null.
@@ -703,7 +705,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let shared_names = request.get("shared_names").and_then(Value::as_object).cloned().unwrap_or_default();
     run_source_with(
         request,
-        |root| StatedFiles { root, files, shared_names, cancel_after, asked: 0, progress: Vec::new() },
+        |root, _| StatedFiles { root, files, shared_names, cancel_after, asked: 0, progress: Vec::new() },
         |host, reply| {
             reply.insert("progress".to_owned(), Value::Array(host.progress));
         },
@@ -714,7 +716,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
 /// the source's root; `finish` adds what the host has to say to the reply.
 fn run_source_with<H: SourceHost>(
     request: &Map<String, Value>,
-    make_host: impl FnOnce(PathBuf) -> H,
+    make_host: impl FnOnce(PathBuf, &ScanSummary) -> H,
     finish: impl FnOnce(H, &mut Map<String, Value>),
 ) -> Outcome {
     let facade = request.get("facade").and_then(Value::as_object).ok_or("the request has no \"facade\" object")?;
@@ -768,7 +770,7 @@ fn run_source_with<H: SourceHost>(
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut host = make_host(garage_ingest::walk::expand_home(&source.root));
+    let mut host = make_host(garage_ingest::walk::expand_home(&source.root), &scan);
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
     match source::ingest_source(&mut host, &mut storage, &context, &scan, &options) {
@@ -796,6 +798,7 @@ pub type HostCall = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *mut
 
 /// The process a run reads files in. See `garage_ingest.h` for each member.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct GarageIngestHost {
     pub context: *mut c_void,
     pub read: HostCall,
@@ -810,6 +813,8 @@ pub struct GarageIngestHost {
 struct ReadingHost {
     host: GarageIngestHost,
     budget: Budget,
+    /// For `garage_ingest_run`: progress goes to the host as the app's `IngestProgress` events.
+    events: Option<service::SourceEvents>,
 }
 
 impl ReadingHost {
@@ -878,16 +883,16 @@ impl SourceHost for ReadingHost {
     }
 
     fn progress(&mut self, phase: &str, current_item: Option<&str>, counters: &Counters) {
-        let Some(progress) = self.host.progress else { return };
-        let event = json!({
-            "phase": phase,
-            "current_item": current_item,
-            "counters": counters_json(counters),
-            "budget": budget_json(&self.budget),
-        });
-        let Ok(event) = CString::new(event.to_string()) else { return };
-        // SAFETY: the host's contract (garage_ingest.h); the event lives through the call.
-        unsafe { progress(self.host.context, event.as_ptr()) };
+        let event = match &self.events {
+            Some(events) => events.progress(phase, current_item, counters),
+            None => json!({
+                "phase": phase,
+                "current_item": current_item,
+                "counters": counters_json(counters),
+                "budget": budget_json(&self.budget),
+            }),
+        };
+        send_event(&self.host, &event);
     }
 
     fn materialized(&self) -> (u64, u64) {
@@ -905,6 +910,14 @@ impl SourceHost for ReadingHost {
     }
 }
 
+/// Hands `event` to the host's `progress`, when it has one.
+fn send_event(host: &GarageIngestHost, event: &Value) {
+    let Some(progress) = host.progress else { return };
+    let Ok(event) = CString::new(event.to_string()) else { return };
+    // SAFETY: the host's contract (garage_ingest.h); the event lives through the call.
+    unsafe { progress(host.context, event.as_ptr()) };
+}
+
 /// Runs one walked source through GarageService, reading each file through the host.
 fn run_source(request: &Map<String, Value>, host: GarageIngestHost) -> Outcome {
     let budget = budget_from(request)?;
@@ -912,7 +925,7 @@ fn run_source(request: &Map<String, Value>, host: GarageIngestHost) -> Outcome {
     let _policy = garage_ingest::materialize::refusing_dataless_reads();
     run_source_with(
         request,
-        |_root| ReadingHost { host, budget },
+        |_root, _| ReadingHost { host, budget, events: None },
         |host, reply| {
             reply.insert("budget".to_owned(), budget_json(&host.budget));
         },
@@ -1182,6 +1195,33 @@ pub unsafe extern "C" fn garage_ingest_run_source(
         }
         // SAFETY: the caller passes a valid host, which the library only reads.
         run_source(request, unsafe { std::ptr::read(host) })
+    })
+}
+
+/// Runs the ingest service's request as `garage_rag.ingest.ingest_xpc` does: `{"facade": {"socket", or "host"
+/// and "port"; "token"}, "source": slug | "*", "include_code"?, "limit"?, "force"?, "contact_names"?,
+/// "settings": "service" | {...}, "budget"?, "self"?, "read_git"?}`. `"*"` runs every enabled source in turn;
+/// with `"settings": "service"` the chunking, quality, placeholder and identity settings are GarageService's
+/// own (`GetSetting`). Each file's text comes from `host`, as for [`garage_ingest_run_source`], and the host's
+/// `progress` hears each `IngestProgress` event (`{"source", "phase", "seen", "total_items", ..., "message",
+/// "error", "current_item"}`). The reply is `{"sources": [...each source's run_source reply, with
+/// "source"], "cancelled"}`, with `"error"` when a source failed or could not be read.
+///
+/// # Safety
+///
+/// As [`garage_ingest_run_source`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_run(
+    request: *const c_char,
+    host: *const GarageIngestHost,
+    result: *mut *mut c_char,
+) -> i32 {
+    call(request, result, |request| {
+        if host.is_null() {
+            return Err("the host pointer was null".to_owned());
+        }
+        // SAFETY: the caller passes a valid host, which the library only reads.
+        service::run(request, unsafe { std::ptr::read(host) })
     })
 }
 

@@ -224,7 +224,12 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   file's text read through a host callback (`ingest/host_read.py`'s `read_for_host` is the reply, so the readers
   can stay Python until each is ported; for a Messages source the host gives only the names contacts shared,
   `shared_names_for_host`); `test_ingest_rust.py` holds it to `_ingest_source`, Messages runs over
-  `fake_messages.py` included. Nothing calls them yet.
+  `fake_messages.py` included. `garage_ingest_run` is the service's whole run, `ingest_xpc`'s port: one source or
+  every enabled one (`"*"`, `ListSources`), the settings GarageService runs with (`"settings": "service"`, over
+  `GetSetting`) and the app's `IngestProgress` events field for field; `test_ingest_rust.py` holds it to
+  `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
+  GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
+  neither it keeps the Python loop.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`), and `extract/dispatch.py` routes a plugin's extensions to it ahead of
   the built-in readers (`extract/plugins.py`). Swift: `macapp/Sources/GaragePlugins` links the static

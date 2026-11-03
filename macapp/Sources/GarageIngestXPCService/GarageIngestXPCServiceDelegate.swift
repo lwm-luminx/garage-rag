@@ -127,6 +127,22 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
     private let callbackLock = NSLock()
     private var callbacksRegistered = false
 
+    /// Set by `cancelIngest`; the Rust loop asks it before each file and between sources.
+    private let cancelLock = NSLock()
+    private var cancelRequested = false
+
+    private var isCancelRequested: Bool {
+        cancelLock.lock()
+        defer { cancelLock.unlock() }
+        return cancelRequested
+    }
+
+    private func setCancelRequested(_ value: Bool) {
+        cancelLock.lock()
+        cancelRequested = value
+        cancelLock.unlock()
+    }
+
     init() {
         super.init(
             serviceName: "GarageIngestXPCService",
@@ -213,6 +229,8 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
 
     func cancelIngest(with reply: @escaping (Bool) -> Void) {
         logger.info("Cancel ingest requested")
+        // The Rust loop stops at its next file; the Python path below hears it through cancel_ingest.
+        setCancelRequested(true)
         guard ensurePythonReady() else {
             logger.warning("Cannot cancel ingest via Python because Python is not initialized: \(self.runtime.statusSnapshot().error ?? "unavailable", privacy: .public)")
             reply(true)
@@ -363,6 +381,35 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
                 mergeConfiguration([GarageXPCConfigurationKey.grpcToken: grpcToken])
             }
 
+            if let grpc = facadeTarget(grpcHost: grpcHost, grpcPort: grpcPort) {
+                let outcome = runRustIngest(
+                    source: source,
+                    grpc: grpc,
+                    token: grpcToken ?? configurationValue(GarageXPCConfigurationKey.grpcToken),
+                    includeCode: includeCode,
+                    force: force,
+                    limit: limit,
+                    contactNames: contactNames
+                )
+                let duration = String(format: "%.3f", CFAbsoluteTimeGetCurrent() - startTime)
+                switch outcome {
+                case .success(let run) where run.error == nil:
+                    let successMsg = "\(successPrefix) \(source) in \(duration)s"
+                    logger.info("\(successMsg, privacy: .public)")
+                    reply(true, successMsg)
+                case .success(let run):
+                    let errorMsg = "Failed to run ingest for \(source) after \(duration)s: \(run.error ?? "")"
+                    logger.error("\(errorMsg, privacy: .public)")
+                    reply(false, errorMsg)
+                case .failure(let error):
+                    let errorMsg = "Failed to run ingest for \(source) after \(duration)s: \(error.localizedDescription)"
+                    logger.error("\(errorMsg, privacy: .public)")
+                    reply(false, errorMsg)
+                }
+                return
+            }
+
+            // No GarageService to persist through: Python's pipeline writes to the database itself.
             let result = withPython { () -> Void in
                 logger.info("Importing garage_rag.ingest in Python for source '\(source, privacy: .public)'...")
                 let ingestModule = try Python.attemptImport("garage_rag.ingest")
@@ -400,6 +447,96 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
                 reply(false, errorMsg)
             }
         }
+    }
+
+    /// GarageService's address, as Python's `get_storage_gateway` picks it: the socket the app configured
+    /// wins, else the port the request or the configuration names. `nil` when neither names one.
+    private func facadeTarget(grpcHost: String?, grpcPort: Int?) -> GarageIngestRunner.GRPCTarget? {
+        if let socket = configurationValue(GarageXPCConfigurationKey.grpcSocket), !socket.isEmpty {
+            return .socket(socket)
+        }
+        let configuredPort = configurationValue(GarageXPCConfigurationKey.grpcPort).flatMap(Int.init)
+        guard let port = grpcPort ?? configuredPort, port > 0 else {
+            return nil
+        }
+        let host = grpcHost ?? configurationValue(GarageXPCConfigurationKey.grpcHost) ?? "127.0.0.1"
+        return .tcp(host: host, port: port)
+    }
+
+    /// Runs the ingest through the Rust loop (`GarageIngestRunner`), with each file's text read by
+    /// `garage_rag.ingest.host_read` in this process's Python. Called on the worker queue.
+    private func runRustIngest(
+        source: String,
+        grpc: GarageIngestRunner.GRPCTarget,
+        token: String?,
+        includeCode: Bool,
+        force: Bool,
+        limit: Int?,
+        contactNames: [[String]]?
+    ) -> Result<GarageIngestRunner.Outcome, Error> {
+        setCancelRequested(false)
+        let runner = GarageIngestRunner(
+            read: { [self] path in
+                pythonReply(function: "read_for_host_json", argument: path)
+            },
+            sharedNames: { [self] directory in
+                pythonReply(function: "shared_names_for_host_json", argument: directory)
+            },
+            progress: { event in
+                GarageIngestActiveConnections.shared.sendProgress(jsonString: event)
+                Self.logProgress(event)
+            },
+            isCancelled: { [self] in isCancelRequested }
+        )
+        logger.info("Running the Rust ingest loop for source '\(source, privacy: .public)' (includeCode: \(includeCode), force: \(force), limit: \(String(describing: limit)))")
+        return runner.run(
+            source: source,
+            grpc: grpc,
+            token: token,
+            includeCode: includeCode,
+            force: force,
+            limit: limit,
+            contactNames: contactNames
+        )
+    }
+
+    /// `garage_rag.ingest.host_read.<function>(argument)`, a JSON string; nil when Python failed.
+    private func pythonReply(function: String, argument: String) -> String? {
+        let result = withPython { () -> String in
+            let module = try Python.attemptImport("garage_rag.ingest.host_read")
+            let reply = try module[dynamicMember: function].throwing.dynamicallyCall(withArguments: [argument])
+            return String(reply) ?? ""
+        }
+        switch result {
+        case .success(let reply):
+            return reply
+        case .failure(let error):
+            logger.error("host_read.\(function, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// Logs a progress event as Python's `_emit_progress` did, to the file log and the clients' log stream.
+    private static func logProgress(_ event: String) {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(event.utf8))) as? [String: Any] else { return }
+        let source = object["source"] as? String ?? ""
+        let phase = object["phase"] as? String ?? ""
+        let message = object["message"] as? String ?? ""
+        let (level, text): (Int32, String)
+        switch phase {
+        case "error":
+            (level, text) = (40, "[\(source)] (error) \(message): \(object["error"] as? String ?? "")")
+        case "cancelled":
+            (level, text) = (30, "[\(source)] (cancelled) \(message)")
+        case "scan", "complete":
+            (level, text) = (20, "[\(source)] (\(phase)) \(message)")
+        default:
+            let percent = (object["progress"] as? Double ?? 0) * 100
+            (level, text) = (20, "[\(source)] (\(phase) \(String(format: "%.1f", percent))%) \(message)")
+        }
+        let levelName = level >= 40 ? "ERROR" : level >= 30 ? "WARN" : "INFO"
+        GarageXPCOutputCapture.shared.log(source: "Ingest", level: levelName, message: text)
+        GarageIngestActiveConnections.shared.sendLog(message: text, level: level)
     }
 
     func ingestSource(slug: String, optionsJson: String, with reply: @escaping (Bool, String?) -> Void) {
