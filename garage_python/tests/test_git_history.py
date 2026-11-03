@@ -1,18 +1,22 @@
-"""Both git readers report what ``git`` itself reports.
+"""Every git reader reports what ``git`` itself reports.
 
 garage_rag.attribute.git reads history through ``_garage_git`` (built into the app's
-Python, libgit2 linked statically) or pygit2 (elsewhere). Each test builds a repository
-with ``git``, reads it through every reader this Python has, and compares with ``git log``,
-``git remote get-url`` and ``git ls-files`` run on the same repository. A reader that is
-not installed skips; CI compiles ``_garage_git`` as an ordinary extension to cover it
-(``tools/garage_git/build_extension.sh``).
+Python, libgit2 linked statically) or pygit2 (elsewhere), and the Rust ingest reads it through
+``rust/garage-git``. Each test builds a repository with ``git``, reads it through every reader
+there is, and compares with ``git log``, ``git remote get-url`` and ``git ls-files`` run on the
+same repository. A reader that is not installed skips; CI compiles ``_garage_git`` as an ordinary
+extension to cover it (``tools/garage_git/build_extension.sh``), and the Rust one is
+``libgarage_ingest_ffi`` (``GARAGE_INGEST_FFI_LIBRARY``, or ``rust/target``).
 """
 
 from __future__ import annotations
 
+import ctypes
+import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -62,12 +66,66 @@ class _Repo:
         )
 
 
+class _RustReader:
+    """:class:`git_mod.GitReader` over ``rust/garage-git``, through ``libgarage_ingest_ffi``'s C ABI."""
+
+    class GitError(Exception):
+        pass
+
+    def __init__(self, library: Path) -> None:
+        self._lib = ctypes.CDLL(str(library))
+        for name in ("garage_ingest_git_history", "garage_ingest_git_remote", "garage_ingest_git_tracked"):
+            getattr(self._lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
+            getattr(self._lib, name).restype = ctypes.c_int32
+        self._lib.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
+
+    def _call(self, name: str, request: dict) -> dict:
+        result = ctypes.c_void_p()
+        status = getattr(self._lib, name)(json.dumps(request).encode(), ctypes.byref(result))
+        try:
+            reply = json.loads(ctypes.string_at(result.value).decode())
+        finally:
+            self._lib.garage_ingest_string_free(result)
+        if status == 1:
+            raise self.GitError(reply["error"])
+        assert status == 0, reply
+        return reply
+
+    def commit_paths(self, path: Path, max_commits: int | None = None) -> list[tuple[str, str, list[str]]]:
+        reply = self._call("garage_ingest_git_history", {"root": str(path), "max_commits": max_commits})
+        return [(name, email, paths) for name, email, paths in reply["commits"]]
+
+    def remote_url(self, path: Path, name: str = "origin") -> str | None:
+        return self._call("garage_ingest_git_remote", {"root": str(path), "name": name})["url"]
+
+    def index_entry_count(self, path: Path) -> int:
+        return self._call("garage_ingest_git_tracked", {"root": str(path)})["count"]
+
+
+def _rust_library() -> Path | None:
+    if value := os.environ.get("GARAGE_INGEST_FFI_LIBRARY"):
+        return Path(value)
+    name = {"darwin": "libgarage_ingest_ffi.dylib", "win32": "garage_ingest_ffi.dll"}.get(
+        sys.platform, "libgarage_ingest_ffi.so"
+    )
+    for profile in ("release", "debug"):
+        candidate = Path(__file__).resolve().parents[2] / "rust" / "target" / profile / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _reader(name: str) -> git_mod.GitReader:
+    if name == "rust":
+        library = _rust_library()
+        if library is None:
+            pytest.skip("libgarage_ingest_ffi is not built (cargo build -p garage-ingest-ffi)")
+        return _RustReader(library)
     module = pytest.importorskip(name)
     return module if name == "_garage_git" else git_mod._Pygit2Reader(module)
 
 
-@pytest.fixture(params=["_garage_git", "pygit2"])
+@pytest.fixture(params=["_garage_git", "pygit2", "rust"])
 def reader(request, monkeypatch) -> git_mod.GitReader:
     """Each reader in turn, installed as the one garage_rag.attribute.git uses."""
     # Only the repository's own configuration: no url.insteadOf or the like from the

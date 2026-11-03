@@ -138,9 +138,9 @@ step leaves the app working, with the Python reference still there for the servi
    (`WalkPolicy`, held to Python's tables), the quality gate (`extract/quality.py`, to the same
    metrics), chunking (`ingest/chunking.py` and its splitters, to the same chunks and offsets) and
    materializing placeholders (`ingest/materialize.py`, to the same budget accounting) and attribution
-   (`attribute/`, to the same decisions and evidence; reading git history stays the host's for now).
-   `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds them to Python. Next:
-   reading git history in Rust, then the service itself.
+   (`attribute/`, to the same decisions and evidence), with git history read in-process through libgit2
+   (`rust/garage-git`, held to `git log` as `_garage_git` and pygit2 are). `garage-ingest-ffi` is their C
+   ABI, and `tests/test_ingest_rust.py` holds them to Python. Next: the service itself.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy

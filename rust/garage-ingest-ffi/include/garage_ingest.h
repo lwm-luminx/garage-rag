@@ -62,9 +62,11 @@ int32_t garage_ingest_chunk(const char *request, char **result);
 //    "author_hints": [...],                 // embedded authors, or a message's senders
 //    "communication": false,               // true: hints are senders
 //    "self": {"name", "identities": ["git_email:ada@example.com", ...]},
-//    "repos": {"<repo root>": {"remote": "...", "by_path": {"<relative>": [[name, email, commits]]}}}}
+//    "repos": {"<repo root>": {"remote": "...", "by_path": {"<relative>": [[name, email, commits]]}}},
+//    "read_git": false}
 // -> {"trust", "authors": [{"name", "email", "role", "confidence", "evidence"}], "evidence", "meta"}
-// The caller reads git history; a repository missing from "repos" has none.
+// With "read_git": true the library reads each repository's history through libgit2, once per
+// process, and "repos" is ignored; otherwise a repository missing from "repos" has none.
 int32_t garage_ingest_attribute(const char *request, char **result);
 
 // Makes a cloud placeholder local within a budget, as garage_rag.ingest.materialize.ensure_local does:
@@ -75,6 +77,17 @@ int32_t garage_ingest_attribute(const char *request, char **result);
 // Pass the returned budget to the next call. The download runs on its own thread with macOS's
 // dataless-file policy on; a read past its timeout is left running and counted in "stalled".
 int32_t garage_ingest_ensure_local(const char *request, char **result);
+
+// Reads a repository in-process through libgit2, as the app's _garage_git module does; no git
+// command runs and nothing connects anywhere. A repository libgit2 cannot read answers
+// GARAGE_INGEST_BAD_REQUEST with {"error"}.
+//   garage_ingest_git_history: {"root", "max_commits"?} -> {"commits": [[name, email, [path, ...]]]},
+//     as `git log --no-merges --no-renames --name-only` with .mailmap applied, newest first
+//   garage_ingest_git_remote:  {"root", "name"?: "origin"} -> {"url": "..." | null}
+//   garage_ingest_git_tracked: {"root"} -> {"count"}, the files `git ls-files` lists
+int32_t garage_ingest_git_history(const char *request, char **result);
+int32_t garage_ingest_git_remote(const char *request, char **result);
+int32_t garage_ingest_git_tracked(const char *request, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);

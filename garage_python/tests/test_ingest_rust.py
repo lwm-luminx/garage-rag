@@ -20,7 +20,9 @@ import importlib.util
 import json
 import os
 import random
+import shutil
 import string
+import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -73,6 +75,7 @@ def rust():
         "garage_ingest_chunk",
         "garage_ingest_ensure_local",
         "garage_ingest_attribute",
+        "garage_ingest_git_history",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -549,8 +552,11 @@ def _python_attribution(path: Path, root: Path, *, trust="authored", hints=(), c
     }
 
 
-def _rust_attribution(rust, path: Path, root: Path, *, trust="authored", hints=(), communication=False, repos=None):
+def _rust_attribution(
+    rust, path: Path, root: Path, *, trust="authored", hints=(), communication=False, repos=None, read_git=False
+):
     request = {
+        "read_git": read_git,
         "path": str(path),
         "source_root": str(root),
         "default_trust": trust,
@@ -713,4 +719,64 @@ def test_git_history_is_weighed_the_same(rust, tmp_path, monkeypatch, remote, ta
 
     for path in (tracked, repo / "src" / "untracked.rs", repo / "Reference" / "x.pdf"):
         port = _rust_attribution(rust, path, tmp_path, repos=repos)
+        assert port == _python_attribution(path, tmp_path), path
+
+
+def _git(root: Path, *args: str, author: tuple[str, str] | None = None, when: int = 0) -> None:
+    env = {
+        **os.environ,
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_COMMITTER_NAME": "Committer",
+        "GIT_COMMITTER_EMAIL": "committer@example.com",
+    }
+    if author is not None:
+        stamp = f"{1_700_000_000 + when * 60} +0000"
+        env |= {
+            "GIT_AUTHOR_NAME": author[0],
+            "GIT_AUTHOR_EMAIL": author[1],
+            "GIT_AUTHOR_DATE": stamp,
+            "GIT_COMMITTER_DATE": stamp,
+        }
+    subprocess.run(["git", *args], cwd=root, check=True, env=env, capture_output=True)
+
+
+def test_history_read_in_rust_attributes_the_same(rust, tmp_path, monkeypatch):
+    """The whole of git attribution in Rust, libgit2 reads included, against Python's."""
+    if shutil.which("git") is None or git_attribution.git_reader() is None:
+        pytest.skip("needs git, and _garage_git or pygit2 for Python's side")
+    monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
+    git_attribution.cached_repo_attribution.cache_clear()
+    repo = tmp_path / "engine"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    people = [
+        ("Ada Lovelace", "ada@example.com"),
+        ("Ada Lovelace", "ADA@example.com"),
+        ("Grace Hopper", "grace@navy.mil"),
+        ("ada-l", "other@x"),
+        ("Bob", "b@x"),
+    ]
+    files = ["src/main.rs", "src/lib.rs", "docs/guide.md", "Reference/spec.pdf", "vendor/dep.c", "café.md"]
+    shuffle = random.Random(7)
+    for when in range(40):
+        for name in shuffle.sample(files, shuffle.randint(1, 3)):
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(f"{name} {when}\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", f"change {when}", author=shuffle.choice(people), when=when)
+    (repo / ".mailmap").write_text("Ada Lovelace <ada@example.com> <ADA@example.com>\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "mailmap", author=people[2], when=41)
+    _git(repo, "remote", "add", "origin", "https://github.com/someone/engine.git")
+
+    reader = git_attribution.git_reader()
+    assert reader is not None
+    commits = rust("garage_ingest_git_history", {"root": str(repo)})["commits"]
+    assert [tuple(commit) for commit in commits] == [
+        (name, email, paths) for name, email, paths in reader.commit_paths(repo)
+    ], "the same commits in the same order"
+    for path in [*(repo / name for name in files), repo / ".mailmap", repo / "src" / "untracked.rs"]:
+        port = _rust_attribution(rust, path, tmp_path, read_git=True)
         assert port == _python_attribution(path, tmp_path), path

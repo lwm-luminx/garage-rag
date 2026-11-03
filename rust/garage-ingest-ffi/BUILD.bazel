@@ -4,6 +4,7 @@ load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
 _DEPS = [
+    "//rust/garage-git",
     "//rust/garage-ingest",
     "@crates//:serde_json",
 ]
