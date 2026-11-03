@@ -5,7 +5,7 @@ use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
-use garage_ingest::{WalkOptions, WalkPolicy, WalkStats, Walked};
+use garage_ingest::{ContentKind, WalkOptions, WalkPolicy, WalkStats, Walked};
 use serde_json::{Map, Value, json};
 
 /// The call succeeded; the result is its JSON.
@@ -123,6 +123,38 @@ fn assess(request: &Map<String, Value>) -> Outcome {
     }))
 }
 
+fn whole(request: &Map<String, Value>, key: &str) -> Result<usize, String> {
+    request
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|value| usize::try_from(value).ok())
+        .ok_or_else(|| format!("the request has no whole number \"{key}\""))
+}
+
+fn chunk(request: &Map<String, Value>) -> Outcome {
+    let text = request.get("text").and_then(Value::as_str).ok_or("the request has no \"text\" string")?;
+    let kind = request.get("kind").and_then(Value::as_str).ok_or("the request has no \"kind\" string")?;
+    let kind = ContentKind::parse(kind).ok_or_else(|| format!("{kind:?} is not a content kind"))?;
+    let extension = request.get("extension").and_then(Value::as_str).unwrap_or_default();
+    let size = whole(request, "size")?;
+    let overlap = whole(request, "overlap")?;
+    let chunks = garage_ingest::chunk_text(text, kind, extension, size, overlap).map_err(|error| error.to_string())?;
+    let chunks: Vec<Value> = chunks
+        .into_iter()
+        .map(|chunk| {
+            json!({
+                "ord": chunk.ord,
+                "text": chunk.text,
+                "chunker": chunk.chunker,
+                "heading_path": chunk.heading_path,
+                "char_start": chunk.char_start,
+                "char_end": chunk.char_end,
+            })
+        })
+        .collect();
+    Ok(json!({ "chunks": chunks }))
+}
+
 /// The default walk policy: `{}` -> `{"exclude_dirs": [...], ..., "max_file_bytes": n}`.
 ///
 /// # Safety
@@ -167,6 +199,18 @@ pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *m
     call(request, result, assess)
 }
 
+/// Chunks a document's text: `{"text", "kind": "prose" | "markdown" | "code" | "tabular" |
+/// "conversation" | "image", "extension"?, "size", "overlap"}` -> `{"chunks": [{"ord", "text",
+/// "chunker", "heading_path", "char_start", "char_end"}]}`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_chunk(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, chunk)
+}
+
 /// Frees a string this library returned. Null is ignored.
 ///
 /// # Safety
@@ -203,6 +247,16 @@ mod tests {
         assert_eq!(verdict["machine_generated"], false);
         assert_eq!(verdict["reason_text"], "looks human-authored");
         assert_eq!(verdict["metrics"]["lines"], 1.0);
+    }
+
+    #[test]
+    fn chunk_answers_with_chunks() {
+        let (status, reply) =
+            run(garage_ingest_chunk, r##"{"text": "# A\nbody", "kind": "markdown", "size": 100, "overlap": 0}"##);
+        assert_eq!(status, GARAGE_INGEST_OK);
+        assert_eq!(reply["chunks"][0]["heading_path"], "A");
+        let (status, _) = run(garage_ingest_chunk, r#"{"text": "x", "kind": "poem", "size": 1, "overlap": 0}"#);
+        assert_eq!(status, GARAGE_INGEST_BAD_REQUEST);
     }
 
     #[test]

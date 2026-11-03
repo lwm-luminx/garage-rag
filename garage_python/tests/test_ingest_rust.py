@@ -1,10 +1,12 @@
 """The Rust ingest pieces (``rust/garage-ingest``) against the Python they replace.
 
-``garage_rag.ingest.walker`` and ``garage_rag.extract.quality`` are the specification. Each tree
-below is walked by both walkers, and each text judged by both gates, through
-``libgarage_ingest_ffi``'s C ABI; the files found, the counts, the verdicts, the reasons and every
-metric must be identical. The Rust walker's default rules are held to Python's tables too, so a
-table edited on one side only fails here.
+``garage_rag.ingest.walker``, ``garage_rag.extract.quality`` and ``garage_rag.ingest.chunking`` are
+the specification. Each tree below is walked by both walkers, each text judged by both gates and
+chunked by both chunkers, through ``libgarage_ingest_ffi``'s C ABI; the files found, the counts, the
+verdicts, the reasons, every metric and every chunk (text, ordinal, chunker id, heading path and
+offsets) must be identical. The chunking cases include the golden test's, which pin Python's
+chunks to the langchain output the index was first built with. The Rust walker's default rules
+are held to Python's tables too, so a table edited on one side only fails here.
 
 The library is found through ``GARAGE_INGEST_FFI_LIBRARY`` or in ``rust/target/{release,debug}``;
 without it the tests skip (``cargo build -p garage-ingest-ffi`` in ``rust/`` makes it).
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import dataclasses
+import importlib.util
 import json
 import os
 import random
@@ -28,7 +31,8 @@ import pytest
 from garage_rag import config
 from garage_rag.attribute.pathrules import EXCLUDED_PREFIXES
 from garage_rag.extract import dispatch, quality
-from garage_rag.ingest import classify, walker
+from garage_rag.extract.base import ContentKind
+from garage_rag.ingest import chunking, classify, splitters, walker
 
 REPO = Path(__file__).resolve().parents[2]
 CORPUS = Path(__file__).parent / "corpora" / "second-brain-os"
@@ -57,7 +61,13 @@ pytestmark = pytest.mark.skipif(
 def rust():
     assert LIBRARY is not None
     lib = ctypes.CDLL(str(LIBRARY))
-    for name in ("garage_ingest_policy", "garage_ingest_walk", "garage_ingest_root_problem", "garage_ingest_assess"):
+    for name in (
+        "garage_ingest_policy",
+        "garage_ingest_walk",
+        "garage_ingest_root_problem",
+        "garage_ingest_assess",
+        "garage_ingest_chunk",
+    ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
     lib.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
@@ -349,3 +359,91 @@ def test_every_text_is_judged_the_same(rust, name, text, sample):
 def test_the_corpus_has_both_verdicts():
     verdicts = {quality.assess(text).machine_generated for _, text in TEXTS}
     assert verdicts == {True, False}
+
+
+# --- chunking -----------------------------------------------------------------------------------
+
+
+def _golden_cases() -> list[tuple[str, str, ContentKind, str, int, int]]:
+    """The chunking golden test's cases, which pin Python to langchain's output."""
+    spec = importlib.util.spec_from_file_location("_chunking_golden", Path(__file__).parent / "test_chunking_golden.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CASES
+
+
+def _sample_code(language: str, rng: random.Random) -> str:
+    keywords = [s.strip() for s in splitters.LANGUAGE_SEPARATORS[language] if s.strip()]
+    words = ["alpha", "beta(x)", "{", "}", "return", "=", "1;", "\\", "{x}", "$", "$$", "|", "::", "é", "日本"]
+    lines = []
+    for _ in range(rng.randint(10, 120)):
+        indent = rng.choice(["", "  ", "    ", "\t"])
+        head = rng.choice(keywords + words)
+        lines.append(indent + head + " " + " ".join(rng.choices(words, k=rng.randint(0, 12))))
+        if rng.random() < 0.2:
+            lines.append("")
+    return rng.choice(["\n", "\r\n"]).join(lines) + rng.choice(["", "\n", "\n\n"])
+
+
+def _sample_markdown(rng: random.Random) -> str:
+    lines = []
+    for _ in range(rng.randint(5, 150)):
+        kind = rng.random()
+        if kind < 0.15:
+            lines.append(rng.choice(["#", "##", "###", "####", "#No"]) + rng.choice(["", " Title", "  Spaced  ", " é"]))
+        elif kind < 0.22:
+            lines.append(rng.choice(["```", "```python", "~~~", "``` ```", "  ```"]))
+        elif kind < 0.3:
+            lines.append("")
+        elif kind < 0.35:
+            lines.append(rng.choice(["\t\tindented code", "a​b c\x07d", "   ", " "]))
+        else:
+            lines.append(
+                " ".join(
+                    rng.choices(
+                        ["word", "Sentence.", "comma,", "why?", "yes!", "日本語", "x" * 40], k=rng.randint(1, 30)
+                    )
+                )
+            )
+    return "\n".join(lines)
+
+
+def _chunk_cases() -> list[tuple[str, str, str, str, int, int]]:
+    cases = [(name, text, kind.value, ext, size, overlap) for name, text, kind, ext, size, overlap in _golden_cases()]
+    rng = random.Random(11)
+    sizes = [(50, 0), (120, 30), (400, 80), (1000, 100)]
+    for extension, language in sorted(chunking._CODE_LANGUAGES.items()):
+        for n in range(2):
+            size, overlap = rng.choice(sizes)
+            cases.append((f"{extension} {n}", _sample_code(language, rng), "code", extension, size, overlap))
+    for extension in (".pl", ".txt", ""):
+        cases.append((f"untabled {extension}", _sample_code("python", rng), "code", extension, 120, 30))
+    for n in range(30):
+        size, overlap = rng.choice(sizes)
+        cases.append((f"markdown {n}", _sample_markdown(rng), "markdown", "", size, overlap))
+        cases.append((f"prose {n}", _sample_markdown(rng), "prose", "", size, overlap))
+        cases.append((f"tabular {n}", _sample_markdown(rng).replace("# ", "## "), "tabular", "", size, overlap))
+    cases += [
+        ("unclosed fence", "# A\nintro\n```\ncode\n\n## B\nmore", "markdown", "", 50, 10),
+        ("conversation", "Ada: hello\nGrace: hi\n" * 40, "conversation", "", 100, 20),
+        ("image", "A photo of a garden", "image", "", 100, 20),
+        ("image empty", "", "image", "", 100, 20),
+        ("corpus readme", (CORPUS / "README.md").read_text(encoding="utf-8"), "markdown", "", 1000, 100),
+    ]
+    return cases
+
+
+CHUNK_CASES = _chunk_cases()
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "kind", "ext", "size", "overlap"), CHUNK_CASES, ids=[c[0] for c in CHUNK_CASES]
+)
+def test_every_text_is_chunked_the_same(rust, name, text, kind, ext, size, overlap):
+    python = [
+        dataclasses.asdict(chunk)
+        for chunk in chunking.chunk_text(text, ContentKind(kind), extension=ext, size=size, overlap=overlap)
+    ]
+    port = rust("garage_ingest_chunk", {"text": text, "kind": kind, "extension": ext, "size": size, "overlap": overlap})
+    assert port["chunks"] == python
