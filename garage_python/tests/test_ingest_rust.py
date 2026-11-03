@@ -1,10 +1,12 @@
 """The Rust ingest pieces (``rust/garage-ingest``) against the Python they replace.
 
-``garage_rag.ingest.walker`` and ``garage_rag.extract.quality`` are the specification. Each tree
-below is walked by both walkers, and each text judged by both gates, through
-``libgarage_ingest_ffi``'s C ABI; the files found, the counts, the verdicts, the reasons and every
-metric must be identical. The Rust walker's default rules are held to Python's tables too, so a
-table edited on one side only fails here.
+``garage_rag.ingest.walker``, ``garage_rag.extract.quality`` and ``garage_rag.ingest.chunking`` are
+the specification. Each tree below is walked by both walkers, each text judged by both gates and
+chunked by both chunkers, through ``libgarage_ingest_ffi``'s C ABI; the files found, the counts, the
+verdicts, the reasons, every metric and every chunk (text, ordinal, chunker id, heading path and
+offsets) must be identical. The chunking cases include the golden test's, which pin Python's
+chunks to the langchain output the index was first built with. The Rust walker's default rules
+are held to Python's tables too, so a table edited on one side only fails here.
 
 The library is found through ``GARAGE_INGEST_FFI_LIBRARY`` or in ``rust/target/{release,debug}``;
 without it the tests skip (``cargo build -p garage-ingest-ffi`` in ``rust/`` makes it).
@@ -14,6 +16,7 @@ from __future__ import annotations
 
 import ctypes
 import dataclasses
+import importlib.util
 import json
 import os
 import random
@@ -26,9 +29,14 @@ from types import SimpleNamespace
 import pytest
 
 from garage_rag import config
+from garage_rag.attribute import git as git_attribution
+from garage_rag.attribute import resolver
 from garage_rag.attribute.pathrules import EXCLUDED_PREFIXES
+from garage_rag.db.models import TrustTier
 from garage_rag.extract import dispatch, quality
-from garage_rag.ingest import classify, walker
+from garage_rag.extract.base import ContentKind
+from garage_rag.extract.placeholder import PlaceholderFile
+from garage_rag.ingest import chunking, classify, materialize, splitters, walker
 
 REPO = Path(__file__).resolve().parents[2]
 CORPUS = Path(__file__).parent / "corpora" / "second-brain-os"
@@ -57,7 +65,15 @@ pytestmark = pytest.mark.skipif(
 def rust():
     assert LIBRARY is not None
     lib = ctypes.CDLL(str(LIBRARY))
-    for name in ("garage_ingest_policy", "garage_ingest_walk", "garage_ingest_root_problem", "garage_ingest_assess"):
+    for name in (
+        "garage_ingest_policy",
+        "garage_ingest_walk",
+        "garage_ingest_root_problem",
+        "garage_ingest_assess",
+        "garage_ingest_chunk",
+        "garage_ingest_ensure_local",
+        "garage_ingest_attribute",
+    ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
     lib.garage_ingest_string_free.argtypes = [ctypes.c_void_p]
@@ -349,3 +365,352 @@ def test_every_text_is_judged_the_same(rust, name, text, sample):
 def test_the_corpus_has_both_verdicts():
     verdicts = {quality.assess(text).machine_generated for _, text in TEXTS}
     assert verdicts == {True, False}
+
+
+# --- chunking -----------------------------------------------------------------------------------
+
+
+def _golden_cases() -> list[tuple[str, str, ContentKind, str, int, int]]:
+    """The chunking golden test's cases, which pin Python to langchain's output."""
+    spec = importlib.util.spec_from_file_location("_chunking_golden", Path(__file__).parent / "test_chunking_golden.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.CASES
+
+
+def _sample_code(language: str, rng: random.Random) -> str:
+    keywords = [s.strip() for s in splitters.LANGUAGE_SEPARATORS[language] if s.strip()]
+    words = ["alpha", "beta(x)", "{", "}", "return", "=", "1;", "\\", "{x}", "$", "$$", "|", "::", "é", "日本"]
+    lines = []
+    for _ in range(rng.randint(10, 120)):
+        indent = rng.choice(["", "  ", "    ", "\t"])
+        head = rng.choice(keywords + words)
+        lines.append(indent + head + " " + " ".join(rng.choices(words, k=rng.randint(0, 12))))
+        if rng.random() < 0.2:
+            lines.append("")
+    return rng.choice(["\n", "\r\n"]).join(lines) + rng.choice(["", "\n", "\n\n"])
+
+
+def _sample_markdown(rng: random.Random) -> str:
+    lines = []
+    for _ in range(rng.randint(5, 150)):
+        kind = rng.random()
+        if kind < 0.15:
+            lines.append(rng.choice(["#", "##", "###", "####", "#No"]) + rng.choice(["", " Title", "  Spaced  ", " é"]))
+        elif kind < 0.22:
+            lines.append(rng.choice(["```", "```python", "~~~", "``` ```", "  ```"]))
+        elif kind < 0.3:
+            lines.append("")
+        elif kind < 0.35:
+            lines.append(rng.choice(["\t\tindented code", "a​b c\x07d", "   ", " "]))
+        else:
+            lines.append(
+                " ".join(
+                    rng.choices(
+                        ["word", "Sentence.", "comma,", "why?", "yes!", "日本語", "x" * 40], k=rng.randint(1, 30)
+                    )
+                )
+            )
+    return "\n".join(lines)
+
+
+def _chunk_cases() -> list[tuple[str, str, str, str, int, int]]:
+    cases = [(name, text, kind.value, ext, size, overlap) for name, text, kind, ext, size, overlap in _golden_cases()]
+    rng = random.Random(11)
+    sizes = [(50, 0), (120, 30), (400, 80), (1000, 100)]
+    for extension, language in sorted(chunking._CODE_LANGUAGES.items()):
+        for n in range(2):
+            size, overlap = rng.choice(sizes)
+            cases.append((f"{extension} {n}", _sample_code(language, rng), "code", extension, size, overlap))
+    for extension in (".pl", ".txt", ""):
+        cases.append((f"untabled {extension}", _sample_code("python", rng), "code", extension, 120, 30))
+    for n in range(30):
+        size, overlap = rng.choice(sizes)
+        cases.append((f"markdown {n}", _sample_markdown(rng), "markdown", "", size, overlap))
+        cases.append((f"prose {n}", _sample_markdown(rng), "prose", "", size, overlap))
+        cases.append((f"tabular {n}", _sample_markdown(rng).replace("# ", "## "), "tabular", "", size, overlap))
+    cases += [
+        ("unclosed fence", "# A\nintro\n```\ncode\n\n## B\nmore", "markdown", "", 50, 10),
+        ("conversation", "Ada: hello\nGrace: hi\n" * 40, "conversation", "", 100, 20),
+        ("image", "A photo of a garden", "image", "", 100, 20),
+        ("image empty", "", "image", "", 100, 20),
+        ("corpus readme", (CORPUS / "README.md").read_text(encoding="utf-8"), "markdown", "", 1000, 100),
+    ]
+    return cases
+
+
+CHUNK_CASES = _chunk_cases()
+
+
+@pytest.mark.parametrize(
+    ("name", "text", "kind", "ext", "size", "overlap"), CHUNK_CASES, ids=[c[0] for c in CHUNK_CASES]
+)
+def test_every_text_is_chunked_the_same(rust, name, text, kind, ext, size, overlap):
+    python = [
+        dataclasses.asdict(chunk)
+        for chunk in chunking.chunk_text(text, ContentKind(kind), extension=ext, size=size, overlap=overlap)
+    ]
+    port = rust("garage_ingest_chunk", {"text": text, "kind": kind, "extension": ext, "size": size, "overlap": overlap})
+    assert port["chunks"] == python
+
+
+# --- materializing placeholders -----------------------------------------------------------------
+
+BUDGET_FIELDS = (
+    "enabled",
+    "max_files",
+    "max_bytes",
+    "timeout_seconds",
+    "files_done",
+    "bytes_done",
+    "deferred",
+    "failed",
+)
+
+
+def _python_ensure_local(path: Path, budget: materialize.MaterializationBudget) -> str:
+    try:
+        materialize.ensure_local(path, budget)
+    except PlaceholderFile:
+        return "deferred" if budget.deferred else "failed"
+    return "local"
+
+
+@pytest.mark.parametrize(
+    ("name", "budget"),
+    [
+        ("off", {}),
+        ("on", {"enabled": True, "timeout_seconds": 5.0}),
+        ("spent files", {"enabled": True, "max_files": 2, "files_done": 2}),
+        ("spent bytes", {"enabled": True, "max_bytes": 10, "bytes_done": 11, "deferred": 4}),
+        ("room left", {"enabled": True, "max_files": 5, "files_done": 1, "bytes_done": 123, "failed": 2}),
+    ],
+)
+@pytest.mark.parametrize("file", ["note.md", ".note.md.icloud", "empty.md", "missing.md"])
+def test_placeholders_are_materialized_the_same(rust, tmp_path, name, budget, file):
+    path = tmp_path / file
+    if file != "missing.md":
+        path.write_bytes(b"" if file == "empty.md" else b"text that is local")
+    python = materialize.MaterializationBudget(**budget)
+    python_outcome = _python_ensure_local(path, python)
+
+    port = rust("garage_ingest_ensure_local", {"path": str(path), "budget": budget})
+
+    assert port["outcome"] == python_outcome
+    assert {key: port["budget"][key] for key in BUDGET_FIELDS} == dataclasses.asdict(python)
+    assert port["budget"]["exhausted"] == python.exhausted
+    assert port["budget"]["summary"] == python.summary()
+
+
+@pytest.mark.parametrize(
+    "counts", [(0, 0, 0, 0), (1, 5, 0, 0), (1234, 1 << 29, 3, 1), (10**7, 3 * 1024**3 + 12345, 1000, 999)]
+)
+def test_budget_summaries_read_the_same(rust, tmp_path, counts):
+    files, size, deferred, failed = counts
+    budget = {"files_done": files, "bytes_done": size, "deferred": deferred, "failed": failed}
+    port = rust("garage_ingest_ensure_local", {"path": str(tmp_path / "missing"), "budget": budget})
+    assert port["budget"]["summary"] == materialize.MaterializationBudget(**budget).summary()
+
+
+# --- attribution --------------------------------------------------------------------------------
+
+OWNER = {"name": "Ada Lovelace", "identities": ["git_email:Ada@Example.com", "git_name:ada-l"]}
+
+
+def _owner() -> resolver.SelfIdentity:
+    pairs = [tuple(part.strip() for part in raw.split(":", 1)) for raw in OWNER["identities"]]
+    return resolver.SelfIdentity(OWNER["name"], pairs)
+
+
+def _python_attribution(path: Path, root: Path, *, trust="authored", hints=(), communication=False) -> dict:
+    decided = resolver.resolve(
+        path,
+        root,
+        source_default_trust=TrustTier(trust),
+        author_hints=list(hints),
+        self_identity=_owner(),
+        communication=communication,
+    )
+    return {
+        "trust": str(decided.trust),
+        "authors": [
+            {
+                "name": author.name,
+                "email": author.email,
+                "role": str(author.role),
+                "confidence": author.confidence,
+                "evidence": author.evidence,
+            }
+            for author in decided.authors
+        ],
+        "evidence": decided.evidence,
+        "meta": decided.meta,
+    }
+
+
+def _rust_attribution(rust, path: Path, root: Path, *, trust="authored", hints=(), communication=False, repos=None):
+    request = {
+        "path": str(path),
+        "source_root": str(root),
+        "default_trust": trust,
+        "author_hints": list(hints),
+        "communication": communication,
+        "self": OWNER,
+        "repos": repos or {},
+    }
+    return rust("garage_ingest_attribute", request)
+
+
+PATHS = [
+    "Reference/a.pdf",
+    "Reference/deep/b.pdf",
+    "Documents/Paper/Reference/c.pdf",
+    "Documents/Paper/draft.md",
+    "Documents/Research/r.md",
+    "Documents/Reference/x.txt",
+    "x/Army Field Manuals/fm.pdf",
+    "a/b/Documentation/d.md",
+    "Datasheets/top.pdf",
+    "lab/Datasheets/chip.pdf",
+    "lib/Manuals/m.pdf",
+    "Books/b.epub",
+    "shelf/Books/b.epub",
+    "Papers/p.pdf",
+    "x/Specs/s.md",
+    "x/RFCs/rfc1.txt",
+    "Personal/diary.md",
+    "Projects/engine/main.py",
+    "Projects/engine/node_modules/left-pad/index.js",
+    "Projects/engine/vendor/lib.c",
+    "Notes/today.md",
+    "Notes/sub/deeper.md",
+    "misc/references/r.md",
+    "misc/PAPERS/r.md",
+    "misc/Book/r.md",
+    "misc/r.md",
+    "r.md",
+    "Library/site-packages/x.py",
+    "Personal/Reference/mine.md",
+]
+
+
+@pytest.mark.parametrize("trust", ["authored", "reference", "received"])
+@pytest.mark.parametrize("relative", PATHS)
+def test_paths_are_attributed_the_same(rust, tmp_path, relative, trust):
+    path = tmp_path / relative
+    assert _rust_attribution(rust, path, tmp_path, trust=trust) == _python_attribution(path, tmp_path, trust=trust)
+
+
+def test_a_path_outside_the_root_is_judged_by_its_name(rust, tmp_path):
+    root = tmp_path / "root"
+    for path in (tmp_path / "Reference" / "x.pdf", tmp_path / "elsewhere" / "Notes" / "n.md", Path("/")):
+        assert _rust_attribution(rust, path, root) == _python_attribution(path, root)
+
+
+HINTS = [
+    ["Grace Hopper"],
+    ["Ada Lovelace"],
+    ["ada lovelace", "Grace Hopper"],
+    ["ADA-L"],
+    ["One", "Two", "Three", "Four", "Five", "Six", "Seven"],
+]
+
+
+@pytest.mark.parametrize("hints", HINTS)
+@pytest.mark.parametrize("relative", ["Reference/p.pdf", "Notes/n.md", "misc/m.md"])
+def test_metadata_is_weighed_the_same(rust, tmp_path, hints, relative):
+    path = tmp_path / relative
+    assert _rust_attribution(rust, path, tmp_path, hints=hints) == _python_attribution(path, tmp_path, hints=hints)
+
+
+SENDERS = [
+    "Ada Lovelace <ada@example.com>",
+    "ADA@EXAMPLE.COM",
+    "Grace Hopper <grace@navy.mil>",
+    '"Hopper, Grace" <grace@navy.mil>',
+    "grace@navy.mil (Grace Hopper)",
+    "Grace (Admiral) <grace@navy.mil>",
+    "Grace <grace@navy.mil>, Bob <bob@x>",
+    "Mr. Bob <bob@x>",
+    "  Bob  <  bob@x  >  ",
+    "Bob <bob@x",
+    '"unterminated <bob@x>',
+    "bob@x@y",
+    "Bob <>",
+    "<>",
+    "",
+    "Zoë Ångström <zoe@example.org>",
+    "=?utf-8?q?Ad=C3=A1?= <a@x>",
+    "group: a@x, b@y;",
+    "Bob <bob@[127.0.0.1]>",
+    "Bob ((nested)) <bob@x>",
+    "Bob (unbalanced <bob@x>",
+    'Bob \\"quoted\\" <bob@x>',
+    "bob . smith @ example . com",
+    "<@route,@r2:bob@x>",
+    "Bob <bob@x> trailing",
+    "ada at example",
+]
+
+
+@pytest.mark.parametrize("sender", SENDERS)
+def test_senders_are_read_the_same(rust, tmp_path, sender):
+    path = tmp_path / "Mail" / "1.eml"
+    hints = [sender, "Second <second@x>"] if sender.startswith("Bob") else [sender]
+    port = _rust_attribution(rust, path, tmp_path, hints=hints, communication=True)
+    assert port == _python_attribution(path, tmp_path, hints=hints, communication=True)
+
+
+def test_random_senders_are_read_the_same(rust, tmp_path):
+    rng = random.Random(1815)
+    alphabet = 'ab .@<>(),:;"\\[]\t'
+    path = tmp_path / "1.eml"
+    for _ in range(3000):
+        sender = "".join(rng.choice(alphabet) for _ in range(rng.randint(0, 14)))
+        port = _rust_attribution(rust, path, tmp_path, hints=[sender], communication=True)
+        assert port == _python_attribution(path, tmp_path, hints=[sender], communication=True), repr(sender)
+
+
+REMOTES = [
+    "https://github.com/grace/engine.git",
+    "ssh://git@github.com:22/grace/engine",
+    "git@github.com:grace/engine.git",
+    "github.com/grace/engine",
+    "engine",
+    "file:///srv/git/engine.git",
+    "https://host/",
+    None,
+]
+
+
+@pytest.mark.parametrize("remote", REMOTES)
+@pytest.mark.parametrize(
+    "tallies",
+    [
+        [("Grace", "grace@navy.mil", 3)],
+        [("Grace", "grace@navy.mil", 15), ("Ada", "ada@example.com", 1)],
+        [("Bob", "b@x", 2), ("Ada", "", 2), ("Al", "al@x", 2)] + [(f"P{n}", f"p{n}@x", 1) for n in range(8)],
+        [("ada-l", "other@x", 1), ("Grace", "grace@navy.mil", 2)],
+        [("Zed", "z@x", 1), ("Amy", "a@x", 1)],
+    ],
+)
+def test_git_history_is_weighed_the_same(rust, tmp_path, monkeypatch, remote, tallies):
+    repo = tmp_path / "engine"
+    (repo / ".git").mkdir(parents=True)
+    (repo / "src").mkdir()
+    tracked = repo / "src" / "main.rs"
+    tracked.write_text("fn main() {}")
+    history = git_attribution.RepoAttribution(root=repo, remote=remote)
+    history.by_path = {
+        "src/main.rs": {
+            (name, email.lower()): git_attribution.AuthorTally(name=name, email=email, commits=commits)
+            for name, email, commits in tallies
+        }
+    }
+    monkeypatch.setattr(resolver, "cached_repo_attribution", lambda root, max_commits=None: history)
+    repos = {str(repo): {"remote": remote, "by_path": {"src/main.rs": [list(t) for t in tallies]}}}
+
+    for path in (tracked, repo / "src" / "untracked.rs", repo / "Reference" / "x.pdf"):
+        port = _rust_attribution(rust, path, tmp_path, repos=repos)
+        assert port == _python_attribution(path, tmp_path), path
