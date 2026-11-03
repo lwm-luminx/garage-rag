@@ -148,9 +148,11 @@ database directly rather than parsing Rich tables.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU, Python.framework and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);
-  - `main` runs it on every push and nightly;
+  - `main` and `next` run it on every push, and `main` nightly;
   - a newer push waits for a running build instead of cancelling it.
-  - It restores and saves Bazel's disk and repository caches. For CI only, it adds
+  - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
+    request reads its base branch's), pruned to what the build used, with each branch's older
+    entries deleted, so they stay under the repository's 10 GB cache quota. For CI only, it adds
     `--build_tests_only` and `--noapple_generate_dsym`.
 - Run it by hand from the Actions tab (workflow_dispatch) when a Python-only change needs the Bazel
   build.

@@ -9,11 +9,12 @@ name: macOS build
 #   (workflow_dispatch) when in doubt.
 # - A push does not cancel a run in progress. The newest push waits for it, and
 #   GitHub keeps only the latest waiting run, so a finished run always reports.
-# - main runs it on every push, plus a nightly run that keeps main's Bazel caches
-#   warm; pull requests restore main's caches.
+# - main and next run it on every push, plus a nightly run on main. Those runs
+#   are the only ones that save Bazel caches; pull requests restore their base
+#   branch's (next's, or main's for a bugfix) and save nothing. See "Caches" below.
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
     paths:
       - "macapp/**"
@@ -43,6 +44,8 @@ permissions:
   # Required by the Aspect CLI artifact upload feature.
   id-token: write
   contents: read
+  # Deleting a branch's superseded cache entries (the last step).
+  actions: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -57,8 +60,25 @@ jobs:
           # ext/pythonkit/PythonKit, which the app compiles.
           submodules: true
       - uses: ./.github/actions/setup-aspect
-      # A cold build of //... runs past the hosted runner's 6h job limit, so
-      # Bazel's disk and repository caches carry the work across runs.
+      # Caches. A cold build of //... runs past the hosted runner's 6h job limit,
+      # so Bazel's disk and repository caches carry the work across runs. A warm
+      # one takes minutes. Keeping them warm under the repository's 10 GB cache
+      # quota is what makes this workflow fast:
+      #
+      # - Only pushes to main and next (and the nightly and manual runs) save.
+      #   A pull request's entry is readable by that pull request alone, and
+      #   each was a full copy (0.3 to 1.3 GB) that evicted main's entry, which
+      #   left every run cold.
+      # - A pull request restores its base branch's entry (GitHub lets it read
+      #   the base branch's and the default branch's caches).
+      # - After a passing build, disk-cache entries this run did not read or
+      #   write are pruned before saving, so the entry tracks the tree instead
+      #   of growing with every run. Bazel sets an entry's mtime whenever it
+      #   stores or retrieves it.
+      # - Once saved, the branch's older entries are deleted.
+      #
+      # The key carries the run id, so a re-run of a run that timed out saves
+      # its progress instead of colliding with the first attempt's key.
       - name: Restore Bazel caches
         id: bazel-cache
         uses: actions/cache/restore@v4
@@ -66,7 +86,7 @@ jobs:
           path: |
             ~/.cache/bazel-disk
             ~/.cache/bazel-repo
-          key: bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.sha }}
+          key: bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
             bazel-test-${{ runner.os }}-${{ runner.arch }}-
@@ -91,7 +111,10 @@ jobs:
             echo "build --noapple_generate_dsym"
           } >> user.bazelrc
           cat user.bazelrc
-      - run: |
+          # Disk-cache entries older than this were not touched by this run.
+          touch "$RUNNER_TEMP/bazel-start"
+      - id: test
+        run: |
           # Headroom for the rest: the runner's shell default is 256, and on macOS
           # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit above).
           ulimit -n 65536 2>/dev/null || ulimit -n "$(sysctl -n kern.maxfilesperproc)"
@@ -101,11 +124,35 @@ jobs:
         # steps, so the save below would never run and the next run would start
         # cold again.
         timeout-minutes: 320
+      - name: Prune the disk cache to what this build used
+        # Only after a passing build: a run that failed early touched little,
+        # and pruning it would throw the warm cache away.
+        if: github.event_name != 'pull_request' && steps.test.outcome == 'success'
+        run: |
+          du -sh ~/.cache/bazel-disk
+          find ~/.cache/bazel-disk -type f ! -newer "$RUNNER_TEMP/bazel-start" -delete
+          find ~/.cache/bazel-disk -type d -empty -delete
+          du -sh ~/.cache/bazel-disk
       - name: Save Bazel caches
-        if: always() && steps.bazel-cache.outputs.cache-primary-key != ''
+        id: bazel-cache-save
+        if: always() && github.event_name != 'pull_request' && steps.bazel-cache.outputs.cache-primary-key != ''
         uses: actions/cache/save@v4
         with:
           path: |
             ~/.cache/bazel-disk
             ~/.cache/bazel-repo
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+      - name: Delete this branch's older Bazel caches
+        # The entry just saved holds everything the older ones did that this
+        # tree still uses (it was restored from them, then pruned or added to).
+        if: always() && steps.bazel-cache-save.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SAVED: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          PREFIX: bazel-test-${{ runner.os }}-${{ runner.arch }}-
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "$PREFIX" \
+            --limit 100 --json id,key --jq '.[] | select(.key != env.SAVED) | .id' |
+            while read -r id; do
+              gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || true
+            done
