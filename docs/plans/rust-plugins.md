@@ -133,9 +133,10 @@ step leaves the app working, with the Python reference still there for the servi
    with readers behind the plugin contract above. `rust/garage-ingest` starts it with the walker
    (`ingest/walker.py`: pruning, the cloud placeholder check, `root_problem`), its rules as data
    (`WalkPolicy`, held to Python's tables), the quality gate (`extract/quality.py`, to the same
-   metrics) and chunking (`ingest/chunking.py` and its splitters, to the same chunks and offsets).
+   metrics), chunking (`ingest/chunking.py` and its splitters, to the same chunks and offsets) and
+   materializing placeholders (`ingest/materialize.py`, to the same budget accounting).
    `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds them to Python. Next:
-   materializing placeholders and attribution, then the service itself.
+   attribution, then the service itself.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy
