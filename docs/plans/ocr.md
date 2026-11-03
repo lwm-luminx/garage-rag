@@ -3,11 +3,14 @@ layout: default
 title: OCR for the Rust Ingester
 description: Which engine reads text from pictures once the image reader leaves Python. Apple Vision in-process on the Mac, Tesseract linked statically for the Windows CLI, and a vision model over XPC as an opt-in later, all behind one engine trait in rust/garage-ocr.
 date: 2026-11-03
-status: Proposed (prototype in rust/garage-ocr)
-status_kind: proposed
+status: Active (Rick chose Vision on the Mac and Tesseract on Windows, 2026-11-03; prototype in rust/garage-ocr)
+status_kind: active
 ---
 
 # OCR for the Rust ingester
+
+> **Decided (Rick, 2026-11-03):** Vision on the Mac and Tesseract on Windows, as recommended below. The
+> Rust image reader uses `garage-ocr`'s `default_engine()`.
 
 The image reader (`garage_rag/extract/image.py`) is one of the last readers still in Python. It
 reads text with Tesseract 5 and the `tessdata_fast` English model, in-process through
@@ -116,8 +119,8 @@ host's closure sends the bytes over NSXPC and returns the spans.
 
 1. **On the Mac, use Apple Vision (accurate, language detection on) as the image reader's engine** in
    the Rust ingester. Once the Python reader retires, Tesseract, Leptonica and `tessdata` leave the
-   app. This is a change to the product's output, so it is Rick's call, and it re-reads and re-embeds
-   every picture once (a new `extractor` and `extractor_version`).
+   app. It re-reads and re-embeds every picture once (a new `extractor` and `extractor_version`).
+   Rick chose this on 2026-11-03.
 2. **On Windows and Linux, use Tesseract, linked statically through `garage-ocr`'s own binding.** The
    Windows build adds Tesseract and Leptonica to `tools/windows/fetch_ext.py`'s MSVC builds. Windows'
    built-in `Windows.Media.Ocr` (WinRT, in-process, using the installed language packs) is the
@@ -162,5 +165,4 @@ first run is on a Mac.
   `garage-text`, the picture document for "no text", and `meta.ocr_engine` / `meta.ocr_confidence`.
   This belongs to the ingester's reader dispatch, wherever the Swift host's `read` hands pictures to
   Rust.
-- A setting for the engine (`ingest.ocr_engine`: `vision` | `tesseract`) if both stay on the Mac.
 - Bazel: the `garage-ocr` targets need their first build on a Mac.
