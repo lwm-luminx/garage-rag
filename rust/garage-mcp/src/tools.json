@@ -1,0 +1,1170 @@
+[
+ {
+  "description": "Search the personal corpus with hybrid semantic + keyword retrieval.\n\nFilter by trust to separate the owner's own writing from reference material,\nby corpus_class to keep source code out of prose answers, and by direction\nto keep to messages the owner sent or received.\n",
+  "inputSchema": {
+   "properties": {
+    "query": {
+     "description": "Natural-language question or keywords to search for.",
+     "title": "Query",
+     "type": "string"
+    },
+    "limit": {
+     "default": 10,
+     "description": "Maximum hits to return.",
+     "maximum": 50,
+     "minimum": 1,
+     "title": "Limit",
+     "type": "integer"
+    },
+    "mode": {
+     "default": "hybrid",
+     "description": "hybrid fuses semantic and keyword search (best default); vector is semantic only; fts is exact-keyword only and needs no embedding model.",
+     "enum": [
+      "hybrid",
+      "vector",
+      "fts"
+     ],
+     "title": "Mode",
+     "type": "string"
+    },
+    "corpus_class": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "document",
+         "code",
+         "communication"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "enum": [
+        "document",
+        "code",
+        "communication"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict by what the resource is. 'document' is prose, 'code' is source and config, 'communication' is messages and mail. Accepts one value or a list.",
+     "title": "Corpus Class"
+    },
+    "trust": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "authored",
+         "reference",
+         "received"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "enum": [
+        "authored",
+        "reference",
+        "received"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict by provenance. 'authored' is what the corpus owner wrote, 'reference' is external QA'ed material, 'received' is what others sent them. Use 'authored' for questions about the owner's own conclusions. Accepts one value or a list.",
+     "title": "Trust"
+    },
+    "source": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict to these source slugs. Accepts one value or a list.",
+     "title": "Source"
+    },
+    "author": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict to documents by this author (substring match).",
+     "title": "Author"
+    },
+    "direction": {
+     "anyOf": [
+      {
+       "enum": [
+        "sent",
+        "received"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict to messages (SMS/iMessage) that went one way: 'sent' is what the corpus owner wrote, 'received' is what others wrote to them. A message thread holds both, so this is how to find the owner's own words in a conversation. Excludes everything that is not a message.",
+     "title": "Direction"
+    }
+   },
+   "required": [
+    "query"
+   ],
+   "type": "object",
+   "title": "rag_searchArguments"
+  },
+  "name": "rag_search",
+  "outputSchema": {
+   "properties": {
+    "query": {
+     "title": "Query",
+     "type": "string"
+    },
+    "mode": {
+     "title": "Mode",
+     "type": "string"
+    },
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "count": {
+     "title": "Count",
+     "type": "integer"
+    },
+    "hits": {
+     "items": {
+      "$ref": "#/$defs/Hit"
+     },
+     "title": "Hits",
+     "type": "array"
+    }
+   },
+   "required": [
+    "query",
+    "mode",
+    "model",
+    "count",
+    "hits"
+   ],
+   "type": "object",
+   "$defs": {
+    "Hit": {
+     "description": "One retrieved chunk.",
+     "properties": {
+      "chunk_id": {
+       "title": "Chunk Id",
+       "type": "integer"
+      },
+      "document_id": {
+       "title": "Document Id",
+       "type": "integer"
+      },
+      "location": {
+       "title": "Location",
+       "type": "string"
+      },
+      "title": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Title"
+      },
+      "corpus_class": {
+       "title": "Corpus Class",
+       "type": "string"
+      },
+      "trust_tier": {
+       "title": "Trust Tier",
+       "type": "string"
+      },
+      "section": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Section"
+      },
+      "authors": {
+       "items": {
+        "type": "string"
+       },
+       "title": "Authors",
+       "type": "array"
+      },
+      "matched_by": {
+       "title": "Matched By",
+       "type": "string"
+      },
+      "score": {
+       "title": "Score",
+       "type": "number"
+      },
+      "text": {
+       "title": "Text",
+       "type": "string"
+      },
+      "direction": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "title": "Direction"
+      },
+      "sender": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "default": null,
+       "title": "Sender"
+      }
+     },
+     "required": [
+      "chunk_id",
+      "document_id",
+      "location",
+      "title",
+      "corpus_class",
+      "trust_tier",
+      "section",
+      "authors",
+      "matched_by",
+      "score",
+      "text"
+     ],
+     "title": "Hit",
+     "type": "object"
+    }
+   },
+   "title": "SearchResult"
+  }
+ },
+ {
+  "description": "Fetch a document's full extracted text, to read past a search snippet.",
+  "inputSchema": {
+   "properties": {
+    "document_id": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Document id, as returned by rag_search.",
+     "title": "Document Id"
+    },
+    "location": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Path of the document; '~' is accepted. Used when no id is given.",
+     "title": "Location"
+    },
+    "max_chars": {
+     "default": 20000,
+     "description": "Truncate content beyond this length.",
+     "maximum": 200000,
+     "minimum": 500,
+     "title": "Max Chars",
+     "type": "integer"
+    }
+   },
+   "type": "object",
+   "title": "rag_get_documentArguments"
+  },
+  "name": "rag_get_document",
+  "outputSchema": {
+   "properties": {
+    "document_id": {
+     "title": "Document Id",
+     "type": "integer"
+    },
+    "location": {
+     "title": "Location",
+     "type": "string"
+    },
+    "title": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Title"
+    },
+    "corpus_class": {
+     "title": "Corpus Class",
+     "type": "string"
+    },
+    "trust_tier": {
+     "title": "Trust Tier",
+     "type": "string"
+    },
+    "authors": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Authors",
+     "type": "array"
+    },
+    "extractor": {
+     "title": "Extractor",
+     "type": "string"
+    },
+    "byte_size": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "title": "Byte Size"
+    },
+    "chunk_count": {
+     "title": "Chunk Count",
+     "type": "integer"
+    },
+    "truncated": {
+     "title": "Truncated",
+     "type": "boolean"
+    },
+    "content": {
+     "title": "Content",
+     "type": "string"
+    }
+   },
+   "required": [
+    "document_id",
+    "location",
+    "title",
+    "corpus_class",
+    "trust_tier",
+    "authors",
+    "extractor",
+    "byte_size",
+    "chunk_count",
+    "truncated",
+    "content"
+   ],
+   "type": "object",
+   "title": "DocumentResult"
+  }
+ },
+ {
+  "description": "List indexed sources with their document and chunk counts.",
+  "inputSchema": {
+   "properties": {},
+   "type": "object",
+   "title": "rag_list_sourcesArguments"
+  },
+  "name": "rag_list_sources",
+  "outputSchema": {
+   "properties": {
+    "count": {
+     "title": "Count",
+     "type": "integer"
+    },
+    "sources": {
+     "items": {
+      "$ref": "#/$defs/SourceInfo"
+     },
+     "title": "Sources",
+     "type": "array"
+    }
+   },
+   "required": [
+    "count",
+    "sources"
+   ],
+   "type": "object",
+   "$defs": {
+    "SourceInfo": {
+     "properties": {
+      "slug": {
+       "title": "Slug",
+       "type": "string"
+      },
+      "kind": {
+       "title": "Kind",
+       "type": "string"
+      },
+      "corpus_class": {
+       "title": "Corpus Class",
+       "type": "string"
+      },
+      "trust_tier": {
+       "title": "Trust Tier",
+       "type": "string"
+      },
+      "root": {
+       "title": "Root",
+       "type": "string"
+      },
+      "documents": {
+       "title": "Documents",
+       "type": "integer"
+      },
+      "chunks": {
+       "title": "Chunks",
+       "type": "integer"
+      }
+     },
+     "required": [
+      "slug",
+      "kind",
+      "corpus_class",
+      "trust_tier",
+      "root",
+      "documents",
+      "chunks"
+     ],
+     "title": "SourceInfo",
+     "type": "object"
+    }
+   },
+   "title": "SourceList"
+  }
+ },
+ {
+  "description": "List authors in the corpus, most-documented first.",
+  "inputSchema": {
+   "properties": {
+    "limit": {
+     "default": 30,
+     "maximum": 200,
+     "minimum": 1,
+     "title": "Limit",
+     "type": "integer"
+    }
+   },
+   "type": "object",
+   "title": "rag_list_authorsArguments"
+  },
+  "name": "rag_list_authors",
+  "outputSchema": {
+   "properties": {
+    "count": {
+     "title": "Count",
+     "type": "integer"
+    },
+    "authors": {
+     "items": {
+      "$ref": "#/$defs/AuthorInfo"
+     },
+     "title": "Authors",
+     "type": "array"
+    }
+   },
+   "required": [
+    "count",
+    "authors"
+   ],
+   "type": "object",
+   "$defs": {
+    "AuthorInfo": {
+     "properties": {
+      "name": {
+       "title": "Name",
+       "type": "string"
+      },
+      "is_self": {
+       "title": "Is Self",
+       "type": "boolean"
+      },
+      "documents": {
+       "title": "Documents",
+       "type": "integer"
+      },
+      "identities": {
+       "items": {
+        "type": "string"
+       },
+       "title": "Identities",
+       "type": "array"
+      }
+     },
+     "required": [
+      "name",
+      "is_self",
+      "documents",
+      "identities"
+     ],
+     "title": "AuthorInfo",
+     "type": "object"
+    }
+   },
+   "title": "AuthorList"
+  }
+ },
+ {
+  "description": "Summarize corpus size, composition, and embedding coverage.\n\nUseful before searching: it shows which classes and trust tiers actually hold\ncontent, and whether embeddings are complete enough for semantic search.\n",
+  "inputSchema": {
+   "properties": {},
+   "type": "object",
+   "title": "rag_statsArguments"
+  },
+  "name": "rag_stats",
+  "outputSchema": {
+   "properties": {
+    "documents": {
+     "title": "Documents",
+     "type": "integer"
+    },
+    "chunks": {
+     "title": "Chunks",
+     "type": "integer"
+    },
+    "authors": {
+     "title": "Authors",
+     "type": "integer"
+    },
+    "placeholders_pending": {
+     "title": "Placeholders Pending",
+     "type": "integer"
+    },
+    "by_class_and_trust": {
+     "items": {
+      "additionalProperties": true,
+      "type": "object"
+     },
+     "title": "By Class And Trust",
+     "type": "array"
+    },
+    "models": {
+     "items": {
+      "$ref": "#/$defs/ModelInfo"
+     },
+     "title": "Models",
+     "type": "array"
+    }
+   },
+   "required": [
+    "documents",
+    "chunks",
+    "authors",
+    "placeholders_pending",
+    "by_class_and_trust",
+    "models"
+   ],
+   "type": "object",
+   "$defs": {
+    "ModelInfo": {
+     "properties": {
+      "slug": {
+       "title": "Slug",
+       "type": "string"
+      },
+      "dims": {
+       "title": "Dims",
+       "type": "integer"
+      },
+      "stored_dims": {
+       "title": "Stored Dims",
+       "type": "integer"
+      },
+      "storage": {
+       "title": "Storage",
+       "type": "string"
+      },
+      "index": {
+       "title": "Index",
+       "type": "string"
+      },
+      "is_default": {
+       "title": "Is Default",
+       "type": "boolean"
+      },
+      "vectors": {
+       "title": "Vectors",
+       "type": "integer"
+      },
+      "pending": {
+       "title": "Pending",
+       "type": "integer"
+      }
+     },
+     "required": [
+      "slug",
+      "dims",
+      "stored_dims",
+      "storage",
+      "index",
+      "is_default",
+      "vectors",
+      "pending"
+     ],
+     "title": "ModelInfo",
+     "type": "object"
+    }
+   },
+   "title": "CorpusStats"
+  }
+ },
+ {
+  "description": "Answer a question from the corpus with the local model, citing excerpts as [n].\n\nRetrieval is exactly rag_search; the excerpts then go to the model named by\nfacts.model on facts.provider (the app's LlamaXPCService or a local Ollama\nserver), so Garage sends nothing off the machine; the answer comes back to\nthe calling client like any other tool result. Use rag_search instead when you want\nto read the excerpts yourself.\n",
+  "inputSchema": {
+   "properties": {
+    "question": {
+     "description": "Natural-language question to answer from the corpus.",
+     "title": "Question",
+     "type": "string"
+    },
+    "limit": {
+     "default": 6,
+     "description": "Excerpts to retrieve and offer the model.",
+     "maximum": 20,
+     "minimum": 1,
+     "title": "Limit",
+     "type": "integer"
+    },
+    "mode": {
+     "default": "hybrid",
+     "description": "Retrieval mode, as for rag_search.",
+     "enum": [
+      "hybrid",
+      "vector",
+      "fts"
+     ],
+     "title": "Mode",
+     "type": "string"
+    },
+    "corpus_class": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "document",
+         "code",
+         "communication"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "enum": [
+        "document",
+        "code",
+        "communication"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict by what the resource is; see rag_search. Accepts one value or a list.",
+     "title": "Corpus Class"
+    },
+    "trust": {
+     "anyOf": [
+      {
+       "items": {
+        "enum": [
+         "authored",
+         "reference",
+         "received"
+        ],
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "enum": [
+        "authored",
+        "reference",
+        "received"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict by provenance; see rag_search. Accepts one value or a list.",
+     "title": "Trust"
+    },
+    "source": {
+     "anyOf": [
+      {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      },
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Restrict to these source slugs. Accepts one value or a list.",
+     "title": "Source"
+    },
+    "max_tokens": {
+     "default": 512,
+     "description": "Cap on the generated answer.",
+     "maximum": 4096,
+     "minimum": 16,
+     "title": "Max Tokens",
+     "type": "integer"
+    },
+    "temperature": {
+     "default": 0.2,
+     "description": "Sampling temperature.",
+     "maximum": 2.0,
+     "minimum": 0.0,
+     "title": "Temperature",
+     "type": "number"
+    }
+   },
+   "required": [
+    "question"
+   ],
+   "type": "object",
+   "title": "rag_askArguments"
+  },
+  "name": "rag_ask",
+  "outputSchema": {
+   "properties": {
+    "answer": {
+     "title": "Answer",
+     "type": "string"
+    },
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "provider": {
+     "title": "Provider",
+     "type": "string"
+    },
+    "question": {
+     "title": "Question",
+     "type": "string"
+    },
+    "citations": {
+     "items": {
+      "$ref": "#/$defs/Citation"
+     },
+     "title": "Citations",
+     "type": "array"
+    },
+    "prompt_tokens": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Prompt Tokens"
+    },
+    "completion_tokens": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Completion Tokens"
+    }
+   },
+   "required": [
+    "answer",
+    "model",
+    "provider",
+    "question",
+    "citations"
+   ],
+   "type": "object",
+   "$defs": {
+    "Citation": {
+     "description": "One excerpt the answer may cite as ``[n]``.",
+     "properties": {
+      "n": {
+       "title": "N",
+       "type": "integer"
+      },
+      "document_id": {
+       "title": "Document Id",
+       "type": "integer"
+      },
+      "title": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Title"
+      },
+      "location": {
+       "title": "Location",
+       "type": "string"
+      },
+      "snippet": {
+       "title": "Snippet",
+       "type": "string"
+      },
+      "score": {
+       "title": "Score",
+       "type": "number"
+      }
+     },
+     "required": [
+      "n",
+      "document_id",
+      "title",
+      "location",
+      "snippet",
+      "score"
+     ],
+     "title": "Citation",
+     "type": "object"
+    }
+   },
+   "title": "AskResult"
+  }
+ },
+ {
+  "description": "Run a raw prompt through the local model, with no retrieval.\n\nThe same facts.model / facts.provider as rag_ask; useful to check the model\nis loaded and responding, or for demos that do not need the corpus.\n",
+  "inputSchema": {
+   "properties": {
+    "prompt": {
+     "description": "Text to send to the local model as the user turn.",
+     "title": "Prompt",
+     "type": "string"
+    },
+    "system": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Optional system instruction.",
+     "title": "System"
+    },
+    "max_tokens": {
+     "default": 256,
+     "description": "Cap on the generated text.",
+     "maximum": 4096,
+     "minimum": 1,
+     "title": "Max Tokens",
+     "type": "integer"
+    },
+    "temperature": {
+     "default": 0.7,
+     "description": "Sampling temperature.",
+     "maximum": 2.0,
+     "minimum": 0.0,
+     "title": "Temperature",
+     "type": "number"
+    }
+   },
+   "required": [
+    "prompt"
+   ],
+   "type": "object",
+   "title": "rag_generateArguments"
+  },
+  "name": "rag_generate",
+  "outputSchema": {
+   "properties": {
+    "text": {
+     "title": "Text",
+     "type": "string"
+    },
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "provider": {
+     "title": "Provider",
+     "type": "string"
+    }
+   },
+   "required": [
+    "text",
+    "model",
+    "provider"
+   ],
+   "type": "object",
+   "title": "GenerateResult"
+  }
+ },
+ {
+  "description": "Answer a question by letting the local model search and read the corpus itself.\n\nThe model named by facts.model on facts.provider gets this server's read-only\ntools (rag_search, rag_get_document, rag_list_sources, rag_list_authors,\nrag_stats) to call, in a loop, until it answers; the result carries the\nanswer, the steps it took and the documents it saw. By default the question is\nsearched first and the model starts from those hits. Use rag_ask for one\nretrieval and a cited answer, rag_agent when the question needs more than one\nlook. Runs on the local model, so nothing leaves the machine; an off-box\nOllama or LM Studio host never receives a communication.\n",
+  "inputSchema": {
+   "properties": {
+    "question": {
+     "description": "Natural-language question to answer from the corpus.",
+     "title": "Question",
+     "type": "string"
+    },
+    "max_steps": {
+     "default": 6,
+     "description": "Tool calls the model may make before it has to answer.",
+     "maximum": 12,
+     "minimum": 1,
+     "title": "Max Steps",
+     "type": "integer"
+    },
+    "max_tokens": {
+     "default": 768,
+     "description": "Cap on each model reply.",
+     "maximum": 4096,
+     "minimum": 16,
+     "title": "Max Tokens",
+     "type": "integer"
+    },
+    "temperature": {
+     "default": 0.2,
+     "description": "Sampling temperature.",
+     "maximum": 2.0,
+     "minimum": 0.0,
+     "title": "Temperature",
+     "type": "number"
+    },
+    "search_first": {
+     "default": true,
+     "description": "Search the corpus for the question before the model's first reply, so a small model starts from the user's documents instead of answering from its training.",
+     "title": "Search First",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "question"
+   ],
+   "type": "object",
+   "title": "rag_agentArguments"
+  },
+  "name": "rag_agent",
+  "outputSchema": {
+   "properties": {
+    "answer": {
+     "title": "Answer",
+     "type": "string"
+    },
+    "model": {
+     "title": "Model",
+     "type": "string"
+    },
+    "provider": {
+     "title": "Provider",
+     "type": "string"
+    },
+    "question": {
+     "title": "Question",
+     "type": "string"
+    },
+    "steps": {
+     "items": {
+      "$ref": "#/$defs/AgentStep"
+     },
+     "title": "Steps",
+     "type": "array"
+    },
+    "citations": {
+     "items": {
+      "$ref": "#/$defs/AgentCitation"
+     },
+     "title": "Citations",
+     "type": "array"
+    },
+    "prompt_tokens": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Prompt Tokens"
+    },
+    "completion_tokens": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Completion Tokens"
+    }
+   },
+   "required": [
+    "answer",
+    "model",
+    "provider",
+    "question",
+    "steps",
+    "citations"
+   ],
+   "type": "object",
+   "$defs": {
+    "AgentCitation": {
+     "description": "One document the model saw while answering.",
+     "properties": {
+      "n": {
+       "title": "N",
+       "type": "integer"
+      },
+      "document_id": {
+       "title": "Document Id",
+       "type": "integer"
+      },
+      "title": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Title"
+      },
+      "location": {
+       "title": "Location",
+       "type": "string"
+      },
+      "snippet": {
+       "title": "Snippet",
+       "type": "string"
+      },
+      "corpus_class": {
+       "title": "Corpus Class",
+       "type": "string"
+      }
+     },
+     "required": [
+      "n",
+      "document_id",
+      "title",
+      "location",
+      "snippet",
+      "corpus_class"
+     ],
+     "title": "AgentCitation",
+     "type": "object"
+    },
+    "AgentStep": {
+     "description": "One tool the model called on its way to the answer.",
+     "properties": {
+      "n": {
+       "title": "N",
+       "type": "integer"
+      },
+      "tool": {
+       "title": "Tool",
+       "type": "string"
+      },
+      "arguments": {
+       "additionalProperties": true,
+       "title": "Arguments",
+       "type": "object"
+      },
+      "summary": {
+       "title": "Summary",
+       "type": "string"
+      },
+      "ok": {
+       "default": true,
+       "title": "Ok",
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "n",
+      "tool",
+      "arguments",
+      "summary"
+     ],
+     "title": "AgentStep",
+     "type": "object"
+    }
+   },
+   "title": "AgentResult"
+  }
+ }
+]

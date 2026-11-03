@@ -9,6 +9,8 @@ members = [
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
+    "garage-mcp",
+    "garage-mcp-ffi",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
@@ -23,6 +25,8 @@ default-members = [
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
+    "garage-mcp",
+    "garage-mcp-ffi",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
@@ -42,6 +46,7 @@ garage-embed = { path = "garage-embed" }
 garage-facade = { path = "garage-facade" }
 garage-git = { path = "garage-git" }
 garage-ingest = { path = "garage-ingest" }
+garage-mcp = { path = "garage-mcp" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"
@@ -59,6 +64,10 @@ tonic-prost-build = "0.14"
 unicode-normalization = "0.1.26"
 yaml-rust2 = { version = "0.13", default-features = false }
 hyper-util = { version = "0.1", features = ["tokio"] }
+# The MCP server's streamable HTTP transport (rust/garage-mcp): hyper is already under tonic.
+bytes = "1.12"
+http-body-util = "0.1"
+hyper = { version = "1.12", features = ["http1", "server"] }
 tower = "0.5"
 
 [workspace.lints.rust]

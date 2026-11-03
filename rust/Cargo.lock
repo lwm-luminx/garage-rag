@@ -286,6 +286,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-mcp"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "garage-embed",
+ "garage-facade",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
+ "regex",
+ "serde_json",
+ "tokio",
+ "tonic",
+]
+
+[[package]]
+name = "garage-mcp-ffi"
+version = "0.1.0"
+dependencies = [
+ "garage-embed",
+ "garage-mcp",
+ "serde_json",
+]
+
+[[package]]
 name = "garage-plugin"
 version = "0.1.0"
 dependencies = [

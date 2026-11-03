@@ -85,6 +85,16 @@ service GarageService {
     // After a worker has embedded a model's chunks: give its distilled facts their vectors, the
     // mean of their representatives' (nothing is embedded, so nothing is sent anywhere).
     rpc BackfillDistilled (BackfillDistilledRequest) returns (BackfillDistilledResponse);
+
+    // --- Corpus Reads for the MCP Server ---
+    // What the MCP tools read, for the Rust MCP server in GarageMCPServerService. Each reply is the
+    // tool's result, JSON-encoded exactly as the Python tool returns it (`result_json`), so the two
+    // servers answer alike. Every request names its caller for the access hooks (docs/plans/access-hooks.md).
+    rpc CorpusSearch (CorpusSearchRequest) returns (CorpusReadResponse);
+    rpc CorpusDocument (CorpusDocumentRequest) returns (CorpusReadResponse);
+    rpc CorpusSources (CorpusSourcesRequest) returns (CorpusReadResponse);
+    rpc CorpusAuthors (CorpusAuthorsRequest) returns (CorpusReadResponse);
+    rpc CorpusStats (CorpusStatsRequest) returns (CorpusReadResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -1032,3 +1042,63 @@ message BackfillDistilledRequest {
 message BackfillDistilledResponse {
     int64 distilled = 1;  // distilled facts given a vector
 }
+
+// ---------------------------------------------------------------------------
+// Corpus reads for the MCP server
+// ---------------------------------------------------------------------------
+
+// Who is reading, as the MCP server saw it. The server passes along what it was given and decides
+// nothing: proving a registration from its token and applying a policy are GarageService's
+// (docs/plans/access-hooks.md, "Callers"). Ignored until the access hooks land.
+message CorpusCaller {
+    string kind = 1;                    // "mcp"
+    string transport = 2;               // "http" | "stdio"
+    // The registration token the client presented (`Authorization: Bearer` over HTTP,
+    // GARAGE_MCP_TOKEN over stdio), unverified. Empty: none.
+    string registration_token = 3;
+    // Transport facts a policy may use, such as request headers it asked for.
+    map<string, string> attributes = 4;
+}
+
+// rag_search. Empty lists and unset fields mean no filter.
+message CorpusSearchRequest {
+    CorpusCaller caller = 1;
+    string query = 2;
+    int32 limit = 3;
+    string mode = 4;                    // hybrid | vector | fts
+    repeated string corpus_classes = 5;
+    repeated string trust_tiers = 6;
+    repeated string sources = 7;
+    optional string author = 8;
+    optional string direction = 9;      // sent | received
+}
+
+// rag_get_document: by id, or else by location ('~' accepted).
+message CorpusDocumentRequest {
+    CorpusCaller caller = 1;
+    optional int64 document_id = 2;
+    string location = 3;
+    int32 max_chars = 4;
+}
+
+// rag_list_sources.
+message CorpusSourcesRequest {
+    CorpusCaller caller = 1;
+}
+
+// rag_list_authors.
+message CorpusAuthorsRequest {
+    CorpusCaller caller = 1;
+    int32 limit = 2;
+}
+
+// rag_stats.
+message CorpusStatsRequest {
+    CorpusCaller caller = 1;
+}
+
+message CorpusReadResponse {
+    // The tool's result (SearchResult, DocumentResult, SourceList, AuthorList, CorpusStats), as JSON.
+    string result_json = 1;
+}
+

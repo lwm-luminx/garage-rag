@@ -70,7 +70,7 @@ public final class GarageEmbedWorkerHost: @unchecked Sendable {
     // MARK: - The worker's calls
 
     /// `{"backend", "method", "url", "path", "headers", "body", "timeout"}` -> `{"status", "body"}`.
-    func http(_ request: [String: Any]) throws -> [String: Any] {
+    public func http(_ request: [String: Any]) throws -> [String: Any] {
         let method = request["method"] as? String ?? "GET"
         let body = request["body"] as? String ?? ""
         let timeout = (request["timeout"] as? NSNumber)?.doubleValue ?? 600
@@ -104,7 +104,7 @@ public final class GarageEmbedWorkerHost: @unchecked Sendable {
     }
 
     /// `{"model"}` -> what was done.
-    func ensureModel(_ request: [String: Any]) throws -> String {
+    public func ensureModel(_ request: [String: Any]) throws -> String {
         guard let model = request["model"] as? String, !model.isEmpty else {
             throw HostError(message: "no model named")
         }

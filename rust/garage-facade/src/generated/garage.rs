@@ -1519,6 +1519,90 @@ pub struct BackfillDistilledResponse {
     #[prost(int64, tag = "1")]
     pub distilled: i64,
 }
+/// Who is reading, as the MCP server saw it. The server passes along what it was given and decides
+/// nothing: proving a registration from its token and applying a policy are GarageService's
+/// (docs/plans/access-hooks.md, "Callers"). Ignored until the access hooks land.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusCaller {
+    /// "mcp"
+    #[prost(string, tag = "1")]
+    pub kind: ::prost::alloc::string::String,
+    /// "http" | "stdio"
+    #[prost(string, tag = "2")]
+    pub transport: ::prost::alloc::string::String,
+    /// The registration token the client presented (`Authorization: Bearer` over HTTP,
+    /// GARAGE_MCP_TOKEN over stdio), unverified. Empty: none.
+    #[prost(string, tag = "3")]
+    pub registration_token: ::prost::alloc::string::String,
+    /// Transport facts a policy may use, such as request headers it asked for.
+    #[prost(map = "string, string", tag = "4")]
+    pub attributes: ::std::collections::HashMap<
+        ::prost::alloc::string::String,
+        ::prost::alloc::string::String,
+    >,
+}
+/// rag_search. Empty lists and unset fields mean no filter.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusSearchRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+    #[prost(string, tag = "2")]
+    pub query: ::prost::alloc::string::String,
+    #[prost(int32, tag = "3")]
+    pub limit: i32,
+    /// hybrid | vector | fts
+    #[prost(string, tag = "4")]
+    pub mode: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "5")]
+    pub corpus_classes: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "6")]
+    pub trust_tiers: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "7")]
+    pub sources: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "8")]
+    pub author: ::core::option::Option<::prost::alloc::string::String>,
+    /// sent | received
+    #[prost(string, optional, tag = "9")]
+    pub direction: ::core::option::Option<::prost::alloc::string::String>,
+}
+/// rag_get_document: by id, or else by location ('~' accepted).
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusDocumentRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+    #[prost(int64, optional, tag = "2")]
+    pub document_id: ::core::option::Option<i64>,
+    #[prost(string, tag = "3")]
+    pub location: ::prost::alloc::string::String,
+    #[prost(int32, tag = "4")]
+    pub max_chars: i32,
+}
+/// rag_list_sources.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusSourcesRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+}
+/// rag_list_authors.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusAuthorsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+    #[prost(int32, tag = "2")]
+    pub limit: i32,
+}
+/// rag_stats.
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusStatsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CorpusReadResponse {
+    /// The tool's result (SearchResult, DocumentResult, SourceList, AuthorList, CorpusStats), as JSON.
+    #[prost(string, tag = "1")]
+    pub result_json: ::prost::alloc::string::String,
+}
 /// Generated client implementations.
 pub mod garage_service_client {
     #![allow(
@@ -2654,6 +2738,130 @@ pub mod garage_service_client {
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(GrpcMethod::new("garage.GarageService", "BackfillDistilled"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// --- Corpus Reads for the MCP Server ---
+        /// What the MCP tools read, for the Rust MCP server in GarageMCPServerService. Each reply is the
+        /// tool's result, JSON-encoded exactly as the Python tool returns it (`result_json`), so the two
+        /// servers answer alike. Every request names its caller for the access hooks (docs/plans/access-hooks.md).
+        pub async fn corpus_search(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusSearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusSearch",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusSearch"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn corpus_document(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusDocumentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusDocument",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusDocument"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn corpus_sources(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusSourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusSources",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusSources"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn corpus_authors(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusAuthorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusAuthors",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusAuthors"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn corpus_stats(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusStatsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusStats",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusStats"));
             self.inner.unary(req, path, codec).await
         }
     }
