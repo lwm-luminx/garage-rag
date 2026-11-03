@@ -8,6 +8,11 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
+use garage_ingest::contact_names::ContactNames;
+use garage_ingest::pipeline::{
+    self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
+    ReadOutcome, SourceInfo, Storage,
+};
 use garage_ingest::{
     Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
     Walked,
@@ -262,12 +267,285 @@ fn repos(value: Option<&Value>) -> Result<SuppliedRepos, String> {
     Ok(SuppliedRepos(repos))
 }
 
-fn attribute(request: &Map<String, Value>) -> Outcome {
-    let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
-    let root = request.get("source_root").and_then(Value::as_str).ok_or("the request has no \"source_root\" string")?;
-    let default = request.get("default_trust").and_then(Value::as_str).unwrap_or("authored");
-    let default_trust = TrustTier::parse(default).ok_or_else(|| format!("{default:?} is not a trust tier"))?;
-    let hints = strings(request.get("author_hints"), "author_hints")?;
+/// A [`FileHost`] that answers with what the request says the file holds.
+struct StatedFile {
+    local: bool,
+    source_sha256: Option<String>,
+    read: Option<ReadOutcome>,
+}
+
+impl FileHost for StatedFile {
+    fn ensure_local(&mut self, _: &FileCandidate) -> bool {
+        self.local
+    }
+
+    fn source_sha256(&mut self, _: &FileCandidate) -> Option<String> {
+        self.source_sha256.clone()
+    }
+
+    fn read(&mut self, _: &FileCandidate) -> ReadOutcome {
+        self.read.take().unwrap_or_else(|| ReadOutcome::Failed("the request has no \"read\"".to_owned()))
+    }
+}
+
+/// A [`Storage`] that writes down each call, as `{"method", ...arguments}`.
+#[derive(Default)]
+struct RecordedCalls(Vec<Value>);
+
+impl Storage for RecordedCalls {
+    fn record_seen(&mut self, uri: &str) {
+        self.0.push(json!({ "method": "record_seen", "uri": uri }));
+    }
+
+    fn record_placeholder(&mut self, uri: &str, mtime: f64, title: &str, reason: &str) {
+        self.0.push(
+            json!({ "method": "record_placeholder", "uri": uri, "mtime": mtime, "title": title, "reason": reason }),
+        );
+    }
+
+    fn record_no_text(&mut self, uri: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+        self.0.push(json!({
+            "method": "record_no_text", "uri": uri, "byte_size": byte_size, "mtime": mtime,
+            "source_sha256": source_sha256,
+        }));
+    }
+
+    fn record_extract_failed(&mut self, uri: &str, error: &str, byte_size: u64, mtime: f64, source_sha256: &str) {
+        self.0.push(json!({
+            "method": "record_extract_failed", "uri": uri, "error": error, "byte_size": byte_size, "mtime": mtime,
+            "source_sha256": source_sha256,
+        }));
+    }
+
+    fn record_rejected(&mut self, uri: &str) {
+        self.0.push(json!({ "method": "record_rejected", "uri": uri }));
+    }
+
+    fn refresh_metadata(
+        &mut self,
+        uri: &str,
+        byte_size: u64,
+        mtime: f64,
+        source_sha256: &str,
+        corpus_class: &str,
+        trust_tier: &str,
+    ) {
+        self.0.push(json!({
+            "method": "refresh_metadata", "uri": uri, "byte_size": byte_size, "mtime": mtime,
+            "source_sha256": source_sha256, "corpus_class": corpus_class, "trust_tier": trust_tier,
+        }));
+    }
+
+    fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> usize {
+        let written = document.chunks.len();
+        let authors: Vec<Value> = document
+            .authors
+            .into_iter()
+            .map(|author| {
+                let identities: Map<String, Value> =
+                    author.identities.into_iter().map(|(kind, value)| (kind, Value::String(value))).collect();
+                json!({
+                    "name": author.name, "role": author.role, "confidence": author.confidence,
+                    "evidence": author.evidence, "identities": identities, "is_self": author.is_self,
+                })
+            })
+            .collect();
+        let chunks: Vec<Value> = document
+            .chunks
+            .into_iter()
+            .map(|chunk| {
+                json!({
+                    "ord": chunk.ord, "text": chunk.text, "token_count": chunk.token_count,
+                    "char_start": chunk.char_start, "char_end": chunk.char_end, "heading_path": chunk.heading_path,
+                    "chunk_sha256": chunk.chunk_sha256, "chunker": chunk.chunker,
+                })
+            })
+            .collect();
+        self.0.push(json!({
+            "method": "replace_document", "uri": uri, "title": document.title, "lang": document.lang,
+            "byte_size": document.byte_size, "mtime": document.mtime, "source_sha256": document.source_sha256,
+            "content_sha256": document.content_sha256, "extractor": document.extractor,
+            "extractor_version": document.extractor_version, "chunker": document.chunker,
+            "content": document.content, "meta": document.meta, "corpus_class": document.corpus_class,
+            "trust_tier": document.trust_tier, "authors": authors, "chunks": chunks,
+        }));
+        written
+    }
+}
+
+fn text_field(object: &Map<String, Value>, key: &str) -> String {
+    object.get(key).and_then(Value::as_str).unwrap_or_default().to_owned()
+}
+
+fn existing_stat(value: Option<&Value>) -> Result<ExistingStat, String> {
+    let Some(value) = value.filter(|value| !value.is_null()) else { return Ok(ExistingStat::default()) };
+    let object = value.as_object().ok_or("\"existing\" is not an object")?;
+    Ok(ExistingStat {
+        exists: object.get("exists").and_then(Value::as_bool).unwrap_or(false),
+        byte_size: object.get("byte_size").and_then(Value::as_i64).unwrap_or(0),
+        mtime: object.get("mtime").and_then(Value::as_f64).unwrap_or(0.0),
+        content_sha256: text_field(object, "content_sha256"),
+        chunker: text_field(object, "chunker"),
+        state: text_field(object, "state"),
+        source_sha256: text_field(object, "source_sha256"),
+    })
+}
+
+fn file_candidate(value: Option<&Value>) -> Result<FileCandidate, String> {
+    let object = value.and_then(Value::as_object).ok_or("the request has no \"candidate\" object")?;
+    let path = object.get("path").and_then(Value::as_str).ok_or("the candidate has no \"path\" string")?;
+    Ok(FileCandidate {
+        path: PathBuf::from(path),
+        uri: object.get("uri").and_then(Value::as_str).unwrap_or(path).to_owned(),
+        size: object.get("size").and_then(Value::as_u64).unwrap_or(0),
+        mtime: object.get("mtime").and_then(Value::as_f64).unwrap_or(0.0),
+        placeholder: object.get("placeholder").and_then(Value::as_bool).unwrap_or(false),
+    })
+}
+
+fn optional_text(object: &Map<String, Value>, key: &str) -> Option<String> {
+    object.get(key).and_then(Value::as_str).map(str::to_owned)
+}
+
+fn read_outcome(value: Option<&Value>) -> Result<Option<ReadOutcome>, String> {
+    let Some(value) = value.filter(|value| !value.is_null()) else { return Ok(None) };
+    let object = value.as_object().ok_or("\"read\" is not an object")?;
+    if let Some(document) = object.get("document") {
+        let document = document.as_object().ok_or("\"read.document\" is not an object")?;
+        let kind = document.get("kind").and_then(Value::as_str).unwrap_or("prose");
+        let kind = ContentKind::parse(kind).ok_or_else(|| format!("{kind:?} is not a content kind"))?;
+        return Ok(Some(ReadOutcome::Document(Extracted {
+            text: text_field(document, "text"),
+            kind,
+            extractor: text_field(document, "extractor"),
+            extractor_version: text_field(document, "extractor_version"),
+            title: optional_text(document, "title"),
+            lang: optional_text(document, "lang"),
+            meta: document.get("meta").and_then(Value::as_object).cloned().unwrap_or_default(),
+            author_hints: strings(document.get("author_hints"), "read.document.author_hints")?,
+        })));
+    }
+    if let Some(message) = object.get("no_text") {
+        return Ok(Some(ReadOutcome::NoText(message.as_str().unwrap_or_default().to_owned())));
+    }
+    if object.get("placeholder").and_then(Value::as_bool).unwrap_or(false) {
+        return Ok(Some(ReadOutcome::Placeholder));
+    }
+    if let Some(error) = object.get("failed") {
+        return Ok(Some(ReadOutcome::Failed(error.as_str().unwrap_or_default().to_owned())));
+    }
+    Err("\"read\" is not one of document, no_text, placeholder or failed".to_owned())
+}
+
+fn ingest_settings(value: Option<&Value>) -> Result<IngestSettings, String> {
+    let mut settings = IngestSettings::default();
+    let Some(value) = value.filter(|value| !value.is_null()) else { return Ok(settings) };
+    for (key, value) in value.as_object().ok_or("\"settings\" is not an object")? {
+        let flag = || value.as_bool().ok_or_else(|| format!("\"settings.{key}\" is not a boolean"));
+        let count = || {
+            value
+                .as_u64()
+                .and_then(|count| usize::try_from(count).ok())
+                .ok_or_else(|| format!("\"settings.{key}\" is not a whole number"))
+        };
+        match key.as_str() {
+            "reject_machine_generated" => settings.reject_machine_generated = flag()?,
+            "index_images" => settings.index_images = flag()?,
+            "max_chunks_per_document" => settings.max_chunks_per_document = count()?,
+            "chunk_size" => settings.chunk_size = count()?,
+            "chunk_overlap" => settings.chunk_overlap = count()?,
+            "code_chunk_size" => settings.code_chunk_size = count()?,
+            "code_chunk_overlap" => settings.code_chunk_overlap = count()?,
+            _ => return Err(format!("\"settings.{key}\" is not an ingest setting")),
+        }
+    }
+    Ok(settings)
+}
+
+fn source_info(value: Option<&Value>) -> Result<SourceInfo, String> {
+    let object = value.and_then(Value::as_object).ok_or("the request has no \"source\" object")?;
+    let root = object.get("root").and_then(Value::as_str).ok_or("the source has no \"root\" string")?;
+    let trust = object.get("default_trust").and_then(Value::as_str).unwrap_or("authored");
+    Ok(SourceInfo {
+        root: PathBuf::from(root),
+        default_class: object.get("default_class").and_then(Value::as_str).unwrap_or("document").to_owned(),
+        default_trust: TrustTier::parse(trust).ok_or_else(|| format!("{trust:?} is not a trust tier"))?,
+    })
+}
+
+fn contact_names(value: Option<&Value>) -> Result<Option<ContactNames>, String> {
+    let Some(value) = value.filter(|value| !value.is_null()) else { return Ok(None) };
+    let tier = |value: &Value| -> Result<ContactNames, String> {
+        let mut names = ContactNames::default();
+        for entry in value.as_array().ok_or("a contact names tier is not a list")? {
+            let handle = entry.get(0).and_then(Value::as_str).ok_or("a contact name has no handle")?;
+            let name = entry.get(1).and_then(Value::as_str).ok_or("a contact name has no name")?;
+            names.add(handle, name);
+        }
+        Ok(names)
+    };
+    // `[[handle, name], ...]`, or `{"names": [...], "fallback": [...]}` for two tiers.
+    match value {
+        Value::Object(tiers) => {
+            let names = tier(tiers.get("names").unwrap_or(&Value::Array(Vec::new())))?;
+            Ok(Some(match tiers.get("fallback") {
+                Some(fallback) => names.with_fallback(tier(fallback)?),
+                None => names,
+            }))
+        }
+        _ => tier(value).map(Some),
+    }
+}
+
+fn counters_json(counters: &Counters) -> Value {
+    json!({
+        "seen": counters.seen, "indexed": counters.indexed, "skipped": counters.skipped,
+        "failed": counters.failed, "placeholders": counters.placeholders, "rejected": counters.rejected,
+        "chunks_written": counters.chunks_written, "errors": counters.errors,
+    })
+}
+
+fn ingest_one(request: &Map<String, Value>) -> Outcome {
+    let existing = existing_stat(request.get("existing"))?;
+    let candidate = file_candidate(request.get("candidate"))?;
+    let mut host = StatedFile {
+        local: request.get("local").and_then(Value::as_bool).unwrap_or(true),
+        source_sha256: request.get("source_sha256").and_then(Value::as_str).map(str::to_owned),
+        read: read_outcome(request.get("read"))?,
+    };
+    let settings = ingest_settings(request.get("settings"))?;
+    let source = source_info(request.get("source"))?;
+    let identity = identity(request)?;
+    let names = contact_names(request.get("contact_names"))?;
+    let policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    let supplied;
+    let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
+        library_history()
+    } else {
+        supplied = repos(request.get("repos"))?;
+        &supplied
+    };
+    let context = Context {
+        source: &source,
+        identity: &identity,
+        git,
+        contact_names: names.as_ref(),
+        settings: &settings,
+        policy: &policy,
+        force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
+    };
+    let mut storage = RecordedCalls::default();
+    let mut counters = Counters::default();
+    pipeline::ingest_one(&mut host, &mut storage, &existing, &candidate, &context, &mut counters);
+    Ok(json!({ "calls": storage.0, "counters": counters_json(&counters) }))
+}
+
+/// The owner: `"self": {"name", "identities": ["kind:value", ...]}`.
+fn identity(request: &Map<String, Value>) -> Result<SelfIdentity, String> {
     let owner = request.get("self").and_then(Value::as_object);
     let name = owner.and_then(|owner| owner.get("name")).and_then(Value::as_str).unwrap_or_default();
     let pairs = strings(owner.and_then(|owner| owner.get("identities")), "self.identities")?
@@ -277,12 +555,26 @@ fn attribute(request: &Map<String, Value>) -> Outcome {
             Some((kind.trim().to_owned(), value.trim().to_owned())).filter(|(_, value)| !value.is_empty())
         })
         .collect::<Vec<_>>();
-    let identity = SelfIdentity::new(name, &pairs);
+    Ok(SelfIdentity::new(name, &pairs))
+}
+
+/// Git history read through libgit2, once per process.
+fn library_history() -> &'static LibGitHistory {
+    static HISTORY: OnceLock<LibGitHistory> = OnceLock::new();
+    HISTORY.get_or_init(LibGitHistory::new)
+}
+
+fn attribute(request: &Map<String, Value>) -> Outcome {
+    let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
+    let root = request.get("source_root").and_then(Value::as_str).ok_or("the request has no \"source_root\" string")?;
+    let default = request.get("default_trust").and_then(Value::as_str).unwrap_or("authored");
+    let default_trust = TrustTier::parse(default).ok_or_else(|| format!("{default:?} is not a trust tier"))?;
+    let hints = strings(request.get("author_hints"), "author_hints")?;
+    let identity = identity(request)?;
     let communication = request.get("communication").and_then(Value::as_bool).unwrap_or(false);
     let supplied;
     let repos: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
-        static HISTORY: OnceLock<LibGitHistory> = OnceLock::new();
-        HISTORY.get_or_init(LibGitHistory::new)
+        library_history()
     } else {
         supplied = repos(request.get("repos"))?;
         &supplied
@@ -462,6 +754,25 @@ pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, resul
     call(request, result, git_tracked)
 }
 
+/// Decides what ingest does with one file, as `ingest/pipeline.py`'s `ingest_one` does, from what the
+/// request says about it: `{"existing"?: {"exists", "byte_size", "mtime", "content_sha256", "chunker",
+/// "state", "source_sha256"}, "candidate": {"path", "uri", "size", "mtime", "placeholder"}, "local"?: true,
+/// "source_sha256"?, "read"?: {"document": {"text", "kind", "extractor", "extractor_version", "title",
+/// "lang", "meta", "author_hints"}} | {"no_text": message} | {"placeholder": true} | {"failed": message},
+/// "settings"?: {...}, "source": {"root", "default_class", "default_trust"}, "self"?, "contact_names"?,
+/// "repos"?, "read_git"?, "policy"?, "force"?}` -> `{"calls": [{"method", ...arguments}], "counters"}`.
+/// `"local"` is `ensure_local`'s answer and `"source_sha256"` the bytes' hash; `"self"`, `"repos"` and
+/// `"read_git"` are as for [`garage_ingest_attribute`]. `"contact_names"` is `[[handle, name], ...]`, or
+/// `{"names": [...], "fallback": [...]}`.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_ingest_one(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, ingest_one)
+}
+
 /// Frees a string this library returned. Null is ignored.
 ///
 /// # Safety
@@ -521,6 +832,27 @@ mod tests {
         let (status, reply) = run(garage_ingest_ensure_local, r#"{"path": "/", "budget": {"nope": 1}}"#);
         assert_eq!(status, GARAGE_INGEST_BAD_REQUEST);
         assert!(reply["error"].as_str().unwrap().contains("nope"));
+    }
+
+    #[test]
+    fn ingest_one_reports_the_facade_calls() {
+        let request = r##"{"candidate": {"path": "/src/Notes/a.md", "size": 3, "mtime": 5.0},
+            "source": {"root": "/src"}, "read": {"document": {"text": "# A\nbody", "kind": "markdown"}}}"##;
+        let (status, reply) = run(garage_ingest_ingest_one, request);
+        assert_eq!(status, GARAGE_INGEST_OK);
+        assert_eq!(reply["calls"][0]["method"], "replace_document");
+        assert_eq!(reply["calls"][0]["chunker"], "markdown:markdown-header+recursive/v2:1000/150");
+        assert_eq!(reply["counters"]["indexed"], 1);
+        let settled = r#"{"candidate": {"path": "/src/a.md", "size": 3, "mtime": 5.0}, "source": {"root": "/src"},
+            "existing": {"exists": true, "byte_size": 3, "mtime": 5.0, "state": "OK"}}"#;
+        let (_, reply) = run(garage_ingest_ingest_one, settled);
+        assert_eq!(reply["calls"][0]["method"], "record_seen");
+        assert_eq!(reply["counters"]["skipped"], 1);
+        let (status, _) = run(
+            garage_ingest_ingest_one,
+            r#"{"candidate": {"path": "/a"}, "source": {"root": "/"}, "settings": {"nope": 1}}"#,
+        );
+        assert_eq!(status, GARAGE_INGEST_BAD_REQUEST);
     }
 
     #[test]

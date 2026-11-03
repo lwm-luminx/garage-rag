@@ -6,7 +6,9 @@ chunked by both chunkers, through ``libgarage_ingest_ffi``'s C ABI; the files fo
 verdicts, the reasons, every metric and every chunk (text, ordinal, chunker id, heading path and
 offsets) must be identical. The chunking cases include the golden test's, which pin Python's
 chunks to the langchain output the index was first built with. The Rust walker's default rules
-are held to Python's tables too, so a table edited on one side only fails here.
+are held to Python's tables too, so a table edited on one side only fails here. One file through
+``pipeline.ingest_one``, with its reads stated rather than made, must end in the same facade calls,
+with the same arguments, and move the counters the same way.
 
 The library is found through ``GARAGE_INGEST_FFI_LIBRARY`` or in ``rust/target/{release,debug}``;
 without it the tests skip (``cargo build -p garage-ingest-ffi`` in ``rust/`` makes it).
@@ -34,11 +36,13 @@ from garage_rag import config
 from garage_rag.attribute import git as git_attribution
 from garage_rag.attribute import resolver
 from garage_rag.attribute.pathrules import EXCLUDED_PREFIXES
-from garage_rag.db.models import TrustTier
+from garage_rag.db.models import CorpusClass, TrustTier
 from garage_rag.extract import dispatch, quality
-from garage_rag.extract.base import ContentKind
+from garage_rag.extract.base import ContentKind, ExtractionError, ExtractResult, NoTextFound
+from garage_rag.extract.contact_names import ContactNames
 from garage_rag.extract.placeholder import PlaceholderFile
-from garage_rag.ingest import chunking, classify, materialize, splitters, walker
+from garage_rag.ingest import chunking, classify, materialize, pipeline, splitters, walker
+from garage_rag.ingest.gateway import ExistingDocStat, SourceContext
 
 REPO = Path(__file__).resolve().parents[2]
 CORPUS = Path(__file__).parent / "corpora" / "second-brain-os"
@@ -76,6 +80,7 @@ def rust():
         "garage_ingest_ensure_local",
         "garage_ingest_attribute",
         "garage_ingest_git_history",
+        "garage_ingest_ingest_one",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -780,3 +785,329 @@ def test_history_read_in_rust_attributes_the_same(rust, tmp_path, monkeypatch):
     for path in [*(repo / name for name in files), repo / ".mailmap", repo / "src" / "untracked.rs"]:
         port = _rust_attribution(rust, path, tmp_path, read_git=True)
         assert port == _python_attribution(path, tmp_path), path
+
+
+# --- one file through the ingest loop -----------------------------------------------------------
+
+
+class _RecordingGateway:
+    """The facade calls ``ingest_one`` makes, written down as the Rust port reports them."""
+
+    def __init__(self, existing: dict | None) -> None:
+        self.existing = ExistingDocStat(**existing) if existing else ExistingDocStat(exists=False)
+        self.calls: list[dict] = []
+
+    def check_stat(self, slug, uri):
+        return self.existing
+
+    def record_seen(self, run_id, slug, uri):
+        self.calls.append({"method": "record_seen", "uri": uri})
+
+    def record_placeholder(self, run_id, slug, uri, mtime, title, reason):
+        self.calls.append(
+            {"method": "record_placeholder", "uri": uri, "mtime": mtime, "title": title, "reason": reason}
+        )
+
+    def record_no_text(self, run_id, slug, uri, *, byte_size, mtime, source_sha256):
+        self.calls.append(
+            {
+                "method": "record_no_text",
+                "uri": uri,
+                "byte_size": byte_size,
+                "mtime": mtime,
+                "source_sha256": source_sha256,
+            }
+        )
+
+    def record_extract_failed(self, run_id, slug, uri, error, *, byte_size, mtime, source_sha256):
+        self.calls.append(
+            {
+                "method": "record_extract_failed",
+                "uri": uri,
+                "error": error,
+                "byte_size": byte_size,
+                "mtime": mtime,
+                "source_sha256": source_sha256,
+            }
+        )
+
+    def record_rejected(self, run_id, slug, uri):
+        self.calls.append({"method": "record_rejected", "uri": uri})
+
+    def refresh_metadata(self, run_id, slug, uri, byte_size, mtime, source_sha256, corpus_class, trust_tier):
+        self.calls.append(
+            {
+                "method": "refresh_metadata",
+                "uri": uri,
+                "byte_size": byte_size,
+                "mtime": mtime,
+                "source_sha256": source_sha256,
+                "corpus_class": corpus_class,
+                "trust_tier": trust_tier,
+            }
+        )
+
+    def replace_document(self, *, run_id, source_slug, authors, chunks, **document):
+        call = {"method": "replace_document", **document}
+        call["authors"] = [dataclasses.asdict(author) for author in authors]
+        call["chunks"] = [
+            {key: value for key, value in dataclasses.asdict(chunk).items() if key not in ("direction", "sender")}
+            for chunk in chunks
+        ]
+        # As stored: JSON, so a tuple in meta reads back as a list.
+        self.calls.append(json.loads(json.dumps(call)))
+        return len(chunks)
+
+
+_KIND = {kind.value: kind for kind in ContentKind}
+MTIME = 1_700_000_000.25
+TEXT_HASH = "ab" * 32
+
+
+def _document(text: str, kind: str = "markdown", **extra) -> dict:
+    return {"document": {"text": text, "kind": kind, "extractor": "test", "extractor_version": "3", **extra}}
+
+
+def _python_read(read: dict | None, path: Path):
+    def extract(_path):
+        if read is None:
+            raise AssertionError("the file was read")
+        if "document" in read:
+            document = read["document"]
+            return ExtractResult(
+                text=document["text"],
+                kind=_KIND[document["kind"]],
+                extractor=document["extractor"],
+                extractor_version=document["extractor_version"],
+                title=document.get("title"),
+                lang=document.get("lang"),
+                meta=dict(document.get("meta", {})),
+                author_hints=list(document.get("author_hints", [])),
+            )
+        if "no_text" in read:
+            raise NoTextFound(read["no_text"])
+        if read.get("placeholder"):
+            raise PlaceholderFile(path)
+        raise ExtractionError(read["failed"])
+
+    return extract
+
+
+def _ingest_both(rust, monkeypatch, tmp_path, case: dict) -> tuple[dict, dict]:
+    root = tmp_path / "src"
+    path = root / case.get("relative", "Notes/note.md")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("x")
+    settings = config.Settings().model_copy(update=case.get("settings", {}))
+    local = case.get("local", True)
+    raw = case.get("source_sha256", TEXT_HASH)
+    contacts = case.get("contact_names")
+
+    def ensure_local(_path, _budget):
+        if not local:
+            raise PlaceholderFile(_path)
+
+    def file_sha256(_path):
+        if raw is None:
+            raise OSError("unreadable")
+        return bytes.fromhex(raw)
+
+    monkeypatch.setattr(pipeline, "ensure_local", ensure_local)
+    monkeypatch.setattr(pipeline, "file_sha256", file_sha256)
+    monkeypatch.setattr(pipeline, "extract", _python_read(case.get("read"), path))
+    monkeypatch.setattr(pipeline, "get_settings", lambda: settings)
+    monkeypatch.setattr(chunking, "get_settings", lambda: settings)
+
+    source = SourceContext(
+        source_id=1,
+        slug="src",
+        root=root,
+        default_class=CorpusClass(case.get("default_class", "document")),
+        default_trust=TrustTier(case.get("default_trust", "authored")),
+        run_id=1,
+    )
+    candidate = walker.Candidate(
+        path=path,
+        size=case.get("size", 1234),
+        mtime=datetime.fromtimestamp(case.get("mtime", MTIME), UTC),
+        placeholder=case.get("placeholder", False),
+    )
+    gateway = _RecordingGateway(case.get("existing"))
+    counters = pipeline.IngestCounters()
+    names = None
+    if contacts is not None:
+        names = ContactNames([tuple(entry) for entry in contacts.get("names", [])])
+        if "fallback" in contacts:
+            names = names.with_fallback([tuple(entry) for entry in contacts["fallback"]])
+    pipeline.ingest_one(
+        gateway,
+        source,
+        candidate,
+        self_identity=_owner(),
+        budget=materialize.MaterializationBudget(),
+        counters=counters,
+        force=case.get("force", False),
+        contact_names=names,
+    )
+    python = {
+        "calls": gateway.calls,
+        "counters": {
+            name: getattr(counters, name)
+            for name in ("seen", "indexed", "skipped", "failed", "placeholders", "rejected", "chunks_written", "errors")
+        },
+    }
+
+    request = {
+        "existing": case.get("existing"),
+        "candidate": {
+            "path": str(path),
+            "uri": candidate.uri,
+            "size": candidate.size,
+            "mtime": candidate.mtime.timestamp(),
+            "placeholder": candidate.placeholder,
+        },
+        "local": local,
+        "source_sha256": raw,
+        "read": case.get("read"),
+        "settings": {
+            name: getattr(settings, name)
+            for name in (
+                "reject_machine_generated",
+                "index_images",
+                "max_chunks_per_document",
+                "chunk_size",
+                "chunk_overlap",
+                "code_chunk_size",
+                "code_chunk_overlap",
+            )
+        },
+        "source": {
+            "root": str(root),
+            "default_class": source.default_class.value,
+            "default_trust": source.default_trust.value,
+        },
+        "self": OWNER,
+        "contact_names": contacts,
+        "repos": {},
+        "force": case.get("force", False),
+    }
+    return python, rust("garage_ingest_ingest_one", request)
+
+
+_PROSE = "# Notes\n\n" + "\n\n".join(f"Paragraph {n} says something about the garage." * 6 for n in range(12))
+_CODE = (REPO / "garage_python" / "src" / "garage_rag" / "ingest" / "classify.py").read_text()
+_LOG = "\n".join(f"2024-01-01T00:00:{n % 60:02d}Z INFO worker[{n}] request handled in {n}ms" for n in range(400))
+_SETTLED = {"exists": True, "byte_size": 1234, "mtime": MTIME, "state": "OK", "content_sha256": "c" * 64}
+
+INGEST_CASES = {
+    "new markdown": {"read": _document(_PROSE, title="Notes", lang="en", meta={"front_matter": {"tags": ["a"]}})},
+    "new code": {"relative": "Projects/engine/main.py", "read": _document(_CODE, "code")},
+    "a readme stays a document": {"relative": "Projects/engine/README.py", "read": _document("x = 1\n", "code")},
+    "a security.rb is code": {"relative": "Projects/engine/security.rb", "read": _document("x = 1\n", "code")},
+    "a reference pdf": {
+        "relative": "Reference/paper.pdf",
+        "read": _document(_PROSE, "prose", author_hints=["Grace Hopper"]),
+    },
+    "the owner's hint": {"read": _document(_PROSE, author_hints=["Ada Lovelace", "Bob Smith"])},
+    "machine output": {"relative": "Notes/run.txt", "read": _document(_LOG, "prose")},
+    "machine output allowed": {
+        "relative": "Notes/run.txt",
+        "read": _document(_LOG, "prose"),
+        "settings": {"reject_machine_generated": False},
+    },
+    "no chunks": {"read": _document("", "prose")},
+    "too many chunks": {
+        "read": _document(_PROSE, "prose"),
+        "settings": {"max_chunks_per_document": 2, "chunk_size": 200},
+    },
+    "a screenshot": {"relative": "Pictures/shot.png", "read": _document("Error: disk full", "prose")},
+    "a screenshot, images off": {
+        "relative": "Pictures/shot.png",
+        "read": _document("Error: disk full", "prose"),
+        "settings": {"index_images": False},
+    },
+    "a photo": {"relative": "Pictures/cat.jpg", "read": _document("cat", "image", title="cat")},
+    "a mail": {
+        "relative": "Mail/hello.eml",
+        "default_class": "communication",
+        "read": _document(
+            "From: grace@navy.mil\n\nHello there, about the compiler.", "conversation", author_hints=["grace@navy.mil"]
+        ),
+        "contact_names": {"names": [["Grace@Navy.mil", "Grace  Hopper"]]},
+    },
+    "a mail, fallback name": {
+        "relative": "Mail/hello.eml",
+        "read": _document("Hello there.", "conversation", author_hints=["+1 (555) 123-4567"]),
+        "contact_names": {"names": [["x@y", "X"]], "fallback": [["5551234567", "Shared Name"]]},
+    },
+    "no text": {"read": {"no_text": "empty"}},
+    "a placeholder read": {"read": {"placeholder": True}},
+    "a failed read": {"read": {"failed": "broken PDF"}},
+    "a failed read, unreadable bytes": {"read": {"failed": "broken"}, "source_sha256": None},
+    "not materialized": {"local": False, "placeholder": True},
+    "unchanged stat": {"existing": _SETTLED},
+    "unchanged stat, forced": {"existing": _SETTLED, "force": True, "read": _document(_PROSE)},
+    "unchanged stat of a placeholder with no size": {
+        "existing": _SETTLED,
+        "placeholder": True,
+        "size": 0,
+    },
+    "changed mtime": {"existing": {**_SETTLED, "mtime": MTIME + 5}, "read": _document(_PROSE)},
+    "unchanged bytes": {"existing": {**_SETTLED, "mtime": MTIME + 5, "source_sha256": TEXT_HASH}},
+    "unchanged bytes, no text": {
+        "existing": {
+            **_SETTLED,
+            "mtime": MTIME + 5,
+            "source_sha256": TEXT_HASH,
+            "state": "NO_TEXT",
+            "content_sha256": "",
+        }
+    },
+    "unchanged bytes, failed": {
+        "existing": {
+            **_SETTLED,
+            "mtime": MTIME + 5,
+            "source_sha256": TEXT_HASH,
+            "state": "FAILED",
+            "content_sha256": "",
+        }
+    },
+    "an extract failure is retried": {
+        "existing": {**_SETTLED, "state": "EXTRACT_FAILED", "content_sha256": ""},
+        "read": _document(_PROSE),
+    },
+    "an old placeholder row with content": {"existing": {**_SETTLED, "state": "PLACEHOLDER"}},
+    "an eml indexed as text": {
+        "relative": "Mail/old.eml",
+        "existing": {**_SETTLED, "chunker": "prose:recursive"},
+        "read": _document("Hello.", "conversation"),
+    },
+    "an eml indexed as mail": {"relative": "Mail/old.eml", "existing": {**_SETTLED, "chunker": "conversation:x"}},
+}
+
+
+@pytest.mark.parametrize("case", INGEST_CASES.values(), ids=INGEST_CASES.keys())
+def test_files_are_ingested_the_same(rust, monkeypatch, tmp_path, case):
+    python, port = _ingest_both(rust, monkeypatch, tmp_path, case)
+    assert port == python
+
+
+@pytest.mark.parametrize("name", ["new markdown", "new code", "a mail", "a screenshot", "too many chunks"])
+def test_unchanged_text_keeps_its_chunks_the_same(rust, monkeypatch, tmp_path, name):
+    """Step 4: a changed file whose text and chunker are unchanged refreshes its metadata only."""
+    case = INGEST_CASES[name]
+    first, _ = _ingest_both(rust, monkeypatch, tmp_path / "first", case)
+    written = first["calls"][-1]
+    assert written["method"] == "replace_document"
+    existing = {
+        "exists": True,
+        "byte_size": 1,
+        "mtime": MTIME - 100,
+        "state": "OK",
+        "content_sha256": written["content_sha256"],
+        "chunker": written["chunker"],
+        "source_sha256": "0" * 64,
+    }
+    python, port = _ingest_both(rust, monkeypatch, tmp_path / "again", {**case, "existing": existing})
+    assert python["calls"][0]["method"] == "refresh_metadata"
+    assert port == python

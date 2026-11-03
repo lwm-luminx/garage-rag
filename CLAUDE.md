@@ -208,7 +208,9 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `pathrules.py`, with `email.utils.parseaddr` ported for senders) with git history read through libgit2
   (`rust/garage-git`, the three reads `_garage_git` makes, bound by hand with no `git2` crate: Bazel links
   `//ext/libgit2`, Cargo finds it with `pkg-config` or `GARAGE_LIBGIT2_DIR`, so a Cargo build needs libgit2
-  installed; `test_git_history.py` holds it to `git` beside the other readers). `garage-ingest-ffi` exports
+  installed; `test_git_history.py` holds it to `git` beside the other readers) and the per-file decisions of
+  the loop (`ingest/pipeline.py`'s `ingest_one`, behind `FileHost` and `Storage` traits, with
+  `extract/contact_names.py` for authors' names). `garage-ingest-ffi` exports
   them as JSON over a C ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds them to Python when
   `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with
