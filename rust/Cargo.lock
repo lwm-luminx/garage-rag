@@ -220,6 +220,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-ingest"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "regex",
+ "serde_json",
+]
+
+[[package]]
+name = "garage-ingest-ffi"
+version = "0.1.0"
+dependencies = [
+ "garage-ingest",
+ "serde_json",
+]
+
+[[package]]
 name = "garage-plugin"
 version = "0.1.0"
 dependencies = [
