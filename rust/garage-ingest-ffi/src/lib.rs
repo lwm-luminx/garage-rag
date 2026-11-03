@@ -5,7 +5,9 @@ use std::ffi::{CStr, CString, c_char};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 
-use garage_ingest::{ContentKind, WalkOptions, WalkPolicy, WalkStats, Walked};
+use garage_ingest::{
+    Budget, ContentKind, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats, Walked,
+};
 use serde_json::{Map, Value, json};
 
 /// The call succeeded; the result is its JSON.
@@ -155,6 +157,61 @@ fn chunk(request: &Map<String, Value>) -> Outcome {
     Ok(json!({ "chunks": chunks }))
 }
 
+fn budget_from(request: &Map<String, Value>) -> Result<Budget, String> {
+    let Some(value) = request.get("budget") else { return Ok(Budget::default()) };
+    let object = value.as_object().ok_or("\"budget\" is not an object")?;
+    let mut budget = Budget::default();
+    for (key, value) in object {
+        let count = || value.as_u64().ok_or_else(|| format!("budget.{key} is not a whole number"));
+        match key.as_str() {
+            "enabled" => budget.enabled = value.as_bool().ok_or("budget.enabled is not a boolean")?,
+            "max_files" => budget.max_files = count()?,
+            "max_bytes" => budget.max_bytes = count()?,
+            "timeout_seconds" => {
+                budget.timeout_seconds = value.as_f64().ok_or("budget.timeout_seconds is not a number")?;
+            }
+            "files_done" => budget.files_done = count()?,
+            "bytes_done" => budget.bytes_done = count()?,
+            "deferred" => budget.deferred = count()?,
+            "failed" => budget.failed = count()?,
+            other => return Err(format!("unknown budget field {other:?}")),
+        }
+    }
+    Ok(budget)
+}
+
+fn budget_json(budget: &Budget) -> Value {
+    json!({
+        "enabled": budget.enabled,
+        "max_files": budget.max_files,
+        "max_bytes": budget.max_bytes,
+        "timeout_seconds": budget.timeout_seconds,
+        "files_done": budget.files_done,
+        "bytes_done": budget.bytes_done,
+        "deferred": budget.deferred,
+        "failed": budget.failed,
+        "exhausted": budget.exhausted(),
+        "summary": budget.summary(),
+    })
+}
+
+fn ensure_local(request: &Map<String, Value>) -> Outcome {
+    let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
+    let mut budget = budget_from(request)?;
+    let materializer = Materializer::shared();
+    let (outcome, message) = match materializer.ensure_local(Path::new(path), &mut budget) {
+        Materialized::Local => ("local", None),
+        Materialized::Deferred => ("deferred", None),
+        Materialized::Failed(message) => ("failed", Some(message)),
+    };
+    Ok(json!({
+        "outcome": outcome,
+        "message": message,
+        "budget": budget_json(&budget),
+        "stalled": materializer.stalled_count(),
+    }))
+}
+
 /// The default walk policy: `{}` -> `{"exclude_dirs": [...], ..., "max_file_bytes": n}`.
 ///
 /// # Safety
@@ -197,6 +254,19 @@ pub unsafe extern "C" fn garage_ingest_root_problem(request: *const c_char, resu
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, assess)
+}
+
+/// Makes a file local if it is a cloud placeholder, within a budget: `{"path", "budget"?: {"enabled",
+/// "max_files", "max_bytes", "timeout_seconds", "files_done", "bytes_done", "deferred", "failed"}}` ->
+/// `{"outcome": "local" | "deferred" | "failed", "message", "budget": {..., "exhausted", "summary"},
+/// "stalled"}`. Pass the returned budget to the next call; the process keeps one count of stalled reads.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_ensure_local(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, ensure_local)
 }
 
 /// Chunks a document's text: `{"text", "kind": "prose" | "markdown" | "code" | "tabular" |
@@ -257,6 +327,19 @@ mod tests {
         assert_eq!(reply["chunks"][0]["heading_path"], "A");
         let (status, _) = run(garage_ingest_chunk, r#"{"text": "x", "kind": "poem", "size": 1, "overlap": 0}"#);
         assert_eq!(status, GARAGE_INGEST_BAD_REQUEST);
+    }
+
+    #[test]
+    fn ensure_local_carries_the_budget() {
+        let (status, reply) =
+            run(garage_ingest_ensure_local, r#"{"path": "/no/such/.stub.md.icloud", "budget": {"enabled": false}}"#);
+        assert_eq!(status, GARAGE_INGEST_OK);
+        assert_eq!(reply["outcome"], "deferred");
+        assert_eq!(reply["budget"]["deferred"], 1);
+        assert_eq!(reply["budget"]["summary"], "materialized 0 files (0.00 GiB), deferred 1");
+        let (status, reply) = run(garage_ingest_ensure_local, r#"{"path": "/", "budget": {"nope": 1}}"#);
+        assert_eq!(status, GARAGE_INGEST_BAD_REQUEST);
+        assert!(reply["error"].as_str().unwrap().contains("nope"));
     }
 
     #[test]

@@ -32,7 +32,8 @@ from garage_rag import config
 from garage_rag.attribute.pathrules import EXCLUDED_PREFIXES
 from garage_rag.extract import dispatch, quality
 from garage_rag.extract.base import ContentKind
-from garage_rag.ingest import chunking, classify, splitters, walker
+from garage_rag.extract.placeholder import PlaceholderFile
+from garage_rag.ingest import chunking, classify, materialize, splitters, walker
 
 REPO = Path(__file__).resolve().parents[2]
 CORPUS = Path(__file__).parent / "corpora" / "second-brain-os"
@@ -67,6 +68,7 @@ def rust():
         "garage_ingest_root_problem",
         "garage_ingest_assess",
         "garage_ingest_chunk",
+        "garage_ingest_ensure_local",
     ):
         getattr(lib, name).argtypes = [ctypes.c_char_p, ctypes.POINTER(ctypes.c_void_p)]
         getattr(lib, name).restype = ctypes.c_int32
@@ -447,3 +449,61 @@ def test_every_text_is_chunked_the_same(rust, name, text, kind, ext, size, overl
     ]
     port = rust("garage_ingest_chunk", {"text": text, "kind": kind, "extension": ext, "size": size, "overlap": overlap})
     assert port["chunks"] == python
+
+
+# --- materializing placeholders -----------------------------------------------------------------
+
+BUDGET_FIELDS = (
+    "enabled",
+    "max_files",
+    "max_bytes",
+    "timeout_seconds",
+    "files_done",
+    "bytes_done",
+    "deferred",
+    "failed",
+)
+
+
+def _python_ensure_local(path: Path, budget: materialize.MaterializationBudget) -> str:
+    try:
+        materialize.ensure_local(path, budget)
+    except PlaceholderFile:
+        return "deferred" if budget.deferred else "failed"
+    return "local"
+
+
+@pytest.mark.parametrize(
+    ("name", "budget"),
+    [
+        ("off", {}),
+        ("on", {"enabled": True, "timeout_seconds": 5.0}),
+        ("spent files", {"enabled": True, "max_files": 2, "files_done": 2}),
+        ("spent bytes", {"enabled": True, "max_bytes": 10, "bytes_done": 11, "deferred": 4}),
+        ("room left", {"enabled": True, "max_files": 5, "files_done": 1, "bytes_done": 123, "failed": 2}),
+    ],
+)
+@pytest.mark.parametrize("file", ["note.md", ".note.md.icloud", "empty.md", "missing.md"])
+def test_placeholders_are_materialized_the_same(rust, tmp_path, name, budget, file):
+    path = tmp_path / file
+    if file != "missing.md":
+        path.write_bytes(b"" if file == "empty.md" else b"text that is local")
+    python = materialize.MaterializationBudget(**budget)
+    python_outcome = _python_ensure_local(path, python)
+
+    port = rust("garage_ingest_ensure_local", {"path": str(path), "budget": budget})
+
+    assert port["outcome"] == python_outcome
+    assert {key: port["budget"][key] for key in BUDGET_FIELDS} == dataclasses.asdict(python)
+    assert port["budget"]["exhausted"] == python.exhausted
+    assert port["budget"]["summary"] == python.summary()
+
+
+@pytest.mark.parametrize(
+    "counts", [(0, 0, 0, 0), (1, 5, 0, 0), (1234, 1 << 29, 3, 1), (10**7, 3 * 1024**3 + 12345, 1000, 999)]
+)
+def test_budget_summaries_read_the_same(rust, tmp_path, counts):
+    files, size, deferred, failed = counts
+    budget = {"files_done": files, "bytes_done": size, "deferred": deferred, "failed": failed}
+    port = rust("garage_ingest_ensure_local", {"path": str(tmp_path / "missing"), "budget": budget})
+    assert port["budget"]["summary"] == materialize.MaterializationBudget(**budget).summary()

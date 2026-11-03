@@ -197,8 +197,10 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   `create_grpc_server` when `GARAGE_EMBED_FFI_LIBRARY` names the build or `rust/target` has it.
 - **Ingest** (`rust/garage-ingest`) ports the pipeline a piece at a time: so far the walker (`ingest/walker.py`,
   its rules as data in `WalkPolicy`, held to Python's tables), the quality gate (`extract/quality.py`, with
-  Python's `str` character classes so every metric matches) and chunking (`ingest/chunking.py` over
-  `ingest/splitters.py`, with `re`'s reading of the separator tables, so chunks, ids and offsets match). `garage-ingest-ffi` exports them as JSON over a C
+  Python's `str` character classes so every metric matches), chunking (`ingest/chunking.py` over
+  `ingest/splitters.py`, with `re`'s reading of the separator tables, so chunks, ids and offsets match) and
+  materializing placeholders (`ingest/materialize.py`: the budget, the timed-out reads it bounds and the
+  dataless-file I/O policy, `setiopolicy_np` bound at link time). `garage-ingest-ffi` exports them as JSON over a C
   ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds them to Python when
   `GARAGE_INGEST_FFI_LIBRARY` names the build or `rust/target` has it. Nothing calls them yet.
 - **Hosts.** Python: `extraction.plugins` lists `unix:` sockets or programs (started with

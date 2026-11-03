@@ -57,6 +57,15 @@ int32_t garage_ingest_assess(const char *request, char **result);
 // Offsets are in characters (Unicode code points), null when the chunk was not found in the text.
 int32_t garage_ingest_chunk(const char *request, char **result);
 
+// Makes a cloud placeholder local within a budget, as garage_rag.ingest.materialize.ensure_local does:
+//   {"path", "budget": {"enabled", "max_files", "max_bytes", "timeout_seconds",   // 0 = unlimited
+//                       "files_done", "bytes_done", "deferred", "failed"}}       // the run so far
+// -> {"outcome": "local" | "deferred" | "failed", "message": "..." | null,
+//     "budget": {... the same fields, updated, "exhausted", "summary"}, "stalled": n}
+// Pass the returned budget to the next call. The download runs on its own thread with macOS's
+// dataless-file policy on; a read past its timeout is left running and counted in "stalled".
+int32_t garage_ingest_ensure_local(const char *request, char **result);
+
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);
 
