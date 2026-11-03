@@ -14,6 +14,7 @@ use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
 };
+use garage_ingest::scanner::{ScanOptions, Ticker, scan_source};
 use garage_ingest::source::{self, ScanSummary, SourceError, SourceHost, SourceOptions};
 use garage_ingest::{
     Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
@@ -657,6 +658,23 @@ fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
     Ok(GrpcTarget::Tcp { host: object.get("host").and_then(Value::as_str).unwrap_or("127.0.0.1").to_owned(), port })
 }
 
+/// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does.
+fn scan(request: &Map<String, Value>) -> Outcome {
+    let policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    let options = ScanOptions {
+        include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
+        policy: &policy,
+        read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(true),
+    };
+    let slug = request.get("source_slug").and_then(Value::as_str).unwrap_or_default();
+    let kind = request.get("kind").and_then(Value::as_str).unwrap_or("filesystem");
+    Ok(scan_source(slug, kind, Path::new(&root(request)?), &options, &mut Ticker::new(None)).to_json())
+}
+
 /// Runs one walked source through GarageService: `BeginIngestSession`, then [`source::ingest_source`].
 fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let facade = request.get("facade").and_then(Value::as_object).ok_or("the request has no \"facade\" object")?;
@@ -667,7 +685,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
     };
-    let scan = scan_summary(request.get("scan"))?;
+    let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
@@ -688,6 +706,19 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let source = source_info(Some(&json!({
         "root": session.root, "default_class": session.default_class, "default_trust": session.default_trust,
     })))?;
+    let scan = match scan_given {
+        Some(scan) => scan_summary(Some(scan))?,
+        // A Messages database is not run here (below), so it is not scanned either.
+        None if session.kind == "sqlite" => ScanSummary::default(),
+        None => {
+            let options = ScanOptions {
+                include_code: options.include_code,
+                policy: &policy,
+                read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
+            };
+            scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
+        }
+    };
     let mut storage = GrpcStorage::new(connection, session.run_id, slug);
     if session.kind == "sqlite" {
         // A Messages database is read conversation by conversation, which is not ported yet.
@@ -943,14 +974,28 @@ pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, resul
     call(request, result, git_tracked)
 }
 
+/// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does: `{"root", "kind"?:
+/// "filesystem" | "git" | "sqlite" | "maildir" | "feed", "source_slug"?, "include_code"?, "read_git"?: true,
+/// "policy"?}` -> `{"source_slug", "kind", "root", "item_count", "item_type", "details", "duration_seconds",
+/// "error"}`. With `"read_git": false` a git source's `tracked_files` detail is left out.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_ingest_scan(request: *const c_char, result: *mut *mut c_char) -> i32 {
+    call(request, result, scan)
+}
+
 /// Runs one walked source, as `ingest/pipeline.py`'s `_ingest_source` does, through GarageService:
 /// `{"facade": {"socket" | "host" and "port", "token"?, "source_slug"}, "scan": {"item_count", "item_type",
 /// "duration_seconds", "details", "error"}, "files": {"<path under the root>": {"local"?, "source_sha256"?,
 /// "read"}}, "include_code"?, "limit"?, "cancel_after"?, "force"?, "settings"?, "self"?, "contact_names"?,
 /// "repos"?, "read_git"?, "policy"?}` -> `{"run_id", "counters", "walk_stats", "completed", "progress"}`, with
 /// `"unavailable"` in place of the counters when the scan found the root unreadable and `"error"` when a
-/// run-wide call failed. The scan is stated until the scanners are ported, and each file's read is stated
-/// as for [`garage_ingest_ingest_one`]; `"cancel_after"` cancels the run after that many files.
+/// run-wide call failed. Without `"scan"` the source is scanned here as [`garage_ingest_scan`] does. Each
+/// file's read is stated as for [`garage_ingest_ingest_one`]; `"cancel_after"` cancels the run after that
+/// many files.
 ///
 /// # Safety
 ///

@@ -211,8 +211,9 @@ uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains ne
   installed; `test_git_history.py` holds it to `git` beside the other readers) and the per-file decisions of
   the loop (`ingest/pipeline.py`'s `ingest_one`, behind `FileHost` and `Storage` traits, with
   `extract/contact_names.py` for authors' names) and the loop over a walked source (`_ingest_source`, in
-  `source.rs`, with the scan's outcome handed in until the scanners are ported and Messages sources left to
-  Python), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  `source.rs`, with Messages sources left to Python) and the scanners that count a source first
+  (`ingest/scanner.py`, in `scanner.rs`: feeds read as expat would, in `feed.rs`, and databases through the
+  system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`); `tests/test_ingest_rust.py` holds them to Python

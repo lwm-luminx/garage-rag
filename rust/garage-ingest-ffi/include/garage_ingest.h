@@ -46,6 +46,11 @@ int32_t garage_ingest_walk(const char *request, char **result);
 // Why a root cannot be walked: {"root"} -> {"problem": "path does not exist: ..." | null}.
 int32_t garage_ingest_root_problem(const char *request, char **result);
 
+// Counts a source's items (garage_rag.ingest.scanner.scan_source): {"root", "kind": "filesystem" | "git" |
+// "sqlite" | "maildir" | "feed", "source_slug", "include_code", "read_git": true, "policy"} ->
+// {"source_slug", "kind", "root", "item_count", "item_type", "details", "duration_seconds", "error"}.
+int32_t garage_ingest_scan(const char *request, char **result);
+
 // The quality gate: {"text", "sample_chars": 65536} ->
 // {"machine_generated", "reasons": [...], "reason_text", "metrics": {"lines", ...}}.
 int32_t garage_ingest_assess(const char *request, char **result);
@@ -102,10 +107,10 @@ int32_t garage_ingest_ingest_one(const char *request, char **result);
 
 // Runs one walked source (garage_rag.ingest.pipeline._ingest_source) through GarageService ("facade":
 // {"socket", or "host" and "port"; "token", "source_slug"}): BeginIngestSession, PersistScan, each file's
-// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The scan's outcome ("scan") and what each
-// file reads ("files", by path under the root, as for garage_ingest_ingest_one) come with the request. The
-// reply holds the run id, counters, walk stats, whether the walk completed and the progress reports, or
-// "unavailable" when the root cannot be read and "error" when a run-wide call failed.
+// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The source is scanned as garage_ingest_scan
+// does unless the request states the outcome ("scan"). What each file reads ("files", by path under the root,
+// as for garage_ingest_ingest_one) comes with the request. The reply holds the run id, counters, walk stats,
+// whether the walk completed and the progress reports, or "unavailable" when the root cannot be read and "error" when a run-wide call failed.
 int32_t garage_ingest_ingest_source(const char *request, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.

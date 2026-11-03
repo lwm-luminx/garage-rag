@@ -1,6 +1,6 @@
 //! The loop over one walked source: `ingest/pipeline.py`'s `_ingest_source`.
 //!
-//! The scan's outcome is handed in (`ingest/scanner.py` is not ported yet), and a Messages database
+//! The scan's outcome is handed in (the caller runs [`crate::scanner`] or states one), and a Messages database
 //! (`sqlite` sources, `ingest/conversations.py`) is not walked, so it is not run here. Everything
 //! else follows Python: a root problem fails the run before anything is stored; the scan is stored;
 //! each candidate the walk yields is counted, decided by [`ingest_one`] and reported; a file whose

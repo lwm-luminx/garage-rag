@@ -1,6 +1,6 @@
 [package]
 name = "garage-ingest"
-description = "Garage's ingest pipeline, moving out of garage_rag.ingest one piece at a time: the walker, quality gate, chunking, materializing, attribution and the per-file loop so far, persisting through GarageService's facade."
+description = "Garage's ingest pipeline, moving out of garage_rag.ingest one piece at a time: the walker, quality gate, chunking, materializing, attribution, the per-file and per-source loops and the scanners so far, persisting through GarageService's facade."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
