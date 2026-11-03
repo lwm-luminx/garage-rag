@@ -139,8 +139,15 @@ step leaves the app working, with the Python reference still there for the servi
    metrics), chunking (`ingest/chunking.py` and its splitters, to the same chunks and offsets) and
    materializing placeholders (`ingest/materialize.py`, to the same budget accounting) and attribution
    (`attribute/`, to the same decisions and evidence), with git history read in-process through libgit2
-   (`rust/garage-git`, held to `git log` as `_garage_git` and pygit2 are). `garage-ingest-ffi` is their C
-   ABI, and `tests/test_ingest_rust.py` holds them to Python. Next: the service itself.
+   (`rust/garage-git`, held to `git log` as `_garage_git` and pygit2 are), and the per-file decisions of the
+   ingest loop (`ingest_one`: which facade call each file ends in and how the counters move, behind a
+   `FileHost` for reading and a `Storage` for the facade), which persist through GarageService's facade
+   (`GrpcStorage`, sending the requests `GrpcIngestStorageGateway` sends, on the client `rust/garage-facade`
+   shares with the embed worker), and the loop over a walked source (`_ingest_source`: the scan stored, each
+   file decided, cancellation, the limit, and a run finalized as complete only when the walk ran out).
+   `garage-ingest-ffi` is their C ABI, and `tests/test_ingest_rust.py` holds them to Python, whole runs
+   included, request for request against GarageService. Next: the scanners and Messages conversations, the
+   readers the host hands files to, then the service itself.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
 
 ## Privacy

@@ -5,6 +5,7 @@ resolver = "3"
 members = [
     "garage-embed",
     "garage-embed-ffi",
+    "garage-facade",
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
@@ -18,6 +19,7 @@ members = [
 default-members = [
     "garage-embed",
     "garage-embed-ffi",
+    "garage-facade",
     "garage-git",
     "garage-ingest",
     "garage-ingest-ffi",
@@ -37,6 +39,7 @@ publish = false
 
 [workspace.dependencies]
 garage-embed = { path = "garage-embed" }
+garage-facade = { path = "garage-facade" }
 garage-git = { path = "garage-git" }
 garage-ingest = { path = "garage-ingest" }
 garage-plugin = { path = "garage-plugin" }

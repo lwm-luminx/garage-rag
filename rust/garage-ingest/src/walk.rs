@@ -7,6 +7,7 @@
 
 use std::fs::{self, Metadata};
 use std::io;
+use std::ops::ControlFlow;
 use std::path::{Component, Path, PathBuf};
 
 use crate::fnmatch::fnmatch;
@@ -64,6 +65,8 @@ pub enum Walked {
     Walked,
     /// The root is a `.git` directory or lies inside one, so nothing was walked.
     InsideGitDir,
+    /// The visitor stopped the walk before it ran out of files.
+    Stopped,
 }
 
 /// What to walk besides the policy.
@@ -333,6 +336,21 @@ pub fn walk(
     stats: &mut WalkStats,
     mut visit: impl FnMut(Candidate),
 ) -> Walked {
+    walk_while(root, policy, options, stats, |candidate| {
+        visit(candidate);
+        ControlFlow::Continue(())
+    })
+}
+
+/// [`walk`], which `visit` may stop, as breaking out of Python's walk generator does: the files after
+/// the one it stops on are neither visited nor counted.
+pub fn walk_while(
+    root: &Path,
+    policy: &WalkPolicy,
+    options: &WalkOptions,
+    stats: &mut WalkStats,
+    mut visit: impl FnMut(Candidate) -> ControlFlow<()>,
+) -> Walked {
     let root = expand_home(root);
     if is_inside_git_dir(&root) {
         return Walked::InsideGitDir;
@@ -375,7 +393,9 @@ pub fn walk(
             stats.files_seen += 1;
             if let Some(candidate) = consider(&current, name, policy, options, stats) {
                 stats.yielded += 1;
-                visit(candidate);
+                if visit(candidate).is_break() {
+                    return Walked::Stopped;
+                }
             }
         }
 

@@ -1,5 +1,6 @@
-// Garage's ingest pieces in Rust, linked in-process: the file walker, the quality gate and chunking,
-// ported from garage_rag.ingest.walker, garage_rag.extract.quality and garage_rag.ingest.chunking.
+// Garage's ingest pieces in Rust, linked in-process: the file walker, the quality gate, chunking,
+// materializing placeholders, attribution, git history and the per-file decisions of the ingest loop,
+// ported from garage_rag.ingest and garage_rag.extract.quality.
 //
 // Each call takes a NUL-terminated UTF-8 JSON request and sets `*result` to a JSON string the
 // library owns; free it with garage_ingest_string_free. A status other than GARAGE_INGEST_OK means
@@ -88,6 +89,24 @@ int32_t garage_ingest_ensure_local(const char *request, char **result);
 int32_t garage_ingest_git_history(const char *request, char **result);
 int32_t garage_ingest_git_remote(const char *request, char **result);
 int32_t garage_ingest_git_tracked(const char *request, char **result);
+
+// What ingest does with one file (garage_rag.ingest.pipeline.ingest_one), decided from what the
+// request says about it: its stat in the database ("existing"), the walk's candidate, whether it is
+// local ("local"), its bytes' hash ("source_sha256") and what its reader made of it ("read": a
+// document, "no_text", "placeholder" or "failed"), with the settings, source, owner, contact names and
+// git history ("repos" or "read_git") attribution reads. The reply is the facade calls Python makes, in
+// order ({"calls": [{"method", ...}]}), and the counters they move. With "facade" ({"socket", or "host" and
+// "port"; "token", "run_id", "source_slug"}) the stat comes from GarageService's CheckDocumentStat and each
+// call is made there as PersistDocument; the reply is then the counters, with "error" when a call failed.
+int32_t garage_ingest_ingest_one(const char *request, char **result);
+
+// Runs one walked source (garage_rag.ingest.pipeline._ingest_source) through GarageService ("facade":
+// {"socket", or "host" and "port"; "token", "source_slug"}): BeginIngestSession, PersistScan, each file's
+// CheckDocumentStat and PersistDocument, and FinalizeIngestSession. The scan's outcome ("scan") and what each
+// file reads ("files", by path under the root, as for garage_ingest_ingest_one) come with the request. The
+// reply holds the run id, counters, walk stats, whether the walk completed and the progress reports, or
+// "unavailable" when the root cannot be read and "error" when a run-wide call failed.
+int32_t garage_ingest_ingest_source(const char *request, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);
