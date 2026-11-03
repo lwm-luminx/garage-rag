@@ -86,5 +86,13 @@ build --enable_platform_specific_config
 build:linux --platforms=//bazel:linux_gnu
 build:linux --host_platform=//bazel:linux_gnu
 
+# macOS 27's dyld rejects Mach-O files that LLVM's objcopy has stripped ("mis-aligned LINKEDIT string
+# pool"; Apple's strip is fine), and rustc strips with rust-objcopy whenever it builds optimized. Tools
+# always build optimized, so no proc-macro loaded into rustc and every crate with a derive failed, and a
+# -c opt output can fail to load the same way. Rust keeps its debug info on macOS until Rust/LLVM fixes
+# rust-objcopy; then these two lines can go. @rules_rust is rules_rs's own (see MODULE.bazel).
+build:macos --@rules_rust//rust/settings:extra_exec_rustc_flag=-Cstrip=none
+build:macos --@rules_rust//rust/settings:extra_rustc_flag=-Cstrip=none
+
 # Build against the bundled PostgreSQL 19 beta instead of 18 (see //ext:postgres_version).
 common:pg19 --//ext:postgres_version=19

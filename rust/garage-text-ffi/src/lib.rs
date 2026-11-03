@@ -7,6 +7,20 @@
 use garage_plugin::ffi::{self, GarageBuffer};
 use garage_text::TextPlugin;
 
+/// The call succeeded; the buffer holds the response message.
+pub const GARAGE_TEXT_OK: i32 = 0;
+/// The request did not decode, or a pointer was null; the buffer holds a message.
+pub const GARAGE_TEXT_BAD_REQUEST: i32 = 1;
+/// The reader panicked; the buffer holds a message. The process is unharmed.
+pub const GARAGE_TEXT_PANIC: i32 = 2;
+
+// The header's names for garage_plugin::ffi's statuses (cbindgen reads literals, not paths).
+const _: () = assert!(
+    GARAGE_TEXT_OK == ffi::STATUS_OK
+        && GARAGE_TEXT_BAD_REQUEST == ffi::STATUS_BAD_REQUEST
+        && GARAGE_TEXT_PANIC == ffi::STATUS_PANIC
+);
+
 /// `garage.plugin.v1.ContractVersion` of the messages this library speaks.
 #[unsafe(no_mangle)]
 pub extern "C" fn garage_text_contract_version() -> u32 {

@@ -1,0 +1,20 @@
+[package]
+name = "garage-embed-uniffi"
+description = "The embed worker for Swift (and Python, and C#) through UniFFI: typed records, errors and a host protocol, beside garage-embed-ffi's JSON C ABI. A pilot of UniFFI for the XPC hosts (docs/plans/uniffi.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_embed_uniffi"
+# Static for the Mac app; shared for uniffi-bindgen's library mode and for Python's bindings in tests.
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+garage-embed.workspace = true
+uniffi.workspace = true
+
+[lints]
+workspace = true
