@@ -151,6 +151,17 @@ typedef struct GarageIngestHost {
 // "error" as for garage_ingest_ingest_source. The host's functions are called on this thread only.
 int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *host, char **result);
 
+// Runs the ingest service's request as garage_rag.ingest.ingest_xpc does: {"facade": {"socket", or "host" and
+// "port"; "token"}, "source": a slug or "*" (every enabled source, in turn), "include_code", "limit", "force",
+// "contact_names", "settings": "service" (chunking, quality, placeholders and identity read from GarageService's
+// GetSetting) or as for garage_ingest_ingest_source, "budget", "self", "read_git"}. Each file's text comes from
+// `host` as for garage_ingest_run_source, but `progress` hears the app's IngestProgress events instead:
+// {"source", "phase": "scan" | "ingest" | "cancelled" | "complete" | "error", "seen", "total_items", "indexed",
+// "skipped", "failed", "placeholders", "rejected", "chunks_written", "item_type", "progress", "message", "error",
+// "current_item"}. The reply is {"sources": [each source's garage_ingest_run_source reply, with "source"],
+// "cancelled"}, plus "error" when a source failed, could not be read, or none is enabled.
+int32_t garage_ingest_run(const char *request, const GarageIngestHost *host, char **result);
+
 // Frees a string one of the calls above returned. Null is ignored.
 void garage_ingest_string_free(char *text);
 

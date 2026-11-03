@@ -8,7 +8,8 @@
 use garage_facade::FacadeError;
 use garage_facade::proto::{
     BeginIngestSessionRequest, BeginIngestSessionResponse, CheckDocumentStatRequest, DocumentAuthorPayload,
-    DocumentChunkPayload, FinalizeIngestSessionRequest, PersistDocumentRequest, PersistScanRequest,
+    DocumentChunkPayload, FinalizeIngestSessionRequest, GetSettingRequest, ListSourcesRequest, PersistDocumentRequest,
+    PersistScanRequest,
 };
 use serde_json::Value;
 
@@ -125,6 +126,29 @@ pub fn begin_session(
 ) -> Result<BeginIngestSessionResponse, FacadeError> {
     let request = BeginIngestSessionRequest { source_slug: source_slug.to_owned(), include_code };
     connection.call(|mut client| async move { client.begin_ingest_session(request).await })
+}
+
+/// The slugs of the enabled sources, in the order GarageService lists them (`list_enabled_sources`).
+///
+/// # Errors
+///
+/// The call's own failure.
+pub fn list_enabled_sources(connection: &Connection) -> Result<Vec<String>, FacadeError> {
+    let reply = connection.call(|mut client| async move { client.list_sources(ListSourcesRequest {}).await })?;
+    Ok(reply.sources.into_iter().filter(|source| source.enabled).map(|source| source.slug).collect())
+}
+
+/// One setting the backend runs with (`GetSetting`, SECTION.KEY as `garage.json` names it), decoded from
+/// its JSON.
+///
+/// # Errors
+///
+/// The call's own failure (an unknown key), or a reply that is not JSON.
+pub fn get_setting(connection: &Connection, name: &str) -> Result<Value, FacadeError> {
+    let request = GetSettingRequest { name: name.to_owned() };
+    let reply = connection.call(|mut client| async move { client.get_setting(request).await })?;
+    serde_json::from_str(&reply.value_json)
+        .map_err(|error| FacadeError::Failed(format!("{name}: GarageService answered with no JSON: {error}")))
 }
 
 fn action(uri: &str, action: &str) -> PersistDocumentRequest {

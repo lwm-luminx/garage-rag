@@ -227,7 +227,12 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   file's text read through a host callback (`ingest/host_read.py`'s `read_for_host` is the reply, so the readers
   can stay Python until each is ported; for a Messages source the host gives only the names contacts shared,
   `shared_names_for_host`); `test_ingest_rust.py` holds it to `_ingest_source`, Messages runs over
-  `fake_messages.py` included. Nothing calls them yet.
+  `fake_messages.py` included. `garage_ingest_run` is the service's whole run, `ingest_xpc`'s port: one source or
+  every enabled one (`"*"`, `ListSources`), the settings GarageService runs with (`"settings": "service"`, over
+  `GetSetting`) and the app's `IngestProgress` events field for field; `test_ingest_rust.py` holds it to
+  `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
+  GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
+  neither it keeps the Python loop.
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
