@@ -119,8 +119,10 @@ anything else when the caller says what it is sending:
 
 ### Layer 5 — local fact extraction
 
-Only the local part of LangExtract is shipped, vendored as `enrich/langextract`.
-Upstream chooses its backend by regex on the model name and would send a
+Only the local part of LangExtract is shipped: the Rust port `langextract_rs`
+(which makes no requests and opens no files; the model it is given is its only way
+out), or where that is not installed, the Python subset vendored as
+`enrich/langextract`. Upstream chooses its backend by regex on the model name and would send a
 `gemini-*` or `gpt-*` model id to Google or OpenAI; that routing and those
 backends are not vendored, and `enrich/facts.py` refuses a cloud model id with a
 clear error. Every extraction runs on `LocalLanguageModel`, Garage's own
