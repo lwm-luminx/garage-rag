@@ -152,7 +152,9 @@ database directly rather than parsing Rich tables.
   - a newer push waits for a running build instead of cancelling it.
   - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
     request reads its base branch's), pruned to what the build used, with each branch's older
-    entries deleted, so they stay under the repository's 10 GB cache quota. For CI only, it adds
+    entries deleted, so they stay under the repository's 10 GB cache quota.
+    With the `BUILDBUDDY_API_KEY` secret set, it also uses BuildBuddy's remote cache, shared by
+    every branch. For CI only, it adds
     `--build_tests_only` and `--noapple_generate_dsym`.
 - Run it by hand from the Actions tab (workflow_dispatch) when a Python-only change needs the Bazel
   build.
