@@ -125,17 +125,35 @@ class TestBackfill:
 class TestEmbedWorkerBatches:
     """The XPC embed worker gets its texts from GetEmbeddingBatches."""
 
-    def _batches_sql(self, provider: str) -> str:
+    def _batches(self, provider: str):
         session = MagicMock()
         session.execute.return_value.all.return_value = []
+
+        # 5 chunks in all, 2 of them communications.
+        def pending(session, model, *, include_communications=True):
+            return 5 if include_communications else 3
+
         with (
             patch("garage_rag.db.engine.session_scope") as scope,
             patch("garage_rag.db.emb_tables.get_model", return_value=_model(provider)),
-            patch("garage_rag.embed.ollama.count_pending", return_value=0),
+            patch("garage_rag.embed.ollama.count_pending", side_effect=pending),
         ):
             scope.return_value.__enter__.return_value = session
-            GarageRpcServicer().GetEmbeddingBatches(GetEmbeddingBatchesRequest(model_slug="m"), MagicMock())
-        return str(session.execute.call_args.args[0])
+            response = GarageRpcServicer().GetEmbeddingBatches(GetEmbeddingBatchesRequest(model_slug="m"), MagicMock())
+        return response, str(session.execute.call_args.args[0])
+
+    def _batches_sql(self, provider: str) -> str:
+        return self._batches(provider)[1]
+
+    def test_off_box_provider_is_told_what_was_withheld(self) -> None:
+        set_settings(_off_box(lmstudio_host="https://lmstudio.example.com/v1"))
+        response, _ = self._batches("lmstudio")
+        assert (response.total_pending, response.withheld) == (3, 2)
+
+    def test_local_provider_has_nothing_withheld(self) -> None:
+        set_settings(Settings())
+        response, _ = self._batches("llama_xpc")
+        assert (response.total_pending, response.withheld) == (5, 0)
 
     def test_off_box_provider_gets_no_communications(self) -> None:
         set_settings(_off_box(lmstudio_host="https://lmstudio.example.com/v1"))

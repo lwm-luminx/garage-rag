@@ -412,6 +412,17 @@ py_test(
 )
 
 py_test(
+    name = "test_embed_worker",
+    srcs = ["test_embed_worker.py"],
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/proto",
+        "//garage_python/src/garage_rag/service",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_embed_xpc",
     srcs = ["test_embed_xpc.py"],
     # These start a real gRPC server on 127.0.0.1. --nosandbox_default_allow_network (the

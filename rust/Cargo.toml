@@ -3,6 +3,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "garage-embed",
+    "garage-embed-ffi",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
@@ -11,6 +13,8 @@ members = [
 ]
 # protogen needs protoc; everything else builds without it.
 default-members = [
+    "garage-embed",
+    "garage-embed-ffi",
     "garage-plugin",
     "garage-text",
     "garage-text-ffi",
@@ -26,6 +30,7 @@ repository = "https://github.com/lwm-luminx/garage-rag"
 publish = false
 
 [workspace.dependencies]
+garage-embed = { path = "garage-embed" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"

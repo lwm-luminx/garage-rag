@@ -126,6 +126,9 @@ step leaves the app working, with the Python reference still there for the servi
    modules they share with the app (`LlamaClient`, `LlamaServiceHost`, `ImageEmbedClient`,
    `ImageEmbedEngine`) on the kit too.
 2. **Embeddings.** The backfill worker in GarageEmbedXPCService, in Rust, over the same gRPC facade.
+   `rust/garage-embed` is that worker: `ops/backfill.py`'s loop and messages over `GetEmbeddingBatches`,
+   `UpdateEmbeddings` and a new `BackfillDistilled`, with the model servers reached through its host
+   after a port of the egress guard's destination rules. `garage-embed-ffi` is its C ABI.
 3. **Ingest.** The walker, readers, chunking, attribution, the quality gate and the splitters, in Rust,
    with readers behind the plugin contract above.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.

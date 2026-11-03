@@ -1,0 +1,20 @@
+[package]
+name = "garage-embed"
+description = "The embed worker: embeds the chunks a model has no vectors for, through the GarageService database facade, with the model servers reached through its host."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+hyper-util.workspace = true
+prost.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tonic = { workspace = true, features = ["channel"] }
+tonic-prost.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true

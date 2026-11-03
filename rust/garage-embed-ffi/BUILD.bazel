@@ -1,0 +1,40 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+_DEPS = [
+    "//rust/garage-embed",
+    "@crates//:serde_json",
+]
+
+# The embed worker behind its C ABI (include/garage_embed.h), linked statically into the embed
+# service.
+rust_static_library(
+    name = "garage_embed_ffi_static",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_embed_ffi",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+cc_library(
+    name = "garage-embed-ffi",
+    hdrs = ["include/garage_embed.h"],
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+    deps = [":garage_embed_ffi_static"],
+)
+
+rust_library(
+    name = "garage_embed_ffi_lib",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_embed_ffi",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+rust_test(
+    name = "garage-embed-ffi-test",
+    crate = ":garage_embed_ffi_lib",
+)

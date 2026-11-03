@@ -16,6 +16,8 @@ from garage_rag.net import egress
 from garage_rag.proto.garage_pb2 import (
     AddSourceRequest,
     AddSourceResponse,
+    BackfillDistilledRequest,
+    BackfillDistilledResponse,
     BackfillRequest,
     BackfillStatus,
     BeginIngestSessionRequest,
@@ -414,3 +416,6 @@ class GarageClient:
 
     def update_embeddings(self, request: UpdateEmbeddingsRequest) -> UpdateEmbeddingsResponse:
         return self._invoke_unary("UpdateEmbeddings", request, UpdateEmbeddingsResponse)
+
+    def backfill_distilled(self, request: BackfillDistilledRequest) -> BackfillDistilledResponse:
+        return self._invoke_unary("BackfillDistilled", request, BackfillDistilledResponse)
