@@ -176,7 +176,8 @@ Components are moving from Python to Rust one at a time ([docs/plans/rust-plugin
 `rust/` is a Cargo workspace (toolchain pinned in `rust-toolchain.toml`, the same as MODULE.bazel's) that
 Bazel also builds through rules_rs (`crate.from_cargo` over `rust/Cargo.lock`; each crate's `BUILD.bazel`
 mirrors its `Cargo.toml` by hand, and gazelle leaves the folder alone). On Linux, `.bazelrc`'s `build:linux`
-uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains need.
+uses `//bazel:linux_gnu`, the host plus a libc constraint the Rust toolchains need. On macOS, `build:macos`
+turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-objcopy strips.
 
 - **The contract.** `proto/garage_plugin.proto` (`garage.plugin.v1.ExtractorPlugin`: `Describe`, `Extract`)
   is between the ingester and its readers: a file name and bytes in, never a path. It crosses gRPC on a
