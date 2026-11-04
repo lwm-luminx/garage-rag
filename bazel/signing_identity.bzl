@@ -22,6 +22,15 @@ provisioning profile outside the store), so it and its XPC services can reach th
 that `~/Library/Application Support/GarageApp` links to once a released build has run. Any other
 team's certificate signs without it.
 
+The same repository serves `--config=developer_id` (`//bazel:developer_id`), the Developer ID build
+for GitHub releases (`//macapp/package`): the keychain's "Developer ID Application" and "Developer ID
+Installer" certificates, and the three Developer ID provisioning profiles it embeds (the app and the
+two launcher helper bundles), found among those installed for Xcode
+(`~/Library/Developer/Xcode/UserData/Provisioning Profiles`, `~/Library/MobileDevice/Provisioning
+Profiles`) or in the folders `GARAGE_PROVISIONING_PROFILES` lists (colon-separated). A profile is
+picked by its application identifier, among those that provision every device (Developer ID), the
+one that expires last. Nothing about them is checked in; a build that lacks one fails saying which.
+
 A certificate is passed to the build by its common name, never its SHA-1 hash: rules_apple's
 codesigningtool looks the identity up with a regex that must match inside the quoted name
 `security find-identity` prints, so a hash is "not found". The hash is used only here, to read the
@@ -109,6 +118,113 @@ def _choose(rctx, identities):
             return (name, name, "the local identity from //tools/signing:local_identity")
     return ("-", "-", "no signing identity in the keychain")
 
+_DEVELOPER_ID_PREFIX = "Developer ID Application: "
+_INSTALLER_PREFIX = "Developer ID Installer: "
+
+# The bundles a Developer ID build embeds a profile in, by the //bazel label flag that names the
+# profile, and the bundle identifier its application identifier carries after the team.
+_PROFILES = [
+    ("app", "me.rickmark.garage-rag"),
+    ("garage_cli", "me.rickmark.garage-rag.garage-cli"),
+    ("garage_mcp", "me.rickmark.garage-rag.mcp-server-cli"),
+]
+
+def _installer_identities(rctx):
+    """`find-identity` without `-p codesigning`, which leaves installer certificates out."""
+    if not rctx.os.name.startswith("mac"):
+        return []
+    result = rctx.execute(["/usr/bin/security", "find-identity", "-v"], quiet = True)
+    if result.return_code != 0:
+        return []
+    return _parse_identities(result.stdout)
+
+def _first_named(identities, prefix):
+    for _, name in identities:
+        if name.startswith(prefix):
+            return name
+    return ""
+
+def _plist_value(xml, key):
+    """The value after `<key>key</key>` in a plist's XML: a string's or date's text, "true", "false" or ""."""
+    marker = "<key>" + key + "</key>"
+    at = xml.find(marker)
+    if at < 0:
+        return ""
+    rest = xml[at + len(marker):].lstrip()
+    if rest.startswith("<true/>"):
+        return "true"
+    if rest.startswith("<false/>"):
+        return "false"
+    for tag in ("string", "date"):
+        opening = "<" + tag + ">"
+        if rest.startswith(opening):
+            return rest[len(opening):rest.find("</" + tag + ">")].strip()
+    return ""
+
+def _profile_dirs(rctx):
+    dirs = [entry.strip() for entry in rctx.getenv("GARAGE_PROVISIONING_PROFILES", "").split(":") if entry.strip()]
+    home = rctx.getenv("HOME")
+    if home:
+        dirs.append(home + "/Library/Developer/Xcode/UserData/Provisioning Profiles")
+        dirs.append(home + "/Library/MobileDevice/Provisioning Profiles")
+    return dirs
+
+def _developer_id_profiles(rctx):
+    """Maps each application identifier to `(expiration, path)` of its newest Developer ID profile."""
+    found = {}
+    if not rctx.os.name.startswith("mac"):
+        return found
+    for directory in _profile_dirs(rctx):
+        path = rctx.path(directory)
+        if not path.exists or not path.is_dir:
+            continue
+        rctx.watch_tree(path)
+        for child in path.readdir():
+            if not child.basename.endswith(".provisionprofile"):
+                continue
+            decoded = rctx.execute(["/usr/bin/security", "cms", "-D", "-i", str(child)], quiet = True)
+            if decoded.return_code != 0:
+                continue
+            xml = decoded.stdout
+
+            # A Developer ID profile provisions every device; development and App Store ones do not.
+            if _plist_value(xml, "ProvisionsAllDevices") != "true":
+                continue
+            app_id = _plist_value(xml, "com.apple.application-identifier")
+            expires = _plist_value(xml, "ExpirationDate")
+            if app_id and (app_id not in found or expires > found[app_id][0]):
+                found[app_id] = (expires, str(child))
+    return found
+
+_MISSING_PROFILE = """genrule(
+    name = "{target}",
+    outs = ["{target}.missing"],
+    cmd = "echo '{message}' >&2; exit 1",
+)
+"""
+
+def _write_developer_id(rctx, team):
+    """Returns the Developer ID identities, their team and the profiles' BUILD targets."""
+    application = _first_named(_find_identities(rctx), _DEVELOPER_ID_PREFIX)
+    installer = _first_named(_installer_identities(rctx), _INSTALLER_PREFIX)
+    if application.endswith(")") and "(" in application:
+        # "Developer ID Application: Name (TEAMID)": the team is the parenthesized suffix.
+        team = application[application.rfind("(") + 1:-1]
+    profiles = _developer_id_profiles(rctx)
+    targets = []
+    for flag, bundle_id in _PROFILES:
+        target = "developer_id_{}_profile".format(flag)
+        app_id = team + "." + bundle_id if team else bundle_id
+        if app_id in profiles:
+            rctx.symlink(profiles[app_id][1], target + ".provisionprofile")
+            targets.append('alias(\n    name = "{0}",\n    actual = "{0}.provisionprofile",\n)\n'.format(target))
+        else:
+            message = ("No Developer ID provisioning profile for {} is installed: install it (double-click it, " +
+                       "or Xcode, Settings, Accounts, Download Manual Profiles) or name its folder in " +
+                       "GARAGE_PROVISIONING_PROFILES.").format(app_id)
+            targets.append(_MISSING_PROFILE.format(target = target, message = message))
+    return application, installer, team, "\n".join(targets)
+
 def _signing_identity_impl(rctx):
     identity, name, source = _choose(rctx, _find_identities(rctx))
     team = _team(rctx, identity, name) if rctx.os.name.startswith("mac") else ""
@@ -116,7 +232,8 @@ def _signing_identity_impl(rctx):
     # rules_apple matches signing_certificate_name against certificate names only (see the
     # docstring), so hand it the name; `identity` was the hash only to look up the team above.
     identity = name
-    rctx.file("BUILD.bazel", "exports_files([\"identity.bzl\"])\n")
+    developer_id, installer, developer_id_team, profile_targets = _write_developer_id(rctx, team or "")
+    rctx.file("BUILD.bazel", "package(default_visibility = [\"//visibility:public\"])\n\nexports_files([\"identity.bzl\"])\n\n" + profile_targets)
     rctx.file("identity.bzl", """\"\"\"The identity local builds sign with. Generated by //bazel:signing_identity.bzl.\"\"\"
 
 # Chosen from: {source}.
@@ -129,7 +246,28 @@ AUTO_SIGNING_IDENTITY_NAME = {name}
 # The Team ID of an Apple Development certificate, "" otherwise. When it is the App Group's team
 # (//bazel:signing.bzl APP_GROUP_TEAM), the build claims the App Group (//bazel:is_local_app_group).
 AUTO_SIGNING_TEAM = {team}
-""".format(source = source, identity = repr(identity), name = repr(name), team = repr(team)))
+
+# The keychain's Developer ID certificates (//bazel:developer_id, //macapp/package), or a placeholder
+# naming what is missing, so a Developer ID build without one fails at signing saying so.
+DEVELOPER_ID_IDENTITY = {developer_id}
+DEVELOPER_ID_INSTALLER_IDENTITY = {installer}
+DEVELOPER_ID_TEAM = {developer_id_team}
+
+# The Developer ID profiles' targets here, as the canonical labels a platform's flags need.
+DEVELOPER_ID_PROFILES = {{
+    "app": str(Label("//:developer_id_app_profile")),
+    "garage_cli": str(Label("//:developer_id_garage_cli_profile")),
+    "garage_mcp": str(Label("//:developer_id_garage_mcp_profile")),
+}}
+""".format(
+        source = source,
+        identity = repr(identity),
+        name = repr(name),
+        team = repr(team),
+        developer_id = repr(developer_id or "(no Developer ID Application certificate in the keychain)"),
+        installer = repr(installer or "(no Developer ID Installer certificate in the keychain)"),
+        developer_id_team = repr(developer_id_team),
+    ))
 
 signing_identity = repository_rule(
     implementation = _signing_identity_impl,

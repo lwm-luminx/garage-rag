@@ -224,16 +224,17 @@ Things worth knowing:
 
 ### Signed builds
 
-The Developer ID and App Store builds are made from
+The App Store build, and the Developer ID build's Sparkle feed, are made from
 [garage-enterprise](https://github.com/lwm-luminx/garage-enterprise), which carries this repository as a
-submodule. This repository's part is the seam, `bazel/platforms.bzl`: a signed distribution is a platform
+submodule. A notarized Developer ID build for a GitHub release is also made here, from the keychain's
+Developer ID certificates and the installed Developer ID profiles: `--config=developer_id` and
+`//macapp/package` (see RELEASING.md, "GitHub release"). This repository's part in the others is the seam, `bazel/platforms.bzl`: a signed distribution is a platform
 that sets rules_apple's `signing_certificate_name`, `//bazel:distribution` (`developer_id` or `store`,
 behind `//bazel:is_developer_id` and `//bazel:is_store`, which pick entitlements, hardened runtime and the
 store-only resources) and the three provisioning-profile label flags for the app and the two launcher
 helper bundles. `//bazel:macos_application.bzl`, `xcarchive.bzl`, `lipo.bzl`, `notarytool.bzl` and
-`pkgbuild.bzl` are the generic rules such a repository instantiates; the identities, the profiles, the
-notarize, upload and appcast scripts and their tests are not here. A fork builds ad hoc or with the local
-identity above without any of them.
+`pkgbuild.bzl` are the generic rules such a repository instantiates; the App Store upload and appcast
+scripts are not here. A fork builds ad hoc or with a local identity without any of them.
 
 ## Why Postgres is built from source
 
