@@ -1,0 +1,39 @@
+[package]
+name = "garage-cli"
+description = "The `garage` command line and the `garage-mcp` stdio server in Rust: the Python CLI's commands over GarageService, which runs in the same process (docs/plans/python-removal.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_cli"
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "garage"
+path = "src/bin/garage.rs"
+
+[[bin]]
+name = "garage-mcp"
+path = "src/bin/garage-mcp.rs"
+
+[dependencies]
+garage-embed.workspace = true
+garage-facade.workspace = true
+garage-ingest.workspace = true
+garage-ingest-ffi = { path = "../garage-ingest-ffi" }
+garage-mcp.workspace = true
+garage-readers.workspace = true
+garage-service.workspace = true
+libc.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+
+[dev-dependencies]
+tokio-postgres.workspace = true
+
+[lints]
+workspace = true

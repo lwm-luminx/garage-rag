@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import PythonXPCService
+import PythonXPCService_protocol
 
 /// Gets a launcher connected to the app's private Postgres: starts Garage.app
 /// hidden when nothing is listening, then exports `GARAGE_DATABASE_URL` with the

@@ -3,7 +3,7 @@ layout: default
 title: The Backend in Rust, and the End of Python in the App
 description: What Python is still in Garage after the Rust XPC services, module by module; how GarageService (the gRPC backend) moves to a Rust crate on tokio-postgres; and the order in which the launchers, the Windows services, Python.framework and garage_python then leave.
 date: 2026-11-04
-status: Active (inventory done; stages 1 and 2 of `rust/garage-service`, the storage facade, corpus reads and operations, and stage 3's facts listing, prompts, graph projection, `ClusterFacts` and `EnrichFacts` behind a `FactExtractor` trait, in the branch; its LangExtract adapter waits on langextract-rs reaching crates.io (Rick, 2026-11-04); `EnsureLlamaModel` and `Backfill` too, so every RPC is answered; stage 4's host switch, GarageXPCService on `garage-service-ffi` without PythonKit, in a stacked branch; the launchers and Windows next; the JSON Schema generator with the CLI question in stage 5)
+status: Active (inventory done; stages 1 and 2 of `rust/garage-service`, the storage facade, corpus reads and operations, and stage 3's facts listing, prompts, graph projection, `ClusterFacts` and `EnrichFacts` behind a `FactExtractor` trait, in the branch; its LangExtract adapter waits on langextract-rs reaching crates.io (Rick, 2026-11-04); `EnsureLlamaModel` and `Backfill` too, so every RPC is answered; stage 4's host switch, GarageXPCService on `garage-service-ffi` without PythonKit, and the `garage`/`garage-mcp` launchers on `rust/garage-cli`, in a stacked branch; Windows next; the JSON Schema generator with the CLI question in stage 5)
 status_kind: active
 ---
 
@@ -48,8 +48,8 @@ Line counts are of `garage_python/src/garage_rag` on `next` at #307, without gen
 
 | What | Python it runs | Replaced by | Stage |
 | --- | --- | --- | --- |
-| `garage` launcher (`GarageLauncher` → `garage_rag.cli`, 2,025 lines) | the whole CLI, mostly thin presenters over `ops/` | a Rust `garage` binary: the same commands as gRPC calls to the app's socket, and its own server for a venv-less install | 4 |
-| `garage-mcp` launcher (`garage_rag.mcp_server.server` on stdio) | the Python MCP server | `garage-mcp`'s stdio front end (`stdio.rs`, built for #299, not yet a binary) | 4 |
+| `garage` launcher (`GarageLauncher` → `garage_rag.cli`, 2,025 lines) | the whole CLI, mostly thin presenters over `ops/` | `rust/garage-cli`: every command over GarageService run in the same process, linked into the launcher (done) | 4 |
+| `garage-mcp` launcher (`garage_rag.mcp_server.server` on stdio) | the Python MCP server | `garage-mcp`'s stdio front end over the in-process service, `rust/garage-cli`'s second binary (done) | 4 |
 | The Python extractors (`extract/`, 3,348 lines) including the Tesseract image reader (`image.py`, `tesseract.py`, `imageio.py`) | only the Python ingest loop (CLI, Windows, the smoke test) since #307/#309 | the Rust readers (`garage-readers`, `garage-ocr`) | 5 |
 | Extraction plugins (`extract/plugins.py`, `extraction.plugins`) | the Python loop starts a plugin program and routes files to it over the contract | the same contract, spoken by the Rust ingester (`garage-plugin` has the server and the in-process ABI; the client over a Unix socket is missing) | 2 |
 | The Windows app (`winapp/`, `Garage.Services.exe --service core|ingest`) | embeds CPython and runs the backend and the Python ingest loop | the Rust service and ingest binaries, started the same way | 4 |
@@ -128,8 +128,9 @@ Each stage is a pull request to `next`, stacked on the previous one while it is 
    `ListFacts`, `GetFactStats`, `ListFactPrompts`, the metadata anchors, `ClusterFacts`.
 4. **The host switch**: GarageXPCService links `garage-service-ffi` and drops PythonKit (done: the
    service on GarageXPCKit, its host the embed worker's, the bundled schema through `GARAGE_SQL_DIR`); the
-   parity test retires with the Python server; the `garage` and `garage-mcp` launchers become Rust
-   binaries (the helper bundles, entitlements and the `/bin/sh` forwarders stay); `Garage.Services.exe`
+   parity test retires with the Python server; the `garage` and `garage-mcp` launchers call the Rust
+   CLI linked in (done: `rust/garage-cli`, `garage_cli_main`/`garage_mcp_main`; the helper bundles,
+   entitlements and the `/bin/sh` forwarders stay, PythonKit leaves them); `Garage.Services.exe`
    starts the Rust binaries on Windows.
 5. **Strip**: Python.framework and the site-packages leave the bundle and the Bazel rules
    (`bazel/python_site_packages.bzl`, `framework_linking.bzl`'s Python parts); `PythonXPCService`

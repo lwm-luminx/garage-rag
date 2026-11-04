@@ -3,6 +3,7 @@
 [workspace]
 resolver = "3"
 members = [
+    "garage-cli",
     "garage-embed",
     "garage-embed-ffi",
     "garage-embed-uniffi",
@@ -26,6 +27,7 @@ members = [
 ]
 # protogen needs protoc; everything else builds without it.
 default-members = [
+    "garage-cli",
     "garage-embed",
     "garage-embed-ffi",
     "garage-embed-uniffi",

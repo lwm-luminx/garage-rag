@@ -122,6 +122,31 @@ impl Connection {
     {
         Ok(self.runtime.block_on(call(self.client.clone()))?.into_inner())
     }
+
+    /// Runs one server-streaming call, handing `each` every message as it arrives, until the
+    /// stream ends or `each` returns false.
+    ///
+    /// # Errors
+    ///
+    /// The call's own status, as a [`FacadeError`].
+    pub fn stream<T, F>(
+        &self,
+        call: impl FnOnce(Client) -> F,
+        mut each: impl FnMut(T) -> bool,
+    ) -> Result<(), FacadeError>
+    where
+        F: Future<Output = Result<tonic::Response<tonic::Streaming<T>>, tonic::Status>>,
+    {
+        self.runtime.block_on(async {
+            let mut stream = call(self.client.clone()).await?.into_inner();
+            while let Some(item) = stream.message().await? {
+                if !each(item) {
+                    break;
+                }
+            }
+            Ok(())
+        })
+    }
 }
 
 async fn connect(target: &GrpcTarget) -> Result<Channel, FacadeError> {

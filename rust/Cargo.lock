@@ -942,6 +942,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-cli"
+version = "0.1.0"
+dependencies = [
+ "garage-embed",
+ "garage-facade",
+ "garage-ingest",
+ "garage-ingest-ffi",
+ "garage-mcp",
+ "garage-readers",
+ "garage-service",
+ "libc",
+ "serde_json",
+ "tokio",
+ "tokio-postgres",
+ "tonic",
+]
+
+[[package]]
 name = "garage-embed"
 version = "0.1.0"
 dependencies = [

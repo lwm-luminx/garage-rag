@@ -16,6 +16,7 @@ use std::process::ExitCode;
 
 /// The FFI crates and the header each exports.
 const CRATES: &[(&str, &str)] = &[
+    ("garage-cli", "include/garage_cli.h"),
     ("garage-embed-ffi", "include/garage_embed.h"),
     ("garage-service-ffi", "include/garage_service.h"),
     ("garage-text-ffi", "include/garage_text.h"),
