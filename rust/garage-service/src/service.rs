@@ -8,10 +8,12 @@ use std::sync::{Arc, PoisonError, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use deadpool_postgres::Pool;
+use garage_embed::Host;
 use garage_facade::proto;
 use garage_facade::proto::garage_service_server::GarageService as GarageServiceTrait;
 use garage_ingest::WalkPolicy;
 use garage_ingest::scanner::{ScanOptions, ScanResult, Ticker, scan_source};
+use garage_mcp::chat::{ChatModel, ChatSettings};
 use garage_mcp::pyjson;
 use serde_json::{Map, Value};
 use tokio::sync::mpsc;
@@ -20,6 +22,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 use crate::catalog::{self, ModelRequest};
+use crate::clusters::{self, ChatDistiller, ClusterParams, ClusterProgress, ClusterRun, ClusterSummary, Distill};
 use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
 use crate::db::{Client, isoformat_opt};
 use crate::embedding::{backfill_distilled, count_pending, pending_chunks, store_vectors};
@@ -29,6 +32,7 @@ use crate::gateway::{self, AuthorPayload, ChunkPayload, DocumentPayload};
 use crate::mcp_install::{self, InstallRequest};
 use crate::migrate::{apply_migrations, pending_migrations};
 use crate::models::{count_vectors, drop_model, get_model, list_models, register_model, set_default_model};
+use crate::prompts::EffectivePrompt;
 use crate::registry::{StoragePlan, truncate_vector};
 use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
 use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
@@ -51,6 +55,9 @@ pub struct GarageService {
     pool: Pool,
     config: RwLock<Config>,
     embedder: Arc<dyn QueryEmbedder>,
+    /// The process's way to a model server, for the chat model the long jobs ask (`ClusterFacts`'s
+    /// distiller); without one those jobs run without a model.
+    host: Option<Arc<dyn Host>>,
     sql_dir: PathBuf,
     /// Whether every caller is one the server can vouch for (the token, or the Unix socket), so
     /// the config-changing methods may be answered (`callers_vouched_for`).
@@ -68,7 +75,22 @@ impl GarageService {
         callers_vouched_for: bool,
     ) -> Result<Self> {
         let pool = db::pool_for(&config.database_url())?;
-        Ok(Self { pool, config: RwLock::new(config), embedder, sql_dir, callers_vouched_for })
+        Ok(Self { pool, config: RwLock::new(config), embedder, host: None, sql_dir, callers_vouched_for })
+    }
+
+    /// The same service with a host for its chat model.
+    #[must_use]
+    pub fn with_host(mut self, host: Arc<dyn Host>) -> Self {
+        self.host = Some(host);
+        self
+    }
+
+    /// The configured chat model (`LocalChatModel`), or why there is none.
+    fn chat_model(&self, config: &Config) -> Result<ChatModel> {
+        let Some(host) = self.host.clone() else {
+            return Err(ServiceError::Unavailable("this process has no way to reach a model server".into()));
+        };
+        ChatModel::new(&chat_settings(config), host).map_err(|e| ServiceError::invalid(e.0))
     }
 
     /// The configuration in effect.
@@ -1232,9 +1254,34 @@ impl GarageServiceTrait for GarageService {
 
     async fn cluster_facts(
         &self,
-        _r: Request<proto::ClusterFactsRequest>,
+        request: Request<proto::ClusterFactsRequest>,
     ) -> std::result::Result<Response<Self::ClusterFactsStream>, Status> {
-        unimplemented("ClusterFacts")
+        let r = request.into_inner();
+        let config = self.config();
+        let params = ClusterParams::from_config(
+            &config,
+            (r.threshold != 0.0).then_some(r.threshold),
+            (r.neighbors != 0).then_some(i64::from(r.neighbors)),
+        )?;
+        let distiller: Option<Arc<dyn Distill>> = if r.no_distill {
+            None
+        } else {
+            Some(Arc::new(ChatDistiller { chat: Arc::new(self.chat_model(&config)?) }))
+        };
+        let mut client = self.client().await?;
+        let model = get_model(&client, Some(&r.model), &config.default_embedding_model()).await?;
+        let schema = if r.no_graph { None } else { Some(prompts::graph_schema(&configured_prompts(&config)?)?) };
+        let ef_search = config.hnsw_ef_search();
+        let (tx, rx) = mpsc::channel(64);
+        tokio::spawn(async move {
+            let job = ClusterJob { model, params, full: r.full, distiller, schema, ef_search };
+            let result = run_cluster(&mut client, job, &tx).await;
+            let _ = match result {
+                Ok(finished) => tx.send(Ok(finished)).await,
+                Err(error) => tx.send(Err(Status::from(error))).await,
+            };
+        });
+        ok(Box::pin(ReceiverStream::new(rx)) as Self::ClusterFactsStream)
     }
 
     async fn list_fact_prompts(
@@ -1543,6 +1590,121 @@ async fn run_scan(
         }))
         .await;
     Ok(())
+}
+
+/// The chat model's configuration (`facts.*`, `inference.*`, `identity.name`, the servers).
+fn chat_settings(config: &Config) -> ChatSettings {
+    let text = |name: &str| match config.setting(name) {
+        Ok(Value::String(value)) => value,
+        _ => String::new(),
+    };
+    let mut settings = ChatSettings { servers: config.embed_settings(), ..ChatSettings::default() };
+    for (value, field) in
+        [(text("facts.provider"), &mut settings.fact_provider), (text("facts.model"), &mut settings.fact_model)]
+    {
+        if !value.is_empty() {
+            *field = value;
+        }
+    }
+    settings.inference_provider = text("inference.provider");
+    settings.inference_model = text("inference.model");
+    settings.self_name = config.self_name();
+    settings
+}
+
+/// The effective fact prompts, from `facts.prompts` (`configured_prompts`).
+fn configured_prompts(config: &Config) -> Result<Vec<EffectivePrompt>> {
+    prompts::effective_prompts(&prompts::parse_prompts(&config.setting("facts.prompts")?)?)
+}
+
+type ClusterSender = mpsc::Sender<std::result::Result<proto::ClusterFactsStatus, Status>>;
+
+/// One `ClusterFacts` run as asked for.
+struct ClusterJob {
+    model: crate::models::EmbeddingModel,
+    params: ClusterParams,
+    full: bool,
+    distiller: Option<Arc<dyn Distill>>,
+    /// The graph to rebuild afterwards; `None` with `no_graph`.
+    schema: Option<prompts::GraphSchema>,
+    ef_search: i64,
+}
+
+/// A progress report as the RPC streams it (`on_progress`).
+fn cluster_progress(state: &ClusterProgress) -> proto::ClusterFactsStatus {
+    proto::ClusterFactsStatus {
+        phase: state.phase.clone(),
+        facts: state.facts,
+        unembedded: state.unembedded,
+        scanned: state.scanned,
+        to_distill: state.to_distill,
+        distilled: state.distilled,
+        full: state.full,
+        documents: state.documents,
+        nodes: state.nodes,
+        attached: state.attached,
+        candidates: state.candidates,
+        message: state.message(),
+        ..Default::default()
+    }
+}
+
+/// Runs the pass, streaming each progress line with a message (a report the channel cannot take
+/// at the moment is dropped; a closed channel ends the run), rebuilds the graph when asked, and
+/// returns the `finished` status.
+async fn run_cluster(client: &mut Client, job: ClusterJob, tx: &ClusterSender) -> Result<proto::ClusterFactsStatus> {
+    let progress = tx.clone();
+    let mut report = move |state: &ClusterProgress| -> bool {
+        if state.message().is_empty() {
+            return true;
+        }
+        !matches!(progress.try_send(Ok(cluster_progress(state))), Err(mpsc::error::TrySendError::Closed(_)))
+    };
+    let distill_model = job.distiller.as_ref().map(|d| d.model_id()).unwrap_or_default();
+    let run = ClusterRun {
+        params: job.params.clone(),
+        full: job.full,
+        distiller: job.distiller,
+        report_to: Some(&mut report),
+        ef_search: job.ef_search,
+    };
+    let state = clusters::cluster_facts(client, &job.model, run).await?;
+    let graph = match &job.schema {
+        Some(schema) => {
+            let summary = graph::rebuild_graph(client, schema).await?;
+            if summary.available { summary.message() } else { String::new() }
+        }
+        None => String::new(),
+    };
+    let summary =
+        ClusterSummary { model: job.model.slug.clone(), threshold: job.params.threshold, distill_model, state, graph };
+    let s = &summary.state;
+    Ok(proto::ClusterFactsStatus {
+        phase: "finished".to_owned(),
+        full: s.full,
+        documents: s.documents,
+        restatements: s.restatements,
+        nodes: s.nodes,
+        attached: s.attached,
+        accepted: s.accepted,
+        facts: s.facts,
+        unembedded: s.unembedded,
+        distilled_facts: s.distilled_facts,
+        clusters: s.clusters,
+        clustered_facts: s.clustered_facts,
+        dissolved: s.dissolved,
+        failed: s.failed,
+        withheld: s.withheld,
+        model: summary.model.clone(),
+        distill_model: summary.distill_model.clone(),
+        graph: summary.graph.clone(),
+        errors: s.errors.clone(),
+        message: summary.message(),
+        scanned: 0,
+        to_distill: 0,
+        distilled: 0,
+        candidates: 0,
+    })
 }
 
 /// Python's `repr()` of a string, for the messages that carried one (`{query!r}`).

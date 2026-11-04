@@ -265,7 +265,9 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   (`mcp_install.rs`), each with the Python message; the Facts page's reads (`ops/facts.py`: `ListFacts`/`GetFactStats`,
   `facts.rs`; `ListFactPrompts` over `config/fact_prompts.py`'s merge and hashes, `prompts.rs`, which also validates
   `facts.prompts`) and the AGE projection with its three reads (`db/graph.py`: `rebuild_graph`, `GetGraphLabels`/
-  `FindGraphVertices`/`GetGraphNeighborhood`, `graph.rs`; `available = false` without AGE or a built graph); the
+  `FindGraphVertices`/`GetGraphNeighborhood`, `graph.rs`; `available = false` without AGE or a built graph) and
+  `ClusterFacts` (`enrich/clusters.py` step for step in `clusters.rs`: the guard, both levels, anchors, the distiller over
+  `garage_mcp::chat` run in `spawn_blocking`, one transaction, progress streamed; `tests/clusters.rs`); the
   other RPCs answer `UNIMPLEMENTED` until their stage.
   `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is
   `test_postgres.py`'s cases for what is ported, `tests/grpc.rs` the service over a socket and a port and

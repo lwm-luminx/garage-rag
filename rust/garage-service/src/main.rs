@@ -75,12 +75,11 @@ fn run() -> Result<(), String> {
     let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build().map_err(|e| e.to_string())?;
     let token = token_from_env();
     let vouched = config_change_allowed(token.is_some(), matches!(endpoint, Endpoint::Unix(_)));
-    let embedder = Arc::new(HostEmbedder {
-        host: Arc::new(PlainHost::new(runtime.handle().clone())),
-        settings: config.embed_settings(),
-    });
+    let host: Arc<dyn garage_embed::Host> = Arc::new(PlainHost::new(runtime.handle().clone()));
+    let embedder = Arc::new(HostEmbedder { host: host.clone(), settings: config.embed_settings() });
     let service = GarageService::new(config, embedder, sql_dir(options.sql_dir.as_deref()), vouched)
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .with_host(host);
     println!("Garage gRPC server listening on {endpoint} (PID: {})", std::process::id());
     let result = runtime.block_on(serve(service, &endpoint, token.as_deref(), stopped()));
     println!("Garage gRPC server stopped.");

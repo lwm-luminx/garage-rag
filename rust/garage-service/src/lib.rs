@@ -10,6 +10,7 @@
 
 pub mod auth;
 pub mod catalog;
+pub mod clusters;
 pub mod config;
 pub mod corpus;
 pub mod db;

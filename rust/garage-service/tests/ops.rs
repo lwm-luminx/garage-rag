@@ -12,7 +12,7 @@ use std::sync::Arc;
 use garage_facade::proto;
 use garage_facade::proto::garage_service_client::GarageServiceClient;
 use garage_service::config::Config;
-use garage_service::models::EmbeddingModel;
+use garage_service::models::{EmbeddingModel, ModelSpec, register_model};
 use garage_service::search::QueryEmbedder;
 use garage_service::server::{Endpoint, serve};
 use garage_service::service::{GarageService, sql_dir};
@@ -596,7 +596,7 @@ fn settings_are_written_and_reloaded_and_clients_are_registered() {
 
 #[test]
 fn facts_prompts_and_the_graph_answer_over_grpc() {
-    common::with_db_url(|_, url| {
+    common::with_db_url(|pool, url| {
         Box::pin(async move {
             let dir = scratch();
             let config_path = dir.join("garage.json");
@@ -669,6 +669,42 @@ fn facts_prompts_and_the_graph_answer_over_grpc() {
             let around =
                 client.get_graph_neighborhood(proto::GraphNeighborhoodRequest::default()).await.unwrap().into_inner();
             assert!(!around.available && around.center.is_none());
+
+            // ClusterFacts streams its progress and totals; without a model to compare under it
+            // says so, and the binary's chat model is asked only when the process can reach one.
+            let cluster = |model: &str, threshold: f64, no_distill: bool, no_graph: bool| proto::ClusterFactsRequest {
+                model: model.into(),
+                threshold,
+                neighbors: 0,
+                no_distill,
+                no_graph,
+                full: false,
+            };
+            let missing = client.cluster_facts(cluster("", 0.0, true, true)).await.unwrap_err();
+            assert_eq!(missing.code(), Code::NotFound);
+            assert!(missing.message().starts_with("no default model registered"), "{}", missing.message());
+            let bad = client.cluster_facts(cluster("", 2.0, true, true)).await.unwrap_err();
+            assert_eq!(bad.code(), Code::InvalidArgument);
+            assert_eq!(bad.message(), "threshold must be above 0 and at most 1, not 2.0");
+            let mut db = pool.get().await.unwrap();
+            register_model(&mut db, &ModelSpec::new("tiny", "tiny", 8), true).await.unwrap();
+            let no_host = client.cluster_facts(cluster("tiny", 0.0, false, true)).await.unwrap_err();
+            assert_eq!(no_host.code(), Code::Unavailable);
+            let mut stream = client.cluster_facts(cluster("tiny", 0.0, true, false)).await.unwrap().into_inner();
+            let mut events = Vec::new();
+            while let Some(event) = stream.message().await.unwrap() {
+                events.push(event);
+            }
+            let finished = events.last().unwrap();
+            assert_eq!((finished.phase.as_str(), finished.model.as_str(), finished.full), ("finished", "tiny", true));
+            assert_eq!(
+                finished.message,
+                "0 potential facts distilled into 0; 0 of those group 0 restatements; regrouped the corpus"
+            );
+            assert!(finished.graph.is_empty() || finished.graph.starts_with("graph 'garage': "), "{}", finished.graph);
+            assert!(events.iter().all(|e| e.phase == "finished" || !e.message.is_empty()));
+            let params_key: String = db.query_one("SELECT params FROM fact_cluster_state", &[]).await.unwrap().get(0);
+            assert_eq!(params_key, "t=0.9;s=0.95;d=0.05;g=50;r=4");
             server.stop().await;
         })
     });
