@@ -1,4 +1,4 @@
-From c31ad9eb64ab5328facbbda2cb61e8e4dd151219 Mon Sep 17 00:00:00 2001
+From f0b801899fd8e2335e7e324e9af9e96706336867 Mon Sep 17 00:00:00 2001
 From: Rick Mark-Penwell <rickmark@outlook.com>
 Date: Sun, 27 Sep 2026 20:32:16 +0000
 Subject: [PATCH v1 1/3] Add a pthread-based PGSemaphore implementation and
@@ -189,7 +189,7 @@ index e415952..eaa2d49 100644
        <term><option>-Dtap_tests={ auto | enabled | disabled }</option></term>
        <listitem>
 diff --git a/meson.build b/meson.build
-index d05634f..120372d 100644
+index 3595c84..7b67cad 100644
 --- a/meson.build
 +++ b/meson.build
 @@ -3293,6 +3293,14 @@ if sema_kind == 'unnamed_posix' and \
@@ -536,10 +536,10 @@ index 661c4a9..c6e5e0c 100644
  #undef USE_OPENSSL
  
 diff --git a/src/tools/pgindent/typedefs.list b/src/tools/pgindent/typedefs.list
-index 656f1f6..13f33d0 100644
+index 553162c..d39d574 100644
 --- a/src/tools/pgindent/typedefs.list
 +++ b/src/tools/pgindent/typedefs.list
-@@ -1951,6 +1951,7 @@ PGQueryClass
+@@ -1950,6 +1950,7 @@ PGQueryClass
  PGRUsage
  PGSemaphore
  PGSemaphoreData

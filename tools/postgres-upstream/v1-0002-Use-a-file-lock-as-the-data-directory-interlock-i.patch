@@ -1,4 +1,4 @@
-From c5b984b52d5526bb97ac50e0cff9d8317581fc0e Mon Sep 17 00:00:00 2001
+From 4dc5c669d588e5b37cab06392b9e89546fe4946f Mon Sep 17 00:00:00 2001
 From: Rick Mark-Penwell <rickmark@outlook.com>
 Date: Sun, 27 Sep 2026 20:32:16 +0000
 Subject: [PATCH v1 2/3] Use a file lock as the data directory interlock in
@@ -41,7 +41,7 @@ Discussion: https://postgr.es/m/a90b5411-705f-4286-bd81-a26c520a6cfb%40technowle
  3 files changed, 237 insertions(+), 2 deletions(-)
 
 diff --git a/doc/src/sgml/runtime.sgml b/doc/src/sgml/runtime.sgml
-index d998491..30f85ea 100644
+index 6e9f7f4..806c23d 100644
 --- a/doc/src/sgml/runtime.sgml
 +++ b/doc/src/sgml/runtime.sgml
 @@ -719,6 +719,19 @@ psql: error: connection to server on socket "/tmp/.s.PGSQL.5432" failed: No such
@@ -367,16 +367,16 @@ index 2e3886c..441238f 100644
  	if (AnonymousShmem != NULL)
  	{
 diff --git a/src/include/utils/pidfile.h b/src/include/utils/pidfile.h
-index 82b4c19..f698537 100644
+index 825e51a..f62cd4c 100644
 --- a/src/include/utils/pidfile.h
 +++ b/src/include/utils/pidfile.h
 @@ -23,7 +23,9 @@
   *		4	port number
   *		5	first Unix socket directory path (empty if none)
   *		6	first listen_address (IP address or "*"; empty if no TCP port)
-- *		7	shared memory key (empty on Windows)
-+ *		7	shared memory key (empty on Windows; "<inode> 0" in an
-+ *			APPSTORE build, which holds a file lock instead of a
+- *		7	shared memory key and ID (empty on Windows)
++ *		7	shared memory key and ID (empty on Windows; "<inode> 0" in
++ *			an APPSTORE build, which holds a file lock instead of a
 + *			System V segment)
   *		8	postmaster status (see values below)
   *
