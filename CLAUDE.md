@@ -129,9 +129,11 @@ on fakes.
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
     cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `format`, `gazelle`, `buildifier` and `winapp-bazel`
+    binding's tests), `swiftcheck`, `buildifier` (the Aspect CLI's task, which posts `aspect / buildifier`)
+    and `winapp-bazel`
     (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
-  - On macOS: `lint`, which analyzes Apple targets.
+  - Nothing else: `aspect format` (Ruff), `aspect lint` (Ruff) and `aspect gazelle` (only
+    `proto/BUILD.bazel` since the Python package left) run locally, not in CI (Rick, 2026-11-04).
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);
@@ -846,11 +848,10 @@ are dated so a stale one can be spotted.
   the site (garagerag.app, GitHub Pages) publish from. `main` flows into `next` through a merge PR merged with
   "Create a merge commit" (Rick, 2026-09-30). Both branches are protected by one ruleset, "Protected: main and
   next": PR required (merge or squash), signed commits, no force-push or deletion.
-- Required checks (Rick, 2026-11-04): `aspect / format`, `aspect / buildifier`, `aspect / gazelle` and
-  `aspect / lint`, the check runs the Aspect Workflows GitHub App posts for those tasks (they take precedence over
-  the Actions jobs that run them), plus the Actions jobs "Swift: syntax check (tree-sitter)" and "Rust: fmt,
-  clippy and tests (rust/)". The `aspect /` checks appear only when CI signs in to Aspect (`ASPECT_API_TOKEN`), so a
-  fork's PR needs an admin bypass. winapp-bazel and the macOS, Windows and known-answers jobs are not required;
+- Required checks (Rick, 2026-11-04): `aspect / buildifier`, the check run the Aspect Workflows GitHub App posts
+  for the `buildifier` job's task (it takes precedence over the job's own check), plus the Actions jobs "Swift:
+  syntax check (tree-sitter)" and "Rust: fmt, clippy and tests (rust/)". The `aspect /` check appears only when CI
+  signs in to Aspect (`ASPECT_API_TOKEN`), so a fork's PR needs an admin bypass. winapp-bazel and the macOS, Windows and known-answers jobs are not required;
   the notarized Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job or
   task means updating the ruleset with it.
 - A PR that contains merge commits cannot be rebase-merged on GitHub; it needs "Create a merge commit".

@@ -7,8 +7,7 @@ name: CI
 #   running), the protogen and cbindgen output checks, the third-party notices
 #   check, and the .NET binding's tests against the built library.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
-# - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
-# - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
+# - `buildifier`: the Aspect CLI's Starlark formatting task (`aspect / buildifier`).
 #
 # The Bazel build and test of //... (the app, Postgres, ICU and llama.cpp from
 # source) is in macos.yaml. It runs only when the build could have changed, and
@@ -104,28 +103,6 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
 
-  format:
-    name: "Format: Python tools and Starlark formatting"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      - name: aspect format
-        run: aspect format --task:name format
-
-  gazelle:
-    name: "Gazelle: BUILD files match the proto sources"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      - name: aspect gazelle
-        run: aspect gazelle --task:name gazelle
-
   # The Bazel build of winapp/ (winapp/README.md, "Bazel"): every project but the WinUI app and
   # its FlaUI tests, compiled and tested on Linux, plus the check that each BUILD.bazel still
   # mirrors its csproj. Plain `bazel`, not `aspect`: Aspect adds --config=ci on CI, whose macOS
@@ -160,6 +137,9 @@ jobs:
             ~/.cache/bazel-repo
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
+  # Starlark formatting. The Python package left (docs/plans/python-removal.md), and with it
+  # the format (Ruff), lint (Ruff) and gazelle (one proto BUILD file) tasks: what Python is
+  # left is a dozen development scripts run outside CI.
   buildifier:
     name: "Buildifier: Starlark files"
     runs-on: ubuntu-latest
@@ -170,16 +150,3 @@ jobs:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
         run: aspect buildifier --task:name buildifier
-
-  lint:
-    name: "Lint: Ruff over //..., Apple targets included (macOS)"
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      # //tools:bazel_env has no sources to lint, and analyzing it fetches cosmopolitan binaries
-      # (bazel_env.bzl -> rules_coreutils -> ape) from hosts outside our control.
-      - name: aspect lint //...
-        run: aspect lint --task:name lint -- //... -//tools:bazel_env
