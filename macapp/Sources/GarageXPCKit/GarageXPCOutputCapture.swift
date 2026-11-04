@@ -1,7 +1,6 @@
 import Foundation
 import Darwin
 import OSLog
-import PythonXPCService_protocol
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCOutputCapture")
 

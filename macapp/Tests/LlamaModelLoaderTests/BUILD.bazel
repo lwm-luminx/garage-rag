@@ -10,31 +10,19 @@ swift_library(
     deps = [
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",
-        "//macapp/Sources/LlamaModelLoader:LlamaModelLoaderCore",
         "//macapp/Sources/LlamaServiceHost",
-        "//macapp/Sources/PythonXPCService",
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Tests/LlamaTestSupport",
     ],
 )
 
 macos_unit_test(
     name = "LlamaModelLoaderTests",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-    ],
     bundle_id = "me.rickmark.garage-rag.LlamaModelLoaderTests",
     bundle_name = "LlamaModelLoaderTests",
-    # LlamaModelLoader -> PythonXPCService -> GaragePythonEmbed calls the CPython C
-    # API, so the test bundle has to link the interpreter like the app does.
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-    ],
     minimum_os_version = "14.0",
     visibility = ["//visibility:public"],
     deps = [
         ":LlamaModelLoaderTests_lib",
-        "//ext/python:python_framework",
     ],
 )

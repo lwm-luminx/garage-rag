@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "FolderAccessRelay")
 

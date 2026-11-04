@@ -2,7 +2,7 @@
 
 The archive is assembled here rather than with rules_apple's `xcarchive`, which
 unpacks the app with Python's zipfile: that writes symlinks out as plain files,
-so a versioned framework (Python.framework's Versions/Current, Python and
+so a versioned framework (Sparkle.framework's Versions/Current, Sparkle and
 Resources links) lost its signature in the archive while the same framework
 in the .app was signed. `ditto` keeps symlinks, and the action verifies the
 archived app's signature so a broken one fails the build, not the upload.
@@ -59,7 +59,7 @@ for dsym in "$@"; do
 done
 
 # App Store Connect asks for a dSYM matching the UUID of every Mach-O in the app. Bazel makes them
-# for the Swift targets only; the rest (Postgres, ICU, Python, the extension modules) are built by
+# for the Swift targets only; the rest (Postgres, ICU, the Rust libraries) are built by
 # their own build systems, so dsymutil makes one here from whatever debug information the binary
 # keeps. Symlinks and binaries whose UUIDs already have a dSYM are skipped.
 known="$work/uuids"

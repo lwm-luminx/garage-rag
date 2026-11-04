@@ -3,7 +3,7 @@ import GRPC
 import NIO
 import SwiftProtobuf
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 import proto_garage_proto_swift
 
 public enum GarageGRPCStatus: Equatable {

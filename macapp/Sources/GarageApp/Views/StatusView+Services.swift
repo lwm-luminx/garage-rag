@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 /// The Index Manager box (the gRPC backend) and the Helper Services box (one row per XPC helper),
 /// each row with Test, Restart and a chevron to its status report, self tests and the last test's
@@ -252,9 +252,6 @@ extension StatusView {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 4) {
                     detailLine("Process", processLine(service, report: report), monospaced: true)
-                    if let report {
-                        detailLine("Python", pythonLine(report.python), monospaced: report.python.error == nil, isError: report.python.error != nil)
-                    }
                     if let path = report?.logFilePath, !path.isEmpty {
                         detailLine("Log file", MenuBarStatus.abbreviatedPath(path), monospaced: true)
                     }
@@ -355,21 +352,6 @@ extension StatusView {
             parts.append("up \(formatUptime(report.uptimeSeconds))")
         }
         return parts.joined(separator: " · ")
-    }
-
-    private func pythonLine(_ python: GarageXPCPythonStatus) -> String {
-        // A helper built without Python (GarageXPCKit alone, such as ModelDownloadXPCService).
-        if python.state == "notUsed" {
-            return "Not used"
-        }
-        if let error = python.error, !error.isEmpty {
-            return "\(python.state): \(error)"
-        }
-        let version = python.version?.split(separator: " ").first.map(String.init) ?? python.state
-        var line = version
-        if let home = python.home, !home.isEmpty { line += " · \(MenuBarStatus.abbreviatedPath(home))" }
-        if let initMs = python.initializationMs { line += String(format: " · started in %.0f ms", initMs) }
-        return line
     }
 
     private func managedServiceLine(_ managed: GarageXPCManagedServiceStatus) -> some View {

@@ -111,8 +111,7 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
         [
             GarageXPCSelfTest(
                 name: "Ingest Library",
-                description: "The Rust ingest loop is linked into this process and answers (the walker's default rules).",
-                requiresPython: false
+                description: "The Rust ingest loop is linked into this process and answers (the walker's default rules)."
             ) {
                 switch GarageIngestRunner.libraryCheck() {
                 case .success(let summary):
@@ -123,8 +122,7 @@ final class GarageIngestXPCServiceDelegate: GarageXPCServiceBase, GarageIngestXP
             },
             GarageXPCSelfTest(
                 name: "GarageService Address",
-                description: "The app has told this service where GarageService listens, which every ingest stores through.",
-                requiresPython: false
+                description: "The app has told this service where GarageService listens, which every ingest stores through."
             ) { [weak self] in
                 guard let self, let target = self.facadeTarget(grpcHost: nil, grpcPort: nil) else {
                     throw GarageXPCSelfTestSkipped("GARAGE_GRPC_SOCKET / GARAGE_GRPC_PORT are not configured")

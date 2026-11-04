@@ -52,10 +52,10 @@ public enum GarageSockets {
         path.utf8.count <= maxPathLength
     }
 
-    /// The variable that tells Python where LlamaXPCService's llama-server API listens.
+    /// The variable that tells the Rust CLI where LlamaXPCService's llama-server API listens.
     public static let llamaSocketVariable = "GARAGE_LLAMA_SOCKET"
 
-    /// Sets `GARAGE_LLAMA_SOCKET` for the Python this process embeds, before it starts, unless it is
+    /// Sets `GARAGE_LLAMA_SOCKET` for the Rust CLI this process links, before it starts, unless it is
     /// set already or `GARAGE_LLAMA_HTTP_PORT` moved LlamaXPCService to a loopback port.
     public static func exportLlamaSocket() {
         let environment = ProcessInfo.processInfo.environment
@@ -81,8 +81,8 @@ public enum GarageSockets {
     ///
     /// Stale-socket recovery (`removeStaleSocket` and then the bind) is one critical section under
     /// it, so two processes recovering the same socket take turns and the second sees the first's
-    /// live socket instead of unlinking it after both probes found the old one dead. The Python
-    /// gRPC server takes the same lock for its socket. The lock file stays in place: every process
+    /// live socket instead of unlinking it after both probes found the old one dead. GarageService
+    /// takes the same lock for its socket. The lock file stays in place: every process
     /// on the path must lock the same inode, and it lives in the owner-only socket folder.
     public static func withRecoveryLock<T>(at path: String, _ body: () throws -> T) throws -> T {
         // The lock file sits beside the socket, so its folder must exist first: LlamaXPCService can

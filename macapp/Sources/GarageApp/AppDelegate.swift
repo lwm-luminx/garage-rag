@@ -1,5 +1,5 @@
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 /// Keeps the app running in the menu bar after the main window closes (this
 /// is a menu-bar-resident app, not a document-based one), and makes sure the

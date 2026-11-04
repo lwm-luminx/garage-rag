@@ -1,13 +1,11 @@
 import Foundation
 import OSLog
-import PythonXPCService_protocol
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCServiceHost")
 
 /// A long-running component owned by an XPC helper (gRPC server, MCP server, worker pool, ...).
 ///
 /// All callbacks are invoked on the host's background thread, never on the XPC listener thread.
-/// Implementations that call into Python must wrap those calls in `GaragePythonRuntime.shared.withGIL`.
 public protocol GarageManagedService: AnyObject {
     /// Stable identifier shown in status reports.
     var name: String { get }

@@ -26,12 +26,11 @@ swift_library(
         ":GarageMCPFFI",
         "//macapp/Sources/GarageEmbedWorker",
         "//macapp/Sources/GarageXPCKit",
-        "//macapp/Sources/LlamaModelLoader:LlamaModelLoaderCore",
+        "//macapp/Sources/LlamaModelLoader",
     ],
 )
 
-# The service binary. It is built on GarageXPCKit and links neither Python.framework nor
-# PythonXPCService.framework.
+# The service binary, built on GarageXPCKit.
 macos_xpc_service(
     name = "GarageMCPServerService",
     bundle_id = "me.rickmark.garage-rag.mcp-server-xpc",

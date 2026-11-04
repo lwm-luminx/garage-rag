@@ -2,7 +2,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 
 # Which bundled PostgreSQL major version to build against: 18 (//ext/postgres, default) or
 # the 19 beta. //ext/postgres selects its source and patches by this flag, and pgvector, Apache AGE,
-# the app bundle and PythonXPCService all go through the aliases below, so flipping it switches the
+# the app bundle and the Rust backend all go through the aliases below, so flipping it switches the
 # whole tree:
 #   aspect build //:macapp --//ext:postgres_version=19    (or --config=pg19)
 # A cluster initdb'd by one major version won't start under the other - switching an
@@ -83,30 +83,6 @@ alias(
 )
 
 alias(
-    name = "python",
-    actual = "//ext/python:python_3_14t",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "python_framework",
-    actual = "//ext/python:python_framework",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "Python",
-    actual = "//ext/python:Python",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "python_framework_import",
-    actual = "//ext/python:Python",
-    visibility = ["//visibility:public"],
-)
-
-alias(
     name = "llama_cpp",
     actual = "//ext/llama_cpp:llama_cpp",
     visibility = ["//visibility:public"],
@@ -124,25 +100,11 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "PythonKit",
-    actual = "//ext/pythonkit:PythonKit_swift",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "pythonkit",
-    actual = "//ext/pythonkit:PythonKit_swift",
-    visibility = ["//visibility:public"],
-)
-
-# The per-dependency codesign_test targets live next to the rules that produce
-# the binaries they check (//ext/python); this suite keeps
-# `bazel test //ext:tests` covering all of them.
+# The per-dependency build tests live next to the rules that produce the binaries they check;
+# this suite keeps `bazel test //ext:tests` covering all of them.
 test_suite(
     name = "tests",
     tests = [
         "//ext/age:age_build_test",
-        "//ext/python:python_framework_codesign_test",
     ],
 )

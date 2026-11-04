@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class GarageMCPServiceTests: XCTestCase {

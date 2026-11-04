@@ -98,18 +98,10 @@ signing_identity = sys.argv[3]
 options = sys.argv[4]
 
 # 0. Clean unneeded directories from the staged app bundle before signing
-for site_python_test in [
-    os.path.join(app_bundle, "Contents/Resources/site-python/test"),
-    os.path.join(app_bundle, "Contents/Frameworks/PythonXPCService.framework/site-python/test"),
-    os.path.join(app_bundle, "Contents/Frameworks/PythonXPCService.framework/Resources/site-python/test"),
-]:
-    if os.path.exists(site_python_test):
-        shutil.rmtree(site_python_test, ignore_errors=True)
-
 frameworks_dir = os.path.join(app_bundle, "Contents/Frameworks")
 if os.path.exists(frameworks_dir):
     for fw in os.listdir(frameworks_dir):
-        if fw == "Python.framework" or fw.endswith(".framework"):
+        if fw.endswith(".framework"):
             versions_dir = os.path.join(frameworks_dir, fw, "Versions")
             if os.path.isdir(versions_dir):
                 for ver in os.listdir(versions_dir):

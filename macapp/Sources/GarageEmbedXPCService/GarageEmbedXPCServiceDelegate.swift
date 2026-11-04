@@ -2,8 +2,8 @@ import EmbedClient
 import Foundation
 import GarageEmbedWorker
 import GarageXPCKit
-import ImageEmbedBridgeCore
-import LlamaModelLoaderCore
+import ImageEmbedBridge
+import LlamaModelLoader
 import OSLog
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.embed-xpc", category: "GarageEmbedXPCService")
@@ -45,8 +45,7 @@ final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCS
         [
             GarageXPCSelfTest(
                 name: "Embed Worker",
-                description: "The Rust embed worker is linked into this process and answers (an embedding with no provider must be refused).",
-                requiresPython: false
+                description: "The Rust embed worker is linked into this process and answers (an embedding with no provider must be refused)."
             ) {
                 switch GarageEmbedWorker.embedTexts(provider: "none", modelRef: "none", texts: ["self test"], host: GarageEmbedWorkerHost()) {
                 case .failure(let failure) where failure.kind == .failed:
@@ -59,8 +58,7 @@ final class GarageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageEmbedXPCS
             },
             GarageXPCSelfTest(
                 name: "gRPC Connection",
-                description: "The embed worker reaches GarageService (its socket, or host and port) with the app's token and lists the registered models.",
-                requiresPython: false
+                description: "The embed worker reaches GarageService (its socket, or host and port) with the app's token and lists the registered models."
             ) { [weak self] in
                 guard let self, let target = self.grpc else {
                     throw GarageXPCSelfTestSkipped("GARAGE_GRPC_SOCKET / GARAGE_GRPC_PORT are not configured")

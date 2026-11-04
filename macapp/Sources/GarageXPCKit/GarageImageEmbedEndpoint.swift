@@ -6,7 +6,7 @@ import Foundation
 /// private to the app that bundles it: a sibling service cannot look
 /// `me.rickmark.garage-rag.image-embed-xpc` up by name. So the app asks it for the endpoint of an
 /// anonymous listener (`GarageImageEmbedXPCServiceProtocol.getListenerEndpoint`) and hands it to
-/// every service whose Python embeds with `image_xpc` models (garage-xpc: backfill and search;
+/// every service that embeds with `image_xpc` models (garage-xpc: backfill and search;
 /// mcp-server-xpc: rag_search; embed-xpc: the embed worker), which then connect with
 /// `NSXPCConnection(listenerEndpoint:)`. The app hands it over again whenever either side is relaunched.
 @objc(GarageImageEmbedEndpointReceiverProtocol)

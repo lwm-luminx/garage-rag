@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// Represents a source registered in the configuration file or the Postgres database.
 public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {

@@ -1,6 +1,6 @@
 import Foundation
 import MCPServerClient
-import PythonXPCService
+import GarageXPCKit
 
 enum GarageMCPStatus: Equatable {
     case stopped

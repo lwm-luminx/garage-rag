@@ -15,6 +15,6 @@ swift_library(
     deps = [
         "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/LlamaClient",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )

@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import Security
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 public struct RegisteredModel: Identifiable, Hashable, Sendable {
     public var id: String { slug }

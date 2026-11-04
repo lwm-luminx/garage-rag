@@ -9,8 +9,7 @@ public enum LlamaEndpointSelfTest {
     public static func make(store: GarageLlamaEndpointStore = .shared) -> GarageXPCSelfTest {
         GarageXPCSelfTest(
             name: GarageLlamaEndpointStore.dependentSelfTestName,
-            description: "Reaches LlamaXPCService over NSXPC, through the endpoint the app hands over, which on-demand model loads go through.",
-            requiresPython: false
+            description: "Reaches LlamaXPCService over NSXPC, through the endpoint the app hands over, which on-demand model loads go through."
         ) {
             guard let endpoint = store.endpoint else {
                 throw GarageXPCSelfTestSkipped("LlamaXPCService endpoint not handed over yet: the Garage app hands it over after launch")

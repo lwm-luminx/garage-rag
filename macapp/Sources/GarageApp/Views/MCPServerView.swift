@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 /// One citation in a `rag_ask` result.
 struct PlaygroundCitation: Decodable, Identifiable {

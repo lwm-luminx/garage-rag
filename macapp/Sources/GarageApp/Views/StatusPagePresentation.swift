@@ -1,5 +1,5 @@
 import SwiftUI
-import PythonXPCService
+import GarageXPCKit
 
 // What the Status page says, worked out from plain values so it can be tested without a view;
 // each type's `init(appState:)` reads them from the live one. Three questions, three types:

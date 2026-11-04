@@ -1,5 +1,0 @@
-filegroup(
-    name = "python_source",
-    srcs = glob(["**"]),
-    visibility = ["//visibility:public"],
-)

@@ -23,7 +23,7 @@ public enum GarageXPCCrashHandler {
     private static let alternateStackSize = max(Int(SIGSTKSZ), 256 * 1024)
 
     /// Gives the calling thread an alternate signal stack so `SIGSEGV`/`SIGBUS` caused by stack exhaustion can
-    /// still run the handler. Called for the main thread by `install` and for every large-stack Python thread.
+    /// still run the handler. Called for the main thread by `install`.
     public static func installAlternateSignalStackForCurrentThread() {
         var current = stack_t()
         if sigaltstack(nil, &current) == 0, current.ss_flags & SS_DISABLE == 0, current.ss_sp != nil {

@@ -1,6 +1,6 @@
 import Darwin
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 
 /// `GarageSockets` (the owner-only folder the app's endpoints listen in) and `GarageXPCPeerRequirement`
 /// (who may talk to the XPC services).

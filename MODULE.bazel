@@ -119,9 +119,9 @@ bazel_dep(name = "rules_apple", version = "5.1.0")
 # rules_apple's xcarchive tool (tools/xcarchivetool/make_xcarchive.py) extracts the app's
 # zip with zipfile.extractall() and re-copies it with shutil.copytree(symlinks=False),
 # both of which dereference/corrupt symlinks. This breaks any bundle that relies on real
-# symlinks, e.g. our bundled Python.framework's Versions/Current, which lands as a handful
-# of tiny text files instead of symlinks and makes Xcode's export/upload step reject the
-# archive with "code object is not signed at all" for Python.framework.
+# symlinks, e.g. a versioned framework's Versions/Current (Sparkle's), which lands as a
+# handful of tiny text files instead of symlinks and makes Xcode's export/upload step reject
+# the archive with "code object is not signed at all".
 bazel_dep(name = "rules_swift", version = "3.6.1")
 bazel_dep(name = "rules_xcodeproj", version = "4.1.0")
 bazel_dep(name = "rules_pkg", version = "1.3.0")
@@ -191,7 +191,6 @@ include("//ext/pgvector:pgvector.MODULE.bazel")
 include("//ext/age:age.MODULE.bazel")
 include("//ext/libicu:libicu.MODULE.bazel")
 include("//ext/openssl:openssl.MODULE.bazel")
-include("//ext/python:python.MODULE.bazel")
 include("//ext/libzlib:libzlib.MODULE.bazel")
 include("//ext/llama_cpp:llama_cpp.MODULE.bazel")
 include("//ext/sparkle:sparkle.MODULE.bazel")

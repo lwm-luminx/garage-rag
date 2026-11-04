@@ -16,8 +16,7 @@
 # versioned layout the Mac App Store requires (ITMS-90291/90292, "Malformed Framework"): a
 # Versions/Current link to a version folder, and the binary and each other top-level entry a link
 # to Versions/Current/<entry>. codesign accepts a flat framework, so only store validation would
-# otherwise catch one. PythonXPCService.framework gets the layout from macos_versioned_framework
-# (//bazel:macos_framework.bzl), Python.framework from its apple_dynamic_framework_import.
+# otherwise catch one. Sparkle.framework (the Developer ID build's) ships with that layout.
 set -euo pipefail
 
 root="$1"

@@ -1,13 +1,12 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
 load("//bazel:foreign_cc.bzl", "extract_foreign_cc_file", "normalize_install_names")
 
-# libgit2, static, linked into the app's Python for its built-in _garage_git module (see
-# //ext/python): garage_rag.attribute.git reads local repositories through it, in-process, with
-# nothing loaded at run time and no git command run.
+# libgit2, static, linked into garage-git (rust/garage-git): the ingest's attribution reads local
+# repositories through it, in-process, with nothing loaded at run time and no git command run.
 #
 # Built for local reads only: no HTTPS or SSH transport, so no TLS library and no libssh2. SHA-1
 # is libgit2's own collision-detecting implementation and SHA-256 its builtin one, which is what
-# lets HTTPS stay off. zlib and iconv come from the system when the interpreter is linked.
+# lets HTTPS stay off. zlib and iconv come from the system when the crate is linked.
 cmake(
     name = "libgit2",
     build_args = [

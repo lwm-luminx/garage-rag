@@ -1,7 +1,7 @@
 import Foundation
 import AppKit
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 /// Represents categories of TCC (Transparency, Consent, and Control) permissions in macOS.
 public enum TCCPermissionCategory: String, Sendable, Codable, CaseIterable {

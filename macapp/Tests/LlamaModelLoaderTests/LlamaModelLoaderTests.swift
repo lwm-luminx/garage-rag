@@ -1,10 +1,10 @@
 import XCTest
 import LlamaClient
 @testable import LlamaModelLoader
-@testable import LlamaModelLoaderCore
+@testable import LlamaModelLoader
 import LlamaServiceHost
 import LlamaTestSupport
-import PythonXPCService
+import GarageXPCKit
 
 // MARK: - Resolver
 

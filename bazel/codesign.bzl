@@ -19,9 +19,8 @@ codesign_validation_test = _codesign_validation_test
 #
 # Hardened runtime is only *required* for notarization, so enable it for the
 # signed distribution configs and leave it off for the local ones. The
-# distribution configs sign everything with one Team ID, every extension module
-# in site-python included, so validation passes there and neither ships
-# com.apple.security.cs.disable-library-validation.
+# distribution configs sign everything with one Team ID, so validation passes
+# there and neither ships com.apple.security.cs.disable-library-validation.
 # tools/macos/trace_loaded_images.sh checks that at run time.
 HARDENED_RUNTIME_CODESIGNOPTS = select({
     "//bazel:is_developer_id": ["--options=runtime"],
@@ -238,9 +237,7 @@ fix_macho() {
     local dylib_id
     dylib_id="$(otool -D "$file" 2>/dev/null | tail -n +2 | head -n 1 || true)"
     if [ -n "$dylib_id" ]; then
-        if [[ "$dylib_id" == *"/Python.framework/"* ]] || [[ "$file" == *"/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -id "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
-        elif [[ "$dylib_id" == /Users/* ]] || [[ "$dylib_id" == */_bazel* ]] || [[ "$dylib_id" == /sandbox/* ]] || [[ "$dylib_id" == ./* ]] || [[ "$dylib_id" == /* && "$dylib_id" != /usr/lib/* && "$dylib_id" != /System/* && "$dylib_id" != /Library/* ]]; then
+        if [[ "$dylib_id" == /Users/* ]] || [[ "$dylib_id" == */_bazel* ]] || [[ "$dylib_id" == /sandbox/* ]] || [[ "$dylib_id" == ./* ]] || [[ "$dylib_id" == /* && "$dylib_id" != /usr/lib/* && "$dylib_id" != /System/* && "$dylib_id" != /Library/* ]]; then
             /usr/bin/install_name_tool -id "@rpath/$(basename "$file")" "$file" 2>/dev/null || true
         fi
     fi
@@ -253,13 +250,7 @@ fix_macho() {
             continue
         fi
 
-        if [[ "$file" == *"/Python.framework/Versions/"*"/bin/"* ]] || [[ "$file" == *"/Python.framework/bin/"* ]] || [[ "$file" == *"/Versions/"*"/bin/"* ]] || [[ "$file" == *"/bin/python"* ]]; then
-            if [[ "$dep" == *"/Python.framework/"* ]] || [[ "$dep" == "@rpath/Python"* ]] || [[ "$dep" == *"/Python" && "$dep" != "/usr/lib/"* && "$dep" != "/System/"* ]]; then
-                /usr/bin/install_name_tool -change "$dep" "@executable_path/../Python" "$file" 2>/dev/null || true
-            fi
-        elif [[ "$dep" == *"/Python.framework/"* ]] && [[ "$dep" != "@rpath/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -change "$dep" "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
-        elif [[ "$dep" == /DLC/* ]]; then
+        if [[ "$dep" == /DLC/* ]]; then
             /usr/bin/install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$file" 2>/dev/null || true
         elif [[ "$dep" == ./* ]]; then
             /usr/bin/install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$file" 2>/dev/null || true
@@ -268,32 +259,14 @@ fix_macho() {
         fi
     done
 
-    # If it is inside Python.framework/Versions/.../bin
-    if [[ "$file" == *"/Python.framework/Versions/"*"/bin/"* ]] || [[ "$file" == *"/Python.framework/bin/"* ]] || [[ "$file" == *"/Versions/"*"/bin/"* ]]; then
-        /usr/bin/install_name_tool -add_rpath "@loader_path/.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../../.." "$file" 2>/dev/null || true
-    fi
-
     if [[ "$file" == *".xpc/Contents/MacOS/"* ]]; then
         /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@loader_path/../../../../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../../../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../../../../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../../../Frameworks/Python.framework" "$file" 2>/dev/null || true
     elif [[ "$file" == *".app/Contents/MacOS/"* ]] || [[ "$file" == *"/MacOS/"* ]]; then
         /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
     fi
 }
 
@@ -392,17 +365,13 @@ if [ "$kind" = "dir" ]; then
         if [ -n "$latest_ver" ]; then
             (cd "$output/Versions" && ln -sf "$latest_ver" Current)
         fi
-        for link_target in Python Headers Resources; do
+        for link_target in Headers Resources; do
             if [ -e "$output/Versions/Current/$link_target" ]; then
                 rm -rf "$output/$link_target"
                 (cd "$output" && ln -sf "Versions/Current/$link_target" "$link_target")
             fi
         done
     fi
-
-    # Remove site-python test directory and Python.framework lib directory if present before signing
-    find "$output" -depth -type d \\( -name "test" -path "*/site-python/test" -o -name "test" -path "$output/test" \\) -exec rm -rf {} + 2>/dev/null || true
-    find "$output" -depth -type d \\( -name "lib" -path "*/Python.framework/Versions/*/lib" -o -name "lib" -path "*/Python.framework/lib" \\) -exec rm -rf {} + 2>/dev/null || true
 
     # Ensure all regular files are independent writable copies (break hardlinks)
     for file in $(find "$output" -type f); do
@@ -433,9 +402,6 @@ if [ "$kind" = "dir" ]; then
     if [ -d "$output/Versions" ]; then
         for ver_dir in "$output/Versions"/*; do
             if [ -d "$ver_dir" ] && [ ! -L "$ver_dir" ]; then
-                if [ -f "$ver_dir/Python" ]; then
-                    codesign_file "$ver_dir/Python"
-                fi
                 codesign_file "$ver_dir"
             fi
         done

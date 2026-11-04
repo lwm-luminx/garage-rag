@@ -45,8 +45,7 @@ swift_library(
     ],
 )
 
-# The service binary. It is built on GarageXPCKit and links neither Python.framework nor
-# PythonXPCService.framework.
+# The service binary, built on GarageXPCKit.
 macos_xpc_service(
     name = "GarageIngestXPCService",
     bundle_id = "me.rickmark.garage-rag.ingest-xpc",

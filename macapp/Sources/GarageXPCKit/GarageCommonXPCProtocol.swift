@@ -28,11 +28,11 @@ public protocol GarageCommonXPCServiceProtocol: NSObjectProtocol {
     /// Runs a service diagnostic check returning success status, summary, and details.
     func runDiagnostic(with reply: @escaping (Bool, String?, String?) -> Void)
 
-    /// Returns a JSON encoded `GarageXPCStatusReport` describing lifecycle state, Python runtime state,
+    /// Returns a JSON encoded `GarageXPCStatusReport` describing lifecycle state, managed services,
     /// last self-test results and recent diagnostic log lines.
     func getServiceStatus(with reply: @escaping (String) -> Void)
 
-    /// Re-runs the service self-test suite (Python runtime, stdlib extension modules, site-packages, database, gRPC, ...)
+    /// Re-runs the service self-test suite (database, gRPC, the linked Rust library, ...)
     /// and replies with overall success and a JSON encoded `GarageXPCStatusReport`.
     func runSelfTests(with reply: @escaping (Bool, String) -> Void)
 
@@ -117,50 +117,6 @@ public struct GarageXPCTestResult: Codable, Equatable, Sendable {
     public var passed: Bool { status != .failed }
 }
 
-/// Snapshot of the Python runtime embedded in an XPC service.
-public struct GarageXPCPythonStatus: Codable, Equatable, Sendable {
-    /// One of `notStarted`, `starting`, `ready`, `failed`.
-    public var state: String
-    public var version: String?
-    public var home: String?
-    public var stdlibDir: String?
-    public var libDynloadDir: String?
-    public var sitePackagesDir: String?
-    public var sysPath: [String]
-    public var error: String?
-    public var initializationMs: Double?
-    /// Bundled `libpq.dylib` loaded into the process for psycopg (nil when none was found).
-    public var libpqPath: String?
-    /// `dlopen` failure for the bundled libpq, if any.
-    public var libpqError: String?
-
-    public init(
-        state: String,
-        version: String? = nil,
-        home: String? = nil,
-        stdlibDir: String? = nil,
-        libDynloadDir: String? = nil,
-        sitePackagesDir: String? = nil,
-        sysPath: [String] = [],
-        error: String? = nil,
-        initializationMs: Double? = nil,
-        libpqPath: String? = nil,
-        libpqError: String? = nil
-    ) {
-        self.state = state
-        self.version = version
-        self.home = home
-        self.stdlibDir = stdlibDir
-        self.libDynloadDir = libDynloadDir
-        self.sitePackagesDir = sitePackagesDir
-        self.sysPath = sysPath
-        self.error = error
-        self.initializationMs = initializationMs
-        self.libpqPath = libpqPath
-        self.libpqError = libpqError
-    }
-}
-
 /// Snapshot of a background service managed inside an XPC helper.
 public struct GarageXPCManagedServiceStatus: Codable, Equatable, Sendable {
     public var name: String
@@ -188,7 +144,6 @@ public struct GarageXPCStatusReport: Codable, Equatable, Sendable {
     /// Overall lifecycle: `bootstrapping`, `ready`, `degraded`, `failed`.
     public var lifecycle: String
     public var logFilePath: String?
-    public var python: GarageXPCPythonStatus
     public var services: [GarageXPCManagedServiceStatus]
     public var tests: [GarageXPCTestResult]
     public var lastTestRun: Double?
@@ -203,7 +158,6 @@ public struct GarageXPCStatusReport: Codable, Equatable, Sendable {
         uptimeSeconds: Double,
         lifecycle: String,
         logFilePath: String? = nil,
-        python: GarageXPCPythonStatus,
         services: [GarageXPCManagedServiceStatus] = [],
         tests: [GarageXPCTestResult] = [],
         lastTestRun: Double? = nil,
@@ -216,7 +170,6 @@ public struct GarageXPCStatusReport: Codable, Equatable, Sendable {
         self.uptimeSeconds = uptimeSeconds
         self.lifecycle = lifecycle
         self.logFilePath = logFilePath
-        self.python = python
         self.services = services
         self.tests = tests
         self.lastTestRun = lastTestRun
@@ -253,7 +206,7 @@ public enum GarageXPCConfigurationKey {
     /// The Unix-domain socket the gRPC server listens on (`GarageSockets`); wins over host and port.
     public static let grpcSocket = "GARAGE_GRPC_SOCKET"
     public static let logLevel = "GARAGE_LOG_LEVEL"
-    /// Directory the Python server works in, and so where it finds `./garage.json`: the
+    /// Directory GarageService works in, and so where it finds `./garage.json`: the
     /// app's working directory, as when the app ran the `garage` CLI there.
     public static let workingDirectory = "GARAGE_WORKING_DIRECTORY"
     /// The models folder of a `--data-directory` launch (a UI test's), which an XPC service cannot

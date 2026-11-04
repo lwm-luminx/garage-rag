@@ -45,44 +45,6 @@ codesign(
     visibility = ["//visibility:public"],
 )
 
-# `PythonXPCService.framework/Resources/tessdata/eng.traineddata`, beside `site-python` (the
-# interpreter's home), where garage_rag.extract.tesseract looks for it. Tesseract itself is built
-# into the app's Python (_garage_tesseract, see //ext/python).
-copy_to_directory(
-    name = "tessdata_output",
-    srcs = ["//ext/tesseract:tessdata"],
-    out = "tessdata",
-    include_external_repositories = ["+http_file+tessdata_eng"],
-    root_paths = ["file"],
-    visibility = ["//visibility:public"],
-)
-
-# PostgreSQL client library, shipped inside PythonXPCService.framework (see
-# python_framework_libs). psycopg's pure Python implementation uses it through ctypes; it must
-# carry the app's Team ID (hardened runtime / library validation rejects the Homebrew copy) and
-# the runtime option.
-codesign(
-    name = "libpq",
-    src = "//ext:libpq_dylib",
-    out = "libpq.dylib",
-    options = ["runtime"],
-    visibility = ["//visibility:public"],
-)
-
-# `PythonXPCService.framework/Frameworks/`: the libraries the framework links with load
-# commands (`@rpath`, resolved through its `@loader_path/Frameworks` rpath). dyld loads them
-# when a service or launcher starts, before the App Sandbox applies, and Python finds them among
-# the process's loaded images; nothing locates them by path.
-copy_to_directory(
-    name = "python_framework_libs",
-    srcs = [
-        ":libpq",
-    ],
-    out = "Frameworks",
-    root_paths = ["macapp/externals"],
-    visibility = ["//visibility:public"],
-)
-
 copy_to_directory(
     name = "schema_output",
     srcs = [
@@ -92,51 +54,5 @@ copy_to_directory(
     replace_prefixes = {
         "data/sql/sql": "",
     },
-    visibility = ["//visibility:public"],
-)
-
-copy_to_directory(
-    name = "site-python-only",
-    srcs = [
-        "//ext/python:python_3_14t",
-    ],
-    exclude_srcs_patterns = [
-        "**/test/**",
-        "**/test",
-        # Build-time only (Makefile, libpython3.14t.a, python.o): never loaded by the embedded
-        # interpreter, and the static library alone is dead weight in the bundle.
-        "**/config-3.14t-darwin/**",
-        "**/config-3.14t-darwin",
-    ],
-    # The real version directory, not Versions/Current: whether that symlink is walked depends on
-    # the configuration (the rules_xcodeproj build does not), and when it is not, nothing matches
-    # and site-python ships without the standard library.
-    include_srcs_patterns = [
-        "ext/python/python_3_14t/Python.framework/Versions/3.14/lib/python3.14t/**",
-    ],
-    replace_prefixes = {
-        "ext/python/python_3_14t/Python.framework/Versions/3.14/lib/python3.14t": "",
-    },
-)
-
-copy_to_directory(
-    name = "site-python-raw",
-    srcs = [
-        ":site-python-only",
-        "//garage_python:site-packages",
-    ],
-    out = "site-python-raw",
-    replace_prefixes = {
-        "garage_python/site-packages": "site-packages",
-        "site-python-only": "",
-    },
-    visibility = ["//visibility:public"],
-)
-
-codesign(
-    name = "site-python",
-    src = ":site-python-raw",
-    out = "site-python",
-    options = ["runtime"],
     visibility = ["//visibility:public"],
 )

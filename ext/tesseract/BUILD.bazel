@@ -1,8 +1,8 @@
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
 
-# Static libtesseract, linked with //ext/leptonica into the app's Python for its built-in
-# _garage_tesseract module (see //ext/python): garage_rag.extract.tesseract reads images through its
-# C API (capi.h) in-process, with no dylib loaded at run time.
+# Static libtesseract, linked with //ext/leptonica into garage-ocr (rust/garage-ocr) where Vision is
+# not available: it reads images through the C API (capi.h) in-process, with no dylib loaded at
+# run time.
 cmake(
     name = "tesseract",
     build_args = [

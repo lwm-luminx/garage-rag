@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import Combine
-import PythonXPCService
+import GarageXPCKit
 
 // The Status page: is anything wrong and what fixes it, what the pipeline is doing and how much of
 // the corpus is indexed, and whether each helper process is alive. The helpers' output is folded

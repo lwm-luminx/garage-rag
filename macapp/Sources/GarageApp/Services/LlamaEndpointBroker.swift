@@ -2,7 +2,7 @@ import Foundation
 import OSLog
 import ImageEmbedClient
 import LlamaClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "LlamaEndpointBroker")
 

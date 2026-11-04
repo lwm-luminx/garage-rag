@@ -1,7 +1,7 @@
 import XCTest
 import SwiftUI
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class SplashViewTests: XCTestCase {

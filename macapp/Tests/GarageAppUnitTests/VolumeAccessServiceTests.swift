@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 @MainActor

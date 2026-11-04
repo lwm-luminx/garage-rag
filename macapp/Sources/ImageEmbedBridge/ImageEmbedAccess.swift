@@ -59,8 +59,7 @@ public enum ImageEmbedAccess {
     public static func selfTest(store: GarageImageEmbedEndpointStore = .shared) -> GarageXPCSelfTest {
         GarageXPCSelfTest(
             name: GarageImageEmbedEndpointStore.dependentSelfTestName,
-            description: "Reaches GarageImageEmbedXPCService over NSXPC, through the endpoint the app hands over, which image embeddings go through.",
-            requiresPython: false
+            description: "Reaches GarageImageEmbedXPCService over NSXPC, through the endpoint the app hands over, which image embeddings go through."
         ) {
             guard let endpoint = store.endpoint else {
                 throw GarageXPCSelfTestSkipped("GarageImageEmbedXPCService endpoint not handed over yet: the Garage app hands it over after launch")

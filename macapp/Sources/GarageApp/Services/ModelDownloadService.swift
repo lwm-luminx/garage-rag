@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 import AppKit
 import ModelDownloadClient
-import PythonXPCService
+import GarageXPCKit
 
 /// Service managing the state and operations of the ModelDownload XPC service in the macOS app.
 @MainActor

@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 import Combine
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "OSLogStreamService")
 
@@ -229,8 +229,7 @@ public final class OSLogStreamService: ObservableObject {
             category == "ingestservice" ||
             category == "ingestclient" ||
             category == "garageingestxpcservice" ||
-            process.contains("garageingest") ||
-            message.hasPrefix("[Python]") {
+            process.contains("garageingest") {
             targets.insert(.ingest)
         }
 

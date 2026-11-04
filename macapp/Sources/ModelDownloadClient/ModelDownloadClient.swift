@@ -1,6 +1,6 @@
 import Foundation
 import OSLog
-import PythonXPCService_protocol
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "ModelDownloadClient")
 

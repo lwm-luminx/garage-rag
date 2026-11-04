@@ -135,7 +135,7 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
         let engine = self.engine
         let server = self.httpService.server
         return [
-            GarageXPCSelfTest(name: "Llama Engine", description: "Queries the llama.cpp engine health route and reports the loaded model.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Llama Engine", description: "Queries the llama.cpp engine health route and reports the loaded model.") {
                 let health = engine.handleHealth()
                 guard let status = health["status"] as? String else {
                     throw GarageXPCSelfTestFailure("Llama engine health returned no status", details: String(describing: health))
@@ -145,7 +145,7 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
                 let desc = (props["model_description"] as? String) ?? ""
                 return "Status: \(status)\nModel: \(model)\n\(desc)"
             },
-            GarageXPCSelfTest(name: "Model File", description: "Verifies the currently loaded model path exists on disk.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Model File", description: "Verifies the currently loaded model path exists on disk.") {
                 guard let path = engine.currentModelPath else {
                     throw GarageXPCSelfTestSkipped("No model loaded")
                 }
@@ -156,7 +156,7 @@ public final class LlamaXPCServiceDelegate: GarageXPCServiceBase, LlamaXPCServic
                 let size = (try? FileManager.default.attributesOfItem(atPath: path)[.size] as? Int64) ?? 0
                 return "Model: \(path)\nSize: \(size) bytes"
             },
-            GarageXPCSelfTest(name: "HTTP API", description: "Reports whether the llama-server API is listening on its socket (or loopback port).", requiresPython: false) {
+            GarageXPCSelfTest(name: "HTTP API", description: "Reports whether the llama-server API is listening on its socket (or loopback port).") {
                 guard server.isListening else {
                     throw GarageXPCSelfTestFailure("llama HTTP API is not listening on \(server.url)")
                 }
