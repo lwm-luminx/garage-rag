@@ -15,6 +15,7 @@ pub mod config;
 pub mod corpus;
 pub mod db;
 pub mod embedding;
+pub mod enrich;
 pub mod error;
 pub mod facts;
 pub mod gateway;

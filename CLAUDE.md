@@ -267,8 +267,12 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `facts.prompts`) and the AGE projection with its three reads (`db/graph.py`: `rebuild_graph`, `GetGraphLabels`/
   `FindGraphVertices`/`GetGraphNeighborhood`, `graph.rs`; `available = false` without AGE or a built graph) and
   `ClusterFacts` (`enrich/clusters.py` step for step in `clusters.rs`: the guard, both levels, anchors, the distiller over
-  `garage_mcp::chat` run in `spawn_blocking`, one transaction, progress streamed; `tests/clusters.rs`); the
-  other RPCs answer `UNIMPLEMENTED` until their stage.
+  `garage_mcp::chat` run in `spawn_blocking`, one transaction, progress streamed; `tests/clusters.rs`) and
+  `EnrichFacts` (`enrich/facts.py`, `enrich/metadata.py` and `ops/facts.py`'s loop in `enrich.rs`: the metadata facts
+  with no model, `fact_runs` and `stale_only`, the egress rule per document, each prompt's facts replaced in their
+  own transaction, `tests/enrich.rs`; the model's side is a `FactExtractor` the binary supplies, the LangExtract
+  adapter over the langextract-rs crate once it is on crates.io, and a service without one writes the metadata
+  facts and fails each prompt as unavailable); the other RPCs answer `UNIMPLEMENTED` until their stage.
   `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is
   `test_postgres.py`'s cases for what is ported, `tests/grpc.rs` the service over a socket and a port and
   `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run

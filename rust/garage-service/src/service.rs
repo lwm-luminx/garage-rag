@@ -26,6 +26,7 @@ use crate::clusters::{self, ChatDistiller, ClusterParams, ClusterProgress, Clust
 use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
 use crate::db::{Client, isoformat_opt};
 use crate::embedding::{backfill_distilled, count_pending, pending_chunks, store_vectors};
+use crate::enrich::{self, EnrichEvent, EnrichRun, FactExtractor, FactModel};
 use crate::error::{Result, ServiceError};
 use crate::facts::{self, FactFilters, FactRow};
 use crate::gateway::{self, AuthorPayload, ChunkPayload, DocumentPayload};
@@ -58,6 +59,9 @@ pub struct GarageService {
     /// The process's way to a model server, for the chat model the long jobs ask (`ClusterFacts`'s
     /// distiller); without one those jobs run without a model.
     host: Option<Arc<dyn Host>>,
+    /// The model's side of fact extraction (`EnrichFacts`); without one only metadata facts are
+    /// written and each prompt's run fails as unavailable.
+    extractor: Option<Arc<dyn FactExtractor>>,
     sql_dir: PathBuf,
     /// Whether every caller is one the server can vouch for (the token, or the Unix socket), so
     /// the config-changing methods may be answered (`callers_vouched_for`).
@@ -75,13 +79,28 @@ impl GarageService {
         callers_vouched_for: bool,
     ) -> Result<Self> {
         let pool = db::pool_for(&config.database_url())?;
-        Ok(Self { pool, config: RwLock::new(config), embedder, host: None, sql_dir, callers_vouched_for })
+        Ok(Self {
+            pool,
+            config: RwLock::new(config),
+            embedder,
+            host: None,
+            extractor: None,
+            sql_dir,
+            callers_vouched_for,
+        })
     }
 
     /// The same service with a host for its chat model.
     #[must_use]
     pub fn with_host(mut self, host: Arc<dyn Host>) -> Self {
         self.host = Some(host);
+        self
+    }
+
+    /// The same service with a fact extractor for `EnrichFacts`.
+    #[must_use]
+    pub fn with_extractor(mut self, extractor: Arc<dyn FactExtractor>) -> Self {
+        self.extractor = Some(extractor);
         self
     }
 
@@ -1247,9 +1266,77 @@ impl GarageServiceTrait for GarageService {
 
     async fn enrich_facts(
         &self,
-        _r: Request<proto::EnrichFactsRequest>,
+        request: Request<proto::EnrichFactsRequest>,
     ) -> std::result::Result<Response<Self::EnrichFactsStream>, Status> {
-        unimplemented("EnrichFacts")
+        let r = request.into_inner();
+        let config = self.config();
+        let chat = chat_settings(&config);
+        let model_id = if r.model.is_empty() { chat.fact_model } else { r.model };
+        let provider = if r.provider.is_empty() { chat.fact_provider } else { r.provider };
+        enrich::refuse_cloud_model_id(&model_id)?;
+        let servers = config.embed_settings();
+        let model = FactModel::new(&provider, &model_id, &servers)?;
+        let selected = prompts::select_prompts(&configured_prompts(&config)?, &r.prompts)?;
+        if selected.is_empty() {
+            return Err(ServiceError::NotFound("no fact prompts are enabled".into()).into());
+        }
+        let mut client = self.client().await?;
+        let source = if r.source.is_empty() { "*" } else { r.source.as_str() };
+        let documents =
+            enrich::documents_to_enrich(&client, source, (r.document_id > 0).then_some(r.document_id)).await?;
+        if documents.is_empty() {
+            return Err(ServiceError::NotFound("no documents to enrich".into()).into());
+        }
+        let extractor = self.extractor.clone();
+        let (tx, rx) = mpsc::channel(64);
+        let total = i64::try_from(documents.len()).unwrap_or(i64::MAX);
+        let started = proto::EnrichFactsStatus {
+            phase: "started".to_owned(),
+            total,
+            model: model.model_id.clone(),
+            provider: model.provider.clone(),
+            message: format!("enriching {} document(s) via {}/{}", thousands(total), model.provider, model.model_id),
+            ..Default::default()
+        };
+        tokio::spawn(async move {
+            if tx.send(Ok(started)).await.is_err() {
+                return;
+            }
+            let progress = tx.clone();
+            let mut on_event = move |event: &EnrichEvent| -> bool {
+                !matches!(progress.try_send(Ok(enrich_event(event))), Err(mpsc::error::TrySendError::Closed(_)))
+            };
+            let run = EnrichRun {
+                documents,
+                selected,
+                model,
+                servers,
+                stale_only: r.stale_only,
+                extractor,
+                on_event: &mut on_event,
+            };
+            let result = enrich::enrich_facts(&mut client, run).await;
+            let _ = match result {
+                Ok(summary) => {
+                    tx.send(Ok(proto::EnrichFactsStatus {
+                        phase: "finished".to_owned(),
+                        total: summary.total,
+                        facts: summary.facts,
+                        model: summary.model_id.clone(),
+                        provider: summary.provider.clone(),
+                        enriched: summary.enriched,
+                        failed: summary.failed,
+                        skipped: summary.skipped,
+                        prompts: summary.prompts.clone(),
+                        message: summary.message(),
+                        ..Default::default()
+                    }))
+                    .await
+                }
+                Err(error) => tx.send(Err(Status::from(error))).await,
+            };
+        });
+        ok(Box::pin(ReceiverStream::new(rx)) as Self::EnrichFactsStream)
     }
 
     async fn cluster_facts(
@@ -1615,6 +1702,23 @@ fn chat_settings(config: &Config) -> ChatSettings {
 /// The effective fact prompts, from `facts.prompts` (`configured_prompts`).
 fn configured_prompts(config: &Config) -> Result<Vec<EffectivePrompt>> {
     prompts::effective_prompts(&prompts::parse_prompts(&config.setting("facts.prompts")?)?)
+}
+
+/// A document's event as the RPC streams it (`on_event`).
+fn enrich_event(event: &EnrichEvent) -> proto::EnrichFactsStatus {
+    proto::EnrichFactsStatus {
+        phase: "document".to_owned(),
+        total: event.total,
+        index: event.index,
+        document_id: event.document_id,
+        document_uri: event.uri.clone(),
+        facts: event.facts,
+        error: event.error.clone().unwrap_or_default(),
+        skipped: i64::from(event.skipped),
+        prompts: event.prompts.clone(),
+        message: event.message(),
+        ..Default::default()
+    }
 }
 
 type ClusterSender = mpsc::Sender<std::result::Result<proto::ClusterFactsStatus, Status>>;

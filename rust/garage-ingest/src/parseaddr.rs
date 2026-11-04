@@ -367,9 +367,79 @@ pub fn parseaddr(addr: &str) -> (String, String) {
     if addresses.len() == 1 { addresses.remove(0) } else { (String::new(), String::new()) }
 }
 
+/// `email.utils.getaddresses(fieldvalues)` (strict): `(name, address)` for each address in the
+/// header values, or one `("", "")` when a value is malformed or the count does not add up.
+#[must_use]
+pub fn getaddresses(fields: &[&str]) -> Vec<(String, String)> {
+    let fields: Vec<&str> = fields.iter().map(|v| if balanced_parentheses(v) { *v } else { "('', '')" }).collect();
+    let all = fields.join(", ");
+    let mut result = if all.is_empty() { Vec::new() } else { Parser::new(&all).address_list() };
+    for address in &mut result {
+        if address.1.contains('[') {
+            *address = (String::new(), String::new());
+        }
+    }
+    let expected: usize = fields.iter().map(|v| 1 + strip_quoted_realnames(v).matches(',').count()).sum();
+    if result.len() != expected {
+        return vec![(String::new(), String::new())];
+    }
+    result
+}
+
+/// `email.utils.formataddr((name, address))`: the address alone without a name; a name with
+/// specials quoted; a name outside ASCII as an RFC 2047 `utf-8` encoded word.
+#[must_use]
+pub fn formataddr(name: &str, address: &str) -> String {
+    if name.is_empty() {
+        return address.to_owned();
+    }
+    if !name.is_ascii() {
+        return format!("=?utf-8?b?{}?= <{address}>", base64(name.as_bytes()));
+    }
+    let specials = |ch: char| "][\\()<>@,:;\".".contains(ch);
+    let escaped = quote(name);
+    if name.chars().any(specials) { format!("\"{escaped}\" <{address}>") } else { format!("{escaped} <{address}>") }
+}
+
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.iter().enumerate().fold(0u32, |acc, (i, &b)| acc | (u32::from(b) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]));
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
-    use super::parseaddr;
+    use super::{formataddr, getaddresses, parseaddr};
+
+    #[test]
+    fn address_lists_split_as_python_splits_them() {
+        let pairs = |items: &[(&str, &str)]| -> Vec<(String, String)> {
+            items.iter().map(|(n, a)| ((*n).to_owned(), (*a).to_owned())).collect()
+        };
+        assert_eq!(
+            getaddresses(&["Ada Lovelace <ada@example.com>", "bob@example.com, Carol <carol@example.com>"]),
+            pairs(&[("Ada Lovelace", "ada@example.com"), ("", "bob@example.com"), ("Carol", "carol@example.com")])
+        );
+        assert_eq!(getaddresses(&["\"Lovelace, Ada\" <ada@x>"]), pairs(&[("Lovelace, Ada", "ada@x")]));
+        assert_eq!(getaddresses(&["alice@example.com <bob@example.com>"]), pairs(&[("", "")]));
+        assert_eq!(getaddresses(&["Ada (<a@x>"]), pairs(&[("", "")]));
+        assert_eq!(getaddresses(&[]), Vec::<(String, String)>::new());
+        assert_eq!(formataddr("", "a@x"), "a@x");
+        assert_eq!(formataddr("Ada Lovelace", "a@x"), "Ada Lovelace <a@x>");
+        assert_eq!(formataddr("Lovelace, Ada", "a@x"), "\"Lovelace, Ada\" <a@x>");
+        assert_eq!(formataddr("Ada \"the\" L.", "a@x"), "\"Ada \\\"the\\\" L.\" <a@x>");
+        assert_eq!(formataddr("Zoë", "zoe@x.org"), "=?utf-8?b?Wm/Dqw==?= <zoe@x.org>");
+    }
 
     fn pair(name: &str, address: &str) -> (String, String) {
         (name.to_owned(), address.to_owned())

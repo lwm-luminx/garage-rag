@@ -709,3 +709,80 @@ fn facts_prompts_and_the_graph_answer_over_grpc() {
         })
     });
 }
+
+#[test]
+fn enrich_facts_streams_over_grpc() {
+    common::with_db_url(|pool, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let config_path = dir.join("garage.json");
+            let mut server = Running::start(&url, &config_path).await;
+            let client = &mut server.client;
+            let db = pool.get().await.unwrap();
+            let mail = common::source(&db, "mail", json!({})).await;
+            let content = "Subject: Lunch\nFrom: ada@example.com\nTo: bob@example.com\n\nNoon?";
+            let letter = common::document(&db, mail, "lunch.eml", content, "communication").await;
+            db.execute(
+                "UPDATE documents SET meta = '{\"email_from\": \"ada@example.com\", \"email_to\": \"bob@example.com\"}' \
+                 WHERE id = $1",
+                &[&letter],
+            )
+            .await
+            .unwrap();
+
+            let request = |source: &str, document_id: i64, model: &str, prompts: &[&str]| proto::EnrichFactsRequest {
+                source: source.into(),
+                document_id,
+                model: model.into(),
+                provider: String::new(),
+                prompts: prompts.iter().map(|p| (*p).to_owned()).collect(),
+                stale_only: false,
+            };
+            // This server has no extractor: the metadata facts are written, the prompt fails.
+            let mut stream = client.enrich_facts(request("*", 0, "", &[])).await.unwrap().into_inner();
+            let mut statuses = Vec::new();
+            while let Some(status) = stream.message().await.unwrap() {
+                statuses.push(status);
+            }
+            assert_eq!(
+                statuses.iter().map(|s| s.phase.as_str()).collect::<Vec<_>>(),
+                ["started", "document", "finished"]
+            );
+            assert_eq!(statuses[0].message, "enriching 1 document(s) via llama_xpc/gemma2-2b");
+            assert_eq!((statuses[0].total, statuses[0].model.as_str()), (1, "gemma2-2b"));
+            let doc = &statuses[1];
+            assert_eq!(
+                (doc.index, doc.document_id, doc.document_uri.as_str(), doc.facts),
+                (1, letter, "test://lunch.eml", 3)
+            );
+            assert_eq!(doc.prompts, ["metadata"]);
+            assert!(
+                doc.error.starts_with("fact extraction with a model is not available in this build"),
+                "{}",
+                doc.error
+            );
+            assert_eq!(doc.message, format!("1/1: test://lunch.eml: {}", doc.error));
+            let done = &statuses[2];
+            assert_eq!((done.total, done.enriched, done.failed, done.skipped, done.facts), (1, 0, 1, 0, 3));
+            assert_eq!(done.prompts, ["default"]);
+            assert_eq!(done.provider, "llama_xpc");
+            assert_eq!(done.message, "0/1 documents enriched, 3 facts extracted, 1 failed");
+            let facts: i64 = common::scalar(&db, "SELECT count(*) FROM facts WHERE document_id = $1", &[&letter]).await;
+            assert_eq!(facts, 3);
+
+            let refused = client.enrich_facts(request("*", 0, "gpt-4o", &[])).await.unwrap_err();
+            assert_eq!(refused.code(), Code::InvalidArgument);
+            assert!(refused.message().starts_with("'gpt-4o' names a cloud-hosted model"), "{}", refused.message());
+            let missing = client.enrich_facts(request("*", 999, "", &[])).await.unwrap_err();
+            assert_eq!((missing.code(), missing.message()), (Code::NotFound, "document 999 not found"));
+            let none = client.enrich_facts(request("nothing", 0, "", &[])).await.unwrap_err();
+            assert_eq!((none.code(), none.message()), (Code::NotFound, "no documents to enrich"));
+            let unknown = client.enrich_facts(request("*", 0, "", &["nope"])).await.unwrap_err();
+            assert_eq!(
+                (unknown.code(), unknown.message()),
+                (Code::NotFound, "unknown fact prompt(s) nope; known: default")
+            );
+            server.stop().await;
+        })
+    });
+}
