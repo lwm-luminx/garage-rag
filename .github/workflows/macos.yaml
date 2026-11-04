@@ -60,6 +60,8 @@ jobs:
           # ext/pythonkit/PythonKit, which the app compiles.
           submodules: true
       - uses: ./.github/actions/setup-aspect
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       # Caches. A cold build of //... runs past the hosted runner's 6h job limit,
       # so Bazel's disk and repository caches carry the work across runs. A warm
       # one takes minutes. Keeping them warm under the repository's 10 GB cache
