@@ -201,7 +201,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
     <span class="card-icon">🪟</span>
     <h3>Windows <small>alpha</small></h3>
     {% if site.windows_alpha_url and site.windows_alpha_url != "" %}<p>An early build for 64-bit Windows. It isn't finished: expect rough edges, and back up anything you index with it.</p>
-    <a href="{{ '/windows.html' | relative_url }}" class="card-link">Get the Windows alpha →</a>{% else %}<p>A Windows version is on the way. The database, Python and indexer already build and pass their tests on Windows; the first alpha will be posted here.</p>
+    <a href="{{ '/windows.html' | relative_url }}" class="card-link">Get the Windows alpha →</a>{% else %}<p>A Windows version is on the way. The database and the indexer already build and pass their tests on Windows; the first alpha will be posted here.</p>
     <a href="{{ '/windows.html' | relative_url }}" class="card-link">About the Windows alpha →</a>{% endif %}
   </div>
 
@@ -213,13 +213,13 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
   </div>
 </div>
 
-## Also a command line and a Python package
+## Also a command line
 
-The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline is the [`garage-rag`](https://pypi.org/project/garage-rag/) Python package on PyPI, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
+The Mac app includes a `garage` command for terminal workflows and a `garage-mcp` stdio server for MCP clients (in `Garage.app/Contents/MacOS`). The same pipeline builds as those two commands with Cargo, so the indexer, extractors and search run anywhere PostgreSQL with pgvector does, [Linux]({{ '/linux.html' | relative_url }}) included. The developer documentation covers the <a href="{{ '/architecture.html' | relative_url }}">architecture</a>, <a href="{{ '/attribution.html' | relative_url }}">attribution engine</a>, <a href="{{ '/privacy.html' | relative_url }}">privacy internals</a> and <a href="{{ '/schema.html' | relative_url }}">database schema</a>.
 
 <h2 id="open-source">Open source, on GitHub</h2>
 
-Garage is free and open source. Everything is in one repository on GitHub: the Mac app, the Python pipeline, the Windows build and this website.
+Garage is free and open source. Everything is in one repository on GitHub: the Mac app, the Rust pipeline, the Windows app and this website.
 
 <div class="grid">
   <div class="card">

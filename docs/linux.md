@@ -11,24 +11,24 @@ description: How to run Garage on Linux from the command line, with PostgreSQL a
 
 ## What you get, and what you don't
 
-The Linux version is the same `garage_rag` Python package the Mac app runs inside. CI tests it on Linux on every push, against a real PostgreSQL with pgvector.
+The Linux version is the same Rust pipeline the Mac app runs inside its services, built as the `garage` and `garage-mcp` commands. CI tests it on Linux on every push, against a real PostgreSQL with pgvector.
 
-- **Included:** indexing folders and git repositories; Markdown, PDF, Office documents, code and `.eml` mail; image OCR with Tesseract; authorship attribution; hybrid search; fact distillation; and the MCP server over stdio or HTTP.
+- **Included:** indexing folders and git repositories; Markdown, PDF, Office documents, code and `.eml` mail; image OCR with Tesseract (when built with it); authorship attribution; hybrid search; fact distillation; and the MCP server over stdio or HTTP.
 - **Not on Linux:** the menu-bar app and its first-run assistant, the bundled database, and the built-in llama.cpp engine. Apple Messages, Apple Mail and HEIC images need a Mac too. Use [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) for embeddings and answers.
 
 ## Before you start
 
-- Python 3.13 or 3.14 and [uv](https://docs.astral.sh/uv/), which can fetch Python for you (or `pipx`).
+- A Rust toolchain from [rustup](https://rustup.rs/) (the repository names the version it needs), and the libgit2 and SQLite development packages.
 - PostgreSQL with [pgvector](https://github.com/pgvector/pgvector) 0.7 or later. CI tests PostgreSQL 18, the version the Mac app bundles.
 - Ollama or LM Studio, on this computer or on another machine you run.
-- For OCR, optional: `libtesseract` with English language data (`tesseract-ocr` and `tesseract-ocr-eng` on Debian and Ubuntu).
+- For OCR, optional: `libtesseract-dev` with English language data (`tesseract-ocr-eng` on Debian and Ubuntu), and the `tesseract` feature at build time.
 
 ## 1. Set up the database
 
 On Debian or Ubuntu, with the PostgreSQL project's [apt repository](https://wiki.postgresql.org/wiki/Apt) set up:
 
 ```bash
-sudo apt install postgresql-18 postgresql-18-pgvector tesseract-ocr tesseract-ocr-eng
+sudo apt install postgresql-18 postgresql-18-pgvector libgit2-dev libsqlite3-dev pkg-config
 sudo -u postgres createuser "$USER"
 sudo -u postgres createdb --owner "$USER" garage
 sudo -u postgres psql -d garage -c 'CREATE EXTENSION IF NOT EXISTS vector'
@@ -38,14 +38,15 @@ pgvector is not a trusted extension, so `postgres` creates it once. Your own rol
 
 ## 2. Install Garage
 
-Garage is on [PyPI](https://pypi.org/project/garage-rag/) as `garage-rag`. Install it as a tool, which puts the `garage` and `garage-mcp` commands on your `PATH` in an environment of their own:
+Build the commands from the repository with Cargo, which puts `garage` and `garage-mcp` in `~/.cargo/bin`:
 
 ```bash
-uv tool install --python 3.14 garage-rag
+git clone https://github.com/rickmark/garage-rag.git
+cargo install --path garage-rag/rust/garage-cli
 garage version
 ```
 
-Without uv, `pipx install garage-rag` does the same. To update later, run `uv tool upgrade garage-rag`. To run the latest code from `main` instead of a release, use `uv tool install --python 3.14 "garage-rag @ git+https://github.com/rickmark/garage-rag#subdirectory=garage_python"`.
+Add `--features garage-readers/tesseract` to read the text in pictures with the system's Tesseract. To update later, pull and run the same command. Prebuilt Linux binaries are not published yet.
 
 ## 3. Configure and initialize
 
