@@ -844,11 +844,15 @@ are dated so a stale one can be spotted.
   repository as a submodule tracking `next` (Rick, 2026-10-05).
 - New PRs target **`next`** (the next feature release). Only bugfixes target `main`, which is what releases and
   the site (garagerag.app, GitHub Pages) publish from. `main` flows into `next` through a merge PR merged with
-  "Create a merge commit" (Rick, 2026-09-30). Both branches are ruleset-protected: PR required, no force-push.
-- Required checks (rulesets, 2026-09-27): `python`, `swiftcheck`, `format`, `gazelle`, `buildifier`, `lint`.
-  The `python` job left with the Python package (2026-11-04); the ruleset needs `rust` in its place.
-  The macOS, Windows, known-answers and free-threaded jobs are not required; the notarized
-  Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job means updating the ruleset with it.
+  "Create a merge commit" (Rick, 2026-09-30). Both branches are protected by one ruleset, "Protected: main and
+  next": PR required (merge or squash), signed commits, no force-push or deletion.
+- Required checks (Rick, 2026-11-04): `aspect / format`, `aspect / buildifier`, `aspect / gazelle` and
+  `aspect / lint`, the check runs the Aspect Workflows GitHub App posts for those tasks (they take precedence over
+  the Actions jobs that run them), plus the Actions jobs "Swift: syntax check (tree-sitter)" and "Rust: fmt,
+  clippy and tests (rust/)". The `aspect /` checks appear only when CI signs in to Aspect (`ASPECT_API_TOKEN`), so a
+  fork's PR needs an admin bypass. winapp-bazel and the macOS, Windows and known-answers jobs are not required;
+  the notarized Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job or
+  task means updating the ruleset with it.
 - A PR that contains merge commits cannot be rebase-merged on GitHub; it needs "Create a merge commit".
 - Stacked PRs: when another branch or open PR already works on the same part of the app, base new work on it
   rather than on `main`/`next`, and name the base in the PR (Rick, 2026-09-24). When stacked PRs merge top-down
