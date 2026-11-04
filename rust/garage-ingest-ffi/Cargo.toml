@@ -11,6 +11,13 @@ publish.workspace = true
 name = "garage_ingest_ffi"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+# The C symbols (`#[no_mangle]`). A crate that calls this one from Rust and is itself linked beside the
+# ingest service's static library (garage-cli, in the app's unit tests) turns them off, or both
+# libraries would define every `garage_ingest_*`.
+default = ["exports"]
+exports = []
+
 [dependencies]
 garage-git.workspace = true
 garage-ingest.workspace = true

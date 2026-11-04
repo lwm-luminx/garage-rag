@@ -1062,7 +1062,7 @@ fn git_tracked(request: &Map<String, Value>) -> Outcome {
 ///
 /// `request` is a NUL-terminated string and `result` a writable pointer; free `*result` with
 /// [`garage_ingest_string_free`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_policy(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, |_| Ok(WalkPolicy::default().to_json()))
 }
@@ -1074,7 +1074,7 @@ pub unsafe extern "C" fn garage_ingest_policy(request: *const c_char, result: *m
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_walk(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, walk)
 }
@@ -1084,7 +1084,7 @@ pub unsafe extern "C" fn garage_ingest_walk(request: *const c_char, result: *mut
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_root_problem(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, |request| Ok(json!({ "problem": garage_ingest::root_problem(Path::new(&root(request)?)) })))
 }
@@ -1095,7 +1095,7 @@ pub unsafe extern "C" fn garage_ingest_root_problem(request: *const c_char, resu
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, assess)
 }
@@ -1110,7 +1110,7 @@ pub unsafe extern "C" fn garage_ingest_assess(request: *const c_char, result: *m
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_attribute(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, attribute)
 }
@@ -1123,7 +1123,7 @@ pub unsafe extern "C" fn garage_ingest_attribute(request: *const c_char, result:
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_ensure_local(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, ensure_local)
 }
@@ -1135,7 +1135,7 @@ pub unsafe extern "C" fn garage_ingest_ensure_local(request: *const c_char, resu
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_chunk(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, chunk)
 }
@@ -1147,7 +1147,7 @@ pub unsafe extern "C" fn garage_ingest_chunk(request: *const c_char, result: *mu
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_git_history(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, git_history)
 }
@@ -1157,7 +1157,7 @@ pub unsafe extern "C" fn garage_ingest_git_history(request: *const c_char, resul
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_git_remote(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, git_remote)
 }
@@ -1167,7 +1167,7 @@ pub unsafe extern "C" fn garage_ingest_git_remote(request: *const c_char, result
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, git_tracked)
 }
@@ -1180,7 +1180,7 @@ pub unsafe extern "C" fn garage_ingest_git_tracked(request: *const c_char, resul
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_scan(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, scan)
 }
@@ -1198,7 +1198,7 @@ pub unsafe extern "C" fn garage_ingest_scan(request: *const c_char, result: *mut
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, ingest_source)
 }
@@ -1215,7 +1215,7 @@ pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, res
 ///
 /// As [`garage_ingest_policy`], and `host` points to a valid [`GarageIngestHost`] whose functions may be
 /// called on this thread until the call returns.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_run_source(
     request: *const c_char,
     host: *const GarageIngestHost,
@@ -1243,7 +1243,7 @@ pub unsafe extern "C" fn garage_ingest_run_source(
 /// # Safety
 ///
 /// As [`garage_ingest_run_source`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_run(
     request: *const c_char,
     host: *const GarageIngestHost,
@@ -1272,7 +1272,7 @@ pub unsafe extern "C" fn garage_ingest_run(
 /// # Safety
 ///
 /// As [`garage_ingest_policy`].
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_ingest_one(request: *const c_char, result: *mut *mut c_char) -> i32 {
     call(request, result, ingest_one)
 }
@@ -1282,7 +1282,7 @@ pub unsafe extern "C" fn garage_ingest_ingest_one(request: *const c_char, result
 /// # Safety
 ///
 /// `text` is null or a string one of this library's calls returned, not yet freed.
-#[unsafe(no_mangle)]
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
 pub unsafe extern "C" fn garage_ingest_string_free(text: *mut c_char) {
     if !text.is_null() {
         // SAFETY: the caller's contract: a string this library made with CString::into_raw.
