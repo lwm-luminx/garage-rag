@@ -9,6 +9,7 @@
 //! [docs/plans/python-removal.md]: https://garagerag.app/plans/python-removal/
 
 pub mod auth;
+pub mod backfill;
 pub mod catalog;
 pub mod clusters;
 pub mod config;

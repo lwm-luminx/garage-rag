@@ -42,13 +42,25 @@ struct Running {
 
 impl Running {
     async fn start(database_url: &str, config_path: &Path) -> Self {
+        Self::start_with_host(database_url, config_path, None).await
+    }
+
+    /// A server whose long jobs reach a model server through `host`.
+    async fn start_with_host(
+        database_url: &str,
+        config_path: &Path,
+        host: Option<Arc<dyn garage_embed::Host>>,
+    ) -> Self {
         let mut config = Config::default();
         config.set_field("database_url", Value::String(database_url.to_owned()));
         config.path = Some(config_path.to_path_buf());
         let mut vector = vec![0.0f32; 8];
         vector[0] = 0.6;
         vector[1] = 0.8;
-        let service = GarageService::new(config, Arc::new(FixedEmbedder(vector)), sql_dir(None), true).unwrap();
+        let mut service = GarageService::new(config, Arc::new(FixedEmbedder(vector)), sql_dir(None), true).unwrap();
+        if let Some(host) = host {
+            service = service.with_host(host);
+        }
         let socket = config_path.with_file_name("grpc");
         let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
         let endpoint = Endpoint::Unix(socket.clone());
@@ -782,6 +794,94 @@ fn enrich_facts_streams_over_grpc() {
                 (unknown.code(), unknown.message()),
                 (Code::NotFound, "unknown fact prompt(s) nope; known: default")
             );
+            server.stop().await;
+        })
+    });
+}
+
+/// An Ollama that answers `/api/embed` with one 8-wide vector per input.
+struct FakeOllama {
+    calls: std::sync::Mutex<Vec<Value>>,
+}
+
+impl garage_embed::Host for FakeOllama {
+    fn http(&self, request: &garage_embed::HttpRequest) -> Result<garage_embed::HttpResponse, String> {
+        assert_eq!(request.url, "http://localhost:11434/api/embed");
+        let body: Value = serde_json::from_slice(&request.body).unwrap();
+        let inputs = match &body["input"] {
+            Value::Array(items) => items.len(),
+            Value::String(_) => 1,
+            other => panic!("unexpected input {other}"),
+        };
+        self.calls.lock().unwrap().push(body);
+        let embeddings: Vec<Vec<f32>> =
+            (0..inputs).map(|i| (0..8).map(|d| if d == i % 8 { 1.0 } else { 0.0 }).collect()).collect();
+        let reply = json!({"embeddings": embeddings});
+        Ok(garage_embed::HttpResponse { status: 200, body: reply.to_string().into_bytes() })
+    }
+}
+
+/// Every status the stream carries.
+async fn collect(client: &mut Client, request: proto::BackfillRequest) -> Vec<proto::BackfillStatus> {
+    let mut stream = client.backfill(request).await.unwrap().into_inner();
+    let mut statuses = Vec::new();
+    while let Some(status) = stream.message().await.unwrap() {
+        statuses.push(status);
+    }
+    statuses
+}
+
+#[test]
+fn backfill_runs_the_embed_worker_in_process_and_streams_its_progress() {
+    common::with_db_url(|pool, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let config_path = dir.join("garage.json");
+            let ollama = Arc::new(FakeOllama { calls: std::sync::Mutex::new(Vec::new()) });
+            let mut server = Running::start_with_host(&url, &config_path, Some(ollama.clone())).await;
+            let client = &mut server.client;
+            let mut db = pool.get().await.unwrap();
+            let spec = ModelSpec { provider: "ollama".into(), ..ModelSpec::new("tiny", "tiny-embed", 8) };
+            register_model(&mut db, &spec, true).await.unwrap();
+            let notes = common::source(&db, "notes", json!({})).await;
+            let first = common::chunk(&db, notes, "a.md", "alpha", "document").await;
+            common::chunk(&db, notes, "b.md", "beta", "document").await;
+            common::chunk(&db, notes, "c.eml", "a message", "communication").await;
+
+            let statuses = collect(
+                client,
+                proto::BackfillRequest { model: "tiny".into(), batch_size: 2, limit: 0, skip_verify: false },
+            )
+            .await;
+            let phases: Vec<&str> = statuses.iter().map(|s| s.phase.as_str()).collect();
+            assert_eq!(phases, ["started", "progress", "progress", "finished"], "{statuses:?}");
+            assert_eq!(statuses[0].message, "tiny: embedding 3 chunks");
+            let done = statuses.last().unwrap();
+            assert_eq!((done.total, done.embedded, done.failed, done.remaining, done.batches), (3, 3, 0, 0, 2));
+            assert_eq!(done.message, "tiny: embedded 3");
+            let stored: i64 = common::scalar(&db, "SELECT count(*) FROM emb_tiny", &[]).await;
+            assert_eq!(stored, 3);
+            let vector: Vec<f32> = {
+                let text: String =
+                    common::scalar(&db, "SELECT embedding::text FROM emb_tiny WHERE chunk_id = $1", &[&first]).await;
+                text.trim_matches(|c| c == '[' || c == ']').split(',').map(|v| v.parse().unwrap()).collect()
+            };
+            assert!((vector[0] - 1.0).abs() < 1e-6, "{vector:?}");
+            // The probe, then two batches of two and one.
+            assert_eq!(ollama.calls.lock().unwrap().len(), 3);
+
+            let again = collect(client, proto::BackfillRequest { model: String::new(), ..Default::default() }).await;
+            assert_eq!(
+                again.iter().map(|s| (s.phase.as_str(), s.message.as_str())).collect::<Vec<_>>(),
+                [("complete", "tiny: already complete")]
+            );
+
+            let missing = client.backfill(proto::BackfillRequest { model: "nope".into(), ..Default::default() }).await;
+            let missing = match missing {
+                Ok(stream) => stream.into_inner().message().await.unwrap_err(),
+                Err(status) => status,
+            };
+            assert_eq!(missing.code(), Code::NotFound, "{missing:?}");
             server.stop().await;
         })
     });

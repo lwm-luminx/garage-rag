@@ -23,7 +23,13 @@ struct Fake {
 }
 
 impl FactExtractor for Fake {
-    fn extract(&self, model: &FactModel, prompt: &EffectivePrompt, text: &str) -> Result<Vec<Extracted>, String> {
+    fn extract(
+        &self,
+        model: &FactModel,
+        _servers: &Settings,
+        prompt: &EffectivePrompt,
+        text: &str,
+    ) -> Result<Vec<Extracted>, String> {
         self.asked.lock().unwrap().push((model.model_id.clone(), prompt.name.clone(), text.to_owned()));
         let end = text.find('\n').map_or(text.chars().count(), |i| text[..i].chars().count());
         Ok(vec![Extracted {

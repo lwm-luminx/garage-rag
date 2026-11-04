@@ -25,7 +25,6 @@ use crate::catalog::{self, ModelRequest};
 use crate::clusters::{self, ChatDistiller, ClusterParams, ClusterProgress, ClusterRun, ClusterSummary, Distill};
 use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
 use crate::db::{Client, isoformat_opt};
-use crate::embedding::{backfill_distilled, count_pending, pending_chunks, store_vectors};
 use crate::enrich::{self, EnrichEvent, EnrichRun, FactExtractor, FactModel};
 use crate::error::{Result, ServiceError};
 use crate::facts::{self, FactFilters, FactRow};
@@ -37,7 +36,7 @@ use crate::prompts::EffectivePrompt;
 use crate::registry::{StoragePlan, truncate_vector};
 use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
 use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
-use crate::{corpus, db, graph, prompts};
+use crate::{backfill, corpus, db, graph, prompts};
 
 /// What `GetVersion` reports: the Python package's version, since the app shows it as the
 /// backend's and nothing about the contract changed.
@@ -184,12 +183,6 @@ fn ok<T>(value: T) -> std::result::Result<Response<T>, Status> {
 }
 
 type StatusStream<T> = Pin<Box<dyn Stream<Item = std::result::Result<T, Status>> + Send + 'static>>;
-
-fn unimplemented<T>(name: &str) -> std::result::Result<Response<T>, Status> {
-    Err(Status::unimplemented(format!(
-        "{name} is not ported to the Rust GarageService yet (docs/plans/python-removal.md)"
-    )))
-}
 
 #[tonic::async_trait]
 #[allow(clippy::too_many_lines)] // one method per RPC
@@ -571,24 +564,7 @@ impl GarageServiceTrait for GarageService {
         _request: Request<proto::ListModelsRequest>,
     ) -> std::result::Result<Response<proto::ListModelsResponse>, Status> {
         let client = self.client().await?;
-        let models: Vec<proto::ModelInfo> = list_models(&client)
-            .await?
-            .into_iter()
-            .map(|m| proto::ModelInfo {
-                slug: m.slug,
-                provider: m.provider,
-                model_ref: m.model_ref,
-                dims: m.dims,
-                stored_dims: m.stored_dims,
-                storage_kind: m.storage_kind,
-                index_kind: m.index_kind,
-                table_name: m.table_name,
-                is_default: m.is_default,
-                model_id: m.model_id.unwrap_or_default(),
-                distance: m.distance,
-                modality: if m.modality.is_empty() { "text".into() } else { m.modality },
-            })
-            .collect();
+        let models = backfill::model_infos(&client).await?;
         ok(proto::ListModelsResponse { formatted_output: format!("{} models registered", models.len()), models })
     }
 
@@ -932,66 +908,24 @@ impl GarageServiceTrait for GarageService {
     ) -> std::result::Result<Response<proto::GetEmbeddingBatchesResponse>, Status> {
         let r = request.into_inner();
         let client = self.client().await?;
-        let model = get_model(&client, opt(&r.model_slug).as_deref(), &self.default_model()).await?;
-        // The worker posts these texts to the model's provider: an off-box one never gets
-        // communication chunks.
-        let local = garage_embed::provider::provider_is_local(&model.provider, &self.config().embed_settings());
-        let pending_total = count_pending(&client, &model, local).await?;
-        let withheld = if local { 0 } else { count_pending(&client, &model, true).await? - pending_total };
-        let mut fetch_limit = if r.batch_size > 0 { i64::from(r.batch_size) } else { 64 };
-        if r.limit > 0 && i64::from(r.limit) < fetch_limit {
-            fetch_limit = i64::from(r.limit);
-        }
-        let chunks: Vec<proto::EmbeddingChunkItem> = pending_chunks(&client, &model, local, fetch_limit)
-            .await?
-            .into_iter()
-            .map(|(chunk_id, text)| proto::EmbeddingChunkItem { chunk_id, text })
-            .collect();
-        let has_more = pending_total - i64::try_from(chunks.len()).unwrap_or(0) > 0;
-        ok(proto::GetEmbeddingBatchesResponse {
-            model_slug: model.slug.clone(),
-            table_name: model.table_name.clone(),
-            provider: model.provider.clone(),
-            model_ref: model.model_ref.clone(),
-            dims: model.dims,
-            stored_dims: model.stored_dims,
-            storage_kind: model.storage_kind.clone(),
-            index_kind: model.index_kind.clone(),
-            total_pending: pending_total,
-            chunks,
-            has_more,
-            modality: model.modality().to_owned(),
-            withheld,
-        })
+        let settings = self.config().embed_settings();
+        ok(backfill::embedding_batches(&client, &self.default_model(), &settings, &r).await?)
     }
 
     async fn update_embeddings(
         &self,
         request: Request<proto::UpdateEmbeddingsRequest>,
     ) -> std::result::Result<Response<proto::UpdateEmbeddingsResponse>, Status> {
-        let r = request.into_inner();
         let mut client = self.client().await?;
-        let model = get_model(&client, opt(&r.model_slug).as_deref(), &self.default_model()).await?;
-        if r.embeddings.is_empty() {
-            return ok(proto::UpdateEmbeddingsResponse { success: true, count: 0, error: String::new() });
-        }
-        let vectors: Vec<(i64, Vec<f32>)> = r.embeddings.into_iter().map(|item| (item.chunk_id, item.vector)).collect();
-        let count = store_vectors(&mut client, &model, &vectors, true).await?;
-        ok(proto::UpdateEmbeddingsResponse {
-            success: true,
-            count: i32::try_from(count).unwrap_or(i32::MAX),
-            error: String::new(),
-        })
+        ok(backfill::update_embeddings(&mut client, &self.default_model(), request.into_inner()).await?)
     }
 
     async fn backfill_distilled(
         &self,
         request: Request<proto::BackfillDistilledRequest>,
     ) -> std::result::Result<Response<proto::BackfillDistilledResponse>, Status> {
-        let r = request.into_inner();
         let client = self.client().await?;
-        let model = get_model(&client, opt(&r.model_slug).as_deref(), &self.default_model()).await?;
-        let distilled = backfill_distilled(&client, &model).await?;
+        let distilled = backfill::distilled(&client, &self.default_model(), &request.into_inner().model_slug).await?;
         ok(proto::BackfillDistilledResponse { distilled })
     }
 
@@ -1250,18 +1184,63 @@ impl GarageServiceTrait for GarageService {
 
     // -- later stages -----------------------------------------------------------------------
 
+    /// Embeds pending chunks with the embed worker in this process, streaming each model's progress
+    /// (`garage backfill`; the app embeds through its own worker).
     async fn backfill(
         &self,
-        _r: Request<proto::BackfillRequest>,
+        request: Request<proto::BackfillRequest>,
     ) -> std::result::Result<Response<Self::BackfillStream>, Status> {
-        unimplemented("Backfill")
+        let Some(host) = self.host.clone() else {
+            return Err(ServiceError::Unavailable("this process has no way to reach a model server".into()).into());
+        };
+        let options = backfill::options(&request.into_inner());
+        let settings = self.config().embed_settings();
+        let facade = backfill::LocalFacade {
+            pool: self.pool.clone(),
+            default_model: self.default_model(),
+            settings: settings.clone(),
+            handle: tokio::runtime::Handle::current(),
+        };
+        let (tx, rx) = mpsc::channel(64);
+        let reporting: Arc<dyn Host> = Arc::new(backfill::ReportingHost::new(host, tx.clone()));
+        tokio::task::spawn_blocking(move || {
+            let result = garage_embed::backfill(&facade, &settings, &reporting, &options);
+            if let Err(error) = result {
+                let status = match error {
+                    garage_embed::BackfillError::NotFound(message) => Status::not_found(message),
+                    garage_embed::BackfillError::Failed(message) => Status::unknown(message),
+                    garage_embed::BackfillError::Cancelled => Status::cancelled("backfill cancelled"),
+                };
+                let _ = tx.blocking_send(Err(status));
+            }
+        });
+        ok(Box::pin(ReceiverStream::new(rx)) as Self::BackfillStream)
     }
 
+    /// Has LlamaXPCService load a model unless it is resident, through this process's host. Only
+    /// the host's loader is used (never this RPC again), so a server outside the app answers
+    /// `FAILED_PRECONDITION` rather than calling itself.
     async fn ensure_llama_model(
         &self,
-        _r: Request<proto::EnsureLlamaModelRequest>,
+        request: Request<proto::EnsureLlamaModelRequest>,
     ) -> std::result::Result<Response<proto::EnsureLlamaModelResponse>, Status> {
-        unimplemented("EnsureLlamaModel")
+        let model = request.into_inner().model;
+        if model.trim().is_empty() {
+            return Err(Status::invalid_argument("model is required"));
+        }
+        let Some(host) = self.host.clone() else {
+            return Err(Status::failed_precondition(format!(
+                "this process cannot load {model}: it is not running inside the Garage app. \
+                 Open Garage and load {model} on the Models page."
+            )));
+        };
+        let loaded = tokio::task::spawn_blocking(move || host.ensure_llama_model(&model))
+            .await
+            .map_err(|e| Status::unknown(format!("model loader panicked: {e}")))?;
+        match loaded {
+            Ok(message) => ok(proto::EnsureLlamaModelResponse { message }),
+            Err(reason) => Err(Status::failed_precondition(reason)),
+        }
     }
 
     async fn enrich_facts(

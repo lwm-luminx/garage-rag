@@ -272,7 +272,7 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   with no model, `fact_runs` and `stale_only`, the egress rule per document, each prompt's facts replaced in their
   own transaction, `tests/enrich.rs`; the model's side is a `FactExtractor` the binary supplies, the LangExtract
   adapter over the langextract-rs crate once it is on crates.io, and a service without one writes the metadata
-  facts and fails each prompt as unavailable); the other RPCs answer `UNIMPLEMENTED` until their stage.
+  facts and fails each prompt as unavailable), `EnsureLlamaModel` through the host's loader (`FAILED_PRECONDITION` outside the app) and `Backfill` (`ops/backfill.py`: `garage-embed`'s worker run in-process over `LocalFacade`, the pool answering its facade calls, with its progress streamed, `backfill.rs`), so every RPC of `garage.proto` is answered.
   `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is
   `test_postgres.py`'s cases for what is ported, `tests/grpc.rs` the service over a socket and a port and
   `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run

@@ -438,7 +438,7 @@ pub struct Extracted {
 /// host (`extract_facts`). Only grounded extractions come back: an ungrounded one is the model
 /// quoting its own few-shot example, which cannot be traced to the source text.
 pub trait FactExtractor: Send + Sync {
-    /// The facts `prompt` finds in `text` with `model`.
+    /// The facts `prompt` finds in `text` with `model`, on the configured `servers`.
     ///
     /// # Errors
     ///
@@ -446,6 +446,7 @@ pub trait FactExtractor: Send + Sync {
     fn extract(
         &self,
         model: &FactModel,
+        servers: &Settings,
         prompt: &EffectivePrompt,
         text: &str,
     ) -> std::result::Result<Vec<Extracted>, String>;
@@ -738,8 +739,9 @@ async fn run_prompt(
                     "fact extraction with a model is not available in this build; metadata facts were written".into(),
                 ));
             };
-            let (model, prompt_copy, text) = (run.model.clone(), prompt.clone(), text.to_owned());
-            tokio::task::spawn_blocking(move || extractor.extract(&model, &prompt_copy, &text))
+            let (model, servers, prompt_copy, text) =
+                (run.model.clone(), run.servers.clone(), prompt.clone(), text.to_owned());
+            tokio::task::spawn_blocking(move || extractor.extract(&model, &servers, &prompt_copy, &text))
                 .await
                 .unwrap_or_else(|e| Err(format!("extractor panicked: {e}")))
                 .map_err(ServiceError::Unavailable)?

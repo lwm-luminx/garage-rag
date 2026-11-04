@@ -130,9 +130,25 @@ fn a_unix_socket_server_answers_without_a_token_and_vouches_for_its_callers() {
         assert_eq!(setting.value_json, "\"llama_xpc\"");
         let bad = client.get_setting(proto::GetSettingRequest { name: "nope.model".into() }).await.unwrap_err();
         assert_eq!(bad.code(), Code::InvalidArgument);
-        // A method a later stage ports says so, and is not refused on the socket.
-        let later = client.ensure_llama_model(proto::EnsureLlamaModelRequest::default()).await.unwrap_err();
-        assert_eq!(later.code(), Code::Unimplemented);
+        // EnsureLlamaModel is answered on the socket; outside the app no loader can load a model.
+        let unnamed = client.ensure_llama_model(proto::EnsureLlamaModelRequest::default()).await.unwrap_err();
+        assert_eq!((unnamed.code(), unnamed.message()), (Code::InvalidArgument, "model is required"));
+        let request = proto::EnsureLlamaModelRequest { model: "gemma2-2b".into() };
+        let outside = client.ensure_llama_model(request).await.unwrap_err();
+        assert_eq!(outside.code(), Code::FailedPrecondition);
+        assert!(
+            outside
+                .message()
+                .starts_with("this process cannot load gemma2-2b: it is not running inside the Garage app."),
+            "{}",
+            outside.message()
+        );
+        // Backfill runs the embed worker through the process's host; this server has none.
+        let no_host = client.backfill(proto::BackfillRequest::default()).await.unwrap_err();
+        assert_eq!(
+            (no_host.code(), no_host.message()),
+            (Code::Unavailable, "this process has no way to reach a model server")
+        );
         // A config change is allowed on the socket: the empty name is what is refused.
         let allowed = client.set_setting(proto::SetSettingRequest::default()).await.unwrap_err();
         assert_eq!(allowed.code(), Code::InvalidArgument);
@@ -178,7 +194,7 @@ fn the_token_guards_every_call_but_ensure_llama_model() {
         assert_eq!(refused.code(), Code::Unauthenticated);
         assert!(refused.message().contains(METADATA_KEY));
         let later = bare.ensure_llama_model(proto::EnsureLlamaModelRequest::default()).await.unwrap_err();
-        assert_eq!(later.code(), Code::Unimplemented, "EnsureLlamaModel needs no token");
+        assert_eq!(later.code(), Code::InvalidArgument, "EnsureLlamaModel needs no token");
 
         let mut wrong = GarageServiceClient::with_interceptor(channel.clone(), with_token("s3cret-for-this-tesT"));
         assert_eq!(wrong.ping(proto::PingRequest::default()).await.unwrap_err().code(), Code::Unauthenticated);
