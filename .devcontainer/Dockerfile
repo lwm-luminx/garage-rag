@@ -5,13 +5,13 @@ FROM mcr.microsoft.com/devcontainers/base:ubuntu
 ARG TARGETARCH
 ARG PG_MAJOR=18
 
-# direnv + curl for downloading bazelisk; the native libraries the Linux CI job installs
-# (libgit2 and libtesseract for the _garage_git/_garage_tesseract extensions, Tesseract's
-# English data); a C toolchain for those extensions.
+# direnv + curl for downloading bazelisk and rustup; the native libraries the Linux CI job
+# installs for the Rust crates (libgit2, SQLite, libtesseract with Tesseract's English data,
+# protoc); a C toolchain for their build scripts.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        pip direnv curl ca-certificates gnupg postgresql-common \
-        build-essential pkg-config libgit2-dev libtesseract-dev tesseract-ocr-eng \
+        direnv curl ca-certificates gnupg postgresql-common \
+        build-essential pkg-config protobuf-compiler libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng \
     && rm -rf /var/lib/apt/lists/*
 
 # Postgres + pgvector from the PGDG repository: the app's major (18), with a pgvector new
@@ -22,8 +22,11 @@ RUN /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y \
         "postgresql-${PG_MAJOR}" "postgresql-${PG_MAJOR}-pgvector" \
     && rm -rf /var/lib/apt/lists/*
 
-# uv on every user's PATH (the container runs as vscode, not root).
-RUN curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+# rustup for the vscode user: rust/rust-toolchain.toml names the toolchain it installs on first use.
+USER vscode
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain none \
+    && echo 'export PATH="$HOME/.cargo/bin:$PATH"' >> "$HOME/.bashrc"
+USER root
 
 # Install bazelisk (latest release)
 RUN curl -L "https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-${TARGETARCH:-amd64}" \

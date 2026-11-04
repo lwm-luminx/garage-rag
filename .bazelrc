@@ -7,16 +7,6 @@ common --downloader_config=bazel/downloader.cfg
 
 
 
-# Select the uv hub's dependency group (matches project name in pyproject.toml).
-common --@pypi//dep_group=garage_rag
-# Select the hermetic free-threaded 3.14 (3.14t) interpreter from @python_interpreters.
-# Its toolchains are gated on these flags (target_settings = python_version_is_3_14 and
-# freethreaded_is_true); without them, resolution falls through to a transitively-registered
-# rules_python interpreter. The freethreaded flag also makes the uv hub pick cp314t wheels.
-common --@aspect_rules_py//py/private/interpreter:python_version=3.14
-common --@aspect_rules_py//py/private/interpreter:freethreaded=true
-common --@rules_python//python/config_settings:py_freethreaded=yes
-
 # winapp/: a C# target sees its dependencies' dependencies, as NuGet and MSBuild let a project use
 # every package and project it reaches transitively; the BUILD files mirror the csproj files'
 # direct references only.
@@ -25,20 +15,10 @@ common --@rules_dotnet//dotnet/settings:strict_deps=false
 
 
 
-# Python tests that need a real Postgres (garage_python/tests/test_postgres.py) run
-# against the server this names and skip when it is unset; see "Testing against
-# Postgres" in CLAUDE.md.
+# The Rust tests that need a real Postgres (rust/garage-service/tests, rust/garage-cli/tests)
+# run against the server this names and pass without running when it is unset; see "Testing
+# against Postgres" in CLAUDE.md.
 test --test_env=GARAGE_TEST_DATABASE_URL
-
-# garage_python/tests/test_inference_live.py runs against a real LM Studio / Ollama
-# when these name a model (and skips otherwise); see that file's docstring.
-test --test_env=GARAGE_TEST_OLLAMA_EMBED_MODEL
-test --test_env=GARAGE_TEST_OLLAMA_URL
-test --test_env=GARAGE_TEST_LMSTUDIO_EMBED_MODEL
-test --test_env=GARAGE_TEST_LMSTUDIO_CHAT_MODEL
-test --test_env=GARAGE_TEST_LMSTUDIO_URL
-test --test_env=GARAGE_TEST_LMSTUDIO_AUTH_ON
-test --test_env=GARAGE_LMSTUDIO_API_TOKEN
 
 # Load settings & overrides specific to the current user from `user.bazelrc`.
 # That file is git-ignored so settings aren't shared with team members. This is
@@ -78,7 +58,7 @@ build:ci --platforms=//bazel:adhoc
 
 # On a Linux host (the devcontainer, CI's Linux jobs) build for that host: the macOS platforms above
 # have no matching execution platform there, so no test could run. The macOS-only targets are not
-# buildable on Linux either way; winapp/ and the Python targets are. --enable_platform_specific_config
+# buildable on Linux either way; winapp/ and the Rust crates are. --enable_platform_specific_config
 # applies `build:linux` only when Bazel runs on Linux. It is repeated here as a `build` option, after
 # the --platforms above: the presets' `common` copy expands before every `build` line, so the
 # local_signed default would win again.

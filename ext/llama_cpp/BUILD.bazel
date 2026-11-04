@@ -38,7 +38,7 @@ cmake(
     visibility = ["//visibility:public"],
 )
 
-# The pin, read by garage_python/tests/test_llama_known_answers.py to check that
+# The pin, read by tools/llama/known_answers.py to check that
 # //ext/nomic_embed:known_answers.json was generated with this llama.cpp.
 exports_files(
     ["llama_cpp.MODULE.bazel"],

@@ -5,7 +5,5 @@ See https://bazel.build/rules/lib/globals/repo
 ignore_directories([
     # Claude Code worktrees: each carries its own bazel-* output symlinks.
     ".claude",
-    "garage_python/.venv",
-    "**/.pytest_cache",
     "**/__pycache__",
 ])

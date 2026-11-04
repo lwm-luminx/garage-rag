@@ -1,4 +1,4 @@
-"""Fails when THIRD_PARTY_NOTICES.txt no longer covers uv.lock plus the bundled native components."""
+"""Fails when THIRD_PARTY_NOTICES.txt no longer covers Cargo.lock plus the bundled native components."""
 
 import sys
 from pathlib import Path

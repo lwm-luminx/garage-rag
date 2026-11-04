@@ -22,14 +22,10 @@ FONTS = Path("/usr/share/fonts/truetype/dejavu")
 
 
 def font(bold: bool, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(
-        str(FONTS / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")), size
-    )
+    return ImageFont.truetype(str(FONTS / ("DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf")), size)
 
 
-def wrap(
-    draw: ImageDraw.ImageDraw, text: str, face: ImageFont.FreeTypeFont, width: int
-) -> list[str]:
+def wrap(draw: ImageDraw.ImageDraw, text: str, face: ImageFont.FreeTypeFont, width: int) -> list[str]:
     lines: list[str] = []
     for word in text.split():
         candidate = f"{lines[-1]} {word}" if lines else word
@@ -45,9 +41,7 @@ def main() -> None:
     draw = ImageDraw.Draw(card)
 
     # The app window on the right, bleeding off the bottom and right edges.
-    shot = Image.open(ASSETS / "screenshots" / "mcp-server-light-2x.webp").convert(
-        "RGB"
-    )
+    shot = Image.open(ASSETS / "screenshots" / "mcp-server-light-2x.webp").convert("RGB")
     shot_width = 700
     shot = shot.resize(
         (shot_width, round(shot.height * shot_width / shot.width)),
@@ -55,9 +49,7 @@ def main() -> None:
     )
     shot_x, shot_y = 560, 90
     shadow = Image.new("RGBA", (shot.width + 40, shot.height + 40), (0, 0, 0, 0))
-    ImageDraw.Draw(shadow).rounded_rectangle(
-        (20, 24, shot.width + 20, shot.height + 24), 14, fill=(31, 35, 40, 40)
-    )
+    ImageDraw.Draw(shadow).rounded_rectangle((20, 24, shot.width + 20, shot.height + 24), 14, fill=(31, 35, 40, 40))
     card.paste(shadow, (shot_x - 20, shot_y - 20), shadow)
     card.paste(shot, (shot_x, shot_y))
     draw.rectangle(
@@ -66,11 +58,7 @@ def main() -> None:
     )
 
     # Logo and wordmark.
-    logo = (
-        Image.open(ASSETS / "logo.png")
-        .convert("RGBA")
-        .resize((112, 112), Image.Resampling.LANCZOS)
-    )
+    logo = Image.open(ASSETS / "logo.png").convert("RGBA").resize((112, 112), Image.Resampling.LANCZOS)
     card.paste(logo, (64, 70), logo)
     draw.text((64, 212), "Garage", font=font(True, 76), fill=TEXT)
 

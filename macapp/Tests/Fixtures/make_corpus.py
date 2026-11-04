@@ -6,7 +6,7 @@ came from. ``README.md`` lists what the tests rely on.
 
 The output is byte-for-byte deterministic, so rerunning this leaves ``git status`` clean:
 
-    garage_python/.venv/bin/python macapp/Tests/Fixtures/make_corpus.py
+    python3 macapp/Tests/Fixtures/make_corpus.py
 
 The text files are written from the strings below, the PDF by hand (one page, the standard
 Helvetica font, no compression), and the Word file with python-docx, with fixed document
@@ -101,9 +101,7 @@ ZIP_TIME = (2025, 1, 1, 0, 0, 0)
 
 
 def _pdf_string(text: str) -> str:
-    return (
-        "(" + text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
-    )
+    return "(" + text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)") + ")"
 
 
 def make_pdf() -> bytes:
@@ -122,11 +120,7 @@ def make_pdf() -> bytes:
             b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
         ),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
-        b"<< /Length "
-        + str(len(content)).encode()
-        + b" >>\nstream\n"
-        + content
-        + b"endstream",
+        b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"endstream",
         f"<< /Title {_pdf_string(PDF_TITLE)} /Author (Nell Oduya) >>".encode("latin-1"),
     ]
     out = io.BytesIO()
@@ -140,16 +134,14 @@ def make_pdf() -> bytes:
     out.write(b"0000000000 65535 f \n")
     for offset in offsets:
         out.write(f"{offset:010d} 00000 n \n".encode())
-    out.write(
-        f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 6 0 R >>\n".encode()
-    )
+    out.write(f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R /Info 6 0 R >>\n".encode())
     out.write(f"startxref\n{xref}\n%%EOF\n".encode())
     return out.getvalue()
 
 
 def make_docx() -> bytes:
     """A Word file whose bytes do not depend on when or where it was made."""
-    import docx  # python-docx, one of garage_python's dependencies
+    import docx  # python-docx: pip install python-docx
 
     document = docx.Document()
     props = document.core_properties

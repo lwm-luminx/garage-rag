@@ -68,9 +68,7 @@ def download(urls: list[str], sha256: str | None = None) -> bytes:
         if sha256:
             digest = hashlib.sha256(data).hexdigest()
             if digest != sha256:
-                print(
-                    f"  sha256 {digest} does not match the pinned {sha256}", flush=True
-                )
+                print(f"  sha256 {digest} does not match the pinned {sha256}", flush=True)
                 continue
             print(f"  sha256 ok ({digest})", flush=True)
         return data
@@ -98,9 +96,7 @@ def extract(data: bytes, dest: Path, strip_prefix: str | None) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--dest", type=Path, required=True)
     parser.add_argument("names", nargs="+")
     args = parser.parse_args()

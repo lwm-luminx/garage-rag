@@ -1,0 +1,7 @@
+# Ruff, for the Python development tools in the tree (tools/, winapp/bazel, macapp/Tests/Fixtures):
+# `aspect format` and `aspect lint` read it, as does a bare `ruff` run from the root.
+line-length = 120
+target-version = "py313"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

@@ -4,12 +4,13 @@
 ``StoreScreenshotsUITests`` writes ``web-<name>-<appearance>.png`` next to the store set: the MCP
 page's window with transparent corners and close-ups of parts of other pages, all at 2x. This
 writes, for each name and appearance, WebP at 1x and 2x of the width the site shows it at (the
-1040 px content column at most), a 1x PNG of the light one for browsers without WebP, and ``_data/screenshots.yml`` with each
-image's 1x size, which ``_includes/screenshot.html`` reads for its ``width`` and ``height``::
+1040 px content column at most), a 1x PNG of the light one for browsers without WebP, and
+``_data/screenshots.yml`` with each image's 1x size, which ``_includes/screenshot.html`` reads for its
+``width`` and ``height``::
 
-    garage_python/.venv/bin/python tools/screenshots/web_images.py <captures> docs
+    python3 tools/screenshots/web_images.py <captures> docs
 
-Needs Pillow built with WebP (the ``garage_python`` venv's is).
+Needs Pillow built with WebP (``pip install Pillow``).
 """
 
 from __future__ import annotations
@@ -47,11 +48,7 @@ def convert(source: Path, out_dir: Path, stem: str, fallback: bool) -> tuple[int
         image = image.convert(mode)
         one_x, two_x = sizes(*image.size)
         for suffix, size in (("1x", one_x), ("2x", two_x)):
-            scaled = (
-                image
-                if image.size == size
-                else image.resize(size, Image.Resampling.LANCZOS)
-            )
+            scaled = image if image.size == size else image.resize(size, Image.Resampling.LANCZOS)
             scaled.save(
                 out_dir / f"{stem}-{suffix}.webp",
                 "WEBP",
@@ -64,12 +61,8 @@ def convert(source: Path, out_dir: Path, stem: str, fallback: bool) -> tuple[int
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument(
-        "captures", type=Path, help="folder holding the test's web-*.png files"
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("captures", type=Path, help="folder holding the test's web-*.png files")
     parser.add_argument("site", type=Path, help="the Jekyll site (docs/)")
     args = parser.parse_args(argv)
 
@@ -93,9 +86,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no web-*.png in {args.captures}", file=sys.stderr)
         return 1
 
-    lines = [
-        "# Written by tools/screenshots/web_images.py: each screenshot's 1x size, for its width and height."
-    ]
+    lines = ["# Written by tools/screenshots/web_images.py: each screenshot's 1x size, for its width and height."]
     for name, appearances in sorted(found.items()):
         if set(appearances) != {"light", "dark"}:
             print(f"{name} lacks a light or dark capture", file=sys.stderr)

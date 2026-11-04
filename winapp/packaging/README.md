@@ -48,8 +48,8 @@ From `winapp\packaging`, in Windows PowerShell 5.1 or `pwsh`:
   organizations to accept one. WiX's command-line tool is pinned to the same version in
   `dotnet-tools.json`.
 
-The version defaults to `garage_python/pyproject.toml`'s; pass `-Version X.Y.Z` to every script to
-override it. `-Arch arm64` builds for ARM64 once arm64 builds of Python and Postgres exist.
+The version defaults to GarageService's (`rust/garage-service/src/service.rs`); pass `-Version X.Y.Z` to every script to
+override it. `-Arch arm64` builds for ARM64 once an arm64 build of Postgres exists.
 
 CI builds all three, unsigned, in `windows.yaml`'s `package` job (artifact `garage-windows-x64`).
 
@@ -142,7 +142,5 @@ Raise the version for each release. Windows Installer compares only `X.Y.Z`.
   (windows.md section 2.7).
 - **More natives.** llama.cpp, Tesseract and Leptonica have no Windows builds yet. Each joins the
   stage once `windows.yaml` builds it.
-- **A locked environment.** `site-packages` is resolved from `pyproject.toml` at stage time, because
-  `uv.lock` has no Windows environment yet (windows.md section 4).
 - **Closing Garage on upgrade.** Postgres runs detached from the app, so an MSI upgrade or uninstall
   with Garage running finds its files in use and asks for a restart. Quit Garage first.

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# After adding or upgrading a third-party dependency, run this script to
-# regenerate the language lockfiles. Also run once after `aspect init` to
-# materialize the placeholder lockfiles the template ships with.
+# After changing a Bazel module dependency, run this script to regenerate the
+# lockfiles. Also run once after `aspect init` to materialize the placeholder
+# lockfiles the template ships with.
 set -o errexit -o nounset -o pipefail
 
 cd "$(dirname "$0")/.."
@@ -11,12 +11,9 @@ cd "$(dirname "$0")/.."
 # bazel/preset.bazelrc in sync so //bazel:preset.update_test passes.
 bazel run //bazel:preset.update
 
-# Python: regenerate uv.lock from pyproject.toml (uv reads pyproject + lock).
-bazel run @uv -- lock --directory garage_python
-
 # Accept any resulting MODULE.bazel.lock changes.
 bazel mod deps --lockfile_mode=update
 
-# The app redistributes every locked runtime package; refresh their license texts.
-# //data/notices:third_party_notices_test fails until this is committed.
+# The app redistributes every crate it links; refresh their license texts after a Cargo.lock
+# change. //data/notices:third_party_notices_test fails until this is committed.
 python3 tools/third_party_notices.py

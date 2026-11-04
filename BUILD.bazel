@@ -1,30 +1,13 @@
 """Targets in the repository root"""
 
-# tools/swiftcheck is a venv-only dev script (tree-sitter comes from the `dev` extras, which
-# the @pypi hub does not expose), not a Bazel target.
-# gazelle:exclude tools/swiftcheck
-
-# tools/windows is run by .github/workflows/windows.yaml with the runner's Python, outside Bazel.
-# gazelle:exclude tools/windows
-
-# tools/llama regenerates //ext/nomic_embed:known_answers.json with the system Python, cmake and a
-# compiler (.github/workflows/known-answers.yaml), outside Bazel.
-# gazelle:exclude tools/llama
-
-# garage_python/hatch_build.py is the PyPI build's hook, run by hatchling outside Bazel.
-# gazelle:exclude garage_python/hatch_build.py
-
-# tools/screenshots turns the store screenshot test's website captures into docs/ images and draws
-# the site's social card, run by hand with the garage_python venv's Pillow, outside Bazel.
-# gazelle:exclude tools/screenshots
-
-# tools/pythonkit regenerates PythonKit's link-time symbol table (ext/pythonkit) from the submodule,
-# run by hand and checked by the swiftcheck job with the runner's Python, outside Bazel.
-# gazelle:exclude tools/pythonkit
+# The Python scripts in the tree are development tools run outside Bazel, with the system
+# Python or a throwaway venv: tools/swiftcheck (tree-sitter), tools/windows (windows.yaml),
+# tools/llama (known-answers.yaml), tools/screenshots (the site's images), tools/third_party_notices.py
+# and winapp/bazel's csproj check and repin. gazelle's Python plugin is off (//tools/gazelle), so
+# their BUILD files, where one exists, are written by hand.
 
 # winapp is the .NET solution for the Windows app. Its BUILD files mirror the csproj files by hand
-# (//winapp/bazel:csproj_sync_test holds them together), and its Python is that test's and
-# repin.py's, so gazelle leaves the folder alone.
+# (//winapp/bazel:csproj_sync_test holds them together), so gazelle leaves the folder alone.
 # gazelle:exclude winapp
 
 # rust/ is a Cargo workspace; its BUILD files mirror each Cargo.toml by hand.
@@ -32,9 +15,11 @@
 
 exports_files(
     [
+        "LICENSE",
         "README.md",
+        "ruff.toml",
     ],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 # The gazelle binary + `gazelle` runner target live in //tools/gazelle (the
@@ -85,11 +70,6 @@ alias(
     name = "is_store",
     actual = "//bazel:is_store",
     visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "garage_rag",
-    actual = "//garage_python/src/garage_rag",
 )
 
 alias(

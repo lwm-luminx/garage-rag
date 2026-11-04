@@ -58,7 +58,6 @@ def config(ctx: ConfigContext):
         
         
         "//tools/lint:linters.bzl%ruff",
-        "//tools/lint:linters.bzl%ty",
         
         
         
