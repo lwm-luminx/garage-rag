@@ -345,7 +345,7 @@ public final class XPCServiceManager: ObservableObject {
             id: "ingest-xpc",
             name: "Document Ingestion Helper",
             bundleId: "me.rickmark.garage-rag.ingest-xpc",
-            serviceDescription: "Runs multi-threaded Python ingestion pipelines with crash isolation and sandboxed filesystem access."
+            serviceDescription: "Runs the ingest loop, which reads every file and stores it through GarageService, with crash isolation and sandboxed filesystem access."
         ),
         XPCServiceInfo(
             id: "embed-xpc",
