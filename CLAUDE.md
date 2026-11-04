@@ -159,7 +159,10 @@ on fakes.
   committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
   `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
 - `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
-  runner's OS and CPU.
+  runner's OS and CPU. Given the `ASPECT_API_TOKEN` secret (every job that runs `aspect` passes it), it
+  signs the CLI in to Aspect (the token on stdin, never in `GITHUB_ENV`). That turns on the CLI's GitHub
+  features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings as
+  review comments. BuildBuddy stays the remote cache. Without the token (forks) nothing changes.
 
 ### Rust (`rust/`) and reader plugins
 

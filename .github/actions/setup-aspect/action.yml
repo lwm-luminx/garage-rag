@@ -2,7 +2,18 @@ name: Set up the Aspect CLI
 description: >-
   Installs the Aspect CLI launcher pinned by tools/tools.lock.json for this
   runner's OS and CPU (the CLI version it runs is pinned by .aspect/version.axl),
-  and Bazelisk where the image lacks it.
+  and Bazelisk where the image lacks it. Given an Aspect API token, it also
+  signs the CLI in to Aspect, which turns on its GitHub features: a check run
+  per task, a PR summary comment, and lint findings as review comments (all
+  through Aspect's GitHub App on the organization).
+inputs:
+  aspect-api-token:
+    description: >-
+      An Aspect API token (client_id:secret), usually secrets.ASPECT_API_TOKEN.
+      Empty (a fork's pull request, or no secret) leaves the CLI signed out and
+      the build unchanged.
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -35,4 +46,18 @@ runs:
           if [ "$os" = macos ]; then brew install bazelisk; else
             echo "no bazelisk or bazel on this image" >&2; exit 1
           fi
+        fi
+    # Sign in the way aspect-build/setup-aspect does: the token goes to the CLI on stdin, so it never
+    # lands in GITHUB_ENV or another step's environment, and the CLI keeps a short-lived credential.
+    # A failed sign-in only costs the GitHub features, never the build. Whitespace pasted into the secret
+    # (a trailing newline) is dropped: the token is client_id:secret, which holds none.
+    - if: inputs.aspect-api-token != ''
+      shell: bash
+      env:
+        ASPECT_API_TOKEN: ${{ inputs.aspect-api-token }}
+      run: |
+        if printf '%s' "$ASPECT_API_TOKEN" | tr -d '[:space:]' | "$RUNNER_TEMP/bin/aspect" auth login --with-api-token; then
+          "$RUNNER_TEMP/bin/aspect" auth status || true
+        else
+          echo "::warning::Aspect sign-in failed; tasks run without GitHub check runs or lint comments"
         fi
