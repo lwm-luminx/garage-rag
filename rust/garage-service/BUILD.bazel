@@ -48,6 +48,7 @@ rust_binary(
     visibility = ["//visibility:public"],
     deps = [
         ":garage-service",
+        "//rust/garage-embed",
         "@crates//:serde_json",
         "@crates//:tokio",
     ],
