@@ -13,6 +13,8 @@ _DEPS = [
 rust_static_library(
     name = "garage_embed_uniffi_static",
     srcs = glob(["src/**/*.rs"]),
+    # UniFFI's macros read the crate's Cargo.toml from CARGO_MANIFEST_DIR.
+    compile_data = ["Cargo.toml"],
     crate_name = "garage_embed_uniffi",
     edition = "2024",
     deps = _DEPS,
@@ -58,6 +60,8 @@ swift_library(
 rust_library(
     name = "garage_embed_uniffi_lib",
     srcs = glob(["src/**/*.rs"]),
+    # UniFFI's macros read the crate's Cargo.toml from CARGO_MANIFEST_DIR.
+    compile_data = ["Cargo.toml"],
     crate_name = "garage_embed_uniffi",
     edition = "2024",
     deps = _DEPS,
@@ -65,5 +69,6 @@ rust_library(
 
 rust_test(
     name = "garage-embed-uniffi-test",
+    compile_data = ["Cargo.toml"],
     crate = ":garage_embed_uniffi_lib",
 )
