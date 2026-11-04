@@ -24,6 +24,7 @@ use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config}
 use crate::db::{Client, isoformat_opt};
 use crate::embedding::{backfill_distilled, count_pending, pending_chunks, store_vectors};
 use crate::error::{Result, ServiceError};
+use crate::facts::{self, FactFilters, FactRow};
 use crate::gateway::{self, AuthorPayload, ChunkPayload, DocumentPayload};
 use crate::mcp_install::{self, InstallRequest};
 use crate::migrate::{apply_migrations, pending_migrations};
@@ -31,7 +32,7 @@ use crate::models::{count_vectors, drop_model, get_model, list_models, register_
 use crate::registry::{StoragePlan, truncate_vector};
 use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
 use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
-use crate::{corpus, db};
+use crate::{corpus, db, graph, prompts};
 
 /// What `GetVersion` reports: the Python package's version, since the app shows it as the
 /// backend's and nothing about the contract changed.
@@ -438,16 +439,58 @@ impl GarageServiceTrait for GarageService {
 
     async fn list_facts(
         &self,
-        _r: Request<proto::ListFactsRequest>,
+        request: Request<proto::ListFactsRequest>,
     ) -> std::result::Result<Response<proto::ListFactsResponse>, Status> {
-        unimplemented("ListFacts")
+        let r = request.into_inner();
+        let client = self.client().await?;
+        let filters = FactFilters {
+            query: r.query,
+            source: r.source,
+            fact_class: r.fact_class,
+            corpus_class: r.corpus_class,
+            document_id: Some(r.document_id),
+        };
+        let limit = if r.limit == 0 { 200 } else { i64::from(r.limit) };
+        let page =
+            facts::list_facts(&client, &filters, limit, i64::from(r.offset), r.collapse, Some(r.distilled_fact_id))
+                .await?;
+        let summaries: Vec<proto::FactSummary> = page.facts.iter().map(fact_summary).collect();
+        ok(proto::ListFactsResponse {
+            formatted_output: format!("{} of {} facts", summaries.len(), page.total),
+            facts: summaries,
+            total_count: page.total,
+            classes: page
+                .classes
+                .into_iter()
+                .map(|(fact_class, count)| proto::FactClassCount { fact_class, count })
+                .collect(),
+        })
     }
 
     async fn get_fact_stats(
         &self,
-        _r: Request<proto::FactStatsRequest>,
+        request: Request<proto::FactStatsRequest>,
     ) -> std::result::Result<Response<proto::FactStatsResponse>, Status> {
-        unimplemented("GetFactStats")
+        let r = request.into_inner();
+        let client = self.client().await?;
+        let filters = FactFilters {
+            query: r.query,
+            source: r.source,
+            fact_class: r.fact_class,
+            corpus_class: r.corpus_class,
+            document_id: Some(r.document_id),
+        };
+        let stats = facts::fact_stats(&client, &filters).await?;
+        ok(proto::FactStatsResponse {
+            formatted_output: stats.message(),
+            facts: stats.facts,
+            documents: stats.documents,
+            facts_by_source: stats.by_source.into_iter().collect(),
+            facts_by_class: stats.by_class.into_iter().collect(),
+            distilled: stats.distilled,
+            clusters: stats.clusters,
+            clustered_facts: stats.clustered_facts,
+        })
     }
 
     // -- sources, models, stats -------------------------------------------------------------
@@ -1196,30 +1239,101 @@ impl GarageServiceTrait for GarageService {
 
     async fn list_fact_prompts(
         &self,
-        _r: Request<proto::ListFactPromptsRequest>,
+        request: Request<proto::ListFactPromptsRequest>,
     ) -> std::result::Result<Response<proto::ListFactPromptsResponse>, Status> {
-        unimplemented("ListFactPrompts")
+        let _ = request;
+        let config = self.config();
+        let configured = config.setting("facts.prompts")?;
+        let prompts = prompts::effective_prompts(&prompts::parse_prompts(&configured)?)?
+            .iter()
+            .map(|p| proto::FactPrompt {
+                name: p.name.clone(),
+                description: p.description.clone(),
+                examples_json: pyjson::dumps(&p.examples_value(), CORPUS_JSON),
+                corpus_classes: p.corpus_classes.clone(),
+                sources: p.sources.clone(),
+                enabled: p.enabled,
+                builtin: p.builtin,
+                customized: p.customized,
+                sha256: db::hex_string(&p.sha256()),
+            })
+            .collect();
+        ok(proto::ListFactPromptsResponse { prompts, configured_json: pyjson::dumps(&configured, CORPUS_JSON) })
     }
 
     async fn get_graph_labels(
         &self,
-        _r: Request<proto::GraphLabelsRequest>,
+        request: Request<proto::GraphLabelsRequest>,
     ) -> std::result::Result<Response<proto::GraphLabelsResponse>, Status> {
-        unimplemented("GetGraphLabels")
+        let _ = request;
+        let mut client = self.client().await?;
+        let labels = graph::graph_labels(&mut client).await?;
+        ok(proto::GraphLabelsResponse {
+            available: labels.available,
+            vertex_labels: labels
+                .vertices
+                .into_iter()
+                .map(|(label, count)| proto::GraphLabelCount { label, count })
+                .collect(),
+            edge_labels: labels
+                .edges
+                .into_iter()
+                .map(|(label, count)| proto::GraphLabelCount { label, count })
+                .collect(),
+        })
     }
 
     async fn find_graph_vertices(
         &self,
-        _r: Request<proto::FindGraphVerticesRequest>,
+        request: Request<proto::FindGraphVerticesRequest>,
     ) -> std::result::Result<Response<proto::FindGraphVerticesResponse>, Status> {
-        unimplemented("FindGraphVertices")
+        let r = request.into_inner();
+        let mut client = self.client().await?;
+        if !graph::graph_labels(&mut client).await?.available {
+            return ok(proto::FindGraphVerticesResponse::default());
+        }
+        let limit = if r.limit == 0 { 50 } else { i64::from(r.limit) };
+        let found = graph::find_vertices(&mut client, &r.query, &r.label, limit).await?;
+        ok(proto::FindGraphVerticesResponse { available: true, vertices: found.iter().map(graph_vertex).collect() })
     }
 
     async fn get_graph_neighborhood(
         &self,
-        _r: Request<proto::GraphNeighborhoodRequest>,
+        request: Request<proto::GraphNeighborhoodRequest>,
     ) -> std::result::Result<Response<proto::GraphNeighborhoodResponse>, Status> {
-        unimplemented("GetGraphNeighborhood")
+        let r = request.into_inner();
+        let mut client = self.client().await?;
+        let center = if r.vertex_id != 0 {
+            graph::Center::Id(r.vertex_id)
+        } else {
+            graph::Center::Key { label: r.label.clone(), key: r.key }
+        };
+        let depth = if r.depth == 0 { 1 } else { i64::from(r.depth) };
+        let vertex_labels =
+            (r.filter_vertex_labels || !r.vertex_labels.is_empty()).then_some(r.vertex_labels.as_slice());
+        let edge_labels = (r.filter_edge_labels || !r.edge_labels.is_empty()).then_some(r.edge_labels.as_slice());
+        let limit = if r.limit == 0 { 200 } else { i64::from(r.limit) };
+        let result = graph::neighborhood(&mut client, &center, depth, vertex_labels, edge_labels, limit).await?;
+        let (true, Some(center)) = (result.available, result.center) else {
+            return ok(proto::GraphNeighborhoodResponse::default());
+        };
+        ok(proto::GraphNeighborhoodResponse {
+            available: true,
+            center: Some(graph_vertex(&center)),
+            vertices: result.vertices.iter().map(graph_vertex).collect(),
+            edges: result
+                .edges
+                .iter()
+                .map(|e| proto::GraphEdge {
+                    id: e.id,
+                    label: e.label.clone(),
+                    source_id: e.source_id,
+                    target_id: e.target_id,
+                    properties_json: graph::properties_json(&e.properties),
+                })
+                .collect(),
+            truncated: result.truncated,
+        })
     }
 
     async fn set_setting(
@@ -1434,6 +1548,49 @@ async fn run_scan(
 /// Python's `repr()` of a string, for the messages that carried one (`{query!r}`).
 fn pyrepr_str(text: &str) -> String {
     garage_mcp::pyrepr::str_repr(text)
+}
+
+/// A `FactRow` as its proto (`ListFacts`).
+fn fact_summary(f: &FactRow) -> proto::FactSummary {
+    proto::FactSummary {
+        id: f.id,
+        document_id: f.document_id,
+        ord: f.ord,
+        fact: f.fact.clone(),
+        fact_class: f.fact_class.clone(),
+        attributes_json: match &f.attributes {
+            Value::Object(map) if !map.is_empty() => pyjson::dumps(&f.attributes, pyjson::DEFAULT),
+            _ => String::new(),
+        },
+        char_start: f.char_start,
+        char_end: f.char_end,
+        extractor: f.extractor.clone(),
+        extractor_model: f.extractor_model.clone().unwrap_or_default(),
+        created_at: isoformat_opt(f.created_at),
+        document_title: f.document_title.clone().unwrap_or_default(),
+        document_uri: f.document_uri.clone(),
+        source_slug: f.source_slug.clone(),
+        corpus_class: f.corpus_class.clone(),
+        excerpt: f.excerpt.clone().unwrap_or_default(),
+        excerpt_start: if f.excerpt.as_deref().is_some_and(|e| !e.is_empty()) { f.excerpt_start } else { 0 },
+        distilled_fact_id: f.distilled_fact_id.unwrap_or(0),
+        distilled_size: i32::try_from(f.distilled_size).unwrap_or(i32::MAX),
+        distilled_statement: f.distilled_statement.clone().unwrap_or_default(),
+        distilled_generated: f.distilled_generated,
+        distilled_spread: f.distilled_spread,
+        restates_fact_id: f.restates_fact_id.unwrap_or(0),
+    }
+}
+
+/// A graph vertex as its proto (`_graph_vertex`).
+fn graph_vertex(v: &graph::GraphVertex) -> proto::GraphVertex {
+    proto::GraphVertex {
+        id: v.id,
+        label: v.label.clone(),
+        key: v.key,
+        title: v.title.clone(),
+        properties_json: graph::properties_json(&v.properties),
+    }
 }
 
 /// `f"{n:,}"`.

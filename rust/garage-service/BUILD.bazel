@@ -24,6 +24,7 @@ rust_library(
         "@crates//:hyper-util",
         "@crates//:libc",
         "@crates//:prost",
+        "@crates//:regex",
         "@crates//:serde_json",
         "@crates//:tokio",
         "@crates//:tokio-postgres",

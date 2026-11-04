@@ -593,3 +593,83 @@ fn settings_are_written_and_reloaded_and_clients_are_registered() {
         })
     });
 }
+
+#[test]
+fn facts_prompts_and_the_graph_answer_over_grpc() {
+    common::with_db_url(|_, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let config_path = dir.join("garage.json");
+            let mut server = Running::start(&url, &config_path).await;
+            let client = &mut server.client;
+
+            let prompts = client.list_fact_prompts(proto::ListFactPromptsRequest {}).await.unwrap().into_inner();
+            assert_eq!(prompts.configured_json, "[]");
+            assert_eq!(prompts.prompts.len(), 1);
+            let default = &prompts.prompts[0];
+            assert_eq!(default.name, "default");
+            assert!(default.builtin && !default.customized && default.enabled);
+            assert_eq!(default.sha256, "d39469abe21804eade92ad4cd1b95cb821d8b50951e2d6122bdbca98f9172b92");
+            assert!(default.examples_json.starts_with("[{\"text\": \"Acme Corp was founded in 1998"));
+            assert!(default.description.starts_with("Extract every standalone fact"));
+
+            let set = |value: &str| proto::SetSettingRequest {
+                name: "facts.prompts".into(),
+                value: value.into(),
+                path: String::new(),
+            };
+            let configured = concat!(
+                "[{\"name\": \"default\", \"enabled\": false, \"sources\": [\"notes\"]}, ",
+                "{\"name\": \"people\", \"description\": \"Find people.\", \"examples\": ",
+                "[{\"text\": \"Ann met Bob.\", \"extractions\": [{\"class\": \"person\", \"text\": \"Ann\"}]}]}]"
+            );
+            client.set_setting(set(configured)).await.unwrap();
+            let prompts = client.list_fact_prompts(proto::ListFactPromptsRequest {}).await.unwrap().into_inner();
+            assert_eq!(prompts.configured_json, configured);
+            assert_eq!(prompts.prompts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>(), ["default", "people"]);
+            assert!(prompts.prompts[0].customized && !prompts.prompts[0].enabled);
+            assert_eq!(prompts.prompts[0].sources, ["notes"]);
+            assert_eq!(prompts.prompts[0].sha256, default.sha256, "the built-in's text is kept");
+            assert_eq!(
+                prompts.prompts[1].examples_json,
+                "[{\"text\": \"Ann met Bob.\", \"extractions\": [{\"class\": \"person\", \"text\": \"Ann\", \
+                 \"attributes\": {}}]}]"
+            );
+            let bad = client.set_setting(set("[{\"name\": \"x\"}]")).await.unwrap_err();
+            assert_eq!(bad.code(), Code::InvalidArgument);
+            assert!(bad.message().contains("'x' is not a built-in prompt, so it needs description and examples"));
+
+            let stats = client.get_fact_stats(proto::FactStatsRequest::default()).await.unwrap().into_inner();
+            assert_eq!(stats.formatted_output, "0 facts across 0 documents");
+            let listed = client.list_facts(proto::ListFactsRequest::default()).await.unwrap().into_inner();
+            assert_eq!(listed.formatted_output, "0 of 0 facts");
+            let bad = client
+                .list_facts(proto::ListFactsRequest {
+                    corpus_class: "mail".into(),
+                    ..proto::ListFactsRequest::default()
+                })
+                .await
+                .unwrap_err();
+            assert_eq!(bad.code(), Code::InvalidArgument);
+            assert!(bad.message().starts_with("unknown corpus class 'mail'"));
+
+            // No graph has been built (and the server may have no AGE): every read says so.
+            let labels = client.get_graph_labels(proto::GraphLabelsRequest {}).await.unwrap().into_inner();
+            assert!(!labels.available && labels.vertex_labels.is_empty());
+            let found = client
+                .find_graph_vertices(proto::FindGraphVerticesRequest {
+                    query: "x".into(),
+                    label: String::new(),
+                    limit: 0,
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(!found.available);
+            let around =
+                client.get_graph_neighborhood(proto::GraphNeighborhoodRequest::default()).await.unwrap().into_inner();
+            assert!(!around.available && around.center.is_none());
+            server.stop().await;
+        })
+    });
+}

@@ -262,11 +262,16 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   (`sources.rs`), `Scan` streaming `garage-ingest`'s scanners, `RegisterModel` over `models.json`
   (`catalog.rs`)/`SetDefaultModel`/`DropModel`/`EmbedText`, `SetSetting` (the file rewritten in `config init`'s
   layout and the process reloaded from it, `config.rs`) and `McpInstall`/`McpUninstall`/`McpStatus`
-  (`mcp_install.rs`), each with the Python message; the other RPCs answer `UNIMPLEMENTED` until their stage.
+  (`mcp_install.rs`), each with the Python message; the Facts page's reads (`ops/facts.py`: `ListFacts`/`GetFactStats`,
+  `facts.rs`; `ListFactPrompts` over `config/fact_prompts.py`'s merge and hashes, `prompts.rs`, which also validates
+  `facts.prompts`) and the AGE projection with its three reads (`db/graph.py`: `rebuild_graph`, `GetGraphLabels`/
+  `FindGraphVertices`/`GetGraphNeighborhood`, `graph.rs`; `available = false` without AGE or a built graph); the
+  other RPCs answer `UNIMPLEMENTED` until their stage.
   `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is
   `test_postgres.py`'s cases for what is ported, `tests/grpc.rs` the service over a socket and a port and
-  `tests/ops.rs` the operations over gRPC; all need `GARAGE_TEST_DATABASE_URL` and pass without running when it
-  is unset (CI's rust job has a pgvector service). The query embedder goes through `garage-embed`'s providers
+  `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run
+  only where the server has AGE: `apt install postgresql-16-age` on a Linux dev box; CI's image has none); all need
+  `GARAGE_TEST_DATABASE_URL` and pass without running when it is unset (CI's rust job has a pgvector service). The query embedder goes through `garage-embed`'s providers
   and egress rules; the binary's host speaks plain HTTP only.
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the

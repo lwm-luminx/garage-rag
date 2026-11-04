@@ -24,6 +24,7 @@ hyper = { workspace = true, features = ["client"] }
 hyper-util = { workspace = true, features = ["client-legacy", "http1"] }
 libc.workspace = true
 prost.workspace = true
+regex.workspace = true
 serde_json.workspace = true
 tokio = { workspace = true, features = ["sync"] }
 tokio-postgres.workspace = true

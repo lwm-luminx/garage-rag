@@ -1086,6 +1086,7 @@ dependencies = [
  "hyper-util",
  "libc",
  "prost",
+ "regex",
  "serde_json",
  "tokio",
  "tokio-postgres",

@@ -9,7 +9,6 @@
 //! already says plus the one change, never from the loaded values, which carry the app-managed
 //! database URL from the environment ([`update_config`], [`save_config`]).
 
-use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Map, Value, json};
@@ -662,45 +661,10 @@ pub fn validate(values: &mut Map<String, Value>, context: &str) -> Result<()> {
     Ok(())
 }
 
-/// The built-in prompt names (`BUILTIN_PROMPT_NAMES`): an entry of one of these overrides it and
-/// may leave its text out.
-const BUILTIN_PROMPT_NAMES: [&str; 1] = ["default"];
-
-/// `validate_prompt_list` as far as the file's shape goes: every prompt an object with a name,
-/// names unique, a prompt that is not built in with a non-empty description and examples. The
-/// examples' own fields and the graph schema are checked by the facts stage.
+/// `validate_prompt_list` over the file's `facts.prompts`: the entries' shape, unique names, a prompt
+/// that is not built in with its own text, and the graph schema (`crate::prompts`).
 fn validate_prompts(value: &Value) -> std::result::Result<(), String> {
-    let Value::Array(items) = value else {
-        return Err("fact_prompts: expected a list of prompts".to_owned());
-    };
-    let mut seen = BTreeSet::new();
-    for item in items {
-        let Value::Object(prompt) = item else {
-            return Err("facts.prompts: each prompt must be an object".to_owned());
-        };
-        let Some(name) = prompt.get("name").and_then(Value::as_str) else {
-            return Err("facts.prompts: each prompt needs a name".to_owned());
-        };
-        let repr = garage_mcp::pyrepr::str_repr(name);
-        if !seen.insert(name.to_owned()) {
-            return Err(format!("facts.prompts: the name {repr} is used twice"));
-        }
-        if BUILTIN_PROMPT_NAMES.contains(&name) {
-            continue;
-        }
-        let missing: Vec<&str> =
-            ["description", "examples"].into_iter().filter(|key| prompt.get(*key).is_none_or(Value::is_null)).collect();
-        if !missing.is_empty() {
-            return Err(format!(
-                "facts.prompts: {repr} is not a built-in prompt, so it needs {}",
-                missing.join(" and ")
-            ));
-        }
-        if prompt.get("description").and_then(Value::as_str).is_none_or(|d| d.trim().is_empty()) {
-            return Err(format!("facts.prompts: {repr} has an empty description"));
-        }
-    }
-    Ok(())
+    crate::prompts::parse_prompts(value).map(|_| ()).map_err(|e| e.message().to_owned())
 }
 
 /// Sets `SECTION.KEY` to `raw_value` in the file at `path` and saves it (`update_config`): the
@@ -905,7 +869,13 @@ mod tests {
                 .message()
                 .contains("needs description and examples")
         );
-        assert!(check("fact_prompts", json!([{"name": "mine", "description": "d", "examples": []}])).is_ok());
+        assert!(
+            check("fact_prompts", json!([{"name": "mine", "description": "d", "examples": [{"text": "t"}]}])).is_ok()
+        );
+        assert_eq!(
+            check("fact_prompts", json!([{"name": "mine", "description": "d", "examples": []}])).unwrap_err().message(),
+            "t: facts.prompts: 'mine': examples must not be empty; LangExtract needs at least one"
+        );
     }
 
     #[test]
