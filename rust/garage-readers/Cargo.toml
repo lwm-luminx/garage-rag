@@ -1,0 +1,22 @@
+[package]
+name = "garage-readers"
+description = "Garage's file readers in Rust: text, Markdown and code (garage-text), mail, PDF and Office (the FOSS markdown-extract crates), pictures (garage-ocr), and the names iMessage contacts shared."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+garage-ingest.workspace = true
+garage-ocr.workspace = true
+garage-text.workspace = true
+mail-markdown.workspace = true
+office-markdown.workspace = true
+pdf-markdown.workspace = true
+plist.workspace = true
+rusqlite.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

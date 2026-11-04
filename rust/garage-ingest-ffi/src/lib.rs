@@ -760,6 +760,10 @@ fn run_source_with<H: SourceHost>(
         scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
     };
     let mut storage = GrpcStorage::new(connection, session.run_id, slug);
+    if rust_readers(request)?.is_some() {
+        // GarageService remembers a no-text or failed file with the reader that gave up on it.
+        storage = storage.with_extractor_revision(garage_readers::revision);
+    }
     let options = SourceOptions { messages: session.kind == "sqlite", ..options };
     let context = Context {
         source: &source,
@@ -808,11 +812,30 @@ pub struct GarageIngestHost {
     pub shared_names: HostCall,
 }
 
-/// A run's files read through the host's readers: placeholders made local within the budget and
-/// the bytes hashed here, the text read by the host.
+/// The Rust readers a request asks for with `"readers": {...}` (their `extraction.*` settings, with
+/// `index_images` also taken from `"settings"`), or none when the host reads the files.
+fn rust_readers(request: &Map<String, Value>) -> Result<Option<garage_readers::Readers>, String> {
+    let readers = match request.get("readers") {
+        None | Some(Value::Null) => return Ok(None),
+        Some(Value::Object(readers)) => readers,
+        Some(_) => return Err("\"readers\" is not an object".to_owned()),
+    };
+    let mut settings = garage_readers::Settings::from_json(Some(readers));
+    if !readers.contains_key("index_images")
+        && let Some(index_images) =
+            request.get("settings").and_then(|settings| settings.get("index_images")).and_then(Value::as_bool)
+    {
+        settings.index_images = index_images;
+    }
+    Ok(Some(garage_readers::Readers::new(settings)))
+}
+
+/// A run's files: placeholders made local within the budget and the bytes hashed here, the text
+/// read by the Rust readers when the request asks for them, else by the host.
 struct ReadingHost {
     host: GarageIngestHost,
     budget: Budget,
+    readers: Option<garage_readers::Readers>,
     /// For `garage_ingest_run`: progress goes to the host as the app's `IngestProgress` events.
     events: Option<service::SourceEvents>,
 }
@@ -854,6 +877,9 @@ impl FileHost for ReadingHost {
     }
 
     fn read(&mut self, candidate: &FileCandidate) -> ReadOutcome {
+        if let Some(readers) = &mut self.readers {
+            return readers.read(&candidate.path);
+        }
         let request = json!({
             "path": candidate.path.to_string_lossy(),
             "uri": candidate.uri,
@@ -900,6 +926,9 @@ impl SourceHost for ReadingHost {
     }
 
     fn shared_names(&mut self, directory: &Path) -> Vec<(String, String)> {
+        if self.readers.is_some() {
+            return garage_readers::shared_names(directory);
+        }
         if self.host.shared_names.is_none() {
             return Vec::new();
         }
@@ -921,11 +950,12 @@ fn send_event(host: &GarageIngestHost, event: &Value) {
 /// Runs one walked source through GarageService, reading each file through the host.
 fn run_source(request: &Map<String, Value>, host: GarageIngestHost) -> Outcome {
     let budget = budget_from(request)?;
+    let readers = rust_readers(request)?;
     // Only the materialize thread may start a download; a read here of a dataless file fails instead.
     let _policy = garage_ingest::materialize::refusing_dataless_reads();
     run_source_with(
         request,
-        |_root, _| ReadingHost { host, budget, events: None },
+        |_root, _| ReadingHost { host, budget, readers, events: None },
         |host, reply| {
             reply.insert("budget".to_owned(), budget_json(&host.budget));
         },
@@ -1176,7 +1206,9 @@ pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, res
 /// Runs one walked source, as [`garage_ingest_ingest_source`] does, reading each file through `host`:
 /// the request is the same without `"files"` and `"cancel_after"`, plus the materialize `"budget"` (as for
 /// [`garage_ingest_ensure_local`]). Placeholders are made local within the budget and the bytes are hashed
-/// here; the host's `read` reads the text. Progress and cancellation go through the host. The reply holds
+/// here; the host's `read` reads the text, unless the request has `"readers": {"max_file_bytes"?,
+/// "ocr_min_chars"?, "index_images"?, "pdf_min_chars_per_page"?}`, when [`garage_readers`] read it (and a
+/// Messages source's shared names) and GarageService hears each reader's revision. Progress and cancellation go through the host. The reply holds
 /// `"budget"` (as it stands at the end) in place of `"progress"`.
 ///
 /// # Safety
@@ -1202,7 +1234,8 @@ pub unsafe extern "C" fn garage_ingest_run_source(
 /// and "port"; "token"}, "source": slug | "*", "include_code"?, "limit"?, "force"?, "contact_names"?,
 /// "settings": "service" | {...}, "budget"?, "self"?, "read_git"?}`. `"*"` runs every enabled source in turn;
 /// with `"settings": "service"` the chunking, quality, placeholder and identity settings are GarageService's
-/// own (`GetSetting`). Each file's text comes from `host`, as for [`garage_ingest_run_source`], and the host's
+/// own (`GetSetting`), the readers' too when the request has `"readers"`. Each file's text is read as for
+/// [`garage_ingest_run_source`], and the host's
 /// `progress` hears each `IngestProgress` event (`{"source", "phase", "seen", "total_items", ..., "message",
 /// "error", "current_item"}`). The reply is `{"sources": [...each source's run_source reply, with
 /// "source"], "cancelled"}`, with `"error"` when a source failed or could not be read.

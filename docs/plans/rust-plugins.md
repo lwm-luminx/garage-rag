@@ -158,9 +158,14 @@ step leaves the app working, with the Python reference still there for the servi
    as `ingest/conversations.py` does, its host supplying only the names contacts shared. Containers like
    PST are read the same way, streamed item by item, since a source may sit on slow storage (NFS, SMB). `garage_ingest_run` is
    the service's whole run (`ingest_xpc`: every enabled source, the settings from GarageService, the
-   app's progress events), and GarageIngestXPCService now runs it, linked in, with Python answering only
-   the reads. Next: the readers, from `markdown-extract`, then OCR and contact names, after which the
-   service drops Python.
+   app's progress events), and GarageIngestXPCService runs it, linked in. The readers are in too
+   (`rust/garage-readers`): text through garage-text, mail, PDF and Office through `markdown-extract`'s
+   crates, pictures through garage-ocr (Vision on the Mac, Tesseract elsewhere) and the Messages shared
+   names, so the service's ingest runs no Python. Mail, PDF, Office and pictures read differently from the
+   Python readers, so they carry new revisions and each such file is read once more; the client sends its
+   reader's revision with the stat check and the no-text and failed outcomes, so GarageService remembers the
+   right one. Next: drop the service's Python fallback (the loop it runs with no GarageService) and the
+   `extraction.plugins` route for the Rust readers, then Tesseract, Leptonica and tessdata leave the Mac app.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
    `rust/garage-mcp` is the MCP server with no search or database code of its own: it reads the corpus
    through new GarageService calls (`CorpusSearch`, `CorpusDocument`, `CorpusSources`, `CorpusAuthors`,

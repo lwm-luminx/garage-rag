@@ -1848,6 +1848,64 @@ def test_the_service_run_matches_ingest_xpc(rust, monkeypatch, run_facade, case)
     assert recorder.tokens == {"launch-token"}
 
 
+_MAIL = (
+    "From: Grace Hopper <grace@navy.mil>\r\nTo: Ada Lovelace <ada@example.com>\r\nSubject: The north slope\r\n"
+    "Message-ID: <1@navy.mil>\r\nDate: Tue, 3 Nov 2026 10:00:00 +0000\r\n\r\n"
+    "The pears on the north slope are ready to pick this week.\r\n"
+)
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="the facade's socket is a Unix-domain socket")
+def test_the_service_run_reads_with_the_rust_readers(rust, monkeypatch, run_facade):
+    """With ``"readers"`` the run reads every file itself, never asking the host, and tells GarageService
+    which reader (and version) each file went to, so a file a reader gave up on is retried when it changes."""
+    recorder, socket, _client = run_facade
+    root = recorder.root
+    files = {
+        "Notes/orchard.md": "# Orchard\n\nThe pears grow on the north slope, and the apples by the mill.\n",
+        "Notes/empty.md": "  \n\n",
+        "Mail/slope.eml": _MAIL,
+        "Reference/broken.pdf": "not a pdf",
+    }
+    for relative, text in files.items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).write_text(text)
+    recorder.sources = [("notes", True)]
+    monkeypatch.setattr(config, "_settings", config.Settings(self_name=OWNER["name"]))
+
+    reply = _run_source(
+        {"facade": {"socket": str(socket), "token": "launch-token"}, "source": "notes", "settings": "service"}
+        | {"readers": {}},
+        read=lambda path: pytest.fail(f"the host was asked to read {path}"),
+        progress=lambda _event: None,
+        cancelled=lambda: False,
+        entry="garage_ingest_run",
+    )
+
+    assert "error" not in reply, reply
+    revisions = {
+        str(root / "Notes/orchard.md"): "markdown:1",
+        str(root / "Notes/empty.md"): "markdown:1",
+        str(root / "Mail/slope.eml"): "mail-markdown:3",
+        str(root / "Reference/broken.pdf"): "pdf-markdown:1",
+    }
+    calls = recorder.requests["notes"]
+    stats = {
+        call.uri: call.extractor_revision for call in calls if isinstance(call, garage_pb2.CheckDocumentStatRequest)
+    }
+    assert stats == revisions
+    persisted = {call.uri: call for call in calls if isinstance(call, garage_pb2.PersistDocumentRequest)}
+    assert persisted[str(root / "Notes/orchard.md")].extractor == "markdown"
+    mail = persisted[str(root / "Mail/slope.eml")]
+    assert (mail.extractor, mail.corpus_class, mail.title) == ("mail-markdown", "communication", "The north slope")
+    assert "north slope are ready" in mail.content
+    empty = persisted[str(root / "Notes/empty.md")]
+    assert (empty.action, empty.extractor_revision) == ("no_text", "markdown:1")
+    broken = persisted[str(root / "Reference/broken.pdf")]
+    assert (broken.action, broken.extractor_revision) == ("extract_failed", "pdf-markdown:1")
+    assert recorder.tokens == {"launch-token"}
+
+
 # --- the scanners -------------------------------------------------------------------------------
 
 _FEEDS = {
@@ -1905,7 +1963,7 @@ _FEEDS = {
 def _scan_tree(root: Path) -> None:
     files = {
         "Notes/a.md": "alpha",
-        "Notes/empty.md": "",
+        "Notes/empty.md": "  \n\n",
         "Notes/big.txt": "x" * (LIMIT + 1),
         "Notes/deep/b.txt": "beta",
         "Notes/.hidden.md": "skip",

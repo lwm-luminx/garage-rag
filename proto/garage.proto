@@ -906,6 +906,9 @@ message PersistScanResponse {
 message CheckDocumentStatRequest {
     string source_slug = 1;
     string uri = 2;
+    // The caller's reader and its version for the file ("pdf-markdown:1"), which a remembered no-text or
+    // failed outcome must match. Empty: the server's own Python reader decides.
+    string extractor_revision = 3;
 }
 
 message CheckDocumentStatResponse {
@@ -963,6 +966,9 @@ message PersistDocumentRequest {
     string error = 18;
     repeated DocumentAuthorPayload authors = 19;
     repeated DocumentChunkPayload chunks = 20;
+    // The no_text and extract_failed actions: the caller's reader and its version, remembered with the outcome
+    // (see CheckDocumentStatRequest.extractor_revision). Empty: the server's own Python reader's.
+    string extractor_revision = 21;
 }
 
 message PersistDocumentResponse {

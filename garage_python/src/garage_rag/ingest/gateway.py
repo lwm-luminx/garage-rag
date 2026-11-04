@@ -258,13 +258,19 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
             session.commit()
 
     @staticmethod
-    def _remembered_outcome(session: Any, source_id: int, uri: str) -> ExistingDocStat | None:
-        """The stored no-text or failed outcome for ``uri``, if its extractor is unchanged since."""
+    def _remembered_outcome(
+        session: Any, source_id: int, uri: str, revision: str | None = None
+    ) -> ExistingDocStat | None:
+        """The stored no-text or failed outcome for ``uri``, if its extractor is unchanged since.
+
+        ``revision`` is the caller's reader for the file (the Rust ingest loop's own readers); without
+        one, the Python reader's.
+        """
         from garage_rag.db.models import IngestOutcome
         from garage_rag.extract.dispatch import extractor_revision
 
         row = session.query(IngestOutcome).filter_by(source_id=source_id, uri=uri).one_or_none()
-        if row is None or row.extractor_revision != extractor_revision(Path(uri)):
+        if row is None or row.extractor_revision != (revision or extractor_revision(Path(uri))):
             return None
         return ExistingDocStat(
             exists=True,
@@ -285,6 +291,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
         mtime: float,
         source_sha256: str,
         error: str | None = None,
+        revision: str | None = None,
     ) -> None:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -296,7 +303,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
             "byte_size": byte_size or None,
             "mtime": datetime.fromtimestamp(mtime, tz=UTC) if mtime else None,
             "source_sha256": bytes.fromhex(source_sha256) if source_sha256 else None,
-            "extractor_revision": extractor_revision(Path(uri)),
+            "extractor_revision": revision or extractor_revision(Path(uri)),
             "error": error,
             "recorded_at": datetime.now(tz=UTC),
         }
@@ -312,7 +319,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
 
         session.query(IngestOutcome).filter_by(source_id=source_id, uri=uri).delete(synchronize_session=False)
 
-    def check_stat(self, source_slug: str, uri: str) -> ExistingDocStat:
+    def check_stat(self, source_slug: str, uri: str, *, extractor_revision: str | None = None) -> ExistingDocStat:
         from garage_rag.db.models import Document, IngestState, Source
 
         with self.factory() as session:
@@ -321,7 +328,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                 raise LookupError(f"No such source: {source_slug}")
             doc = session.query(Document).filter_by(source_id=src.id, uri=uri).one_or_none()
             if doc is None or doc.state != IngestState.OK:
-                remembered = self._remembered_outcome(session, src.id, uri)
+                remembered = self._remembered_outcome(session, src.id, uri, extractor_revision)
                 if remembered is not None:
                     return remembered
             if doc is None:
@@ -368,6 +375,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
         byte_size: int = 0,
         mtime: float = 0.0,
         source_sha256: str = "",
+        extractor_revision: str | None = None,
     ) -> None:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -391,6 +399,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
                     mtime=mtime,
                     source_sha256=source_sha256,
                     error=error[:2000],
+                    revision=extractor_revision,
                 )
 
             if run_id:
@@ -429,6 +438,7 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
         byte_size: int,
         mtime: float,
         source_sha256: str,
+        extractor_revision: str | None = None,
     ) -> None:
         from sqlalchemy.dialects.postgresql import insert as pg_insert
 
@@ -442,7 +452,14 @@ class SqlAlchemyIngestStorageGateway(IngestStorageGateway):
             if doc is not None:
                 session.delete(doc)
             self._remember_outcome(
-                session, src.id, uri, "no_text", byte_size=byte_size, mtime=mtime, source_sha256=source_sha256
+                session,
+                src.id,
+                uri,
+                "no_text",
+                byte_size=byte_size,
+                mtime=mtime,
+                source_sha256=source_sha256,
+                revision=extractor_revision,
             )
 
             if run_id:

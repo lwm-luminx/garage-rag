@@ -10,7 +10,7 @@ use super::{GarageIngestHost, Outcome, ReadingHost, budget_from, budget_json, se
 
 /// The `garage.json` settings a run reads from GarageService (`GetSetting`) with `"settings": "service"`,
 /// and where each goes in the request: `(name, object, field)`.
-const SERVICE_SETTINGS: [(&str, &str, &str); 12] = [
+const SERVICE_SETTINGS: [(&str, &str, &str); 16] = [
     ("chunking.size", "settings", "chunk_size"),
     ("chunking.overlap", "settings", "chunk_overlap"),
     ("chunking.code_size", "settings", "code_chunk_size"),
@@ -23,6 +23,10 @@ const SERVICE_SETTINGS: [(&str, &str, &str); 12] = [
     ("placeholders.max_bytes", "budget", "max_bytes"),
     ("placeholders.timeout_seconds", "budget", "timeout_seconds"),
     ("identity.name", "self", "name"),
+    ("extraction.max_file_bytes", "readers", "max_file_bytes"),
+    ("extraction.ocr_min_chars", "readers", "ocr_min_chars"),
+    ("extraction.index_images", "readers", "index_images"),
+    ("extraction.pdf_min_chars_per_page", "readers", "pdf_min_chars_per_page"),
 ];
 
 /// What a source's progress events say besides the counters: `IngestProgress`'s `source`, `total_items` and
@@ -127,8 +131,15 @@ fn with_service_settings(request: &Map<String, Value>, connection: &Connection) 
     }
     let mut objects: Map<String, Value> =
         ["settings", "budget", "self"].into_iter().map(|name| (name.to_owned(), json!({}))).collect();
+    // The readers' settings only when the run reads with them.
+    if let Some(Value::Object(readers)) = request.get("readers") {
+        objects.insert("readers".to_owned(), Value::Object(readers.clone()));
+    }
     // A key GarageService cannot answer keeps the library's default, which is Python's.
     for (name, object, field) in SERVICE_SETTINGS {
+        if !objects.contains_key(object) {
+            continue;
+        }
         if let Ok(value) = facade::get_setting(connection, name)
             && !value.is_null()
         {
@@ -179,12 +190,14 @@ pub(super) fn run(request: &Map<String, Value>, host: GarageIngestHost) -> Outco
         request.insert("facade".to_owned(), Value::Object(facade_object));
         // Each source gets the whole budget, as each `ingest_source` call builds its own.
         let budget = budget_from(&request)?;
+        let readers = super::rust_readers(&request)?;
         let mut events: Option<SourceEvents> = None;
         let reply = super::run_source_with(
             &request,
             |_root, scan| ReadingHost {
                 host,
                 budget,
+                readers,
                 events: Some(SourceEvents {
                     source: slug.clone(),
                     total_items: scan.item_count,

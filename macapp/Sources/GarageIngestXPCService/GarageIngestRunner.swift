@@ -6,10 +6,10 @@ import GarageIngestFFI
 ///
 /// The loop walks each source, makes cloud placeholders local, hashes the files, decides what each
 /// one needs and stores it through GarageService, on its socket (or port) and with the app's
-/// per-launch token, with the settings GarageService runs with. Only the text of a file, and the
-/// names iMessage contacts shared, come from this host (`read`, `sharedNames`), which still answers
-/// them with the Python readers until each has a Rust port. A run blocks the calling thread, and
-/// the callbacks run on that thread.
+/// per-launch token, with the settings GarageService runs with. It reads each file's text with its
+/// own readers (`rust/garage-readers`: text, mail, PDF, Office, and pictures through Vision) and the
+/// names iMessage contacts shared, so this host only hears progress and answers whether to stop. A
+/// run blocks the calling thread, and the callbacks run on that thread.
 final class GarageIngestRunner {
     /// Where GarageService listens.
     enum GRPCTarget: Equatable {
@@ -24,22 +24,11 @@ final class GarageIngestRunner {
         let cancelled: Bool
     }
 
-    /// `{"path", "uri", "size", "mtime"}` -> `read_for_host`'s reply, as JSON.
-    private let read: (String) -> String?
-    /// `{"directory"}` -> `{"names": [[handle, name], ...]}`, as JSON.
-    private let sharedNames: (String) -> String?
     /// Each `IngestProgress` event, as JSON.
     private let progress: (String) -> Void
     private let isCancelled: () -> Bool
 
-    init(
-        read: @escaping (String) -> String?,
-        sharedNames: @escaping (String) -> String?,
-        progress: @escaping (String) -> Void,
-        isCancelled: @escaping () -> Bool
-    ) {
-        self.read = read
-        self.sharedNames = sharedNames
+    init(progress: @escaping (String) -> Void, isCancelled: @escaping () -> Bool) {
         self.progress = progress
         self.isCancelled = isCancelled
     }
@@ -70,6 +59,8 @@ final class GarageIngestRunner {
             "facade": facade,
             "source": source,
             "settings": "service",
+            // The Rust readers, with GarageService's `extraction.*` settings.
+            "readers": [String: Any](),
             "include_code": includeCode,
             "force": force,
             // Git history through the libgit2 linked in, as `_garage_git` reads it for Python.
@@ -86,11 +77,11 @@ final class GarageIngestRunner {
         }
         var host = GarageIngestHost(
             context: Unmanaged.passUnretained(self).toOpaque(),
-            read: Self.readEntry,
+            read: nil,
             release: Self.releaseEntry,
             progress: Self.progressEntry,
             cancelled: Self.cancelledEntry,
-            shared_names: Self.sharedNamesEntry
+            shared_names: nil
         )
         var result: UnsafeMutablePointer<CChar>?
         let status = withExtendedLifetime(self) {
@@ -107,42 +98,6 @@ final class GarageIngestRunner {
     }
 
     // MARK: - The C host
-
-    private static func answer(
-        _ context: UnsafeMutableRawPointer?,
-        _ request: UnsafePointer<CChar>?,
-        _ reply: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
-        _ body: (GarageIngestRunner, String) -> String?
-    ) -> Int32 {
-        guard let context, let request, let reply else {
-            reply?.pointee = strdup("the host was called without a context, request or reply")
-            return 1
-        }
-        let runner = Unmanaged<GarageIngestRunner>.fromOpaque(context).takeUnretainedValue()
-        guard let text = body(runner, String(cString: request)) else {
-            reply.pointee = strdup("the host could not answer")
-            return 1
-        }
-        reply.pointee = strdup(text)
-        return 0
-    }
-
-    private static func field(_ name: String, of request: String) -> String? {
-        let object = (try? JSONSerialization.jsonObject(with: Data(request.utf8))) as? [String: Any]
-        return object?[name] as? String
-    }
-
-    private static let readEntry: GarageIngestHostCall = { context, request, reply in
-        GarageIngestRunner.answer(context, request, reply) { runner, request in
-            GarageIngestRunner.field("path", of: request).flatMap(runner.read)
-        }
-    }
-
-    private static let sharedNamesEntry: GarageIngestHostCall = { context, request, reply in
-        GarageIngestRunner.answer(context, request, reply) { runner, request in
-            GarageIngestRunner.field("directory", of: request).flatMap(runner.sharedNames)
-        }
-    }
 
     private static let releaseEntry: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<CChar>?) -> Void = { _, reply in
         free(reply)

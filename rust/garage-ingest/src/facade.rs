@@ -23,13 +23,27 @@ pub struct GrpcStorage {
     connection: Connection,
     run_id: i64,
     source_slug: String,
+    revision: Option<fn(&str) -> String>,
 }
 
 impl GrpcStorage {
     /// Persists through `connection` into the run `run_id` (from [`begin_session`]) of `source_slug`.
     #[must_use]
     pub fn new(connection: Connection, run_id: i64, source_slug: &str) -> Self {
-        Self { connection, run_id, source_slug: source_slug.to_owned() }
+        Self { connection, run_id, source_slug: source_slug.to_owned(), revision: None }
+    }
+
+    /// Names the reader for each file (`"pdf-markdown:1"`) in `CheckDocumentStat` and the no-text and
+    /// failed outcomes, so a remembered outcome is tied to the reader that ran rather than the
+    /// server's own Python reader for the file.
+    #[must_use]
+    pub fn with_extractor_revision(mut self, revision: fn(&str) -> String) -> Self {
+        self.revision = Some(revision);
+        self
+    }
+
+    fn revision(&self, uri: &str) -> String {
+        self.revision.map(|revision| revision(uri)).unwrap_or_default()
     }
 
     /// The connection, for the session calls.
@@ -44,7 +58,11 @@ impl GrpcStorage {
     ///
     /// The call's failure.
     pub fn check_stat(&self, uri: &str) -> Result<ExistingStat, FacadeError> {
-        let request = CheckDocumentStatRequest { source_slug: self.source_slug.clone(), uri: uri.to_owned() };
+        let request = CheckDocumentStatRequest {
+            source_slug: self.source_slug.clone(),
+            uri: uri.to_owned(),
+            extractor_revision: self.revision(uri),
+        };
         let reply = self.connection.call(|mut client| async move { client.check_document_stat(request).await })?;
         Ok(ExistingStat {
             exists: reply.exists,
@@ -183,6 +201,7 @@ impl Storage for GrpcStorage {
             byte_size: size(byte_size),
             mtime,
             source_sha256: source_sha256.to_owned(),
+            extractor_revision: self.revision(uri),
             ..action(uri, "no_text")
         })
         .map(drop)
@@ -201,6 +220,7 @@ impl Storage for GrpcStorage {
             byte_size: size(byte_size),
             mtime,
             source_sha256: source_sha256.to_owned(),
+            extractor_revision: self.revision(uri),
             ..action(uri, "extract_failed")
         })
         .map(drop)
