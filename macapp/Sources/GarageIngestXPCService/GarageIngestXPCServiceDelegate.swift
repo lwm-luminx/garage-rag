@@ -463,8 +463,8 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
         return .tcp(host: host, port: port)
     }
 
-    /// Runs the ingest through the Rust loop (`GarageIngestRunner`), with each file's text read by
-    /// `garage_rag.ingest.host_read` in this process's Python. Called on the worker queue.
+    /// Runs the ingest through the Rust loop (`GarageIngestRunner`), which reads every file with its own
+    /// readers, so no Python runs for it. Called on the worker queue.
     private func runRustIngest(
         source: String,
         grpc: GarageIngestRunner.GRPCTarget,
@@ -476,12 +476,6 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
     ) -> Result<GarageIngestRunner.Outcome, Error> {
         setCancelRequested(false)
         let runner = GarageIngestRunner(
-            read: { [self] path in
-                pythonReply(function: "read_for_host_json", argument: path)
-            },
-            sharedNames: { [self] directory in
-                pythonReply(function: "shared_names_for_host_json", argument: directory)
-            },
             progress: { event in
                 GarageIngestActiveConnections.shared.sendProgress(jsonString: event)
                 Self.logProgress(event)
@@ -498,22 +492,6 @@ final class GarageIngestXPCServiceDelegate: GaragePythonXPCServiceBase, GarageIn
             limit: limit,
             contactNames: contactNames
         )
-    }
-
-    /// `garage_rag.ingest.host_read.<function>(argument)`, a JSON string; nil when Python failed.
-    private func pythonReply(function: String, argument: String) -> String? {
-        let result = withPython { () -> String in
-            let module = try Python.attemptImport("garage_rag.ingest.host_read")
-            let reply = try module[dynamicMember: function].throwing.dynamicallyCall(withArguments: [argument])
-            return String(reply) ?? ""
-        }
-        switch result {
-        case .success(let reply):
-            return reply
-        case .failure(let error):
-            logger.error("host_read.\(function, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
-            return nil
-        }
     }
 
     /// Logs a progress event as Python's `_emit_progress` did, to the file log and the clients' log stream.

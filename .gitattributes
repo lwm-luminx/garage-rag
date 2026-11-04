@@ -7,3 +7,6 @@ garage_python/src/garage_rag/proto/*_pb2.pyi linguist-generated=true
 
 # Upstream test corpora, copied verbatim (garage_python/tests/corpora/README.md)
 garage_python/tests/corpora/** linguist-vendored=true
+
+# Reader fixtures: binary, so diffs (and the lint task's changed-line detection) skip their bytes
+rust/garage-readers/testdata/** binary

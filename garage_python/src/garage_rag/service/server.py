@@ -1518,7 +1518,10 @@ class GarageRpcServicer(GarageServiceServicer):
         self, request: CheckDocumentStatRequest, context: grpc.ServicerContext
     ) -> CheckDocumentStatResponse:
         """Existing stat and hashes of a document, for change detection."""
-        stat = self._ingest_gateway().check_stat(request.source_slug, request.uri)
+        # A caller with its own readers (the Rust ingest loop) names the one for the file; only then is
+        # the keyword passed, so a gateway that predates it still answers the Python loop.
+        revision = {"extractor_revision": request.extractor_revision} if request.extractor_revision else {}
+        stat = self._ingest_gateway().check_stat(request.source_slug, request.uri, **revision)
         return CheckDocumentStatResponse(
             exists=stat.exists,
             byte_size=stat.byte_size,
@@ -1539,6 +1542,7 @@ class GarageRpcServicer(GarageServiceServicer):
         gw = self._ingest_gateway()
         run_id, slug, uri = request.run_id, request.source_slug, request.uri
         chunks_written = 0
+        revision = {"extractor_revision": request.extractor_revision} if request.extractor_revision else {}
         match request.action:
             case "placeholder":
                 gw.record_placeholder(run_id, slug, uri, request.mtime, request.title, request.error)
@@ -1551,6 +1555,7 @@ class GarageRpcServicer(GarageServiceServicer):
                     byte_size=request.byte_size,
                     mtime=request.mtime,
                     source_sha256=request.source_sha256,
+                    **revision,
                 )
             case "no_text":
                 gw.record_no_text(
@@ -1560,6 +1565,7 @@ class GarageRpcServicer(GarageServiceServicer):
                     byte_size=request.byte_size,
                     mtime=request.mtime,
                     source_sha256=request.source_sha256,
+                    **revision,
                 )
             case "rejected":
                 gw.record_rejected(run_id, slug, uri)

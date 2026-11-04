@@ -1419,3 +1419,34 @@ def test_reingest_without_fact_chunks_keeps_the_fact_runs():
     queries = _replace_over([_chunk_row(311, 0, "Old one.", b"\x01")])
 
     assert FactRun not in queries
+
+
+def test_a_callers_reader_revision_reaches_the_gateway():
+    """The Rust loop names the reader that gave up on a file; Python's loop names none, and the gateway
+    then works out its own (``extractor_revision``)."""
+    servicer = GarageRpcServicer()
+    gateway = MagicMock()
+    gateway.check_stat.return_value = ExistingDocStat(exists=False)
+    context = MagicMock()
+    with patch.object(GarageRpcServicer, "_ingest_gateway", return_value=gateway):
+        servicer.CheckDocumentStat(
+            CheckDocumentStatRequest(source_slug="s", uri="/a.pdf", extractor_revision="pdf-markdown:1"), context
+        )
+        servicer.CheckDocumentStat(CheckDocumentStatRequest(source_slug="s", uri="/b.pdf"), context)
+        for action in ("no_text", "extract_failed"):
+            servicer.PersistDocument(
+                PersistDocumentRequest(
+                    run_id=1, source_slug="s", uri="/a.pdf", action=action, extractor_revision="pdf-markdown:1"
+                ),
+                context,
+            )
+            servicer.PersistDocument(
+                PersistDocumentRequest(run_id=1, source_slug="s", uri="/b.pdf", action=action), context
+            )
+
+    assert [call.kwargs.get("extractor_revision") for call in gateway.check_stat.call_args_list] == [
+        "pdf-markdown:1",
+        None,
+    ]
+    for method in (gateway.record_no_text, gateway.record_extract_failed):
+        assert [call.kwargs.get("extractor_revision") for call in method.call_args_list] == ["pdf-markdown:1", None]

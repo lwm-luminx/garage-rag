@@ -1295,6 +1295,10 @@ pub struct CheckDocumentStatRequest {
     pub source_slug: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub uri: ::prost::alloc::string::String,
+    /// The caller's reader and its version for the file ("pdf-markdown:1"), which a remembered no-text or
+    /// failed outcome must match. Empty: the server's own Python reader decides.
+    #[prost(string, tag = "3")]
+    pub extractor_revision: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CheckDocumentStatResponse {
@@ -1398,6 +1402,10 @@ pub struct PersistDocumentRequest {
     pub authors: ::prost::alloc::vec::Vec<DocumentAuthorPayload>,
     #[prost(message, repeated, tag = "20")]
     pub chunks: ::prost::alloc::vec::Vec<DocumentChunkPayload>,
+    /// The no_text and extract_failed actions: the caller's reader and its version, remembered with the outcome
+    /// (see CheckDocumentStatRequest.extractor_revision). Empty: the server's own Python reader's.
+    #[prost(string, tag = "21")]
+    pub extractor_revision: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PersistDocumentResponse {

@@ -232,9 +232,16 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `fake_messages.py` included. `garage_ingest_run` is the service's whole run, `ingest_xpc`'s port: one source or
   every enabled one (`"*"`, `ListSources`), the settings GarageService runs with (`"settings": "service"`, over
   `GetSetting`) and the app's `IngestProgress` events field for field; `test_ingest_rust.py` holds it to
-  `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
-  GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
-  neither it keeps the Python loop.
+  `ingest_xpc`. With `"readers": {...}` (`extraction.*`, also read over `GetSetting`) either run reads every file
+  itself with `rust/garage-readers` instead of asking the host: `extract/dispatch.py`'s routes over garage-text,
+  the FOSS `mail-markdown`, `pdf-markdown` and `office-markdown` crates and garage-ocr (Vision on the Mac,
+  Tesseract elsewhere, `extract/image.py`'s policy), plus `extract/nicknames.py`'s shared names (rusqlite and
+  `plist`). Mail, PDF, Office and pictures are new readers with their own revisions, so each such file is read
+  again once; `CheckDocumentStat` and the no-text and failed `PersistDocument`s carry the reader's revision
+  (`extractor_revision`), which GarageService remembers in place of its own Python reader's. `extraction.plugins`
+  does not apply to the Rust readers yet. GarageIngestXPCService runs it (`GarageIngestRunner`, linked
+  statically) with the Rust readers whenever it has GarageService's socket or port, so no Python runs for an
+  ingest; with neither it keeps the Python loop.
 - **The MCP server** (`rust/garage-mcp`) ports `mcp_server/` with no search or database code: it reads
   the corpus through GarageService's `Corpus*` calls, whose handlers run the Python tools' own functions
   and return their results as JSON, each carrying a `CorpusCaller` for the access hooks. It ports the

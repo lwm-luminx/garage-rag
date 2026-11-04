@@ -120,7 +120,8 @@ int32_t garage_ingest_ingest_source(const char *request, char **result);
 // to the reason (or leaves it NULL). The library frees `*reply` with the host's `release`.
 typedef int32_t (*GarageIngestHostCall)(void *context, const char *request, char **reply);
 
-// The process garage_ingest_run_source reads files in. `read` and `release` are required.
+// The process garage_ingest_run_source reads files in. `read` and `release` are required unless the
+// request has "readers", when the library reads every file itself and `read` and `shared_names` may be null.
 typedef struct GarageIngestHost {
     void *context;
     // One file's text: {"path", "uri", "size", "mtime"} -> {"document": {"text", "kind", "extractor",
@@ -146,7 +147,10 @@ typedef struct GarageIngestHost {
 // Runs one source as garage_ingest_ingest_source does, reading each file through `host`: the
 // same request without "files" and "cancel_after", plus "budget" (as for garage_ingest_ensure_local).
 // The library makes placeholders local within the budget (on its own thread; this thread's reads of
-// dataless files are refused) and hashes each file's bytes itself. The reply holds the run id,
+// dataless files are refused) and hashes each file's bytes itself. With "readers": {"max_file_bytes",
+// "ocr_min_chars", "index_images", "pdf_min_chars_per_page"} (each optional, garage.json's extraction.*)
+// it also reads each file's text and a Messages source's shared names with its own readers
+// (rust/garage-readers), and tells GarageService which reader gave up on a file. The reply holds the run id,
 // counters, walk stats, whether the walk completed and the budget at the end, or "unavailable" /
 // "error" as for garage_ingest_ingest_source. The host's functions are called on this thread only.
 int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *host, char **result);
@@ -154,8 +158,8 @@ int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *ho
 // Runs the ingest service's request as garage_rag.ingest.ingest_xpc does: {"facade": {"socket", or "host" and
 // "port"; "token"}, "source": a slug or "*" (every enabled source, in turn), "include_code", "limit", "force",
 // "contact_names", "settings": "service" (chunking, quality, placeholders and identity read from GarageService's
-// GetSetting) or as for garage_ingest_ingest_source, "budget", "self", "read_git"}. Each file's text comes from
-// `host` as for garage_ingest_run_source, but `progress` hears the app's IngestProgress events instead:
+// GetSetting, and with "readers" the extraction settings too) or as for garage_ingest_ingest_source, "budget",
+// "self", "read_git", "readers"}. Each file's text is read as for garage_ingest_run_source, but `progress` hears the app's IngestProgress events instead:
 // {"source", "phase": "scan" | "ingest" | "cancelled" | "complete" | "error", "seen", "total_items", "indexed",
 // "skipped", "failed", "placeholders", "rejected", "chunks_written", "item_type", "progress", "message", "error",
 // "current_item"}. The reply is {"sources": [each source's garage_ingest_run_source reply, with "source"],
