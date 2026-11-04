@@ -15,6 +15,7 @@ _DEPS = [
 rust_static_library(
     name = "garage_ingest_ffi_static",
     srcs = glob(["src/**/*.rs"]),
+    crate_features = ["exports"],
     crate_name = "garage_ingest_ffi",
     edition = "2024",
     deps = _DEPS,

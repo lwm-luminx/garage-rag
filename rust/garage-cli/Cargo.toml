@@ -23,7 +23,7 @@ path = "src/bin/garage-mcp.rs"
 garage-embed.workspace = true
 garage-facade.workspace = true
 garage-ingest.workspace = true
-garage-ingest-ffi = { path = "../garage-ingest-ffi" }
+garage-ingest-ffi = { path = "../garage-ingest-ffi", default-features = false, features = ["tesseract"] }
 garage-mcp.workspace = true
 garage-readers.workspace = true
 garage-service.workspace = true

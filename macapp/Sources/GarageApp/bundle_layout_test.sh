@@ -5,7 +5,7 @@
 #   Contents/Helpers/garage.app                    bundle ID me.rickmark.garage-rag.garage-cli
 #   Contents/Helpers/garage-mcp.app                bundle ID me.rickmark.garage-rag.mcp-server-cli
 #
-# with each helper's executable a Mach-O that reaches the app's Frameworks through its rpaths,
+# with each helper's executable a Mach-O that needs nothing from the app's Frameworks,
 # marked LSUIElement, and `garage version` running through the forwarder: the forwarder resolves
 # the helper, and the helper runs the Rust CLI linked into it. `version` needs no database, so no
 # app is started and no Keychain is read. It also checks that nothing in the bundle links or
@@ -110,11 +110,8 @@ check_helper() {
 
     [ -x "$executable" ] || { fail "$name: helper executable missing or not executable"; return; }
     file -b "$executable" | grep -q "Mach-O" || fail "$name: helper executable is not a Mach-O"
-    local load_commands linked
-    load_commands="$(otool -l "$executable" 2>/dev/null || true)"
+    local linked
     linked="$(otool -L "$executable" 2>/dev/null || true)"
-    grep -qF -- "path @executable_path/../../../../Frameworks (offset" <<<"$load_commands" \
-        || fail "$name: helper lacks the @executable_path/../../../../Frameworks rpath"
     if grep -q -- "Python.framework\|PythonXPCService.framework" <<<"$linked"; then
         fail "$name: helper links a Python framework"
     fi
