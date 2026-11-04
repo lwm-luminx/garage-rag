@@ -44,30 +44,78 @@ fn routes(service: GarageService, token: Option<&str>) -> tonic::service::Routes
     }
 }
 
-/// Serves `service` at `endpoint` until `shutdown` completes. With a `token`, every call but
-/// `EnsureLlamaModel` must carry it (`TokenAuthInterceptor`).
+/// A bound listener, not yet serving: binding first lets a host report a port in use before
+/// its server task runs (the app's `startServer` reply), and learn the port of a `:0` bind.
+pub enum Bound {
+    /// The socket, and its path, removed when serving ends.
+    Unix(UnixListener, std::path::PathBuf),
+    Tcp(tokio::net::TcpListener),
+}
+
+impl Bound {
+    /// Where the listener is: the socket path, or the address with the port the kernel chose.
+    pub fn endpoint(&self) -> Endpoint {
+        match self {
+            Self::Unix(_, path) => Endpoint::Unix(path.clone()),
+            Self::Tcp(listener) => Endpoint::Tcp(listener.local_addr().unwrap_or_else(|_| ([127, 0, 0, 1], 0).into())),
+        }
+    }
+}
+
+/// Binds `endpoint` on the current runtime.
 ///
 /// # Errors
 ///
 /// When the endpoint cannot be bound (another server answers on the socket, the path is not
-/// absolute, something that is not a socket is there) or the server fails.
+/// absolute, something that is not a socket is there, the port is taken).
+pub async fn bind(endpoint: &Endpoint) -> io::Result<Bound> {
+    match endpoint {
+        Endpoint::Unix(path) => Ok(Bound::Unix(bind_unix_socket(path)?, path.clone())),
+        Endpoint::Tcp(addr) => Ok(Bound::Tcp(tokio::net::TcpListener::bind(addr).await?)),
+    }
+}
+
+/// Serves `service` on `bound` until `shutdown` completes. With a `token`, every call but
+/// `EnsureLlamaModel` must carry it (`TokenAuthInterceptor`).
+///
+/// # Errors
+///
+/// When the server fails.
+pub async fn serve_bound(
+    service: GarageService,
+    bound: Bound,
+    token: Option<&str>,
+    shutdown: impl Future<Output = ()>,
+) -> io::Result<()> {
+    let mut builder = tonic::transport::Server::builder();
+    let router = builder.add_routes(routes(service, token));
+    match bound {
+        Bound::Unix(listener, path) => {
+            let result = router.serve_with_incoming_shutdown(UnixListenerStream::new(listener), shutdown).await;
+            let _ = std::fs::remove_file(path);
+            result.map_err(io::Error::other)
+        }
+        Bound::Tcp(listener) => router
+            .serve_with_incoming_shutdown(tokio_stream::wrappers::TcpListenerStream::new(listener), shutdown)
+            .await
+            .map_err(io::Error::other),
+    }
+}
+
+/// Binds `endpoint` and serves `service` there until `shutdown` completes ([`bind`], then
+/// [`serve_bound`]).
+///
+/// # Errors
+///
+/// When the endpoint cannot be bound or the server fails.
 pub async fn serve(
     service: GarageService,
     endpoint: &Endpoint,
     token: Option<&str>,
     shutdown: impl Future<Output = ()>,
 ) -> io::Result<()> {
-    let mut builder = tonic::transport::Server::builder();
-    let router = builder.add_routes(routes(service, token));
-    match endpoint {
-        Endpoint::Unix(path) => {
-            let listener = bind_unix_socket(path)?;
-            let result = router.serve_with_incoming_shutdown(UnixListenerStream::new(listener), shutdown).await;
-            let _ = std::fs::remove_file(path);
-            result.map_err(io::Error::other)
-        }
-        Endpoint::Tcp(addr) => router.serve_with_shutdown(*addr, shutdown).await.map_err(io::Error::other),
-    }
+    let bound = bind(endpoint).await?;
+    serve_bound(service, bound, token, shutdown).await
 }
 
 /// Binds `path`, owner-only, as the Python server did.

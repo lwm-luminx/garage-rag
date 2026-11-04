@@ -249,7 +249,7 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `garage-embed`'s host and egress rules) and the streamable HTTP transport (GET answers 405).
   `garage-mcp-ffi` is its C ABI (`include/garage_mcp.h`); `tests/test_mcp_rust.py` holds it to the Python
   server when `GARAGE_MCP_FFI_LIBRARY` names the build or `rust/target` has it. GarageMCPServerService runs
-  it on GarageXPCKit (`GarageMCPRustServer`); the stdio `garage-mcp` launcher is still Python.
+  it on GarageXPCKit (`GarageMCPRustServer`), and the stdio `garage-mcp` launcher runs it in-process (`rust/garage-cli`, below).
 - **The backend** (`rust/garage-service`, [docs/plans/python-removal.md](docs/plans/python-removal.md)) ports
   `garage_rag/service` (GarageService over tokio-postgres + deadpool) one stage at a time: so far the database
   layer (`db.rs`, the app's socket URL), `garage.json` (`config.rs`, `SECTIONS` as data), the migrations, the model
@@ -278,11 +278,27 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run
   only where the server has AGE: `apt install postgresql-16-age` on a Linux dev box; CI's image has none); all need
   `GARAGE_TEST_DATABASE_URL` and pass without running when it is unset (CI's rust job has a pgvector service). The query embedder goes through `garage-embed`'s providers
-  and egress rules; the binary's host speaks plain HTTP only.
+  and egress rules; the binary's host speaks plain HTTP only. `garage-service-ffi` is the service behind a C ABI
+  (`include/garage_service.h`: `garage_service_start`/`is_running`/`stop`, a database `probe` for the self test, and
+  a `GarageServiceHost` of the embed worker's shape for the model servers and image models); GarageXPCService runs
+  it (`GarageRustService`, on GarageXPCKit, with `GarageEmbedWorkerHost` carrying the host calls), on the
+  `garage.json` in the app's working directory and the bundled schema (`GARAGE_SQL_DIR`), so no Python runs for
+  the backend either.
+- **The command line** (`rust/garage-cli`) ports `cli.py`: every `garage` command (the `config`, `facts` and `graph`
+  groups included) and the `garage-mcp` stdio server, with Typer's usage errors, Rich's tables and markup (plain
+  off a terminal) and the Python messages. A command runs GarageService in its own process, on a private
+  owner-only socket under `$TMPDIR`, and calls it through `garage-facade`, so the CLI needs no running app:
+  `ingest` runs `garage_ingest_run` with the Rust readers persisting through that socket, `ask` and `mcp-test` call
+  `garage-mcp`'s toolbox directly, `mcp-serve` runs its HTTP server (`--sse` is retired), and `serve` is
+  `garage-service serve`. `config schema` waits for stage 5 (it says so, exit 2). The `garage` and `garage-mcp`
+  binaries are the crate's; `libgarage_cli.a` exports `garage_cli_main`/`garage_mcp_main` (`include/garage_cli.h`)
+  for the Mac app's launcher helpers, which link it statically (`macapp/Sources/GarageLauncher`, no PythonKit).
+  `tests/cli.rs` runs both binaries over the fixture corpus against a throwaway database (`GARAGE_TEST_DATABASE_URL`).
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
-  `garage-text-ffi` and `garage-embed-ffi`; add a crate to `CRATES` in `rust/headergen/src/main.rs`.
+  `garage-cli`, `garage-text-ffi`, `garage-embed-ffi` and `garage-service-ffi`; add a crate to `CRATES` in
+  `rust/headergen/src/main.rs`.
 - **UniFFI** (pilot, [docs/plans/uniffi.md](docs/plans/uniffi.md)): `rust/garage-embed-uniffi` is the embed worker
   with typed records, errors and an `EmbedHost` protocol, beside its C ABI. `rust/uniffi-bindgen` (no
   `cargo-metadata`, so it runs in Bazel's sandbox) generates the bindings; `//rust/garage-embed-uniffi:GarageEmbedUniFFI`
@@ -703,7 +719,9 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   ingest → embed → glean facts (`EnrichFacts` with `stale_only`) through the same `runPipeline` as
   scheduled maintenance, which stops after embed.
 - `garage` and `garage-mcp` are Swift launchers (`Sources/GarageLauncher`) for people at a
-  terminal and for stdio MCP clients, packaged as helper app bundles in `Contents/Helpers`
+  terminal and for stdio MCP clients: each sets the environment up and then calls the Rust CLI linked
+  into it (`rust/garage-cli`'s `garage_cli_main` / `garage_mcp_main`), which runs GarageService in the
+  launcher's own process. They link no Python. They are packaged as helper app bundles in `Contents/Helpers`
   (`garage.app` = `me.rickmark.garage-rag.garage-cli`, `garage-mcp.app` =
   `me.rickmark.garage-rag.mcp-server-cli`; `bazel/launcher_app.bzl`), each with its own
   entitlements and, in the signed distributions, provisioning profile so it can read the App Group
@@ -714,9 +732,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
   sandboxed forwarder could not start a helper with its own sandbox). When a command needs the
   database and nothing listens on its socket
   they open the app hidden (`--background`), then read the Postgres password from the Keychain
-  and export `GARAGE_DATABASE_URL`; stdio registrations therefore carry no database URL. Only
-  these bundled launchers do this; `garage` from a venv is untouched. `garage quit` (launcher only,
-  never Python) posts a distributed notification that makes every running Garage quit as its Quit
+  and export `GARAGE_DATABASE_URL`, `GARAGE_SQL_DIR` (the bundled schema), `GARAGE_MODEL_MANIFEST`,
+  `GARAGE_MCP_EXECUTABLE` and the app's sockets; stdio registrations therefore carry no database URL. Only
+  these bundled launchers do this; a bare `garage` binary reads its config alone. `garage quit` (launcher only,
+  never the CLI) posts a distributed notification that makes every running Garage quit as its Quit
   menu item does, and waits for it; use it before a UI test run, which refuses to share the Mac
   with a running Garage.
 - MCP clients use stdio by default: the MCP page registers the bundled `garage-mcp` launcher
@@ -788,8 +807,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     and links Python.framework.
   - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
     `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService`,
-    `GarageEmbedXPCService` (the Rust embed worker), `GarageIngestXPCService` (the Rust ingest loop) and `GarageMCPServerService` (the Rust MCP server), with their client modules (`ModelDownloadClient`,
-    `LlamaClient`, `ImageEmbedClient`, `EmbedClient`, `IngestClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
+    `GarageEmbedXPCService` (the Rust embed worker), `GarageIngestXPCService` (the Rust ingest loop),
+    `GarageMCPServerService` (the Rust MCP server) and `GarageXPCService` (the Rust backend,
+    `garage-service-ffi`), with their client modules (`ModelDownloadClient`, `LlamaClient`, `ImageEmbedClient`,
+    `EmbedClient`, `IngestClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
     a Python-free core (`LlamaModelLoaderCore`, `ImageEmbedBridgeCore`) plus the C entry points handed to
     Python, which re-export the core. The services are moving off Python one at a time
     ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md), "Python-free XPC services").

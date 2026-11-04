@@ -35,11 +35,13 @@ cc_library(
     deps = [":garage_ingest_ffi_static"],
 )
 
+# The crate itself, for `garage-cli` (which runs `garage_ingest_run` in the launcher's process) and the tests.
 rust_library(
     name = "garage_ingest_ffi_lib",
     srcs = glob(["src/**/*.rs"]),
     crate_name = "garage_ingest_ffi",
     edition = "2024",
+    visibility = ["//visibility:public"],
     deps = _DEPS,
 )
 

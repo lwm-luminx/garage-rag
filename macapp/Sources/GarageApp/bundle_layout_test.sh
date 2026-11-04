@@ -185,6 +185,7 @@ python_free_services=(
     'GarageEmbedXPCService'
     'GarageIngestXPCService'
     'GarageMCPServerService'
+    'GarageXPCService'
 )
 defines_module() { # symbols module
     grep -Eq -- "^_?\\\$s$2.*Mn\$" <<<"$1"
