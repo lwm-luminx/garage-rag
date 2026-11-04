@@ -25,7 +25,7 @@ garage-facade.workspace = true
 garage-ingest.workspace = true
 garage-ingest-ffi = { path = "../garage-ingest-ffi" }
 garage-mcp.workspace = true
-garage-readers.workspace = true
+garage-readers = { workspace = true, features = ["tesseract"] }
 garage-service.workspace = true
 libc.workspace = true
 serde_json.workspace = true
