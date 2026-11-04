@@ -748,7 +748,12 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   into, `bazel/platforms.bzl`: `signed_macos_platform` sets rules_apple's `signing_certificate_name`,
   `//bazel:distribution` (`developer_id` | `store`, behind `//bazel:is_developer_id` / `is_store`) and
   the three provisioning-profile label flags; `codesign` targets name no identity and take the flag's.
-  Builds here are ad hoc (`--config=adhoc`, CI) or locally signed (`--config=local_signed`).
+  Builds here sign with the best identity the keychain has (`//bazel:local_auto`, the default;
+  `bazel/signing_identity.bzl`): an Apple Development certificate (Team ID, no profile, no hardened
+  runtime; `//bazel:is_local_development`, and the App Group too when it is the group's team,
+  `//bazel:is_local_app_group`), else the self-signed local identity, else ad hoc.
+  `--config=adhoc` (CI) and `--config=local_signed` force one; `--repo_env=GARAGE_SIGNING_IDENTITY=`
+  names one.
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It

@@ -69,6 +69,12 @@ bazel_dep(name = "toolchains_llvm", version = "1.9.1")
 bazel_dep(name = "apple_support", version = "2.8.4")
 bazel_dep(name = "rules_apple", version = "5.1.0")
 
+# The identity a local build signs with (//bazel:local_auto): an Apple Development certificate from
+# the keychain when there is one, else the local identity, else ad hoc. See bazel/signing_identity.bzl.
+signing_identity = use_repo_rule("//bazel:signing_identity.bzl", "signing_identity")
+
+signing_identity(name = "garage_signing_identity")
+
 # rules_apple's xcarchive tool (tools/xcarchivetool/make_xcarchive.py) extracts the app's
 # zip with zipfile.extractall() and re-copies it with shutil.copytree(symlinks=False),
 # both of which dereference/corrupt symlinks. This breaks any bundle that relies on real
