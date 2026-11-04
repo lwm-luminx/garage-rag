@@ -291,6 +291,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect format
         run: aspect format --task:name format
 
@@ -300,6 +302,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect gazelle
         run: aspect gazelle --task:name gazelle
 
@@ -343,6 +347,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: ./.github/actions/setup-aspect
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
         run: aspect buildifier --task:name buildifier
 
@@ -355,6 +361,8 @@ jobs:
           # ext/pythonkit/PythonKit, which the Apple targets compile.
           submodules: true
       - uses: ./.github/actions/setup-aspect
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       # //tools:bazel_env has no sources to lint, and analyzing it fetches cosmopolitan binaries
       # (bazel_env.bzl -> rules_coreutils -> ape) from hosts outside our control.
       - name: aspect lint //...
