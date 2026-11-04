@@ -4,22 +4,22 @@
     "binaries": [
       {
         "kind": "file",
-        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.26.25/aspect-launcher-aarch64-unknown-linux-musl",
-        "sha256": "8ceefcc08e00aea9f067d9c0d04d64d89178eeddc1b270833e9e520e74cedb40",
+        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.41.50/aspect-launcher-aarch64-unknown-linux-musl",
+        "sha256": "b7ae03f027e2253ddd25f1a91a43fd6a4df8542a60c520378f0036cd1c48bf30",
         "os": "linux",
         "cpu": "arm64"
       },
       {
         "kind": "file",
-        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.26.25/aspect-launcher-x86_64-unknown-linux-musl",
-        "sha256": "b7275b182710761d826696d58d3bd0da9379133751504fbf102b313b5f30c8b1",
+        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.41.50/aspect-launcher-x86_64-unknown-linux-musl",
+        "sha256": "45c3046b8d14a78add34cd95dda5860a019250dfaae978f22e7d29cb8e4f99f3",
         "os": "linux",
         "cpu": "x86_64"
       },
       {
         "kind": "file",
-        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.26.25/aspect-launcher-aarch64-apple-darwin",
-        "sha256": "e67288870f1c772e11b5a0b05f9ef5415a3c192a9997928f044e835e28e67315",
+        "url": "https://github.com/aspect-build/aspect-cli/releases/download/v2026.41.50/aspect-launcher-aarch64-apple-darwin",
+        "sha256": "47932406033ea1aafadb4358a1bad74ad95ae309efb756c53044d844b8d1899f",
         "os": "macos",
         "cpu": "arm64"
       }
