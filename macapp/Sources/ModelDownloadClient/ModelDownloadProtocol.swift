@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService_protocol
+import GarageXPCKit
 
 /// Objective-C compatible protocol for the ModelDownload XPC Service.
 @objc(ModelDownloadXPCServiceProtocol)

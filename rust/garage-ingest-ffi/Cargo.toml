@@ -23,7 +23,7 @@ tesseract = ["garage-readers/tesseract"]
 [dependencies]
 garage-git.workspace = true
 garage-ingest.workspace = true
-garage-readers.workspace = true
+garage-readers = { workspace = true, default-features = false }
 serde_json.workspace = true
 
 [lints]

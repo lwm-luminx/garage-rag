@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 /// The pages, in sidebar order: Status on its own at the top, then each `SidebarGroup`'s pages.
 enum AppSection: String, CaseIterable, Identifiable {

@@ -6,7 +6,7 @@ import IngestClient
 import ModelDownloadClient
 import ImageEmbedClient
 import LlamaClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "XPCServiceManager")
 
@@ -86,7 +86,7 @@ public struct ServiceDiagnosticTest: Equatable, Sendable {
 
     public static let selfTests = ServiceDiagnosticTest(
         name: "In-Service Self Tests",
-        description: "Runs the self tests embedded in the helper (Python runtime, imports, managed services)."
+        description: "Runs the self tests embedded in the helper (its Rust library, database, gRPC, managed services)."
     )
     public static let generic = ServiceDiagnosticTest(
         name: "Generic Service Check",
@@ -101,7 +101,7 @@ public struct ServiceDiagnosticTest: Equatable, Sendable {
         description: "Tests Llama inference service properties, model slots, and tokenizer on a fixed prompt."
     )
 
-    // Fallbacks run only when a Python-hosted helper does not answer its self tests.
+    // Fallbacks run only when a helper does not answer its self tests.
     public static let embed = ServiceDiagnosticTest(
         name: "Embeddings Model (mxbai-embed-xsmall) & Fixed-Value Vector Test",
         description: "Loads vector embedding module with mxbai-embed-xsmall and computes float vector coordinates for a fixed sample text."
@@ -567,7 +567,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// Fetches the structured status report (lifecycle, Python runtime, managed services, self tests) of a service.
+    /// Fetches the structured status report (lifecycle, managed services, self tests) of a service.
     @discardableResult
     public func fetchStatusReport(serviceId: String) async -> GarageXPCStatusReport? {
         guard let service = resolveService(serviceId) else { return nil }
@@ -605,7 +605,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// The Python helpers that learn of the database and the gRPC backend only from the app:
+    /// The helpers that learn of the database and the gRPC backend only from the app:
     /// the backend helper gets both with `startServer`, and the others used to hear of them with
     /// their first job, so until then their Database Connection and gRPC Connection self tests
     /// were skipped.
@@ -732,7 +732,7 @@ public final class XPCServiceManager: ObservableObject {
             }
         }
         if total == 0 {
-            lines.append("The service did not report any self tests (lifecycle: \(report.lifecycle), python: \(report.python.state)).")
+            lines.append("The service did not report any self tests (lifecycle: \(report.lifecycle)).")
         }
 
         var summary = "\(passedCount) of \(total) self tests passed"
@@ -1160,7 +1160,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// Diagnostic for helpers built on the shared Python runtime base: run the in-service self tests and
+    /// Diagnostic for helpers built on GarageXPCKit: run the in-service self tests and
     /// fall back to the legacy bespoke check when the helper does not answer with a report.
     private func runSelfTestDiagnostic(for serviceId: String) async -> ServiceDiagnosticTestResult {
         let resolvedId = resolveService(serviceId)?.id ?? serviceId

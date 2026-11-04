@@ -21,10 +21,10 @@ The patch changes these files:
 - `macos_rules.bzl`: the install name is `@rpath/<Name>.framework/Versions/A/<Name>`, as Xcode
   sets it.
 
-Garage builds PythonXPCService.framework with `macos_versioned_framework`
-(`//bazel:macos_framework.bzl`) instead. Applying the patch as well would give the post-processor
-an already versioned bundle, and it fails on that. To try the patch, drop the wrapper
-(`macos_framework` in `macapp/Sources/PythonXPCService/BUILD.bazel`) and add to `MODULE.bazel`:
+Garage no longer bundles a framework of its own (PythonXPCService.framework left with the Python
+removal), so the patch is unused. It was written when that framework was built with
+`macos_versioned_framework` (a wrapper since deleted); to use it for a future framework, add to
+`MODULE.bazel`:
 
 ```starlark
 single_version_override(
@@ -36,12 +36,11 @@ single_version_override(
 
 Tested that way on 2026-09-27: the store archive validated with App Store Connect
 (`VERIFY SUCCEEDED with no errors`), and `codesign --verify --deep --strict` and
-`garage version` from the archived app passed. One Garage-side change is needed first:
-libpq and libtesseract reach the framework through `structured_resources`
-(`//macapp/externals:python_framework_libs`), so with the patch they land in
-`Versions/A/Resources/Frameworks`, not beside the binary, and dyld does not find them through
-`@loader_path/Frameworks`. The test added `-rpath @loader_path/Resources/Frameworks`. The proper
-fix is to bundle them as code rather than as a resource.
+`garage version` from the archived app passed. One Garage-side change was needed then:
+libpq and libtesseract reached the framework through `structured_resources`, so with the patch
+they landed in `Versions/A/Resources/Frameworks`, not beside the binary, and dyld did not find
+them through `@loader_path/Frameworks`. The test added `-rpath @loader_path/Resources/Frameworks`;
+bundling them as code rather than as a resource would be the proper fix.
 
 Not done yet: rules_apple's own tests (the `test/starlark_tests` bundle-content assertions for
 macOS frameworks expect the flat layout and would need updating, plus a new test for the links),

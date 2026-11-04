@@ -2,23 +2,17 @@ name: CI
 
 # The fast checks every push gets, most of them on Linux:
 #
-# - `python`: ruff and the whole pytest suite in a uv venv, with a pgvector
-#   Postgres service so test_postgres.py runs instead of skipping. It is the same
-#   recipe the web-session hook uses (.claude/hooks/session-start.sh).
-# - `python-package`: builds the sdist and wheel PyPI would get, checks their
-#   metadata, and installs each into a fresh venv for tools/pypi/smoke_test.sh
-#   (console scripts, the packaged SQL and model catalog, `garage init-db`).
-# - `python-freethreaded`: the pytest suite again on free-threaded CPython 3.14t,
-#   informational (continue-on-error) while grpcio and lxml still re-enable the GIL.
-# - `rust`: rustfmt, clippy and cargo test over rust/, the protogen output check,
-#   and the .NET binding's tests against the built library.
+# - `rust`: rustfmt, clippy and cargo test over rust/ (with a pgvector Postgres
+#   service, so the tests that need a server run instead of passing without
+#   running), the protogen and cbindgen output checks, the third-party notices
+#   check, and the .NET binding's tests against the built library.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
 # - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
 # - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
 #
-# The Bazel build and test of //... (the app, Postgres, ICU, Python.framework
-# and llama.cpp from source) is in macos.yaml. It runs only when the build could
-# have changed, and a newer push does not cancel it.
+# The Bazel build and test of //... (the app, Postgres, ICU and llama.cpp from
+# source) is in macos.yaml. It runs only when the build could have changed, and
+# a newer push does not cancel it.
 on:
   push:
     branches: [main]
@@ -35,180 +29,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  python:
-    name: "Python: ruff and pytest (with Postgres + pgvector)"
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      # A superuser: pgvector is not a trusted extension, and each run creates
-      # and drops its own garage_test_* database.
-      GARAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-    defaults:
-      run:
-        working-directory: garage_python
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: garage_python/pyproject.toml
-      - name: Create a Python 3.14 venv with the dev extras
-        # uv.lock only resolves for macOS, so install from pyproject, as the
-        # web-session hook does on Linux.
-        run: |
-          uv venv --python 3.14 .venv
-          uv pip install --python .venv -e '.[dev]'
-      - name: Ruff lint and format check
-        run: |
-          .venv/bin/ruff check .
-          .venv/bin/ruff format --check .
-      - name: Build _garage_git and _garage_tesseract
-        # The app's Python has both built in; build them here as extension modules so
-        # test_git_history holds _garage_git (and pygit2, from the dev extra) to what git
-        # reports, and test_tesseract reads through _garage_tesseract and the ctypes path alike.
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng pkg-config
-          ../tools/garage_git/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_git"
-          ../tools/garage_tesseract/build_extension.sh .venv/bin/python "$RUNNER_TEMP/garage_tesseract"
-      - name: Build the Rust text reader, embed worker and ingest pieces
-        # test_text_plugin holds the reader to garage_rag.extract.text, over gRPC and the C ABI
-        # alike; test_embed_worker runs the worker against this GarageService; test_ingest_rust
-        # holds the walker and the quality gate to garage_rag's.
-        # rustup installs the version rust/rust-toolchain.toml pins.
-        working-directory: rust
-        run: cargo build --release --locked -p garage-text-plugin -p garage-text-ffi -p garage-embed-ffi -p garage-ingest-ffi
-      - name: pytest, the whole suite (test_postgres.py against the service)
-        # Typer forces Rich's terminal mode (ANSI colour, boxed errors) when
-        # GITHUB_ACTIONS is set, which breaks the CLI tests' output checks. Bazel's
-        # test sandbox never passes it, so clear it here too.
-        run: env -u GITHUB_ACTIONS .venv/bin/pytest -q
-        env:
-          # test_scanner runs git; keep the runner's global config out of it. Only
-          # here: job-wide, it breaks actions/checkout's post-job git config cleanup.
-          GIT_CONFIG_GLOBAL: /dev/null
-          PYTHONPATH: ${{ runner.temp }}/garage_git:${{ runner.temp }}/garage_tesseract
-          GARAGE_TEXT_PLUGIN: ${{ github.workspace }}/rust/target/release/garage-text-plugin
-          GARAGE_TEXT_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_text_ffi.so
-          GARAGE_EMBED_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_embed_ffi.so
-          GARAGE_INGEST_FFI_LIBRARY: ${{ github.workspace }}/rust/target/release/libgarage_ingest_ffi.so
-
-  python-package:
-    name: "Python package: build, check and smoke-test the sdist and wheel"
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      # createdb's password; each smoke test gets its own database on the service.
-      PGPASSWORD: postgres
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-suffix: package
-          cache-dependency-glob: garage_python/pyproject.toml
-      - name: Build the sdist and wheel and check their metadata (twine --strict)
-        working-directory: garage_python
-        run: |
-          uv build --out-dir "$RUNNER_TEMP/dist"
-          uvx twine check --strict "$RUNNER_TEMP"/dist/*
-      - name: Install the wheel in a fresh venv and smoke-test it (console scripts, packaged data, init-db)
-        env:
-          GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_wheel
-        run: |
-          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' garage_python/pyproject.toml)"
-          createdb -h localhost -U postgres garage_wheel
-          uv venv --python 3.14 "$RUNNER_TEMP/wheel"
-          uv pip install --python "$RUNNER_TEMP/wheel" "$RUNNER_TEMP"/dist/*.whl
-          tools/pypi/smoke_test.sh "$RUNNER_TEMP/wheel/bin/python" "$version"
-      - name: Build from the sdist in a fresh venv and smoke-test it
-        env:
-          GARAGE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/garage_sdist
-        run: |
-          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' garage_python/pyproject.toml)"
-          createdb -h localhost -U postgres garage_sdist
-          uv venv --python 3.14 "$RUNNER_TEMP/sdist"
-          uv pip install --python "$RUNNER_TEMP/sdist" --no-binary garage-rag "$RUNNER_TEMP"/dist/*.tar.gz
-          tools/pypi/smoke_test.sh "$RUNNER_TEMP/sdist/bin/python" "$version"
-
-  python-freethreaded:
-    name: "Python: pytest on free-threaded 3.14t (informational)"
-    # The same suite on the free-threaded build of CPython 3.14 (the `t` ABI),
-    # twice: once as the interpreter behaves by default (grpcio's extension
-    # re-enables the GIL when it is imported) and once with PYTHON_GIL=0, which
-    # keeps the GIL off regardless. Informational until the app ships on it:
-    # a failure here does not fail the workflow. Notes on what stands between
-    # Garage and a free-threaded build are in the project's evaluation
-    # (2026-09-27): grpcio and lxml re-enable the GIL, protobuf falls back to
-    # pure Python because abi3 wheels do not load, cryptography < 44 does not
-    # build (overridden below until the pin is lifted), and the tree-sitter
-    # dev extras do not build at all, so the dev group is not installed.
-    # grpcio has no free-threaded wheel and compiles from source (about 20
-    # minutes); uv keeps the built wheel in its cache, which setup-uv restores.
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    services:
-      postgres:
-        image: pgvector/pgvector:pg18
-        env:
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      GARAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
-    defaults:
-      run:
-        working-directory: garage_python
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-suffix: freethreaded
-          cache-dependency-glob: garage_python/pyproject.toml
-      - name: Create a free-threaded Python 3.14t venv with the dev extras
-        run: |
-          echo 'cryptography>=45' > "$RUNNER_TEMP/overrides.txt"
-          uv venv --python 3.14t .venv
-          uv pip install --python .venv --overrides "$RUNNER_TEMP/overrides.txt" -e . pytest-asyncio
-          .venv/bin/python -c 'import sys, sysconfig; print(sys.version); assert sysconfig.get_config_var("Py_GIL_DISABLED") == 1'
-      - name: pytest (GIL re-enabled by extensions that need it)
-        run: env -u GITHUB_ACTIONS .venv/bin/pytest -q
-        env:
-          GIT_CONFIG_GLOBAL: /dev/null
-      - name: pytest (PYTHON_GIL=0)
-        run: env -u GITHUB_ACTIONS .venv/bin/pytest -q
-        env:
-          GIT_CONFIG_GLOBAL: /dev/null
-          PYTHON_GIL: "0"
-
   rust:
     name: "Rust: fmt, clippy and tests (rust/)"
     runs-on: ubuntu-latest
@@ -253,6 +73,9 @@ jobs:
           git diff --exit-code -- garage-plugin/src/generated garage-facade/src/generated
       - name: The checked-in C headers match the Rust (cbindgen)
         run: cargo run --locked -p headergen -- --check
+      - name: The third-party notices cover Cargo.lock and the bundled components
+        working-directory: .
+        run: python3 tools/third_party_notices.py --check
       - name: UniFFI's Python bindings call the embed worker and back
         run: |
           cargo build --locked -p garage-embed-uniffi -p uniffi-bindgen
@@ -274,19 +97,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          submodules: true
       - uses: astral-sh/setup-uv@v7
       - name: Swift syntax gate (tree-sitter)
         run: |
           uv venv --python 3.14 "$RUNNER_TEMP/venv"
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
-      - name: PythonKit symbol table matches the submodule
-        run: python3 tools/pythonkit/generate_symbols.py --check
 
   format:
-    name: "Format: Python and Starlark formatting"
+    name: "Format: Python tools and Starlark formatting"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -297,7 +116,7 @@ jobs:
         run: aspect format --task:name format
 
   gazelle:
-    name: "Gazelle: BUILD files match the Python sources"
+    name: "Gazelle: BUILD files match the proto sources"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -353,13 +172,10 @@ jobs:
         run: aspect buildifier --task:name buildifier
 
   lint:
-    name: "Lint: Ruff and ty over //..., Apple targets included (macOS)"
+    name: "Lint: Ruff over //..., Apple targets included (macOS)"
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          # ext/pythonkit/PythonKit, which the Apple targets compile.
-          submodules: true
       - uses: ./.github/actions/setup-aspect
         with:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}

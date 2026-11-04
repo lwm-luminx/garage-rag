@@ -3,7 +3,7 @@
 //ext/postgres calls postgres_targets() once, with lib_source selected by //ext:postgres_version:
 @postgres (18) or @postgres19 (the 19 beta), each fetched with the patches in pg<major>/. The
 configure/make invocation, rpath rewriting and libpq extraction are the same for every version,
-and the rest of the tree (pgvector, the app bundle, PythonXPCService) links against the one set
+and the rest of the tree (pgvector, the app bundle) links against the one set
 of targets.
 """
 
@@ -186,8 +186,7 @@ done
     _extract_static_lib("libpgcommon_a", ":" + name, "libpgcommon.a", tags)
     _extract_static_lib("libpgport_a", ":" + name, "libpgport.a", tags)
 
-    # Standalone client library, carried in PythonXPCService.framework's `Frameworks/libpq.dylib`
-    # (signed by //macapp/externals:libpq), linked by the framework and used by psycopg through ctypes. The install
+    # Standalone client library (the Windows build ships it beside the services). The install
     # name is normalised to `@rpath/libpq.dylib` so the same binary works from any location.
     #
     # This copy is pulled straight from :postgres's raw output and only its own install name

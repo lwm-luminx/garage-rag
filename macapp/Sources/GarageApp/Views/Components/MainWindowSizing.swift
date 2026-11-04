@@ -1,5 +1,5 @@
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 import SwiftUI
 
 /// The main window's size follows what it shows. The setup assistant opens at `assistantSize`, also

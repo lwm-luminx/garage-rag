@@ -31,43 +31,38 @@ which AI you connect:
   Communications never do (layer 4).
 
 This is enforced structurally, in layers that are each tested on their own
-(`garage_python/tests/test_egress_block.py`). Removing any one of them fails the
-test suite.
+(`rust/garage-embed`'s `egress` tests and the service's). Removing any one of them
+fails the test suite.
 
 ### Layer 1 — one choke point
 
-`garage_rag/net/egress.py` is the only module that imports an outbound network
-client library (`httpx`, `urllib.request`, `requests`, raw `socket`, ...) or a
-library that opens its own connections (the `ollama` SDK). Every outbound client
-is built there, after its destination is checked:
+No crate of the pipeline opens an outbound connection itself. The embed worker
+(`rust/garage-embed`) builds every model-server request (LM Studio, Ollama and
+the app's `LlamaXPCService`: embeddings, fact extraction, answers, LM Studio model
+management) and hands it to its host (`Host::http`) only after its `egress`
+module has checked the destination; the fact distiller, the query embedder, the
+MCP server's `rag_ask` and the `mcp-test` probe all go through that worker. The
+hosts are the Mac app's XPC services (a `URLSession` with no proxy that returns
+redirects instead of following them), the Windows app's `Garage.Services.exe`
+(an `HttpClient`, likewise) and the `garage` command's own plain-HTTP host.
 
-- `egress.http_client(purpose=..., base_url=...)` — an `httpx` client. Every
-  model server (LM Studio, Ollama and the app's `LlamaXPCService`: embeddings,
-  fact extraction, answers, LM Studio model management) is reached through
-  Garage's own client, `garage_rag/inference`, whose transport is built here;
-- `egress.url_opener(purpose=..., base_url=...)` — a stdlib client (the
-  `mcp-test` probe).
-
-Image embedding models (`image_xpc`) open no connection at all: the Swift host
-of each helper installs two C functions (`garage_rag/xpc/image_host.py`) that
-reach the app's `GarageImageEmbedXPCService` over NSXPC, through the listener
+Image embedding models open no connection at all: the host of each helper
+reaches the app's `GarageImageEmbedXPCService` over NSXPC, through the listener
 endpoint the app hands the helper, and the pictures are embedded on this
 machine's Neural Engine or GPU.
 
-The test parses every source file's AST, so a function-local or
-`importlib.import_module` import is caught too. Inbound and local infrastructure
-is exempt, and listed file by file rather than by pattern: the gRPC server and
-its generated stubs, the MCP server's uvicorn, and psycopg's connection to
-Postgres. The gRPC *client* of the app's facade is listed too, and checks its
-address with the guard (loopback only), unless it is given the app's socket.
+The pipeline's other connections are inbound or local: the gRPC server, the MCP
+server's HTTP listener, and the backend's connection to Postgres over its socket.
+The gRPC *client* of the app's facade (`garage-facade`) checks its address with the
+guard (loopback only), unless it is given the app's socket.
 
 ### Layer 2 — no cloud AI SDK
 
-No source file imports a cloud AI SDK (`anthropic`, `openai`, `google.genai`,
+No crate depends on a cloud AI SDK (`anthropic`, `openai`, `google.genai`,
 `google.cloud`, `cohere`, `mistralai`, `boto3`, upstream `langextract` and the
-like), and `uv.lock` contains none. Neither the `openai` nor the `ollama`
-package is a dependency: LM Studio's and Ollama's HTTP APIs are a few JSON
-routes, made by `garage_rag/inference` with the guard's `httpx` client.
+like), and `rust/Cargo.lock` contains none. Neither an `openai` nor an `ollama`
+crate is a dependency: LM Studio's and Ollama's HTTP APIs are a few JSON
+routes, made by `garage-embed`'s providers and sent by the host.
 
 There used to be an optional Claude vision fallback for OCR. It has been removed:
 OCR is Tesseract only, on this machine, and the `cloud` settings section and the
@@ -119,13 +114,12 @@ anything else when the caller says what it is sending:
 
 ### Layer 5 — local fact extraction
 
-Only the local part of LangExtract is shipped: the Rust port `langextract_rs`
+Only the local part of LangExtract is shipped: the Rust port `langextract-rs`
 (which makes no requests and opens no files; the model it is given is its only way
-out), or where that is not installed, the Python subset vendored as
-`enrich/langextract`. Upstream chooses its backend by regex on the model name and would send a
+out). Upstream chooses its backend by regex on the model name and would send a
 `gemini-*` or `gpt-*` model id to Google or OpenAI; that routing and those
-backends are not vendored, and `enrich/facts.py` refuses a cloud model id with a
-clear error. Every extraction runs on `LocalLanguageModel`, Garage's own
+backends are not shipped, and the fact distiller refuses a cloud model id with a
+clear error. Every extraction runs on Garage's own
 provider, through the same loopback-only client.
 
 ### What these layers do not cover — MCP clients
@@ -204,7 +198,7 @@ client evicted it is skipped without a download while its stat still matches.
 
 ## Garage's own endpoints
 
-The app's pieces talk to each other on this Mac: the Python pipeline to Postgres,
+The app's pieces talk to each other on this Mac: the backend to Postgres,
 the app and its workers to the `GarageService` gRPC facade, and the `llama_xpc`
 provider to `LlamaXPCService`. A loopback TCP port is reachable by every process
 of every account on the Mac, so none of these listen on one:
@@ -231,10 +225,10 @@ of every account on the Mac, so none of these listen on one:
   leaf[subject.OU]` = the team in its own signature), so only the app, its
   other services and the launchers can call it. Ad-hoc and locally signed
   builds have no team, and skip the check.
-- **Inference over NSXPC inside the app.** The XPC services that embed Python
-  send `llama_xpc` requests straight over their NSXPC connection to
-  `LlamaXPCService` (`garage_rag.inference.bridge`); the llama-server socket is
-  for the launchers and a `garage` run from a terminal.
+- **Inference over NSXPC inside the app.** The XPC services send `llama_xpc`
+  requests straight over their NSXPC connection to `LlamaXPCService` (the embed
+  worker's Swift host); the llama-server socket is for the launchers and a
+  `garage` run from a terminal.
 
 `GARAGE_LLAMA_HTTP_PORT` puts `LlamaXPCService` back on a loopback port, for
 debugging with tools that cannot use a socket.

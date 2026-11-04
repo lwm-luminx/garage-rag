@@ -1,11 +1,11 @@
 name: macOS build
 
 # `aspect test //...` on macOS: the app, its XPC services, and the vendored
-# Postgres, ICU, Python.framework and llama.cpp built from source. It is by far
-# the slowest check, so:
+# Postgres, ICU and llama.cpp built from source. It is by far the slowest
+# check, so:
 #
-# - Pull requests run it only when the build could have changed. Python-only
-#   edits are covered by ci.yaml's Linux `python` job. Run it by hand
+# - Pull requests run it only when the build could have changed. Rust-only
+#   edits are covered by ci.yaml's Linux `rust` job. Run it by hand
 #   (workflow_dispatch) when in doubt.
 # - A push does not cancel a run in progress. The newest push waits for it, and
 #   GitHub keeps only the latest waiting run, so a finished run always reports.
@@ -27,13 +27,10 @@ on:
       - "**/BUILD.bazel"
       - "**/*.bzl"
       - "MODULE.bazel"
-      - ".gitmodules"
       - "MODULE.bazel.lock"
       - ".bazelrc"
       - ".bazelversion"
       - ".aspect/**"
-      - "garage_python/pyproject.toml"
-      - "garage_python/uv.lock"
       - ".github/workflows/macos.yaml"
       - ".github/actions/**"
   schedule:
@@ -56,9 +53,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-        with:
-          # ext/pythonkit/PythonKit, which the app compiles.
-          submodules: true
       - uses: ./.github/actions/setup-aspect
         with:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
@@ -97,19 +91,19 @@ jobs:
           BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
         # user.bazelrc is git-ignored and try-imported last by .bazelrc.
         #
-        # - Writing the site-packages tree artifacts (tens of thousands of files)
-        #   into the disk cache ran Bazel out of file descriptors ("Too many open
-        #   files"), even at 65536. The actions that produce them only copy and
-        #   sign files, so they stay out of the cache (no-cache; no-remote-cache
-        #   still uses the disk cache) and re-run on each fresh runner.
+        # - Writing the copied and signed tree artifacts (Postgres, the bundle's
+        #   resources) into the disk cache ran Bazel out of file descriptors ("Too
+        #   many open files"), even at 65536. The actions that produce them only
+        #   copy and sign files, so they stay out of the cache (no-cache;
+        #   no-remote-cache still uses the disk cache) and re-run on each fresh runner.
         # - --build_tests_only: build what the tests need, not every non-manual
         #   target in //....
         # - --noapple_generate_dsym: .bazelrc asks for dSYMs on every build, and
-        #   dsymutil over llama.cpp, Python and Postgres is slow; tests never use them.
+        #   dsymutil over llama.cpp and Postgres is slow; tests never use them.
         run: |
           {
             echo "common --disk_cache=$HOME/.cache/bazel-disk --repository_cache=$HOME/.cache/bazel-repo"
-            echo "common --modify_execution_info=^(PythonSitePackages|CopyToDirectory|Codesign)\$=+no-cache"
+            echo "common --modify_execution_info=^(CopyToDirectory|Codesign)\$=+no-cache"
             echo "startup --host_jvm_args=-XX:-MaxFDLimit"
             echo "test --build_tests_only"
             echo "build --noapple_generate_dsym"

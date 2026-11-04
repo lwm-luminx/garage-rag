@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
-import PythonXPCService
+import GarageXPCKit
 
 /// Full-window setup assistant shown on a fresh install (and on demand from
 /// the "Setup Assistant…" menu item). Four pages: wait for services, pick

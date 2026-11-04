@@ -1,25 +1,21 @@
 name: Windows build
 
-# Postgres (with pgvector, ICU and zlib) and CPython built from source on Windows,
-# from the same pinned sources the macOS app bundles.
+# Postgres (with pgvector, ICU and zlib) built from source on Windows, from the same
+# pinned sources the macOS app bundles, and the Rust services and the app on it.
 #
-# The macOS build goes through Bazel (//ext/postgres, //ext/python and friends), and
-# those rules are Darwin-only: the darwin configure template, Python.framework,
-# dsymutil, install_name_tool. Windows uses each project's own MSVC build instead:
+# The macOS build goes through Bazel (//ext/postgres and friends), and those rules
+# are Darwin-only: the darwin configure template, dsymutil, install_name_tool.
+# Windows uses each project's own MSVC build instead:
 #
 # - `postgres`: ICU (allinone.sln) and zlib (CMake), then Postgres with meson and
 #   pgvector with Makefile.win. The smoke test initdbs an ICU cluster and applies
-#   data/sql twice, as test_postgres.py does.
-# - `python`: CPython with PCbuild\build.bat. PCbuild fetches its own pinned
-#   externals (OpenSSL, zlib, sqlite, xz, bzip2, libffi) rather than //ext's.
-# - `garage`: garage_rag installed on the built interpreter, running
-#   test_postgres.py against the built server (psycopg loads the built libpq.dll).
+#   data/sql twice, as the service's tests do.
 # - `rust`: the Rust libraries the services run (garage_service_ffi, garage_ingest_ffi,
 #   garage_mcp_ffi, docs/plans/python-removal.md), built with Cargo for MSVC, with
 #   libgit2 and SQLite from vcpkg linked statically; uploaded as `rust-windows-x64`.
 # - `winapp`: the native Windows app (winapp/), built with the .NET SDK rather than
 #   Bazel. Its service tests start Garage.Services.exe on those libraries, as the app
-#   does; Garage.Python's tests still embed the built interpreter (stage 5 removes them).
+#   does.
 # - `package`: the MSIX, the MSI and Garage-Setup.exe (winapp/packaging), staged
 #   from the builds above, uploaded unsigned as `garage-windows-x64`. The Visual
 #   C++ runtime comes from Microsoft's Redistributable, downloaded by the scripts.
@@ -38,9 +34,7 @@ on:
       - "ext/pgvector/**"
       - "ext/libicu/**"
       - "ext/libzlib/**"
-      - "ext/python/**"
       - "data/sql/**"
-      - "garage_python/**"
       - "tools/windows/**"
       - "winapp/**"
       - "rust/**"
@@ -212,97 +206,6 @@ jobs:
           path: ${{ runner.temp }}\pgsql
           if-no-files-found: error
 
-  python:
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-      - name: Paths
-        run: |
-          "SRC=$env:RUNNER_TEMP\src" >> $env:GITHUB_ENV
-          "PYROOT=$env:RUNNER_TEMP\python" >> $env:GITHUB_ENV
-      - name: Fetch sources
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          python tools/windows/fetch_ext.py --dest $env:SRC python
-      - name: Build CPython
-        # Tkinter is not built; the macOS framework leaves it out too.
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          & "$env:SRC\python\PCbuild\build.bat" -e -p x64 -c Release --no-tkinter
-      - name: Smoke test
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $py = "$env:SRC\python\PCbuild\amd64\python.exe"
-          & $py -c "import sys, ssl, zlib, sqlite3, ctypes, lzma, bz2, hashlib; print(sys.version); print(ssl.OPENSSL_VERSION)"
-          & $py -m test -j0 --quiet test_zlib test_ssl test_ctypes test_sqlite3
-      - name: Lay out an install
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $py = "$env:SRC\python\PCbuild\amd64\python.exe"
-          & $py "$env:SRC\python\PC\layout" --copy "$env:PYROOT" --include-stable --include-venv --include-dev
-          & "$env:PYROOT\python.exe" -c "import sys, ssl; print(sys.executable, sys.version)"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
-          if-no-files-found: error
-
-  garage:
-    # garage_rag on the built interpreter, against the built Postgres.
-    needs: [postgres, python]
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: pwsh
-    steps:
-      - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/download-artifact@v4
-        with:
-          name: postgres-windows-x64
-          path: ${{ runner.temp }}\pgsql
-      - uses: actions/download-artifact@v4
-        with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
-      - name: Start Postgres
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $bin = "$env:RUNNER_TEMP\pgsql\bin"
-          # psycopg finds libpq.dll on PATH.
-          $bin >> $env:GITHUB_PATH
-          & "$bin\initdb.exe" -D "$env:RUNNER_TEMP\pgdata" -U postgres -A trust -E UTF8 --locale=C `
-            --locale-provider=icu --icu-locale=en-US
-          & "$bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -l "$env:RUNNER_TEMP\postgres.log" -o "-p 5433" -w start
-      - name: Install garage_rag
-        working-directory: garage_python
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          uv venv --python "$env:RUNNER_TEMP\python\python.exe" .venv
-          uv pip install --python .venv -e . pytest-asyncio
-          .venv\Scripts\garage.exe --help
-      - name: test_postgres.py
-        working-directory: garage_python
-        env:
-          GARAGE_TEST_DATABASE_URL: postgresql://postgres@localhost:5433/postgres
-          # The libpq built above from //ext/postgres, as a Windows CLI install points at it.
-          GARAGE_LIBPQ: ${{ runner.temp }}\pgsql\bin\libpq.dll
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          .venv\Scripts\python.exe -c "import os, garage_rag, psycopg, ctypes.util; found = ctypes.util.find_library('libpq.dll'); assert os.path.samefile(found, os.environ['GARAGE_LIBPQ']), found; print('psycopg', psycopg.pq.__impl__, 'libpq', psycopg.pq.version(), found)"
-          .venv\Scripts\python.exe -m pytest -q tests/test_postgres.py
-      - name: Stop Postgres
-        if: always()
-        run: |
-          & "$env:RUNNER_TEMP\pgsql\bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -m fast -w stop
-          Get-Content "$env:RUNNER_TEMP\postgres.log"
-
   rust:
     runs-on: windows-latest
     defaults:
@@ -341,21 +244,16 @@ jobs:
           if-no-files-found: error
 
   winapp:
-    needs: [postgres, python, rust]
+    needs: [postgres, rust]
     runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: winapp/global.json
-      - uses: actions/download-artifact@v4
-        with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
       # PostgresSupervisor's tests run the app's own cluster from this build.
       - uses: actions/download-artifact@v4
         with:
@@ -366,18 +264,9 @@ jobs:
         with:
           name: rust-windows-x64
           path: ${{ runner.temp }}\native
-      - name: garage_rag dependencies
-        working-directory: garage_python
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          uv venv --python "$env:RUNNER_TEMP\python\python.exe" .venv
-          uv pip install --python .venv -e .
       - name: Build and test
         working-directory: winapp
         env:
-          GARAGE_TEST_PYTHON_HOME: ${{ runner.temp }}\python
-          GARAGE_TEST_PYTHON_SITE_PACKAGES: ${{ github.workspace }}\garage_python\.venv\Lib\site-packages
-          GARAGE_TEST_REQUIRE_PYTHON: "1"
           GARAGE_TEST_POSTGRES_HOME: ${{ runner.temp }}\pgsql
           GARAGE_TEST_NATIVE_DIR: ${{ runner.temp }}\native
           GARAGE_TEST_REQUIRE_NATIVE: "1"
@@ -404,7 +293,6 @@ jobs:
         shell: pwsh
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: winapp/global.json

@@ -30,7 +30,7 @@ user.bazelrc
 
 .ruff_cache/
 .mypy_cache/
-garage_python/dist/
 
 # Cargo's build output (rust/)
 rust/target/
+.swiftcheck-venv/

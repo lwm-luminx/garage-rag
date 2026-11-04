@@ -2,12 +2,12 @@
 # Runs the Linux end-to-end tests in the devcontainer (.devcontainer/), from a Mac or any host
 # with Docker and the devcontainer CLI (npm install -g @devcontainers/cli).
 #
-#   tools/e2e/devcontainer.sh                      # tests/test_e2e_cli.py and tests/test_postgres.py
-#   tools/e2e/devcontainer.sh tests/ -q            # anything else: pytest arguments, from garage_python/
+#   tools/e2e/devcontainer.sh                      # the CLI's end-to-end tests and the service's database tests
+#   tools/e2e/devcontainer.sh -p garage-ingest     # anything else: cargo test arguments, from rust/
 #   GARAGE_E2E_REBUILD=1 tools/e2e/devcontainer.sh # rebuild the image first (after a Dockerfile change)
 #
-# The first run builds the image and the venv, which takes several minutes; later runs reuse the
-# container. Postgres runs inside it; nothing on the host is touched.
+# The first run builds the image and the workspace, which takes several minutes; later runs reuse
+# the container. Postgres runs inside it; nothing on the host is touched.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -28,8 +28,8 @@ fi
 devcontainer up "${up_args[@]}" >&2
 
 if [ "$#" -eq 0 ]; then
-  set -- tests/test_e2e_cli.py tests/test_postgres.py -v
+  set -- -p garage-cli -p garage-service
 fi
 # printf %q keeps each argument whole through bash -c.
 exec devcontainer exec --workspace-folder "$REPO" \
-  bash -c "cd garage_python && .venv/bin/pytest $(printf '%q ' "$@")"
+  bash -c "cd rust && cargo test --features garage-plugin/grpc $(printf '%q ' "$@")"

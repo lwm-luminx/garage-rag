@@ -1,6 +1,7 @@
 """Rules for codesigning binaries and directories of binaries on macOS."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@garage_signing_identity//:identity.bzl", "AUTO_SIGNING_IDENTITY_NAME")
 load("@rules_apple//apple/internal:providers.bzl", "new_appleresourceinfo")
 load("//bazel:codesign_test.bzl", _codesign_test = "codesign_test", _codesign_validation_test = "codesign_validation_test", _codesign_verify_test = "codesign_verify_test")
 load("//bazel:signing.bzl", "LOCAL_SIGNING_IDENTITY", "UNCHAINED_IDENTITIES")
@@ -19,9 +20,8 @@ codesign_validation_test = _codesign_validation_test
 #
 # Hardened runtime is only *required* for notarization, so enable it for the
 # signed distribution configs and leave it off for the local ones. The
-# distribution configs sign everything with one Team ID, every extension module
-# in site-python included, so validation passes there and neither ships
-# com.apple.security.cs.disable-library-validation.
+# distribution configs sign everything with one Team ID, so validation passes
+# there and neither ships com.apple.security.cs.disable-library-validation.
 # tools/macos/trace_loaded_images.sh checks that at run time.
 HARDENED_RUNTIME_CODESIGNOPTS = select({
     "//bazel:is_developer_id": ["--options=runtime"],
@@ -46,6 +46,7 @@ HARDENED_RUNTIME_EXPECTED = select({
 # signing_certificate_name flag, the one the distribution's platform set (platforms.bzl).
 EXPECTED_SIGNING_IDENTITY = select({
     "//bazel:is_developer_id": "",
+    "//bazel:is_local_development": AUTO_SIGNING_IDENTITY_NAME,
     "//bazel:is_local_signed": LOCAL_SIGNING_IDENTITY,
     "//bazel:is_store": "",
     "//conditions:default": "-",
@@ -133,7 +134,13 @@ def _codesign_impl(ctx):
     # hardened runtime because the *distribution* builds need it to notarize;
     # silently dropping it locally is what makes a locally built bundle
     # runnable. See HARDENED_RUNTIME_CODESIGNOPTS for the rules_apple side.
-    if signing_identity in UNCHAINED_IDENTITIES:
+    #
+    # A local build signed with an Apple Development certificate (//bazel:local_auto) could carry
+    # it, but the bundles rules_apple signs in that build do not (HARDENED_RUNTIME_CODESIGNOPTS
+    # keys on the distribution), so the pieces signed here follow them: hardened runtime only
+    # under a signed distribution.
+    distribution = ctx.attr._distribution[BuildSettingInfo].value
+    if signing_identity in UNCHAINED_IDENTITIES or distribution not in ("developer_id", "store"):
         codesign_args = _without_hardened_runtime(codesign_args)
 
     extra_inputs = []
@@ -238,9 +245,7 @@ fix_macho() {
     local dylib_id
     dylib_id="$(otool -D "$file" 2>/dev/null | tail -n +2 | head -n 1 || true)"
     if [ -n "$dylib_id" ]; then
-        if [[ "$dylib_id" == *"/Python.framework/"* ]] || [[ "$file" == *"/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -id "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
-        elif [[ "$dylib_id" == /Users/* ]] || [[ "$dylib_id" == */_bazel* ]] || [[ "$dylib_id" == /sandbox/* ]] || [[ "$dylib_id" == ./* ]] || [[ "$dylib_id" == /* && "$dylib_id" != /usr/lib/* && "$dylib_id" != /System/* && "$dylib_id" != /Library/* ]]; then
+        if [[ "$dylib_id" == /Users/* ]] || [[ "$dylib_id" == */_bazel* ]] || [[ "$dylib_id" == /sandbox/* ]] || [[ "$dylib_id" == ./* ]] || [[ "$dylib_id" == /* && "$dylib_id" != /usr/lib/* && "$dylib_id" != /System/* && "$dylib_id" != /Library/* ]]; then
             /usr/bin/install_name_tool -id "@rpath/$(basename "$file")" "$file" 2>/dev/null || true
         fi
     fi
@@ -253,13 +258,7 @@ fix_macho() {
             continue
         fi
 
-        if [[ "$file" == *"/Python.framework/Versions/"*"/bin/"* ]] || [[ "$file" == *"/Python.framework/bin/"* ]] || [[ "$file" == *"/Versions/"*"/bin/"* ]] || [[ "$file" == *"/bin/python"* ]]; then
-            if [[ "$dep" == *"/Python.framework/"* ]] || [[ "$dep" == "@rpath/Python"* ]] || [[ "$dep" == *"/Python" && "$dep" != "/usr/lib/"* && "$dep" != "/System/"* ]]; then
-                /usr/bin/install_name_tool -change "$dep" "@executable_path/../Python" "$file" 2>/dev/null || true
-            fi
-        elif [[ "$dep" == *"/Python.framework/"* ]] && [[ "$dep" != "@rpath/Python.framework/"* ]]; then
-            /usr/bin/install_name_tool -change "$dep" "@rpath/Python.framework/Versions/3.14/Python" "$file" 2>/dev/null || true
-        elif [[ "$dep" == /DLC/* ]]; then
+        if [[ "$dep" == /DLC/* ]]; then
             /usr/bin/install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$file" 2>/dev/null || true
         elif [[ "$dep" == ./* ]]; then
             /usr/bin/install_name_tool -change "$dep" "@loader_path/$(basename "$dep")" "$file" 2>/dev/null || true
@@ -268,32 +267,14 @@ fix_macho() {
         fi
     done
 
-    # If it is inside Python.framework/Versions/.../bin
-    if [[ "$file" == *"/Python.framework/Versions/"*"/bin/"* ]] || [[ "$file" == *"/Python.framework/bin/"* ]] || [[ "$file" == *"/Versions/"*"/bin/"* ]]; then
-        /usr/bin/install_name_tool -add_rpath "@loader_path/.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../.." "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../../.." "$file" 2>/dev/null || true
-    fi
-
     if [[ "$file" == *".xpc/Contents/MacOS/"* ]]; then
         /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@loader_path/../../../../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../../../../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../../../../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../../../../Frameworks/Python.framework" "$file" 2>/dev/null || true
     elif [[ "$file" == *".app/Contents/MacOS/"* ]] || [[ "$file" == *"/MacOS/"* ]]; then
         /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@loader_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
         /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks" "$file" 2>/dev/null || true
-        /usr/bin/install_name_tool -add_rpath "@executable_path/../Frameworks/Python.framework" "$file" 2>/dev/null || true
     fi
 }
 
@@ -392,17 +373,13 @@ if [ "$kind" = "dir" ]; then
         if [ -n "$latest_ver" ]; then
             (cd "$output/Versions" && ln -sf "$latest_ver" Current)
         fi
-        for link_target in Python Headers Resources; do
+        for link_target in Headers Resources; do
             if [ -e "$output/Versions/Current/$link_target" ]; then
                 rm -rf "$output/$link_target"
                 (cd "$output" && ln -sf "Versions/Current/$link_target" "$link_target")
             fi
         done
     fi
-
-    # Remove site-python test directory and Python.framework lib directory if present before signing
-    find "$output" -depth -type d \\( -name "test" -path "*/site-python/test" -o -name "test" -path "$output/test" \\) -exec rm -rf {} + 2>/dev/null || true
-    find "$output" -depth -type d \\( -name "lib" -path "*/Python.framework/Versions/*/lib" -o -name "lib" -path "*/Python.framework/lib" \\) -exec rm -rf {} + 2>/dev/null || true
 
     # Ensure all regular files are independent writable copies (break hardlinks)
     for file in $(find "$output" -type f); do
@@ -433,9 +410,6 @@ if [ "$kind" = "dir" ]; then
     if [ -d "$output/Versions" ]; then
         for ver_dir in "$output/Versions"/*; do
             if [ -d "$ver_dir" ] && [ ! -L "$ver_dir" ]; then
-                if [ -f "$ver_dir/Python" ]; then
-                    codesign_file "$ver_dir/Python"
-                fi
                 codesign_file "$ver_dir"
             fi
         done
@@ -563,6 +537,9 @@ codesign = rule(
         "timestamp": attr.bool(
             default = False,
             doc = "Whether to request a timestamp authority signature.",
+        ),
+        "_distribution": attr.label(
+            default = Label("//bazel:distribution"),
         ),
         "_macos_constraint": attr.label(
             default = Label("@platforms//os:macos"),

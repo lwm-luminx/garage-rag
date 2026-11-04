@@ -2,8 +2,8 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
-# //ext/libgit2 (static, local reads only, the one _garage_git links) with the system libraries it
-# needs, as //ext/python links it: zlib, and iconv on macOS. Cargo builds find libgit2 in build.rs.
+# //ext/libgit2 (static, local reads only) with the system libraries it needs: zlib, and iconv on
+# macOS. Cargo builds find libgit2 in build.rs.
 cc_library(
     name = "libgit2_linked",
     linkopts = ["-lz"] + select({

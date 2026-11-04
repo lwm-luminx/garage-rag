@@ -6,7 +6,7 @@ import OSLog
 import EmbedClient
 import GarageUpdater
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "AppState")
 

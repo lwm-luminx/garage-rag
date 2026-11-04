@@ -18,3 +18,9 @@ LOCAL_SIGNING_IDENTITY = "Garage Local Signing"
 # but not to notarize, and — because hardened runtime turns on library
 # validation, which these cannot satisfy — not to run with hardened runtime.
 UNCHAINED_IDENTITIES = ["-", LOCAL_SIGNING_IDENTITY]
+
+# The team whose App Group (`<team>.group.me.rickmark.garage-rag`) holds the shared data folder.
+# A local build signed with one of this team's Apple Development certificates claims the group
+# (`//bazel:is_local_app_group`); macOS grants a team-prefixed group without a provisioning
+# profile only to code signed by that team.
+APP_GROUP_TEAM = "DWVXMLB45Y"

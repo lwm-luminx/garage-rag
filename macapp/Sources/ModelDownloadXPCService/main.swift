@@ -23,7 +23,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
     override func additionalSelfTests() -> [GarageXPCSelfTest] {
         let engine = self.engine
         return [
-            GarageXPCSelfTest(name: "Models Directory", description: "Models directory exists and is writable.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Models Directory", description: "Models directory exists and is writable.") {
                 let path = engine.getModelsDirectoryPath()
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -39,7 +39,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
                 let models = engine.listDownloadedModels(directoryPath: nil)
                 return "Models directory: \(path)\nDownloaded models: \(models.count)"
             },
-            GarageXPCSelfTest(name: "Download Tasks", description: "Reports the state of the model downloader task queue.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Download Tasks", description: "Reports the state of the model downloader task queue.") {
                 let downloads = engine.listDownloads()
                 let active = downloads.filter { $0.status == .downloading }.count
                 let paused = downloads.filter { $0.status == .paused }.count

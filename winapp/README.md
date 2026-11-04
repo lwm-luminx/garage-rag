@@ -1,9 +1,9 @@
 # Garage for Windows (`winapp/`)
 
-The native Windows Garage: a .NET 10 app that embeds CPython and runs `garage_rag` the way the Mac
-app's XPC services do. The plans are [docs/plans/windows.md](../docs/plans/windows.md) for the port
-and [docs/plans/windows-ui.md](../docs/plans/windows-ui.md) for the UI. This folder holds the Python
-bridge, the service processes, and the UI through phase U5: the app shell, the reading pages (Search,
+The native Windows Garage: a .NET 10 app that runs Garage's Rust services the way the Mac app's XPC
+services do. The plans are [docs/plans/windows.md](../docs/plans/windows.md) for the port and
+[docs/plans/windows-ui.md](../docs/plans/windows-ui.md) for the UI. This folder holds the service
+processes and the UI through phase U5: the app shell, the reading pages (Search,
 Documents, Facts, Database, Logs), the operations pages (Sources, Models, MCP Server, Settings),
 ingest, Update Everything and Automatic Updates through Garage's own services, the setup assistant,
 the notification-area flyout with quick search and Ask Garage, the bug report and the jump list.
@@ -17,12 +17,10 @@ the WinUI app and its UI tests too, on macOS and Linux; see [Bazel](#bazel).
 
 | Path | What |
 |---|---|
-| `src/Garage.Python` | The owned Python bridge: the counterpart of PythonKit plus `GaragePythonEmbed.c`. No service runs it any more; it leaves with the Python package (docs/plans/python-removal.md, stage 5) |
 | `src/Garage.Grpc` | The `GarageService` client generated from `proto/garage.proto`, the `x-garage-token` interceptor, and `services.proto` (the app's control plane to its services) with its named-pipe channel |
 | `src/Garage.Services` | `Garage.Services.exe`: one Garage service per process (`--service core` runs `GarageService`, `--service ingest` the Rust ingest, `--service mcp` the MCP HTTP server), each a Rust library loaded in-process (`garage_service_ffi.dll`, `garage_ingest_ffi.dll`, `garage_mcp_ffi.dll`), answering the app over a named pipe |
 | `src/Garage.App.Core` | Everything the UI decides, with no UI framework: `AppState`, `OperationRunner` (ported from the Mac), the backends (`ServiceHostBackend` over `ServiceManager`, and `DevBackend`), the pipeline (`LibraryCoordinator`), navigation order, presentation values |
 | `src/Garage.App` | The WinUI 3 app (`Garage.exe`): window, `NavigationView`, pages, notification-area icon. Built unpackaged and self-contained |
-| `tests/Garage.Python.Tests` | xUnit v3 tests that embed a real CPython 3.14 and drive `garage_rag` |
 | `tests/Garage.App.Core.Tests` | xUnit v3 tests of Core: the pages' view models and presentations (ported with the Mac's test cases) and the pipeline, against a fake client and a fake ingest service |
 | `tests/Garage.App.UITests` | FlaUI tests of the built app against a fake backend they serve; run with `GARAGE_UI_TESTS=1` (below) |
 | `tests/Garage.Services.Tests` | xUnit v3 tests that start the real service processes as the app does, and (with `GARAGE_TEST_DATABASE_URL`) ingest a folder into a throwaway database through them |
@@ -89,8 +87,7 @@ screenshots and tests.
 
 ## Build and test
 
-Needs the .NET 10 SDK and, for the service tests, the Rust libraries; for `Garage.Python.Tests`,
-a CPython 3.14 for Windows (x64) until stage 5 of the Python removal retires them:
+Needs the .NET 10 SDK and, for the service tests, the Rust libraries:
 
 ```powershell
 cd winapp
@@ -100,29 +97,16 @@ dotnet test --solution Garage.slnx
 
 The service tests find the Rust libraries from `GARAGE_TEST_NATIVE_DIR`, or a Cargo build in
 `rust\target\release` (then `debug`); without them they skip (`GARAGE_TEST_REQUIRE_NATIVE=1` turns
-the skip into a failure; CI sets it). The Python tests find the interpreter from:
+the skip into a failure; CI sets it). The other tests read:
 
-- `GARAGE_TEST_PYTHON_HOME`: a CPython home (the folder with `python314.dll`, `Lib`, `DLLs`).
-  Without it, they ask the `py` launcher for 3.14. With neither, every test skips.
-- `GARAGE_TEST_PYTHON_SITE_PACKAGES`: a site-packages holding `garage_rag`'s dependencies.
-  `garage_python/src` from this checkout goes on `sys.path` after it. Without it, the tests that
-  import `garage_rag` skip. To create one:
-
-  ```powershell
-  py -3.14 -m venv $env:TEMP\garage-venv
-  & $env:TEMP\garage-venv\Scripts\python.exe -m pip install -e ..\garage_python
-  $env:GARAGE_TEST_PYTHON_SITE_PACKAGES = "$env:TEMP\garage-venv\Lib\site-packages"
-  ```
-
-- `GARAGE_TEST_REQUIRE_PYTHON=1` turns those skips into failures; CI sets it.
-- `GARAGE_TEST_DATABASE_URL`, a superuser URL as for `test_postgres.py`: the end-to-end ingest test
+- `GARAGE_TEST_DATABASE_URL`, a superuser URL as for the Rust database tests: the end-to-end ingest test
   creates a throwaway `garage_test_*` database there (with `psql`, from `GARAGE_TEST_POSTGRES_HOME`
   or the PATH) and drops it. Without it, that test skips.
 - `GARAGE_TEST_POSTGRES_HOME`, a Windows build of `//ext/postgres`: the `PostgresSupervisor` tests
   run clusters of their own from it, each in a temporary folder on a free port. Without it, they skip.
 
 CI runs the suite in the `winapp` job of `.github/workflows/windows.yaml`, against the libraries its
-`rust` job builds and the CPython its `python` job builds from `ext/python`'s pins.
+`rust` job builds and the Postgres its `postgres` job builds.
 
 `dotnet format Garage.slnx --verify-no-changes` checks style. The build treats warnings, including
 the recommended analyzers, as errors.
@@ -134,7 +118,7 @@ aspect build //winapp/...          # macOS or Linux (plain bazel works too)
 aspect test //winapp/...
 ```
 
-Bazel builds `Garage.Python`, `Garage.Grpc`, `Garage.App.Core`, `Garage.Services` and their test
+Bazel builds `Garage.Grpc`, `Garage.App.Core`, `Garage.Services` and their test
 projects with [rules_dotnet](https://github.com/bazel-contrib/rules_dotnet), on the .NET SDK 10.0.400
 (`winapp.MODULE.bazel`). `Garage.App` and `Garage.App.UITests` stay `dotnet`-only: WinUI's XAML
 compiler and FlaUI run only on Windows, inside MSBuild.
@@ -196,80 +180,3 @@ identifiers (`menubar.*`, `status.*`, `firstRun.*`), so a test names its counter
 The app's own wording is in `src/Garage.App/Strings/en-US/Resources.resw`: XAML finds it through
 `x:Uid`, code-behind through `Strings.Get`. Core's presentation wording stays in C#, where tests keep
 it in step with the Mac's.
-
-## `Garage.Python`
-
-It talks to `python3XY.dll` directly through source-generated P/Invoke (`Native/CPython.cs`). There
-is no C shim: the Mac's `GaragePythonEmbed.c` fills in a `PyConfig` struct, while here PEP 741's
-`PyInitConfig` API (new in 3.14) sets the same options by name, with no struct layout to mirror.
-
-```csharp
-Python.Initialize(PythonEnvironment.FromHome(@"C:\Program Files\Garage\python",
-    sitePackagesDir: @"C:\Program Files\Garage\site-packages"));
-
-dynamic server = Python.Import("garage_rag.service.server");
-dynamic created = server.create_grpc_server(host: "127.0.0.1", port: 50051);
-created[0].start();
-```
-
-### Start-up
-
-- The interpreter is **isolated**:
-  - `PYTHON*` variables, the working directory, user site-packages and argv are ignored;
-  - UTF-8 mode is on;
-  - no `.pyc` files are written;
-  - Python installs no signal handlers.
-- `sys.path` is exactly `PythonEnvironment.SearchPaths`: `Lib`, `DLLs`, the bundle's
-  site-packages, then any extra paths.
-- `site` is imported afterwards and processes `.pth` files in the bundle's site-packages only. On
-  Windows `site.main()` would also add the home folder and `home\Lib\site-packages`, which would let
-  a package installed into the interpreter shadow the bundle's.
-- `.pth` files matter on Windows: pywin32, which the MCP SDK pulls in there, puts `win32`,
-  `win32\lib` and `pythonwin` on the path through one.
-
-### Threads and the GIL
-
-- The GIL is released once start-up finishes.
-- `Python.Gil()` returns a `GilScope` (a `ref struct`, so it cannot cross an `await`). Scopes nest.
-- Every `PythonObject` operation takes the GIL itself. Hold a scope explicitly only to make several
-  calls atomic, or to save the re-entry cost in a loop.
-- `Python.AllowThreads()` releases the GIL while the host blocks.
-- The Mac keeps Python on one host thread per service. Here any thread may call in, which the gRPC
-  server test relies on: its worker threads take the GIL while the test thread waits for the reply.
-
-### `PythonObject`
-
-A strong reference, used through `dynamic` like PythonKit's `PythonObject`:
-
-- keyword arguments;
-- `obj[key]` and `obj[a, b]`, which pass a tuple;
-- conversions by cast: `(string)`, `(long)`, `(double)`, `(bool)`, `(byte[])`.
-
-It also has an explicit API: `GetAttr`, `Invoke`, `Call(args, kwargs)`, `As<T>()`, and enumeration.
-
-- **Name clashes.** Static members win over Python attributes of the same name, so a Python
-  attribute called `Call` or `ToString` is reached with `GetAttr`.
-- **Releasing references.** `Dispose` releases the reference at once. An object left to the GC is
-  queued and released the next time any thread takes the GIL; a finalizer never waits for it.
-- **Errors.** Python exceptions surface as `PythonException`, which carries the qualified type name,
-  `str(exc)`, the formatted traceback, and the exception object.
-
-### Host callbacks
-
-`garage_rag` asks its host for C function pointers:
-
-- `garage_rag.inference.bridge.install(request, release)`, the llama request bridge;
-- `garage_rag.xpc.host.install_model_loader(loader)`.
-
-In C#, these are `[UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]` methods passed as
-`(nint)(delegate* unmanaged[Cdecl]<...>)&Method`. `Interop.NativeUtf8` allocates and frees the
-C strings they exchange, as `strdup`/`free` do in the Swift host. `GarageHostContractTests` exercises
-both contracts against the real modules.
-
-### Not yet
-
-- **A free-threaded (`python314t.dll`) build.** `PythonEnvironment.FromHome(..., freeThreaded: true)`
-  selects the DLL, and the bindings use only exported functions (no macros), but no test runs
-  against one yet.
-- **Finalizing the interpreter.** `Python.Shutdown()` exists but is untested: a process starts
-  CPython once, and services exit instead of finalizing.

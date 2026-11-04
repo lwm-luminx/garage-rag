@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 /// A connection the fake connector made; `lose()` plays the service being relaunched.

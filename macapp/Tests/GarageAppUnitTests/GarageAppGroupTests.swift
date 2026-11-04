@@ -1,8 +1,8 @@
 import Security
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
-@testable import PythonXPCService_protocol
+@testable import GarageXPCKit
 
 /// `--data-directory` is what keeps a UI test's "Reset Database" away from the real cluster, so a
 /// path that reaches real data must be refused rather than used or silently ignored.

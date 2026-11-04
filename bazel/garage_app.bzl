@@ -47,7 +47,7 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
             "//data/models": "Resources",
             "//docs:config_schema": "Resources",
             "//data/notices:third_party_notices": "Resources",
-            "//garage_python:LICENSE": "Resources",
+            "//:LICENSE": "Resources",
             "//macapp/Sources/GarageApp:PrivacyInfo.xcprivacy": "Resources",
         },
         app_icons = ["//macapp:GarageApp.xcassets"],
@@ -59,12 +59,12 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         entitlements = select({
             "//bazel:is_store": "//macapp/Sources/GarageApp:Garage.entitlements",
             "//bazel:is_developer_id": "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
+            # Signed with an Apple Development certificate of the App Group's team: the group alone,
+            # since without a profile there is no application identifier (//bazel:BUILD.bazel).
+            "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
             "//conditions:default": None,
         }),
         executable_name = "GarageApp",
-        frameworks = [
-            "//macapp/Sources/PythonXPCService:PythonXPCService_framework",
-        ],
         # Sparkle's SUFeedURL/SUPublicEDKey only belong in the builds that embed
         # Sparkle. The App Store build updates through the App Store, and carries the
         # export compliance answer App Store Connect reads on upload instead.
@@ -88,7 +88,6 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         xpc_services = [llama_xpc_service] + GARAGE_XPC_SERVICES,
         deps = [
             "//macapp/Sources/GarageApp:GarageApp_lib",
-            "//ext/python:python_framework",
         ],
         **kwargs
     )

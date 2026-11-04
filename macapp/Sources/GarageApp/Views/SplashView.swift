@@ -1,6 +1,6 @@
 import SwiftUI
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 // MARK: - Constants
 

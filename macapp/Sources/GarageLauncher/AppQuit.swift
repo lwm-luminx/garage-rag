@@ -1,6 +1,6 @@
 import AppKit
 import Foundation
-import PythonXPCService_protocol
+import GarageXPCKit
 
 /// `garage quit`: asks every running Garage to quit the way its Quit menu item does (services
 /// stopped, Postgres given its shutdown checkpoint) and waits for it to exit. The launcher answers

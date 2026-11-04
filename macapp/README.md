@@ -2,16 +2,15 @@
 
 A macOS menu bar + window app that wraps a private Postgres instance and the
 `garage` CLI / `garage-mcp` server for the [garage-rag](../README.md) project.
-Fully self-contained: no Homebrew or system Python required at runtime.
+Fully self-contained: nothing from Homebrew or the system is required at runtime.
 
 ## Building
 
 The app is built by Bazel (via the Aspect CLI, see the [repo README](../README.md)
 and `CLAUDE.md` for the one-time `direnv allow` / `bazel run //tools:bazel_env`
 setup). There is no SwiftPM manifest and no `swift build` / `swift run` path:
-most modules depend on `PythonXPCService` (the XPC client libraries use `GarageXPCKit`),
-which in turn needs PythonKit, the CPython embedding shim and the vendored
-Python / Postgres / llama.cpp that only the Bazel build provides. For an IDE
+the modules depend on the Rust static libraries (`rust/*-ffi`) and the vendored
+Postgres and llama.cpp that only the Bazel build provides. For an IDE
 loop, generate the Xcode project (`aspect run //:xcodeproj`), which carries
 the app, every XPC service and every test bundle.
 
@@ -45,9 +44,6 @@ xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppModelUITests -
 
 # Distribution (Developer ID and App Store) is built from garage-enterprise, which holds the
 # signing identities, profiles and release targets; see "Signed builds" below.
-
-# Smoke test of the embedded Python runtime, exactly as the XPC services start it
-aspect run //macapp/Sources/PythonXPCService:python_embed_smoke -- /path/to/Garage.app
 ```
 
 What ends up in the bundle is declared in `bazel/garage_app.bzl` (`garage_macos_application`,
@@ -55,8 +51,8 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
 
 - `Helpers/garage.app` and `Helpers/garage-mcp.app` — the Swift launchers
   (`//macapp/Sources/GarageCLI:garage_app`, `//macapp/Sources/GarageMCPCLI:garage_mcp_app`,
-  sharing `Sources/GarageLauncher`; see `bazel/launcher_app.bzl`) that embed the bundled Python and
-  run `garage_rag`'s Typer app or the stdio MCP server in-process. Each is a small helper app bundle
+  sharing `Sources/GarageLauncher`; see `bazel/launcher_app.bzl`) that run the Rust command line
+  (`rust/garage-cli`, linked statically) or its stdio MCP server in-process. Each is a small helper app bundle
   of its own (`LSUIElement`, no Dock icon) with its own bundle identifier
   (`me.rickmark.garage-rag.garage-cli`, `me.rickmark.garage-rag.mcp-server-cli`), entitlements and
   provisioning profile: that is what gives the launcher the application identifier the
@@ -82,7 +78,7 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   hidden (`--background`: services start, no window) and waits for Postgres; it then reads the
   database password from the Keychain and exports `GARAGE_DATABASE_URL` itself. An explicit
   `GARAGE_DATABASE_URL` wins; `GARAGE_NO_APP_LAUNCH=1` fails instead of opening the app.
-  `garage quit` is the other way round: the launcher answers it before Python starts, posts
+  `garage quit` is the other way round: the launcher answers it before the CLI starts, posts
   `GarageAppLaunch.quitNotification` (a distributed notification, which the sandboxed launcher may
   send where an Apple event to the app would be refused or ask for Automation consent), and waits up
   to 30s for every running Garage to exit. The app quits as its Quit menu item does. It never
@@ -91,8 +87,7 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   handshake must not sit behind a cold start) unless the app has never stored a password, and
   never mirrors its stdout (the MCP stream) into the unified log. The launcher finds the app it
   lives in by walking up from its own executable to the outermost `.app`
-  (`Launcher.containingAppBundle`), which is where `Frameworks/Python.framework`,
-  `Frameworks/PythonXPCService.framework/site-python` and `Resources/models.json` are.
+  (`Launcher.containingAppBundle`), which is where `Resources/schema` and `Resources/models.json` are.
   `//macapp/Sources/GarageApp:bundle_layout_test` checks this layout and runs `garage version`
   through the forwarder.
 - `Resources/postgres` — Postgres 18 + pgvector + Apache AGE built from source
@@ -106,38 +101,22 @@ instantiated as `GarageApp` in `Sources/GarageApp/BUILD.bazel`):
   `create_graph` without `LOAD 'age'` or a `SET search_path` first.
 - `Resources/schema` — the SQL migrations, `Resources/postgresql.conf`, the model
   manifest and the config JSON schema.
-- `Frameworks/PythonXPCService.framework` — the shared runtime for the
-  `XPCServices/*.xpc` helpers listed under `xpc_services` that embed Python
-  (ModelDownloadXPCService, LlamaXPCService and GarageImageEmbedXPCService, built
-  on `GarageXPCKit` alone, link neither it nor `Python.framework`). Its resources hold
-  `site-python` (`//macapp/externals:site-python`): the standard library,
-  `lib-dynload` and site-packages, used by the CLI and every XPC service, and
-  `tessdata/eng.traineddata`. It lives in the framework because a sandboxed XPC service
-  may read inside the frameworks it links but not elsewhere in the app bundle. The
-  interpreter itself is the `Python.framework` from `//ext/python`, kept to the bare
-  interpreter.
-- Next to `site-python` is an empty `openssl.cnf`. `GaragePythonRuntime` exports it as
-  `OPENSSL_CONF` before the interpreter starts, so neither the bundled `_ssl` nor
-  `cryptography`'s own statically linked OpenSSL reads a configuration from outside the
-  bundle (`cryptography`'s compiled-in default is Homebrew's). At start-up it also calls
-  `truststore.inject_into_ssl()`, so `ssl`'s default contexts verify against the macOS
-  trust store; the bundled OpenSSL ships no CA files.
-- The framework also carries `Frameworks/libpq.dylib`
-  (`//macapp/externals:python_framework_libs`) and links it with a load command
-  (`@rpath`, through its `@loader_path/Frameworks` rpath). Every process that links the
-  framework (the Python XPC services, `garage`, `garage-mcp`) therefore has it mapped
-  before the App Sandbox applies, where opening it later by path is denied. Python finds
-  it among the process's loaded images (`garage_rag.native`); nothing passes its path,
-  and the services never need to know where the app bundle is. Tesseract and libgit2 are
-  not libraries of their own: they are linked statically into Python.framework for its
-  built-in `_garage_tesseract` and `_garage_git` modules.
+- `XPCServices/*.xpc` — the seven helpers listed under `xpc_services`, each built on
+  `GarageXPCKit` with no framework of its own. The four Rust services
+  (`GarageXPCService`, `GarageIngestXPCService`, `GarageEmbedXPCService`,
+  `GarageMCPServerService`) link their library statically (`rust/*-ffi`, through rules_rs),
+  with libgit2 and llama.cpp inside it, so nothing is loaded at run time and no process
+  needs to know where the app bundle is; the backend speaks to Postgres over its socket
+  with tokio-postgres, so no `libpq` ships either. `GarageXPCKit` also holds the types the
+  app and the services pass each other (`GarageAppGroup`, `GarageSockets`,
+  `GaragePostgresEndpoint`, the folder-access and endpoint stores).
 
 ## The Postgres password
 
 `PostgresService` generates the Postgres superuser password on the first launch and keeps it in
 the macOS Keychain as a generic-password item (service `com.rickmark.garage.postgres`, account:
 the login user). The app and the bundled `garage` / `garage-mcp` launchers read it through one
-piece of code, `GaragePostgresEndpoint` in `Sources/PythonXPCService`, which knows two keychains:
+piece of code, `GaragePostgresEndpoint` in `Sources/GarageXPCKit`, which knows two keychains:
 
 - **The App Group keychain** (the data-protection keychain, access group
   `DWVXMLB45Y.group.me.rickmark.garage-rag`, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`,
@@ -161,6 +140,32 @@ that has happened, so a launcher started before the updated app never sees "no p
 result is a line in the Database log (`keychain` source).
 
 The LM Studio API token (`LMStudioTokenStore`) stays in the login keychain: only the app reads it.
+
+## Which identity a local build signs with
+
+A plain `bazel build` signs with the best identity your keychain has (`//bazel:local_auto`, found
+by `bazel/signing_identity.bzl`):
+
+1. an **Apple Development** certificate, if you have one (any team; Xcode creates one when you sign
+   in with an Apple ID). The build gets a Team ID and a designated requirement anchored to Apple,
+   so Keychain ACLs survive rebuilds and `GarageXPCPeerRequirement` checks every XPC peer against
+   that team, as it does in a release. It embeds no provisioning profile and has no hardened
+   runtime, so the Postgres password stays in the login keychain. A certificate of the App Group's
+   own team (`APP_GROUP_TEAM` in `bazel/signing.bzl`) also gives the app, its XPC services and the
+   launchers the App Group (`macapp/externals/GarageAppGroup.entitlements`, as in the Developer ID
+   build), so they keep their data in the group container the released builds share, which
+   `~/Library/Application Support/GarageApp` links to once one of those has run and which an
+   ad-hoc service cannot write. Another team's certificate signs without the group, and the data
+   folder stays `~/Library/Application Support/GarageApp`;
+2. otherwise the self-signed **Garage Local Signing** identity below, if you created it;
+3. otherwise **ad hoc**.
+
+`bazel/signing_identity.bzl` looks again whenever the login keychain changes. To choose, set
+`--repo_env=GARAGE_SIGNING_IDENTITY=` to a certificate's common name or SHA-1 (as
+`security find-identity -v -p codesigning` prints them), or to `-` for ad hoc, in `user.bazelrc`;
+`--config=adhoc` and `--config=local_signed` pick those two outright. A build of the Git checkout
+that signs with Apple Development and one signed by another identity are different applications to
+the Keychain, so the first launch after a switch asks for the Postgres password item once more.
 
 ## A stable local signing identity
 
@@ -192,7 +197,8 @@ bazel run //tools/signing:local_identity          # create it (asks for your pas
 bazel run //tools/signing:local_identity -- show  # what it is, and the requirement it yields
 ```
 
-Then build against it by putting this in `user.bazelrc` (git-ignored):
+A default build uses it when the keychain has no Apple Development certificate. To use it even
+when there is one, put this in `user.bazelrc` (git-ignored):
 
 ```
 build --config=local_signed
@@ -371,14 +377,14 @@ with the Status page listing the missing sources and model under Health.
 ## App architecture
 
 - `PostgresService` — owns a private cluster in `~/Library/Group Containers/DWVXMLB45Y.group.me.rickmark.garage-rag/Library/Application Support/GarageApp/pgdata`, database `garage-rag`, listening only on the socket `.s.PGSQL.14824` in the owner-only folder `s/` at the root of the group container (`GarageSockets`; loopback port 14824 only when that path would be too long). On first initialization it generates a random Postgres superuser password, stores it in the macOS Keychain, and creates the cluster with SCRAM authentication.
-- `OperationRunner` — runs the app's operations (scan, add-source, register-model, sync, …) as calls on the Python `GarageService` over gRPC, logging what each reports. Dedicated runners and log streams exist for the long-running `backfill` and `enrich-facts` streams so they never block ordinary operations; cancelling one stops the work server-side.
-- Backfill (`AppState.runBackfill`) — runs in `GarageEmbedXPCService` through `EmbedClient`: the Rust embed worker (`rust/garage-embed`, linked statically, with `Sources/GarageEmbedWorker` as its host) reaches the database through the backend's GarageService and the model servers through the host. The helper runs no Python; the sandboxed app hosts it in its own process, since an image model reads the image files of granted folders.
-- `IngestService` — runs ingestion through `GarageIngestXPCService` (an XPC helper that embeds Python and calls `garage_rag.ingest` directly), receiving live progress and log callbacks over the connection. Ingest does not go through the CLI.
+- `OperationRunner` — runs the app's operations (scan, add-source, register-model, sync, …) as calls on `GarageService` (the Rust backend in `GarageXPCService`) over gRPC, logging what each reports. Dedicated runners and log streams exist for the long-running `backfill` and `enrich-facts` streams so they never block ordinary operations; cancelling one stops the work server-side.
+- Backfill (`AppState.runBackfill`) — runs in `GarageEmbedXPCService` through `EmbedClient`: the Rust embed worker (`rust/garage-embed`, linked statically, with `Sources/GarageEmbedWorker` as its host) reaches the database through the backend's GarageService and the model servers through the host. The sandboxed app hosts it in its own process, since an image model reads the image files of granted folders.
+- `IngestService` — runs ingestion through `GarageIngestXPCService` (the Rust ingest loop and readers, `rust/garage-ingest-ffi`, linked statically), receiving live progress and log callbacks over the connection. Ingest does not go through the CLI.
 - `GarageMCPService` — owns the loopback HTTP `garage-mcp` server at `http://127.0.0.1:8787/mcp`, hosted inside the `GarageMCPServerService` XPC helper; started after Postgres and stopped before it.
 - `GarageGRPCService` — owns the `GarageService` gRPC backend hosted inside the `GarageXPCService` helper, on the socket `s/grpc` in the group container (port 50051 only when that path would be too long); the Search and Documents views talk to it over gRPC-Swift, and the launchers find it through `GARAGE_GRPC_SOCKET`.
 - `LlamaService` / `ModelDownloadService` — drive the `LlamaXPCService` and `ModelDownloadXPCService` helpers through the `LlamaClient` / `ModelDownloadClient` modules.
-- `LlamaXPCService` runs llama.cpp in-process (`Sources/LlamaEngine`, linked from `//ext/llama_cpp` with Metal and Accelerate). Its XPC interface carries the same llama-server routes (`handleServerRequest`), which the Python embedded in the other XPC services calls directly (`LlamaInferenceBridge`). For Python outside them (the launchers), it also serves the routes (`/health`, `/props`, `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/completion`, `/tokenize`, `/detokenize`, `/v1/rerank`) over HTTP on the socket `s/llama` in the group container, which the launchers export as `GARAGE_LLAMA_SOCKET`. `GARAGE_LLAMA_HTTP_PORT` in the helper's environment moves it to that loopback port instead; the Python side then reads `embedding.llama_host` from `garage.json`. Both front ends (the NSXPC delegate and the HTTP listener) are `Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`: the model UI tests' host app (`GarageApp_uitest`) embeds `Tests/MockLlamaXPCService` instead, the same front end on the testonly `DeterministicLlamaEngine`, under the same bundle identifier.
-- `GarageImageEmbedXPCService` (`Sources/GarageImageEmbedXPCService`, on `Sources/ImageEmbedEngine`) runs CLIP-style image embedding models as Core ML packages (`image_embedding` entries of models.json, downloaded file by file into `models/<slug>/`): an image tower fed decoded pixels and a text tower fed a Gemma-style BPE tokenizer's ids, both L2-normalized into one space. It has no network listener and no Python; the app reaches it through `ImageEmbedClient`, the embed worker's host in `GarageEmbedXPCService` through `ImageEmbedBridgeCore`, and the Python in `GarageXPCService` and `GarageMCPServerService` through `Sources/ImageEmbedBridge`, two C entry points that call the service over NSXPC through the endpoint a second `LlamaEndpointBroker` hands over (`setImageEmbedEndpoint`).
+- `LlamaXPCService` runs llama.cpp in-process (`Sources/LlamaEngine`, linked from `//ext/llama_cpp` with Metal and Accelerate). Its XPC interface carries the same llama-server routes (`handleServerRequest`), which the other XPC services' embed-worker hosts call directly. For processes outside them (the launchers), it also serves the routes (`/health`, `/props`, `/v1/models`, `/v1/embeddings`, `/v1/chat/completions`, `/completion`, `/tokenize`, `/detokenize`, `/v1/rerank`) over HTTP on the socket `s/llama` in the group container, which the launchers export as `GARAGE_LLAMA_SOCKET`. `GARAGE_LLAMA_HTTP_PORT` in the helper's environment moves it to that loopback port instead; the worker then reads `embedding.llama_host` from `garage.json`. Both front ends (the NSXPC delegate and the HTTP listener) are `Sources/LlamaServiceHost`, which takes any `LlamaInferenceEngine`: the model UI tests' host app (`GarageApp_uitest`) embeds `Tests/MockLlamaXPCService` instead, the same front end on the testonly `DeterministicLlamaEngine`, under the same bundle identifier.
+- `GarageImageEmbedXPCService` (`Sources/GarageImageEmbedXPCService`, on `Sources/ImageEmbedEngine`) runs CLIP-style image embedding models as Core ML packages (`image_embedding` entries of models.json, downloaded file by file into `models/<slug>/`): an image tower fed decoded pixels and a text tower fed a Gemma-style BPE tokenizer's ids, both L2-normalized into one space. It has no network listener; the app reaches it through `ImageEmbedClient`, and the embed-worker hosts in `GarageEmbedXPCService`, `GarageXPCService` and `GarageMCPServerService` through `Sources/ImageEmbedBridge`, which calls the service over NSXPC through the endpoint a second `LlamaEndpointBroker` hands over (`setImageEmbedEndpoint`).
 - `XPCServiceManager` — pings all seven helpers, streams their logs into the app, runs their in-service self tests and can restart or terminate them.
 - `AppDelegate` — keeps the app running in the menu bar after the window closes, and signals Postgres and every helper to stop on every quit path (Cmd+Q, Dock quit, menu item).
 - `AppState+LlamaModels` — decides which models `LlamaXPCService` holds: the default `llama_xpc`

@@ -25,7 +25,7 @@ param(
     # The Postgres build to ship (bin, lib, share). Defaults to GARAGE_POSTGRES_HOME.
     [string]$PostgresHome = $env:GARAGE_POSTGRES_HOME,
     [ValidateSet('x64', 'arm64')][string]$Arch = 'x64',
-    # MAJOR.MINOR.BUILD; defaults to garage_python/pyproject.toml's version.
+    # MAJOR.MINOR.BUILD; defaults to GarageService's version (rust/garage-service/src/service.rs).
     [string]$Version,
     # Where to lay it out; defaults to winapp\packaging\out\stage-<arch>.
     [string]$Out

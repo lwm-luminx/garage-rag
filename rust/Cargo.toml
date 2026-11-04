@@ -62,7 +62,7 @@ garage-git = { path = "garage-git" }
 garage-ingest = { path = "garage-ingest" }
 garage-mcp = { path = "garage-mcp" }
 garage-ocr = { path = "garage-ocr", default-features = false }
-garage-readers = { path = "garage-readers" }
+garage-readers = { path = "garage-readers", default-features = false }
 garage-service = { path = "garage-service" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }

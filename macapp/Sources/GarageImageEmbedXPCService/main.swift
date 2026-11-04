@@ -37,8 +37,7 @@ final class GarageImageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageImag
         return [
             GarageXPCSelfTest(
                 name: "Image Model Catalog",
-                description: "models.json lists image embedding models and names their Core ML packages.",
-                requiresPython: false
+                description: "models.json lists image embedding models and names their Core ML packages."
             ) {
                 let specs = engine.resolver.catalogSpecs()
                 guard !specs.isEmpty else {
@@ -49,8 +48,7 @@ final class GarageImageEmbedXPCServiceDelegate: GarageXPCServiceBase, GarageImag
             },
             GarageXPCSelfTest(
                 name: "Resident Image Models",
-                description: "Reports the image embedding models loaded in this process.",
-                requiresPython: false
+                description: "Reports the image embedding models loaded in this process."
             ) {
                 let resident = engine.residentModels()
                 guard !resident.isEmpty else {

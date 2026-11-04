@@ -5,14 +5,14 @@
 #   Contents/Helpers/garage.app                    bundle ID me.rickmark.garage-rag.garage-cli
 #   Contents/Helpers/garage-mcp.app                bundle ID me.rickmark.garage-rag.mcp-server-cli
 #
-# with each helper's executable a Mach-O, marked LSUIElement, that runs the Rust CLI (//rust/garage-cli)
-# and links neither Python.framework nor PythonXPCService.framework, and `garage version` running
-# through the forwarder: the forwarder resolves the helper. `version` needs no database, so no app is
-# started and no Keychain is read. It also checks that PythonXPCService's code is only in the app's
-# framework: `garage version` prints no "Class ... is implemented in both" warning, and no helper or
-# XPC service binary defines the framework's types. Every versioned framework in Contents/Frameworks
-# is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
-# validation needs.
+# with each helper's executable a Mach-O that needs nothing from the app's Frameworks,
+# marked LSUIElement, and `garage version` running through the forwarder: the forwarder resolves
+# the helper, and the helper runs the Rust CLI linked into it. `version` needs no database, so no
+# app is started and no Keychain is read. It also checks that nothing in the bundle links or
+# carries Python: no helper or XPC service links Python.framework or PythonXPCService.framework,
+# none defines a type of the retired PythonKit or PythonXPCService modules, and neither framework
+# is in Contents/Frameworks. Every framework in Contents/Frameworks is versioned and keeps its
+# links (Versions/Current and the top-level entries), which App Store validation needs.
 set -euo pipefail
 
 archive="$1"
@@ -53,7 +53,7 @@ check_framework_links() {
     local entry top ok=1
     for entry in "$fw/Versions/Current"/*; do
         top="$fw/$(basename "$entry")"
-        # Entries with no top-level counterpart (_CodeSignature, Python's bin) need no link.
+        # Entries with no top-level counterpart (_CodeSignature) need no link.
         [ -e "$top" ] || [ -L "$top" ] || [ "$(basename "$entry")" = "${name%.framework}" ] || continue
         if [ ! -L "$top" ] || [ "$(readlink "$top")" != "Versions/Current/$(basename "$entry")" ]; then
             fail "$name: $(basename "$entry") is not a symlink to Versions/Current/$(basename "$entry")"
@@ -112,8 +112,8 @@ check_helper() {
     file -b "$executable" | grep -q "Mach-O" || fail "$name: helper executable is not a Mach-O"
     local linked
     linked="$(otool -L "$executable" 2>/dev/null || true)"
-    if grep -q -- "Python.framework/" <<<"$linked" || grep -q -- "PythonXPCService.framework/" <<<"$linked"; then
-        fail "$name: helper links Python.framework or PythonXPCService.framework; the launchers run the Rust CLI"
+    if grep -q -- "Python.framework\|PythonXPCService.framework" <<<"$linked"; then
+        fail "$name: helper links a Python framework"
     fi
 
     local signing_id
@@ -147,54 +147,22 @@ if [ "$status" -ne 0 ]; then
 else
     pass "garage version through the forwarder: $(printf '%s' "$output" | head -n 1)"
 fi
-# A class compiled into the helper and into PythonXPCService.framework is loaded twice, and the
-# Objective-C runtime says so on stderr ("Class ... is implemented in both ...").
-if grep -q -- "is implemented in both" <<<"$output"; then
-    fail "garage version loads classes twice:"
-    printf '%s\n' "$output" | grep "is implemented in both" | sed 's/^/       /'
-else
-    pass "garage version loads no class twice"
-fi
-
-# One PythonXPCService.framework, the app's, and no helper or XPC service with its own copy of the
-# framework's code (//bazel:framework_linking.bzl): each links the framework instead, except the
-# services built on GarageXPCKit alone, which link neither it nor Python.framework and carry no
-# Python. A module's code is recognized by the Swift nominal type descriptors it defines
-# (`$s<module>...Mn`), and the check first confirms the framework itself defines some of each, so a
-# stripped binary cannot pass unchecked.
-copies="$(find "$app" -type d -name PythonXPCService.framework | wc -l | tr -d ' ')"
-if [ "$copies" = "1" ] && [ -d "$app/Contents/Frameworks/PythonXPCService.framework" ]; then
-    pass "one PythonXPCService.framework, in Contents/Frameworks"
-else
-    fail "expected one PythonXPCService.framework, in Contents/Frameworks; found $copies:"
-    find "$app" -type d -name PythonXPCService.framework | sed 's/^/       /'
-fi
+# No Python framework in the bundle, and no process in it links or carries Python. A module's
+# code is recognized by the Swift nominal type descriptors it defines (`$s<module>...Mn`).
 # Symbol lists go to grep as here-strings, not through a pipe: `grep -q` exits at the first match,
 # and under pipefail the writer's SIGPIPE would turn that match into a failure.
-kit_module='12GarageXPCKit'
+for fw in Python.framework PythonXPCService.framework; do
+    if [ -e "$app/Contents/Frameworks/$fw" ]; then
+        fail "$fw is still in Contents/Frameworks"
+    else
+        pass "no $fw in Contents/Frameworks"
+    fi
+done
 python_modules=('9PythonKit' '16PythonXPCService')
-# The launchers (the Rust CLI) and the XPC services (GarageXPCKit alone) that run no Python.
-python_free_services=(
-    'garage'
-    'garage-mcp'
-    'ModelDownloadXPCService'
-    'LlamaXPCService'
-    'GarageImageEmbedXPCService'
-    'GarageEmbedXPCService'
-    'GarageIngestXPCService'
-    'GarageMCPServerService'
-    'GarageXPCService'
-)
 defines_module() { # symbols module
     grep -Eq -- "^_?\\\$s$2.*Mn\$" <<<"$1"
 }
-framework_binary="$app/Contents/Frameworks/PythonXPCService.framework/PythonXPCService"
-framework_symbols="$(/usr/bin/nm -U -j "$framework_binary" 2>/dev/null || true)"
-for module in "$kit_module" "${python_modules[@]}"; do
-    defines_module "$framework_symbols" "$module" \
-        || fail "PythonXPCService.framework defines no type of $module; the duplicate check below cannot see it"
-done
-for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPCServices/*.xpc/Contents/MacOS/*; do
+for binary in "$app/Contents/MacOS/GarageApp" "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPCServices/*.xpc/Contents/MacOS/*; do
     [ -f "$binary" ] || continue
     name="${binary#"$app"/Contents/}"
     symbols="$(/usr/bin/nm -U -j "$binary" 2>/dev/null || true)"
@@ -205,24 +173,12 @@ for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPC
             python_code="$python_code $module"
         fi
     done
-    python_free=0
-    for service in "${python_free_services[@]}"; do
-        [ "$(basename "$binary")" = "$service" ] && python_free=1
-    done
-    if [ "$python_free" = 1 ]; then
-        if grep -q -- "PythonXPCService.framework/" <<<"$linked" || grep -q -- "Python.framework/" <<<"$linked"; then
-            fail "$name runs no Python but links Python.framework or PythonXPCService.framework"
-        elif [ -n "$python_code" ]; then
-            fail "$name runs no Python but carries Python code:$python_code"
-        else
-            pass "$name runs no Python: it links neither framework and carries none of their code"
-        fi
-    elif [ -n "$python_code" ] || defines_module "$symbols" "$kit_module"; then
-        fail "$name defines what PythonXPCService.framework already carries:$python_code"
-    elif grep -q -- "PythonXPCService.framework/" <<<"$linked"; then
-        pass "$name links PythonXPCService.framework and carries none of its code"
+    if grep -q -- "PythonXPCService.framework/" <<<"$linked" || grep -q -- "Python.framework/" <<<"$linked"; then
+        fail "$name links Python.framework or PythonXPCService.framework"
+    elif [ -n "$python_code" ]; then
+        fail "$name carries Python code:$python_code"
     else
-        fail "$name does not link PythonXPCService.framework"
+        pass "$name links and carries no Python"
     fi
 done
 

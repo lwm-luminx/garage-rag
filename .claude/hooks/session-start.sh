@@ -1,10 +1,10 @@
 #!/bin/bash
 # SessionStart hook for Claude Code on the web.
 #
-# The container has no Swift toolchain and no populated Python venv, so without this
-# neither `pytest`/`ruff` nor any Swift checking works in a web session. It:
-#   1. creates garage_python/.venv with the package and its dev extras (pytest, ruff,
-#      tree-sitter for tools/swiftcheck);
+# The container has no Swift toolchain and no tree-sitter, so without this no Swift
+# checking works in a web session, and the Rust tests that need a database skip. It:
+#   1. creates .swiftcheck-venv with tree-sitter and tree-sitter-swift, for
+#      tools/swiftcheck;
 #   2. installs the swift.org Linux toolchain under /opt/swift so `swiftc -parse` and
 #      `swift-format lint` can syntax-check macapp/ (type checking still needs macOS:
 #      every module imports Apple-only frameworks). Needs download.swift.org allowed in
@@ -12,8 +12,8 @@
 #      tree-sitter checker remains the fallback.
 #   3. starts the image's Postgres with pgvector (built from source when the
 #      distribution's package predates 0.7, which added halfvec and binary_quantize)
-#      and exports GARAGE_TEST_DATABASE_URL, so garage_python/tests/test_postgres.py runs
-#      instead of skipping. Needs github.com reachable for the pgvector build; if any
+#      and exports GARAGE_TEST_DATABASE_URL, so the Rust tests that need a server
+#      (rust/garage-service/tests, rust/garage-cli/tests) run instead of passing idle. Needs github.com reachable for the pgvector build; if any
 #      step fails the hook says so and those tests skip.
 # Idempotent: every step is skipped when its result already exists, and the container
 # state is cached after the hook completes.
@@ -30,7 +30,7 @@ cd "$REPO"
 log() { printf '[session-start] %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
-# 1. Python: uv + the package venv with dev extras
+# 1. A venv for tools/swiftcheck (tree-sitter), the one Python tool a session runs
 # ---------------------------------------------------------------------------
 if ! command -v uv >/dev/null 2>&1; then
   log "installing uv"
@@ -38,32 +38,14 @@ if ! command -v uv >/dev/null 2>&1; then
   export PATH="$HOME/.local/bin:$PATH"
 fi
 
-VENV="$REPO/garage_python/.venv"
-# The venv runs the CPython release the app bundles (ext/python), not whatever 3.14 is on the
-# machine: an old uv's 3.14 is a release candidate that current pydantic cannot import under.
-VENV_PYTHON="$(sed -n 's/.*strip_prefix = "Python-\([0-9.]*\)".*/\1/p' "$REPO/ext/python/python.MODULE.bazel")"
-VENV_PYTHON="${VENV_PYTHON:-3.14}"
-# A venv left by an older hook runs another interpreter; recreate it rather than keep using it.
-if [ -x "$VENV/bin/python" ] &&
-  [ "$("$VENV/bin/python" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null)" != "$VENV_PYTHON" ]; then
-  log "replacing $VENV: it is not python $VENV_PYTHON"
-  rm -rf "$VENV"
+VENV="$REPO/.swiftcheck-venv"
+if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c 'import tree_sitter, tree_sitter_swift' 2>/dev/null; then
+  log "creating $VENV (tree-sitter, tree-sitter-swift)"
+  uv venv --quiet --clear --python 3.14 "$VENV"
+  VIRTUAL_ENV="$VENV" uv pip install --quiet tree-sitter tree-sitter-swift
 fi
-if [ ! -x "$VENV/bin/pytest" ] || [ ! -x "$VENV/bin/ruff" ]; then
-  log "creating $VENV (python $VENV_PYTHON, package + dev extras)"
-  if ! uv venv --quiet --clear --python "$VENV_PYTHON" "$VENV" 2>/dev/null; then
-    # An older uv has no download for a newer CPython release.
-    log "upgrading uv to find python $VENV_PYTHON"
-    python3 -m pip install --quiet --user --upgrade uv 2>/dev/null || pip install --quiet --upgrade uv
-    export PATH="$HOME/.local/bin:$PATH"
-    uv venv --quiet --clear --python "$VENV_PYTHON" "$VENV"
-  fi
-fi
-# uv.lock only resolves for macOS (pyproject [tool.uv].environments), so install the
-# project directly instead of `uv sync`. No-op when everything is already present.
-VIRTUAL_ENV="$VENV" uv pip install --quiet -e "$REPO/garage_python[dev]"
-echo "export PATH=\"$VENV/bin:\$PATH\"" >> "$ENV_FILE"
-log "python: $("$VENV/bin/python" --version), pytest $("$VENV/bin/pytest" --version 2>&1 | awk '{print $2}')"
+echo "export GARAGE_SWIFTCHECK_VENV=\"$VENV\"" >> "$ENV_FILE"
+log "swiftcheck venv: $("$VENV/bin/python" --version)"
 
 # ---------------------------------------------------------------------------
 # 2. Swift toolchain (syntax checking only on Linux)
@@ -161,9 +143,9 @@ SQL
 
 if setup_postgres; then
   echo "export GARAGE_TEST_DATABASE_URL=\"$PG_TEST_URL\"" >> "$ENV_FILE"
-  log "postgres: $PG_MAJOR with pgvector; GARAGE_TEST_DATABASE_URL set for test_postgres.py"
+  log "postgres: $PG_MAJOR with pgvector; GARAGE_TEST_DATABASE_URL set for the Rust database tests"
 else
-  log "no Postgres test server (needs the image's postgresql and github.com for pgvector); test_postgres.py will skip"
+  log "no Postgres test server (needs the image's postgresql and github.com for pgvector); the Rust database tests will not run"
 fi
 
 log "done"

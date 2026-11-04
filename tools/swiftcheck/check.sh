@@ -34,7 +34,9 @@ if command -v swiftc >/dev/null 2>&1; then
   exit "$status"
 fi
 
-PY="$REPO/garage_python/.venv/bin/python"
+# A venv with tree-sitter and tree-sitter-swift (the web-session hook makes one at
+# $GARAGE_SWIFTCHECK_VENV); otherwise whatever python3 has them.
+PY="${GARAGE_SWIFTCHECK_VENV:-$REPO/.swiftcheck-venv}/bin/python"
 [ -x "$PY" ] || PY="python3"
 echo "no swiftc on PATH; using the tree-sitter checker"
 exec "$PY" "$REPO/tools/swiftcheck/swift_syntax_check.py" "$@"

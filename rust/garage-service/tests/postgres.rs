@@ -1,5 +1,5 @@
-//! Tests against a real Postgres + pgvector server: `garage_python/tests/test_postgres.py`'s cases
-//! for what this crate ports so far (the migrations, the per-model DDL and operator classes, the
+//! Tests against a real Postgres + pgvector server: the former `test_postgres.py`'s cases
+//! for what this crate ports (the migrations, the per-model DDL and operator classes, the
 //! ingest facade, the search query, the egress filter on pending chunks), each against a fresh
 //! `garage_test_*` database that is dropped afterwards. They run when `GARAGE_TEST_DATABASE_URL`
 //! names a server reached as a superuser and pass without running when it is unset.

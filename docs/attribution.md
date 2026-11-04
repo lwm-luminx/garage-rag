@@ -50,11 +50,9 @@ the *file*.
 > practice still identifies the right person.
 
 > **No git needed.** History is read in-process through libgit2; Garage never runs `git`,
-> so this signal works on a Mac without the Xcode Command Line Tools. The app's Python has a
-> built-in `_garage_git` module with libgit2 linked in statically (`//ext/python`,
-> `//ext/libgit2`). A venv or PyPI install reads through pygit2 instead
-> (`pip install 'garage-rag[git]'`); with neither, git history is skipped and files are
-> attributed from the signals below.
+> so this signal works on a Mac without the Xcode Command Line Tools. `rust/garage-git` binds the
+> three reads it needs by hand, with libgit2 linked in statically in the app (`//ext/libgit2`,
+> no network transports) and from the system's libgit2 in a `garage` built with Cargo.
 
 ### 2. Embedded document metadata
 

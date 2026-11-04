@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageLauncher
 
 /// The launchers run as helper bundles inside Garage.app; what they derive from their own path

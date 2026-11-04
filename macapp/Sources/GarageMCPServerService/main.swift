@@ -1,6 +1,6 @@
 import Foundation
 import GarageXPCKit
-import LlamaModelLoaderCore
+import LlamaModelLoader
 import OSLog
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.mcp-server-xpc", category: "GarageMCPServerService")
@@ -104,8 +104,7 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
         [
             GarageXPCSelfTest(
                 name: "MCP Server",
-                description: "The Rust MCP server is linked into this process and answers initialize and tools/list.",
-                requiresPython: false
+                description: "The Rust MCP server is linked into this process and answers initialize and tools/list."
             ) {
                 // Neither message reads the corpus, so no backend is needed.
                 let target = GarageMCPRustServer.GRPCTarget.tcp(host: "127.0.0.1", port: 1)
@@ -131,8 +130,7 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
             },
             GarageXPCSelfTest(
                 name: "gRPC Connection",
-                description: "The MCP server reaches GarageService (its socket, or host and port) with the app's token and reads the corpus statistics.",
-                requiresPython: false
+                description: "The MCP server reaches GarageService (its socket, or host and port) with the app's token and reads the corpus statistics."
             ) { [weak self] in
                 guard let self, let target = self.grpc else {
                     throw GarageXPCSelfTestSkipped("GARAGE_GRPC_SOCKET / GARAGE_GRPC_PORT are not configured")

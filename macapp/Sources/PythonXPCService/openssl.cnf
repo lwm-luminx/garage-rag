@@ -1,6 +1,0 @@
-# OpenSSL configuration for Garage's embedded Python.
-#
-# Deliberately empty. GaragePythonRuntime exports OPENSSL_CONF pointing here before the interpreter
-# starts, so every OpenSSL in the process (the bundled _ssl, and the copy statically linked into
-# cryptography, whose compiled-in default is Homebrew's openssl@3 folder) reads this file instead
-# of a configuration found outside the bundle. OpenSSL's built-in defaults apply.

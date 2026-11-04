@@ -28,6 +28,7 @@ pub mod models;
 pub mod prompts;
 pub mod registry;
 pub mod revision;
+pub mod schema;
 pub mod search;
 pub mod server;
 pub mod service;

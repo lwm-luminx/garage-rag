@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// One source registration: exactly what the AddSource RPC (and `garage add-source`) takes.
 struct SourceSpec: Hashable, Sendable {

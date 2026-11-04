@@ -1,25 +1,22 @@
 import Foundation
 import OSLog
-import PythonXPCService_protocol
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "GarageXPCSelfTests")
 
 /// A single self test executed inside an XPC service once it has started.
 ///
-/// In a service that embeds Python, the `run` closure is executed on the Python runtime queue with the GIL
-/// held when `requiresPython` is true, so it may use PythonKit directly. It returns human readable details on success and throws on failure.
+/// The `body` runs on the service's host thread. It returns human readable details on success and
+/// throws on failure.
 public struct GarageXPCSelfTest: Sendable {
     public typealias Body = @Sendable () throws -> String
 
     public let name: String
     public let testDescription: String
-    public let requiresPython: Bool
     public let body: Body
 
-    public init(name: String, description: String, requiresPython: Bool = true, body: @escaping Body) {
+    public init(name: String, description: String, body: @escaping Body) {
         self.name = name
         self.testDescription = description
-        self.requiresPython = requiresPython
         self.body = body
     }
 }
@@ -46,13 +43,8 @@ public struct GarageXPCSelfTestSkipped: Error, LocalizedError {
 
 /// Runs self tests and produces `GarageXPCTestResult` records.
 public enum GarageXPCSelfTestRunner {
-    /// Runs a test that requires the service's embedded runtime (`requiresPython`), on that runtime's
-    /// terms: PythonXPCService's runs it with the GIL held.
-    public typealias RuntimeExecutor = (GarageXPCSelfTest) throws -> String
-
-    /// Executes the given tests sequentially. A test that requires Python fails when no
-    /// `runtimeExecutor` is given, since the service has no interpreter to run it in.
-    public static func run(_ tests: [GarageXPCSelfTest], runtimeExecutor: RuntimeExecutor? = nil) -> [GarageXPCTestResult] {
+    /// Executes the given tests sequentially.
+    public static func run(_ tests: [GarageXPCSelfTest]) -> [GarageXPCTestResult] {
         var results: [GarageXPCTestResult] = []
         results.reserveCapacity(tests.count)
 
@@ -60,15 +52,7 @@ public enum GarageXPCSelfTestRunner {
             let start = CFAbsoluteTimeGetCurrent()
             let result: GarageXPCTestResult
             do {
-                let details: String
-                if test.requiresPython {
-                    guard let runtimeExecutor else {
-                        throw GarageXPCSelfTestFailure("This service embeds no Python runtime", details: "'\(test.name)' requires Python.")
-                    }
-                    details = try runtimeExecutor(test)
-                } else {
-                    details = try test.body()
-                }
+                let details = try test.body()
                 let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000.0
                 result = GarageXPCTestResult(
                     name: test.name,
@@ -124,11 +108,11 @@ public enum GarageXPCSelfTestRunner {
 
 // MARK: - Standard tests
 
-/// Self tests every XPC service shares. PythonXPCService adds the tests of the embedded interpreter.
+/// Self tests every XPC service shares.
 public enum GarageXPCStandardSelfTests {
-    /// Checks that the log directory is writable (non-Python test).
+    /// Checks that the log directory is writable.
     public static func logging(logFileName: String) -> GarageXPCSelfTest {
-        GarageXPCSelfTest(name: "Logging", description: "Log directory is writable and unified logging is configured.", requiresPython: false) {
+        GarageXPCSelfTest(name: "Logging", description: "Log directory is writable and unified logging is configured.") {
             let dir = GarageFileLogger.logsDirectoryURL
             let probe = dir.appendingPathComponent(".write-probe-\(ProcessInfo.processInfo.processIdentifier)")
             do {

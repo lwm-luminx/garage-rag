@@ -4,8 +4,8 @@
 #
 # Hardened runtime ignores DYLD_PRINT_LIBRARIES, and vmmap needs a task port a hardened process
 # does not hand out. lsof needs neither: dyld maps every image it loads, and lsof lists mapped
-# files. CPython never unloads an extension module, so a process's mappings only grow; polling
-# them and keeping the union catches every load, including processes that exit before the end.
+# files. Polling them and keeping the union catches every load, including processes that exit
+# before the end.
 #
 #   tools/macos/trace_loaded_images.sh [--app PATH] [--seconds N] [--out DIR]
 #
@@ -17,10 +17,8 @@
 #   DIR/summary.txt  per process: the non-system images, and every one whose Team ID differs
 #                    from the process's own (those are what library validation would reject)
 #
-# Classes: lib-dynload (stdlib extension), site-packages (third-party extension), bundled
-# (anything else inside the app), system (/usr/lib, /System). "How it loaded" is "linked" when
-# some image in the same process names it in an LC_LOAD_DYLIB command (the way libpq is
-# pre-bound through PythonXPCService.framework), and "dlopen" otherwise.
+# Classes: bundled (inside the app), system (/usr/lib, /System). "How it loaded" is "linked" when
+# some image in the same process names it in an LC_LOAD_DYLIB command, and "dlopen" otherwise.
 set -uo pipefail
 
 app="/Applications/GarageApp.app"
@@ -82,8 +80,6 @@ team_id() {
 classify() {
     case "$1" in
         /usr/lib/*|/System/*|/Library/Apple/*) echo system ;;
-        */lib-dynload/*) echo lib-dynload ;;
-        */site-packages/*) echo site-packages ;;
         "$app"/*) echo bundled ;;
         *) echo outside-app ;;
     esac

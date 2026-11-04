@@ -86,6 +86,8 @@ def garage_launcher_app(
         entitlements = select({
             "//bazel:is_store": store_entitlements,
             "//bazel:is_developer_id": developer_id_entitlements,
+            # The group container holds the sockets the launchers connect to (//bazel:BUILD.bazel).
+            "//bazel:is_local_app_group": Label("//macapp/externals:GarageAppGroup.entitlements"),
             "//conditions:default": None,
         }),
         executable_name = bundle_name,

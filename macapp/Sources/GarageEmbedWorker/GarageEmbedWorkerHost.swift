@@ -1,7 +1,7 @@
 import Foundation
 import GarageEmbedFFI
-import ImageEmbedBridgeCore
-import LlamaModelLoaderCore
+import ImageEmbedBridge
+import LlamaModelLoader
 
 /// The process the Rust embed worker runs in, as the worker sees it (`GarageEmbedHost` in
 /// `garage_embed.h`): it carries the model-server requests the worker's egress rules approved, and

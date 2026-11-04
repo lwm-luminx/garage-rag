@@ -1,7 +1,7 @@
 import XCTest
 
 /// What the made-up corpus in `macapp/Tests/Fixtures/corpus` holds, as its README lists it.
-/// `garage_python/tests/test_fixture_corpus.py` checks the same facts against the real extractors.
+/// rust/garage-cli/tests/cli.rs ingests the same files through the real readers.
 enum FixtureCorpus {
     struct Document {
         let file: String

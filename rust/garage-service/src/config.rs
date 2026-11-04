@@ -40,7 +40,8 @@ pub enum Kind {
     Choice(&'static [&'static str]),
 }
 
-/// One setting: its section and key in the file, its flat field name, its type and its default.
+/// One setting: its section and key in the file, its flat field name, its type, its default and
+/// its description, which `garage config schema` publishes.
 #[derive(Debug)]
 pub struct Setting {
     pub section: &'static str,
@@ -48,6 +49,7 @@ pub struct Setting {
     pub field: &'static str,
     pub kind: Kind,
     default: fn() -> Value,
+    pub doc: &'static str,
 }
 
 impl Setting {
@@ -62,8 +64,8 @@ impl Setting {
 }
 
 macro_rules! setting {
-    ($section:literal, $key:literal, $field:literal, $kind:expr, $default:expr) => {
-        Setting { section: $section, key: $key, field: $field, kind: $kind, default: || json!($default) }
+    ($section:literal, $key:literal, $field:literal, $kind:expr, $default:expr, $doc:literal) => {
+        Setting { section: $section, key: $key, field: $field, kind: $kind, default: || json!($default), doc: $doc }
     };
 }
 
@@ -73,50 +75,323 @@ const INFERENCE_PROVIDERS: &[&str] = &["", "llama_xpc", "ollama", "lmstudio"];
 /// Every setting the file accepts, in file order (`garage_rag.config.SECTIONS` with each
 /// field's default beside it).
 pub static SECTIONS: &[Setting] = &[
-    setting!("database", "url", "database_url", Kind::Str, "postgresql+psycopg:///rag"),
-    setting!("database", "hnsw_ef_search", "hnsw_ef_search", Kind::Int, 100),
-    setting!("identity", "name", "self_name", Kind::Str, ""),
-    setting!("identity", "identities", "self_identities", Kind::StrList, Value::Array(Vec::new())),
-    setting!("embedding", "ollama_host", "ollama_host", Kind::Str, "http://localhost:11434"),
-    setting!("embedding", "lmstudio_host", "lmstudio_host", Kind::Str, "http://localhost:1234/v1"),
-    setting!("embedding", "llama_host", "llama_host", Kind::Str, "http://127.0.0.1:8790"),
-    setting!("embedding", "lmstudio_api_token_file", "lmstudio_api_token_file", Kind::OptStr, Value::Null),
-    setting!("embedding", "default_model", "default_embedding_model", Kind::Str, "bge-m3"),
-    setting!("embedding", "batch_size", "embed_batch_size", Kind::Int, 64),
-    setting!("chunking", "size", "chunk_size", Kind::Int, 1000),
-    setting!("chunking", "overlap", "chunk_overlap", Kind::Int, 150),
-    setting!("chunking", "code_size", "code_chunk_size", Kind::Int, 1200),
-    setting!("chunking", "code_overlap", "code_chunk_overlap", Kind::Int, 100),
-    setting!("placeholders", "materialize", "materialize_placeholders", Kind::Bool, false),
-    setting!("placeholders", "limit", "materialize_limit", Kind::Int, 2000),
-    setting!("placeholders", "max_bytes", "materialize_max_bytes", Kind::Int, 20u64 * 1024 * 1024 * 1024),
-    setting!("placeholders", "timeout_seconds", "materialize_timeout_seconds", Kind::Float, 120.0),
-    setting!("quality", "max_chunks_per_document", "max_chunks_per_document", Kind::Int, 1500),
-    setting!("quality", "reject_machine_generated", "reject_machine_generated", Kind::Bool, true),
-    setting!("extraction", "max_file_bytes", "max_file_bytes", Kind::Int, 64 * 1024 * 1024),
-    setting!("extraction", "pdf_min_chars_per_page", "pdf_min_chars_per_page", Kind::Int, 32),
-    setting!("extraction", "ocr_min_chars", "ocr_min_chars", Kind::Int, 16),
-    setting!("extraction", "index_images", "index_images", Kind::Bool, true),
-    setting!("extraction", "plugins", "extraction_plugins", Kind::StrList, Value::Array(Vec::new())),
-    setting!("mcp", "host", "mcp_host", Kind::Str, "127.0.0.1"),
-    setting!("mcp", "port", "mcp_port", Kind::Int, 8787),
-    setting!("mcp", "path", "mcp_http_path", Kind::Str, "/mcp"),
-    setting!("facts", "model", "fact_model", Kind::Str, "gemma2-2b"),
-    setting!("facts", "provider", "fact_provider", Kind::Choice(PROVIDERS), "llama_xpc"),
-    setting!("facts", "prompts", "fact_prompts", Kind::Prompts, Value::Array(Vec::new())),
-    setting!("facts", "cluster_threshold", "fact_cluster_threshold", Kind::Float, 0.9),
-    setting!("facts", "cluster_restate_threshold", "fact_cluster_restate_threshold", Kind::Float, 0.92),
-    setting!("facts", "cluster_neighbors", "fact_cluster_neighbors", Kind::Int, 10),
-    setting!("facts", "cluster_seed_threshold", "fact_cluster_seed_threshold", Kind::Float, 0.95),
-    setting!("facts", "cluster_max_drift", "fact_cluster_max_drift", Kind::Float, 0.05),
-    setting!("facts", "cluster_tight_similarity", "fact_cluster_tight_similarity", Kind::Float, 0.97),
-    setting!("facts", "cluster_growth_neighbors", "fact_cluster_growth_neighbors", Kind::Int, 50),
-    setting!("facts", "cluster_growth_rounds", "fact_cluster_growth_rounds", Kind::Int, 4),
-    setting!("facts", "cluster_attach_candidates", "fact_cluster_attach_candidates", Kind::Int, 5),
-    setting!("facts", "cluster_distill_facts", "fact_cluster_distill_facts", Kind::Int, 20),
-    setting!("facts", "cluster_max_pairwise", "fact_cluster_max_pairwise", Kind::Int, 300),
-    setting!("inference", "model", "inference_model", Kind::Str, ""),
-    setting!("inference", "provider", "inference_provider", Kind::Choice(INFERENCE_PROVIDERS), ""),
+    setting!(
+        "database",
+        "url",
+        "database_url",
+        Kind::Str,
+        "postgresql+psycopg:///rag",
+        "PostgreSQL URL of the RAG database; the SQLAlchemy form, postgresql+psycopg://, is accepted too."
+    ),
+    setting!(
+        "database",
+        "hnsw_ef_search",
+        "hnsw_ef_search",
+        Kind::Int,
+        100,
+        "HNSW probe width at query time. Higher is better recall, slower."
+    ),
+    setting!("identity", "name", "self_name", Kind::Str, "", "Display name of the corpus owner."),
+    setting!(
+        "identity",
+        "identities",
+        "self_identities",
+        Kind::StrList,
+        Value::Array(Vec::new()),
+        "Identities belonging to the owner as 'kind:value' strings, e.g. 'git_email:me@example.com'. Anything authored by an identity NOT listed here is treated as reference rather than authored."
+    ),
+    setting!(
+        "embedding",
+        "ollama_host",
+        "ollama_host",
+        Kind::Str,
+        "http://localhost:11434",
+        "Base URL of the Ollama server for embeddings, fact distillation and answers. May be another machine; communications are only ever sent to a loopback host."
+    ),
+    setting!(
+        "embedding",
+        "lmstudio_host",
+        "lmstudio_host",
+        Kind::Str,
+        "http://localhost:1234/v1",
+        "Base URL of the LM Studio OpenAI-compatible API (include /v1); embeddings, fact distillation, answers, and model management under /api/v1. May be another machine; communications are only ever sent to a loopback host."
+    ),
+    setting!(
+        "embedding",
+        "llama_host",
+        "llama_host",
+        Kind::Str,
+        "http://127.0.0.1:8790",
+        "Base URL of the llama.cpp HTTP API served by the app's LlamaXPCService (loopback only)."
+    ),
+    setting!(
+        "embedding",
+        "lmstudio_api_token_file",
+        "lmstudio_api_token_file",
+        Kind::OptStr,
+        Value::Null,
+        "Path to an LM Studio API token for an authenticated server. The token itself is kept outside this configuration file; GARAGE_LMSTUDIO_API_TOKEN overrides it."
+    ),
+    setting!(
+        "embedding",
+        "default_model",
+        "default_embedding_model",
+        Kind::Str,
+        "bge-m3",
+        "Slug of the model used when a command does not name one. Must be registered with 'garage register-model' first."
+    ),
+    setting!("embedding", "batch_size", "embed_batch_size", Kind::Int, 64, "Chunks per embedding request."),
+    setting!("chunking", "size", "chunk_size", Kind::Int, 1000, "Target characters per prose chunk."),
+    setting!(
+        "chunking",
+        "overlap",
+        "chunk_overlap",
+        Kind::Int,
+        150,
+        "Characters repeated between adjacent prose chunks, so a sentence spanning a boundary is still retrievable."
+    ),
+    setting!(
+        "chunking",
+        "code_size",
+        "code_chunk_size",
+        Kind::Int,
+        1200,
+        "Target characters per code chunk. Larger, to keep functions intact."
+    ),
+    setting!(
+        "chunking",
+        "code_overlap",
+        "code_chunk_overlap",
+        Kind::Int,
+        100,
+        "Characters repeated between adjacent code chunks."
+    ),
+    setting!(
+        "placeholders",
+        "materialize",
+        "materialize_placeholders",
+        Kind::Bool,
+        false,
+        "Download cloud placeholder files when encountered. Reading a stub asks the provider to fetch it, so a large online-only folder can mean hundreds of gigabytes. Bounded by the limits below."
+    ),
+    setting!(
+        "placeholders",
+        "limit",
+        "materialize_limit",
+        Kind::Int,
+        2000,
+        "Files materialized per run; 0 means unlimited."
+    ),
+    setting!(
+        "placeholders",
+        "max_bytes",
+        "materialize_max_bytes",
+        Kind::Int,
+        20u64 * 1024 * 1024 * 1024,
+        "Byte budget per run; 0 means unlimited."
+    ),
+    setting!(
+        "placeholders",
+        "timeout_seconds",
+        "materialize_timeout_seconds",
+        Kind::Float,
+        120.0,
+        "Give up on a single download that never arrives. A stalled provider cannot be cancelled, so this stops it blocking the run."
+    ),
+    setting!(
+        "quality",
+        "max_chunks_per_document",
+        "max_chunks_per_document",
+        Kind::Int,
+        1500,
+        "Backstop so no single document can dominate the index."
+    ),
+    setting!(
+        "quality",
+        "reject_machine_generated",
+        "reject_machine_generated",
+        Kind::Bool,
+        true,
+        "Reject logs, dumps, and checksum manifests by content shape."
+    ),
+    setting!(
+        "extraction",
+        "max_file_bytes",
+        "max_file_bytes",
+        Kind::Int,
+        64 * 1024 * 1024,
+        "Skip files larger than this; usually archives or disk images."
+    ),
+    setting!(
+        "extraction",
+        "pdf_min_chars_per_page",
+        "pdf_min_chars_per_page",
+        Kind::Int,
+        32,
+        "Below this, escalate a PDF page from pypdf to pdfplumber."
+    ),
+    setting!(
+        "extraction",
+        "ocr_min_chars",
+        "ocr_min_chars",
+        Kind::Int,
+        16,
+        "Below this many characters an image is treated as having no text. Most images in a source tree are icons."
+    ),
+    setting!(
+        "extraction",
+        "index_images",
+        "index_images",
+        Kind::Bool,
+        true,
+        "Index pictures as documents: an image with no text becomes a document with one image chunk, and a screenshot or scan gets one beside its text chunks. Image embedding models (SigLIP 2 in the catalog) embed the picture itself; full-text search sees the file's name. Icons and other tiny images are still skipped. Off, an image without text is not indexed."
+    ),
+    setting!(
+        "extraction",
+        "plugins",
+        "extraction_plugins",
+        Kind::StrList,
+        Value::Array(Vec::new()),
+        "Reader plugins: programs that implement Garage's plugin contract (proto/garage_plugin.proto) for document types. Each entry is the path of a plugin program, which Garage starts and stops with the ingest, or 'unix:' and the path of a socket a running plugin listens on. A plugin's readers take over the extensions they declare, ahead of the built-in ones; plugins listed earlier win. A plugin receives each file's contents, never its path, and is reached only over a Unix-domain socket. '~' is expanded."
+    ),
+    setting!(
+        "mcp",
+        "host",
+        "mcp_host",
+        Kind::Str,
+        "127.0.0.1",
+        "Bind address. This server has no authentication and exposes the whole corpus, so a non-loopback address needs --allow-remote."
+    ),
+    setting!("mcp", "port", "mcp_port", Kind::Int, 8787, "Port for the HTTP transport."),
+    setting!("mcp", "path", "mcp_http_path", Kind::Str, "/mcp", "HTTP route the MCP endpoint is served on."),
+    setting!(
+        "facts",
+        "model",
+        "fact_model",
+        Kind::Str,
+        "gemma2-2b",
+        "Slug or alias of the local model used for fact distillation ('garage enrich-facts') and for the rag_ask / rag_generate MCP tools. For llama_xpc this is the alias the app loaded the model under (the 'inference_models' preset slug); for ollama it is the Ollama model name; for lmstudio it is the LM Studio model key (e.g. 'google/gemma-3-4b')."
+    ),
+    setting!(
+        "facts",
+        "provider",
+        "fact_provider",
+        Kind::Choice(PROVIDERS),
+        "llama_xpc",
+        "Which inference server runs fact distillation and rag_ask: 'llama_xpc' is the app's LlamaXPCService (llama.cpp on embedding.llama_host, loopback only); 'ollama' is the Ollama server on embedding.ollama_host; 'lmstudio' is the LM Studio server on embedding.lmstudio_host, which loads the model on first use. Communications are only ever sent to a loopback host."
+    ),
+    setting!(
+        "facts",
+        "prompts",
+        "fact_prompts",
+        Kind::Prompts,
+        Value::Array(Vec::new()),
+        "Fact-extraction prompts for 'garage enrich-facts', each a name, a description (the instructions), few-shot examples and an optional scope. Merged by name with the built-in 'default' prompt: an entry named 'default' overrides it (fields left out keep the built-in's; enabled false turns it off), and any other entry is added. Every enabled prompt that applies to a document runs; 'garage facts prompts list' shows the result."
+    ),
+    setting!(
+        "facts",
+        "cluster_threshold",
+        "fact_cluster_threshold",
+        Kind::Float,
+        0.9,
+        "Cosine similarity two facts' vectors must reach, under the default embedding model, for 'garage cluster-facts' to consider them the same claim. Paraphrases of a short sentence sit around 0.9 and up on the bge/nomic family; raise it if unrelated facts are grouped, lower it if restatements are missed."
+    ),
+    setting!(
+        "facts",
+        "cluster_restate_threshold",
+        "fact_cluster_restate_threshold",
+        Kind::Float,
+        0.92,
+        "Cosine similarity two facts of one document must reach for 'garage cluster-facts' to treat one as a restatement of the other. No model confirms these, so it is a little stricter than cluster_threshold; facts with the same text always count."
+    ),
+    setting!(
+        "facts",
+        "cluster_neighbors",
+        "fact_cluster_neighbors",
+        Kind::Int,
+        10,
+        "Nearest neighbours 'garage cluster-facts' fetches for each fact when looking for restatements of it. More finds larger groups at the cost of a slower run."
+    ),
+    setting!(
+        "facts",
+        "cluster_seed_threshold",
+        "fact_cluster_seed_threshold",
+        Kind::Float,
+        0.95,
+        "Cosine similarity a fact's neighbours must reach to form the core a group grows from in 'garage cluster-facts --full'. The core's centroid is the group's seed, which its centroid may not drift far from. At least cluster_threshold."
+    ),
+    setting!(
+        "facts",
+        "cluster_max_drift",
+        "fact_cluster_max_drift",
+        Kind::Float,
+        0.05,
+        "Cosine distance a group's centroid may move from its seed as 'garage cluster-facts' adds facts to it. Smaller keeps a group to one claim when similar ones sit close by; larger lets loosely worded restatements join."
+    ),
+    setting!(
+        "facts",
+        "cluster_tight_similarity",
+        "fact_cluster_tight_similarity",
+        Kind::Float,
+        0.97,
+        "Cosine similarity every pair of a group's facts must reach, as judged by its farthest fact from the centroid, for 'garage cluster-facts' to keep the group without asking the local chat model; a looser one is shown to the model, which confirms it states one claim. 1 asks the model about every group."
+    ),
+    setting!(
+        "facts",
+        "cluster_growth_neighbors",
+        "fact_cluster_growth_neighbors",
+        Kind::Int,
+        50,
+        "Nearest facts 'garage cluster-facts --full' fetches around a growing group's centroid in each round. A group cannot gain more than this many facts in one round."
+    ),
+    setting!(
+        "facts",
+        "cluster_growth_rounds",
+        "fact_cluster_growth_rounds",
+        Kind::Int,
+        4,
+        "Times 'garage cluster-facts --full' re-centres a growing group and looks again before it stops; growth usually settles in two or three."
+    ),
+    setting!(
+        "facts",
+        "cluster_attach_candidates",
+        "fact_cluster_attach_candidates",
+        Kind::Int,
+        5,
+        "Nearest distilled facts 'garage cluster-facts' tries for each new fact before it gives the fact a distilled fact of its own."
+    ),
+    setting!(
+        "facts",
+        "cluster_distill_facts",
+        "fact_cluster_distill_facts",
+        Kind::Int,
+        20,
+        "Facts of one group shown to the local chat model when it is asked to confirm the group (those nearest the group's centroid). More costs a longer prompt."
+    ),
+    setting!(
+        "facts",
+        "cluster_max_pairwise",
+        "fact_cluster_max_pairwise",
+        Kind::Int,
+        300,
+        "Largest set of one document's facts 'garage cluster-facts' compares pair by pair. A larger set is grouped from its closest pairs alone, which can only keep facts apart."
+    ),
+    setting!(
+        "inference",
+        "model",
+        "inference_model",
+        Kind::Str,
+        "",
+        "Slug or alias of the local model behind the rag_ask / rag_generate MCP tools, named as facts.model is. Empty (the default) uses facts.model, since a distillation model answers questions too; set it to chat with a larger or tool-calling model while a small one distills facts."
+    ),
+    setting!(
+        "inference",
+        "provider",
+        "inference_provider",
+        Kind::Choice(INFERENCE_PROVIDERS),
+        "",
+        "Which inference server runs inference.model, as facts.provider does for facts.model. Empty uses facts.provider."
+    ),
 ];
 
 /// Keys older files may still carry, ignored with a warning (`RETIRED_KEYS`). A section listed

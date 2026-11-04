@@ -4,7 +4,7 @@ load("@rules_rs//rs:rust_test.bzl", "rust_test")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
 # //ext/tesseract over //ext/leptonica (static, no codecs: the pixels come decoded), with the C++ runtime
-# they need, as //ext/python links them into _garage_tesseract. Cargo builds find libtesseract in build.rs.
+# they need. Cargo builds find libtesseract in build.rs.
 cc_library(
     name = "tesseract_linked",
     linkopts = select({

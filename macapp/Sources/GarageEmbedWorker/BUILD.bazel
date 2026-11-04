@@ -22,7 +22,7 @@ swift_library(
     visibility = ["//visibility:public"],
     deps = [
         ":GarageEmbedFFI",
-        "//macapp/Sources/ImageEmbedBridge:ImageEmbedBridgeCore",
-        "//macapp/Sources/LlamaModelLoader:LlamaModelLoaderCore",
+        "//macapp/Sources/ImageEmbedBridge",
+        "//macapp/Sources/LlamaModelLoader",
     ],
 )

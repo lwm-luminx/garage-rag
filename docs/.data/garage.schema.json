@@ -14,7 +14,7 @@
       "properties": {
         "url": {
           "type": "string",
-          "description": "SQLAlchemy URL for the RAG database (psycopg3 driver).",
+          "description": "PostgreSQL URL of the RAG database; the SQLAlchemy form, postgresql+psycopg://, is accepted too.",
           "default": "postgresql+psycopg:///rag"
         },
         "hnsw_ef_search": {

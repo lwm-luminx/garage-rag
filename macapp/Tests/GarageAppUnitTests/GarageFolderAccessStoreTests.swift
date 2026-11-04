@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 
 /// The receiving side of a folder grant. The unit tests run unsandboxed and hand over plain URLs, so
 /// they check the bookkeeping; consuming a real sandbox extension needs a store-signed build.

@@ -1,8 +1,8 @@
 import Foundation
 import Darwin
 import GarageXPCKit
-import ImageEmbedBridgeCore
-import LlamaModelLoaderCore
+import ImageEmbedBridge
+import LlamaModelLoader
 import OSLog
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.xpc", category: "GarageXPCService")
@@ -114,8 +114,7 @@ final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProt
         [
             GarageXPCSelfTest(
                 name: "gRPC Server",
-                description: "GarageService is linked into this process and binds a loopback port, then stops.",
-                requiresPython: false
+                description: "GarageService is linked into this process and binds a loopback port, then stops."
             ) {
                 let scratch = FileManager.default.temporaryDirectory
                     .appendingPathComponent("garage-xpc-self-test-\(getpid())", isDirectory: true)
@@ -140,8 +139,7 @@ final class GarageXPCServiceDelegate: GarageXPCServiceBase, GarageXPCServiceProt
             },
             GarageXPCSelfTest(
                 name: "Database Connection",
-                description: "GarageService reaches the Postgres cluster the app configured (GARAGE_DATABASE_URL) and reads its version.",
-                requiresPython: false
+                description: "GarageService reaches the Postgres cluster the app configured (GARAGE_DATABASE_URL) and reads its version."
             ) { [weak self] in
                 guard let self, let url = self.configurationValue(GarageXPCConfigurationKey.databaseURL), !url.isEmpty else {
                     throw GarageXPCSelfTestSkipped("GARAGE_DATABASE_URL is not configured")

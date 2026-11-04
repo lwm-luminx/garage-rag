@@ -23,7 +23,7 @@ The app it installs has no package identity, so it behaves as a build-folder run
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'arm64')][string]$Arch = 'x64',
-    # MAJOR.MINOR.BUILD; defaults to garage_python/pyproject.toml's version.
+    # MAJOR.MINOR.BUILD; defaults to GarageService's version (rust/garage-service/src/service.rs).
     [string]$Version,
     # The staged layout; defaults to winapp\packaging\out\stage-<arch>.
     [string]$Stage,

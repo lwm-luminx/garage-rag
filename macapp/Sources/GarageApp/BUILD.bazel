@@ -36,19 +36,6 @@ exports_files(
 swift_library(
     name = "GarageApp_lib",
     srcs = glob(["**/*.swift"]),
-    # rules_apple already gives the app and its test bundles @executable_path/../Frameworks
-    # and @loader_path/../Frameworks (repeating them made ld warn "duplicate -rpath");
-    # only the Python.framework directories are added here.
-    linkopts = [
-        "-Xlinker",
-        "-rpath",
-        "-Xlinker",
-        "@executable_path/../Frameworks/Python.framework",
-        "-Xlinker",
-        "-rpath",
-        "-Xlinker",
-        "@loader_path/../Frameworks/Python.framework",
-    ],
     module_name = "GarageApp",
     visibility = ["//visibility:public"],
     deps = [
@@ -56,6 +43,7 @@ swift_library(
         "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCServiceCore",
         "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/GarageXPCService:GarageXPCServiceCore",
         "//macapp/Sources/ImageEmbedClient",
         "//macapp/Sources/IngestClient",
@@ -63,7 +51,6 @@ swift_library(
         "//macapp/Sources/LlamaModelLoader",
         "//macapp/Sources/MCPServerClient",
         "//macapp/Sources/ModelDownloadClient",
-        "//macapp/Sources/PythonXPCService",
         "//proto:garage_proto_swift",
     ],
 )

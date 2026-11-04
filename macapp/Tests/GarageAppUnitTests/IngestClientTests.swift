@@ -1,7 +1,7 @@
 import XCTest
 @testable import GarageApp
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 final class IngestClientTests: XCTestCase {
 

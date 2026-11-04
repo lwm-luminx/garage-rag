@@ -1,7 +1,7 @@
 //! Garage's reader for plain text, Markdown and source code: `garage_rag.extract.text`, ported.
 //!
-//! The Python module is the specification, and `garage_python/tests/test_text_plugin.py` holds
-//! this crate to it file by file. [`TextPlugin`] serves the reader through the plugin contract
+//! The Python module was the specification, and this crate was held to it file by file until the
+//! Python package retired (docs/plans/python-removal.md). [`TextPlugin`] serves the reader through the plugin contract
 //! (`proto/garage_plugin.proto`), in-process through `garage-text-ffi` or as the
 //! `garage-text-plugin` process.
 

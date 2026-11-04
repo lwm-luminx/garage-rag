@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import GarageCLIFFI
-import PythonXPCService_protocol
+import GarageXPCKit
 
 /// One of the launchers bundled as helper apps in `Garage.app/Contents/Helpers` (reached
 /// through `Contents/MacOS/<name>`, a link to the forwarder script in `Resources/launchers`):

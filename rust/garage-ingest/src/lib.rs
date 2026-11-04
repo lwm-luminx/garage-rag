@@ -9,8 +9,8 @@
 //! with a Messages source read thread by thread ([`conversations`], over the `messages-markdown` crate),
 //! persisting through GarageService ([`facade`]).
 //!
-//! Python's modules are the specification; `garage_python/tests/test_ingest_rust.py` holds each
-//! piece to its Python original through `garage-ingest-ffi`.
+//! Python's modules were the specification: each piece was held to its Python original through
+//! `garage-ingest-ffi` until the Python package retired (docs/plans/python-removal.md).
 
 pub mod attribution;
 pub mod chunking;

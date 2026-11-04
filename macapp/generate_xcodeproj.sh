@@ -3,16 +3,14 @@
 # attribute for to the generated project's project-level build settings.
 #
 # SKIP_EMBEDDED_FRAMEWORKS_VALIDATION: rules_apple's macos_framework produces a
-# shallow bundle (PythonXPCService.framework has Info.plist at its root), which is
-# what `aspect build //:macapp` ships. Xcode's Validate step on the app rejects that
+# shallow bundle (Info.plist at the framework's root), which is what
+# `aspect build //:macapp` ships. Xcode's Validate step on the app rejects that
 # layout ("expected Versions/Current/Resources/Info.plist since the platform does not
 # use shallow bundles"), so without this the Garage scheme cannot build in Xcode.
 #
 # DONT_RUN_SWIFT_STDLIB_TOOL: Xcode's CopySwiftLibs step scans every file under
-# Contents/Frameworks for Swift runtime dependencies, and warns once per empty file
-# in PythonXPCService.framework/site-python ("Failed to parse executable"). Bazel has
-# already built the bundle, and the Swift runtime ships with macOS 14, so the step has
-# nothing to copy.
+# Contents/Frameworks for Swift runtime dependencies. Bazel has already built the
+# bundle, and the Swift runtime ships with macOS 14, so the step has nothing to copy.
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then

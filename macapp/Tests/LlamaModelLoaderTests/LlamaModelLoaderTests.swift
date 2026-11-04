@@ -1,10 +1,10 @@
 import XCTest
 import LlamaClient
 @testable import LlamaModelLoader
-@testable import LlamaModelLoaderCore
+@testable import LlamaModelLoader
 import LlamaServiceHost
 import LlamaTestSupport
-import PythonXPCService
+import GarageXPCKit
 
 // MARK: - Resolver
 
@@ -358,56 +358,11 @@ final class LlamaModelLoaderEndpointTests: XCTestCase {
     }
 }
 
-// MARK: - C bridge
+// MARK: - Endpoint self test
 
-final class LlamaModelLoaderBridgeTests: XCTestCase {
-    override func tearDown() {
-        LlamaModelLoaderBridge.setLoader(nil)
-        super.tearDown()
-    }
-
-    private func call(_ alias: String?, capacity: Int = 256) -> (Int32, String) {
-        var buffer = [CChar](repeating: 0, count: capacity)
-        let status: Int32 = buffer.withUnsafeMutableBufferPointer { out in
-            if let alias {
-                return alias.withCString { LlamaModelLoaderBridge.entry($0, out.baseAddress, capacity) }
-            }
-            return LlamaModelLoaderBridge.entry(nil, out.baseAddress, capacity)
-        }
-        return (status, String(cString: buffer))
-    }
-
-    func testEntryLoadsThroughTheInstalledLoader() {
-        let fake = FakeService()
-        LlamaModelLoaderBridge.setLoader(LlamaModelLoader(service: fake.service, resolve: {
-            LlamaModelLoadPlan(alias: $0, displayName: $0, path: "/models/\($0).gguf")
-        }))
-        let (status, message) = call("bge-m3")
-        XCTAssertEqual(status, 0)
-        XCTAssertTrue(message.contains("/models/bge-m3.gguf"), message)
-        XCTAssertEqual(fake.ensureCount, 1)
-
-        let (again, already) = call("bge-m3")
-        XCTAssertEqual(again, 0)
-        XCTAssertEqual(already, "bge-m3 is already loaded")
-    }
-
-    func testEntryReportsWhatToDo() {
-        LlamaModelLoaderBridge.setLoader(LlamaModelLoader(service: FakeService().service, resolve: { alias in
-            throw LlamaModelLoaderError.notDownloaded(alias: alias, name: "BGE-M3", file: "bge-m3-Q8_0.gguf")
-        }))
-        let (status, message) = call("bge-m3")
-        XCTAssertEqual(status, 1)
-        XCTAssertTrue(message.contains("Download BGE-M3 on the Models page"), message)
-    }
-
-    func testEntryWithoutALoaderOrAlias() {
-        XCTAssertEqual(call("bge-m3").0, 3)
-        XCTAssertEqual(call(nil).0, 2)
-    }
-
+final class LlamaEndpointSelfTestTests: XCTestCase {
     func testSelfTestIsSkippedUntilAnEndpointArrives() {
-        let test = LlamaModelLoaderBridge.selfTest(store: GarageLlamaEndpointStore())
+        let test = LlamaEndpointSelfTest.make(store: GarageLlamaEndpointStore())
         XCTAssertEqual(test.name, GarageLlamaEndpointStore.dependentSelfTestName)
         XCTAssertThrowsError(try test.body()) { error in
             XCTAssertTrue(error is GarageXPCSelfTestSkipped, "unexpected \(error)")
@@ -422,18 +377,9 @@ final class LlamaModelLoaderBridgeTests: XCTestCase {
         let llama = LlamaXPCServiceDelegate(engine: engine, httpPort: 0, socketPath: nil)
         let store = GarageLlamaEndpointStore()
         store.set(llama.anonymousListenerEndpoint())
-        let text = try LlamaModelLoaderBridge.selfTest(store: store).body()
+        let text = try LlamaEndpointSelfTest.make(store: store).body()
         XCTAssertTrue(text.contains("pong from LlamaXPCService"), text)
         XCTAssertTrue(text.contains("test-model"), text)
         withExtendedLifetime(llama) {}
-    }
-
-    func testMessagesAreTruncatedOnScalarBoundaries() {
-        var buffer = [CChar](repeating: 0x7f, count: 6)
-        buffer.withUnsafeMutableBufferPointer { out in
-            LlamaModelLoaderBridge.write("ab\u{00e9}\u{00e9}", to: out.baseAddress, capacity: 6)
-        }
-        // "ab" (2) + "é" (2) fits in 5 bytes; the second "é" would not.
-        XCTAssertEqual(String(cString: buffer), "ab\u{00e9}")
     }
 }

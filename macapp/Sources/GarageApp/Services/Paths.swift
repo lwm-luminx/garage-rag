@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// Resolves where the Postgres install and the `garage` CLI live.
 ///
@@ -175,8 +175,8 @@ enum Paths {
             return res
         }
         let devCandidates = [
-            devRepoRoot.appendingPathComponent(".venv/bin/garage"),
-            devRepoRoot.appendingPathComponent("bazel-bin/garage_python/garage"),
+            devRepoRoot.appendingPathComponent("rust/target/release/garage"),
+            devRepoRoot.appendingPathComponent("rust/target/debug/garage"),
         ]
         for candidate in devCandidates {
             if FileManager.default.isExecutableFile(atPath: candidate.path) {
@@ -206,8 +206,8 @@ enum Paths {
             return res
         }
         let devCandidates = [
-            devRepoRoot.appendingPathComponent(".venv/bin/garage-mcp"),
-            devRepoRoot.appendingPathComponent("bazel-bin/garage_python/garage-mcp"),
+            devRepoRoot.appendingPathComponent("rust/target/release/garage-mcp"),
+            devRepoRoot.appendingPathComponent("rust/target/debug/garage-mcp"),
         ]
         for candidate in devCandidates {
             if FileManager.default.isExecutableFile(atPath: candidate.path) {

@@ -3,7 +3,7 @@ layout: default
 title: The Backend in Rust, and the End of Python in the App
 description: What Python is still in Garage after the Rust XPC services, module by module; how GarageService (the gRPC backend) moves to a Rust crate on tokio-postgres; and the order in which the launchers, the Windows services, Python.framework and garage_python then leave.
 date: 2026-11-04
-status: Active (inventory done; stages 1 and 2 of `rust/garage-service`, the storage facade, corpus reads and operations, and stage 3's facts listing, prompts, graph projection, `ClusterFacts` and `EnrichFacts` behind a `FactExtractor` trait, in the branch; its LangExtract adapter waits on langextract-rs reaching crates.io (Rick, 2026-11-04); `EnsureLlamaModel` and `Backfill` too, so every RPC is answered; stage 4's host switch, GarageXPCService on `garage-service-ffi` without PythonKit, and the `garage`/`garage-mcp` launchers on `rust/garage-cli`, in a stacked branch, and `Garage.Services.exe` on the three Rust libraries in a third; the JSON Schema generator with the CLI question in stage 5)
+status: Landed in part (stages 1 to 4 merged into `next` on 2026-11-04: `rust/garage-service` answers every RPC, GarageXPCService, the launchers and `Garage.Services.exe` run it without Python; stage 5, the strip of Python.framework, `garage_python/`, the `@pypi` hub, the Python CI jobs and the Windows bridge, with `garage config schema` in Rust, is in review)
 status_kind: active
 ---
 

@@ -1,4 +1,4 @@
-# The Windows app's .NET projects. Garage.Python, Garage.Grpc, Garage.App.Core, Garage.Services and
+# The Windows app's .NET projects. Garage.Grpc, Garage.App.Core, Garage.Services and
 # their tests build under Bazel (//winapp/bazel:defs.bzl); Garage.App (WinUI 3) and
 # Garage.App.UITests (FlaUI) build only with the .NET SDK on Windows. See README.md, "Bazel".
 

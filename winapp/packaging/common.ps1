@@ -50,10 +50,10 @@ function Copy-Tree {
 }
 
 function Get-GarageVersion {
-    # garage_python/pyproject.toml's version: the one the Mac app and the CLI report.
-    $pyproject = Get-Content (Join-Path $RepoRoot 'garage_python\pyproject.toml') -Raw
-    if ($pyproject -notmatch '(?m)^version\s*=\s*"(\d+\.\d+\.\d+)"') {
-        throw 'no version = "X.Y.Z" in garage_python/pyproject.toml'
+    # GarageService's version (rust/garage-service/src/service.rs): the one the Mac app and the CLI report.
+    $pyproject = Get-Content (Join-Path $RepoRoot 'rust\garage-service\src\service.rs') -Raw
+    if ($pyproject -notmatch '(?m)^pub const VERSION: &str = "(\d+\.\d+\.\d+)";') {
+        throw 'no pub const VERSION = "X.Y.Z" in rust/garage-service/src/service.rs'
     }
     return $Matches[1]
 }

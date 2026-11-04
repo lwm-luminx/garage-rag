@@ -2,8 +2,8 @@ load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
 
-# Implementation library for ModelDownloadXPCService. It runs no Python, so it is built on
-# GarageXPCKit alone and links neither Python.framework nor PythonXPCService.framework.
+# Implementation library for ModelDownloadXPCService, built on
+# GarageXPCKit alone.
 swift_library(
     name = "ModelDownloadXPCService_lib",
     srcs = glob(["**/*.swift"]),
@@ -24,6 +24,7 @@ macos_xpc_service(
     entitlements = select({
         "//bazel:is_store": ":ModelDownloadXPCService.entitlements",
         "//bazel:is_developer_id": "//macapp/externals:GarageAppGroup.entitlements",
+        "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],

@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 
 final class UTF8StreamDecoderTests: XCTestCase {
     /// Every split point of text with 2-, 3- and 4-byte characters decodes to the original text.

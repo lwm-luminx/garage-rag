@@ -1,6 +1,6 @@
 import Foundation
 import GarageEmbedWorker
-import ImageEmbedBridgeCore
+import ImageEmbedBridge
 import ImageEmbedClient
 import XCTest
 

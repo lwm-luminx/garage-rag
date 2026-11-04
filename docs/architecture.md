@@ -6,6 +6,14 @@ description: How Garage's local RAG pipeline works, from walking folders and ext
 
 # Architecture
 
+> **The pipeline is Rust.** Every stage below runs in the crates under `rust/` (`garage-ingest`,
+> `garage-readers`, `garage-embed`, `garage-service`, `garage-mcp`, `garage-cli`), inside the Mac
+> app's XPC services, the Windows app's `Garage.Services.exe` and the `garage` command. It was
+> written in Python first and ported one piece at a time
+> ([the plan]({{ '/plans/python-removal.html' | relative_url }})); the module names in this guide
+> (`walker.py`, `hybrid.py`, ...) are those originals, which each crate's documentation names, so the
+> guide reads the same against either. Where the two differ, the Rust code is right.
+
 ```
 sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ quality gate
                                                           │
@@ -208,11 +216,8 @@ produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
 building schema on top of what a given local model actually extracts.
 
 Only the local part of LangExtract is used (prompting, chunking, parsing and
-alignment): `langextract_rs`, a Rust port published as
-[langextract-rs](https://github.com/lwm-luminx/langextract-rs), when it is
-installed, and otherwise the Python subset vendored as `enrich/langextract`.
-Both send the same prompts and return the same extractions
-(`tests/test_langextract_rs.py`). Upstream's
+alignment): [langextract-rs](https://github.com/lwm-luminx/langextract-rs), the
+FOSS Rust port, behind the service's `FactExtractor` trait. Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
 OpenAI, is not vendored, and a cloud model id is refused with an error. The
 model is always `facts_language_model(...)`, a `LocalLanguageModel`
@@ -452,31 +457,30 @@ Embedding is a single batching producer at 64 chunks per request: Ollama
 serializes model execution, so client fan-out buys contention, not throughput.
 The `llama_xpc` provider (embeddings and, with `--provider llama_xpc`, facts)
 talks to the app's `LlamaXPCService` through a llama-server-compatible API:
-over NSXPC from the app's own XPC services (`garage_rag.inference.bridge`),
-otherwise over HTTP on its socket in the App Group container
-(`GARAGE_LLAMA_SOCKET`, which the app's processes export), with `llama_host`
-naming the origin. Models are loaded over NSXPC only, never over HTTP. When a request finds its model not resident (503 `no model loaded`, 404
-`model X is not loaded`), `LlamaXPCClient` asks `garage_rag.xpc.host` to load
-it and retries once:
+over NSXPC from the app's own XPC services (the embed worker's Swift host,
+`GarageEmbedWorkerHost`), otherwise over HTTP on its socket in the App Group
+container (`GARAGE_LLAMA_SOCKET`, which the app's processes export), with
+`llama_host` naming the origin. Models are loaded over NSXPC only, never over
+HTTP. When a request finds its model not resident (503 `no model loaded`, 404
+`model X is not loaded`), the worker asks its host to load it and retries once:
 
-- inside the app's XPC services that embed Python (`GarageXPCService` for
-  search, backfill and enrich-facts, `GarageMCPServerService` for `rag_search`
-  and `rag_ask`, the embed worker) the Swift host installed a loader at start-up
-  (`LlamaModelLoaderBridge`, a C function Python calls through ctypes, which
-  releases the GIL); it resolves the slug to the downloaded GGUF and the Models
+- inside the app's XPC services (`GarageXPCService` for search, backfill and
+  enrich-facts, `GarageMCPServerService` for `rag_search` and `rag_ask`,
+  `GarageEmbedXPCService` for the embed worker) the host's loader
+  (`LlamaModelLoader`) resolves the slug to the downloaded GGUF and the Models
   page's load settings (`LlamaModelResolver`) and calls `ensureModel` on
   `LlamaXPCService` over NSXPC, through the endpoint of its anonymous listener,
   which the app hands each of these services at launch and after any of them
   restarts (a sibling XPC service cannot look `LlamaXPCService` up by name);
-- elsewhere (the `garage`/`garage-mcp` launchers, or a venv while the app runs)
-  it asks the app's `EnsureLlamaModel` RPC, which uses `GarageXPCService`'s
-  loader;
+- elsewhere (the `garage`/`garage-mcp` launchers, or a `garage` built with
+  Cargo while the app runs) it asks the app's `EnsureLlamaModel` RPC, which
+  uses `GarageXPCService`'s loader;
 - with neither, the error says to open Garage or load the model on its Models
   page, and a model that is not downloaded is named with where to download it.
 
 `ensureModel` checks and loads under the engine lock, so callers in different
 processes never load the same model twice, and a load waits for any running
-inference (they share the engine lock). Python never unloads. The app decides
+inference (they share the engine lock). The workers never unload. The app decides
 residency (`AppState+LlamaModels.swift`): it loads the default `llama_xpc`
 embedding model once Postgres is up, and again when the default changes, so a
 search finds it resident; it loads the facts model before a distillation run
@@ -484,13 +488,14 @@ and unloads it when the run ends, unless it is also the search model. Anything
 loaded on demand stays until the Models page's Unload, which the Providers box
 offers for every model Llama XPC holds.
 
-## gRPC bridge (`service/server.py`)
+## gRPC bridge (`rust/garage-service`)
 
-`GarageService` (`proto/garage.proto`) listens on loopback port 50051, hosted in
-the app's `GarageXPCService` helper, or run by hand with `garage serve`. Each handler is a thin
-presenter over the same function the CLI command calls (`ops/`), and a
-`_grpc_errors` decorator maps `LookupError`, `ValueError`, `FileExistsError` and
-`PermissionError` onto gRPC status codes. The RPCs fall in three groups:
+`GarageService` (`proto/garage.proto`) listens on the socket `s/grpc` in the App
+Group container (loopback port 50051 only when that path would be too long),
+hosted in the app's `GarageXPCService` helper, or run by hand with `garage
+serve`. Each handler is a thin presenter over the same function the CLI command
+calls (`sources.rs`, `models.rs`, `mcp_install.rs`, ...), and the service's error
+type maps onto gRPC status codes. The RPCs fall in three groups:
 
 - **Corpus reads** for the app's views: `Search`, `ListDocuments`,
   `GetDocument`, `ListFacts`, `GetFactStats`, `ListSources`, `ListModels`, `GetStats`,
@@ -504,11 +509,11 @@ presenter over the same function the CLI command calls (`ops/`), and a
   `McpUninstall` / `McpStatus`, and `EnsureLlamaModel` for processes that cannot
   reach `LlamaXPCService` over NSXPC themselves.
 - **The database facade** the ingest and embed XPC workers persist through
-  (`GrpcIngestStorageGateway`): `BeginIngestSession`, `PersistScan`,
-  `CheckDocumentStat` (the stat and hashes the skip decisions need),
-  `PersistDocument`, `FinalizeIngestSession`, `GetEmbeddingBatches` and
-  `UpdateEmbeddings`. The server side is the same
-  `SqlAlchemyIngestStorageGateway` the in-process pipeline uses.
+  (`garage-ingest`'s `GrpcStorage`, `garage-facade`): `BeginIngestSession`,
+  `PersistScan`, `CheckDocumentStat` (the stat and hashes the skip decisions
+  need), `PersistDocument`, `FinalizeIngestSession`, `GetEmbeddingBatches` and
+  `UpdateEmbeddings`. The server side (`gateway.rs`) is the same code the
+  `garage` command's in-process service runs.
 
 The server accepts requests up to 256 MiB, since `PersistDocument` carries a
 document's whole text and chunks and a long Messages thread outgrows gRPC's
@@ -537,17 +542,16 @@ checks and no socket.
 
 ## Local inference client
 
-`garage_rag/inference/` is the one HTTP client for the three local inference
-servers — LM Studio, Ollama and the app's `LlamaXPCService` — used by the
-embedders (`embed/ollama.py`, `embed/lmstudio.py`, `embed/llama_xpc.py`),
-`LocalChatModel` and the LangExtract provider. There is no `ollama` or `openai`
-package behind it; it is httpx and a few hundred lines.
+`garage-embed`'s providers (`inference/` in the Python original) are the one
+client for the three local inference servers — LM Studio, Ollama and the app's
+`LlamaXPCService` — used by the embedders, the chat model behind `rag_ask` and
+the fact distiller. There is no `ollama` or `openai` crate behind it; the worker
+builds each request and its host sends it (`Host::http`) once the egress rules
+have approved the destination.
 
-Image models are the exception: `embed/image_xpc.py` never speaks HTTP. The
-Swift host of each Python-hosting helper installs two C functions
-(`xpc/image_host.py`) that call `GarageImageEmbedXPCService` over NSXPC through
-the endpoint the app hands over, so `garage` from a venv cannot embed with an
-image model and says so.
+Image models are the exception: they never speak HTTP. The host of each helper
+calls `GarageImageEmbedXPCService` over NSXPC through the endpoint the app hands
+over, so a `garage` built with Cargo cannot embed with an image model and says so.
 
 - **`Backend`** — `kind` (`lmstudio` | `ollama` | `llama_xpc`), `base_url` (the
   server root: a trailing `/v1`, as `lmstudio_host` carries, is dropped and

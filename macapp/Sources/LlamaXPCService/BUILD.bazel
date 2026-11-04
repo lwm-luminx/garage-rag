@@ -37,6 +37,7 @@ macos_xpc_service(
     entitlements = select({
         "//bazel:is_store": ":LlamaXPCService.entitlements",
         "//bazel:is_developer_id": "//macapp/externals:GarageAppGroup.entitlements",
+        "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],

@@ -3,7 +3,7 @@ import Foundation
 import Network
 import OSLog
 import LlamaClient
-import PythonXPCService_protocol
+import GarageXPCKit
 
 /// Minimal HTTP/1.1 listener, on a Unix-domain socket or the loopback interface, that forwards every
 /// request to an engine's llama-server route table.
