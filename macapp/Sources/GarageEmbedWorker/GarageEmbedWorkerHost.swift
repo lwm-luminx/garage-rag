@@ -115,7 +115,7 @@ public final class GarageEmbedWorkerHost: @unchecked Sendable {
     }
 
     /// `{"model", "paths"}` -> `{"vectors"}`: the image tower over the files at `paths`.
-    func embedImages(_ request: [String: Any]) throws -> [String: Any] {
+    public func embedImages(_ request: [String: Any]) throws -> [String: Any] {
         guard let images else { throw HostError(message: "this process has no image embedding service") }
         guard let model = request["model"] as? String, let paths = request["paths"] as? [String] else {
             throw HostError(message: "the request names no model or paths")
@@ -135,7 +135,7 @@ public final class GarageEmbedWorkerHost: @unchecked Sendable {
     }
 
     /// `{"model", "texts"}` -> `{"vectors"}`: the text tower of an image model.
-    func embedImageTexts(_ request: [String: Any]) throws -> [String: Any] {
+    public func embedImageTexts(_ request: [String: Any]) throws -> [String: Any] {
         guard let images else { throw HostError(message: "this process has no image embedding service") }
         guard let model = request["model"] as? String, let texts = request["texts"] as? [String] else {
             throw HostError(message: "the request names no model or texts")

@@ -3,7 +3,7 @@ layout: default
 title: The Backend in Rust, and the End of Python in the App
 description: What Python is still in Garage after the Rust XPC services, module by module; how GarageService (the gRPC backend) moves to a Rust crate on tokio-postgres; and the order in which the launchers, the Windows services, Python.framework and garage_python then leave.
 date: 2026-11-04
-status: Active (inventory done; stages 1 and 2 of `rust/garage-service`, the storage facade, corpus reads and operations, and stage 3's facts listing, prompts, graph projection, `ClusterFacts` and `EnrichFacts` behind a `FactExtractor` trait, in the branch; its LangExtract adapter waits on langextract-rs reaching crates.io (Rick, 2026-11-04); `EnsureLlamaModel` and `Backfill` too, so every RPC is answered; the JSON Schema generator with the CLI question in stage 5)
+status: Active (inventory done; stages 1 and 2 of `rust/garage-service`, the storage facade, corpus reads and operations, and stage 3's facts listing, prompts, graph projection, `ClusterFacts` and `EnrichFacts` behind a `FactExtractor` trait, in the branch; its LangExtract adapter waits on langextract-rs reaching crates.io (Rick, 2026-11-04); `EnsureLlamaModel` and `Backfill` too, so every RPC is answered; stage 4's host switch, GarageXPCService on `garage-service-ffi` without PythonKit, in a stacked branch; the launchers and Windows next; the JSON Schema generator with the CLI question in stage 5)
 status_kind: active
 ---
 
@@ -126,7 +126,8 @@ Each stage is a pull request to `next`, stacked on the previous one while it is 
    Rust ingester (the last leftover of #307).
 3. **Facts**: `EnrichFacts` on langextract-rs (the crate the LangExtract thread is finishing),
    `ListFacts`, `GetFactStats`, `ListFactPrompts`, the metadata anchors, `ClusterFacts`.
-4. **The host switch**: GarageXPCService links `garage-service-ffi` and drops PythonKit; the
+4. **The host switch**: GarageXPCService links `garage-service-ffi` and drops PythonKit (done: the
+   service on GarageXPCKit, its host the embed worker's, the bundled schema through `GARAGE_SQL_DIR`); the
    parity test retires with the Python server; the `garage` and `garage-mcp` launchers become Rust
    binaries (the helper bundles, entitlements and the `/bin/sh` forwarders stay); `Garage.Services.exe`
    starts the Rust binaries on Windows.

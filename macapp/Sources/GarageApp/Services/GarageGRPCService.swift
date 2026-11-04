@@ -117,6 +117,11 @@ final class GarageGRPCService: ObservableObject {
         if FileManager.default.fileExists(atPath: Paths.modelsJSON.path) {
             env["GARAGE_MODEL_MANIFEST"] = Paths.modelsJSON.path
         }
+        // The schema InitDb applies when its request names none: the app's own, so the backend
+        // need not find it from its bundle.
+        if FileManager.default.fileExists(atPath: Paths.schemaDir.path) {
+            env["GARAGE_SQL_DIR"] = Paths.schemaDir.path
+        }
         // A --data-directory launch's models folder, which the helpers cannot see in the app's
         // arguments; they load on-demand models from it rather than from the real data folder.
         if GarageAppGroup.dataDirectoryOverride != nil {

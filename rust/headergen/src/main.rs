@@ -15,8 +15,11 @@ use std::path::Path;
 use std::process::ExitCode;
 
 /// The FFI crates and the header each exports.
-const CRATES: &[(&str, &str)] =
-    &[("garage-embed-ffi", "include/garage_embed.h"), ("garage-text-ffi", "include/garage_text.h")];
+const CRATES: &[(&str, &str)] = &[
+    ("garage-embed-ffi", "include/garage_embed.h"),
+    ("garage-service-ffi", "include/garage_service.h"),
+    ("garage-text-ffi", "include/garage_text.h"),
+];
 
 fn main() -> ExitCode {
     let check = std::env::args().skip(1).any(|arg| arg == "--check");

@@ -278,11 +278,17 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run
   only where the server has AGE: `apt install postgresql-16-age` on a Linux dev box; CI's image has none); all need
   `GARAGE_TEST_DATABASE_URL` and pass without running when it is unset (CI's rust job has a pgvector service). The query embedder goes through `garage-embed`'s providers
-  and egress rules; the binary's host speaks plain HTTP only.
+  and egress rules; the binary's host speaks plain HTTP only. `garage-service-ffi` is the service behind a C ABI
+  (`include/garage_service.h`: `garage_service_start`/`is_running`/`stop`, a database `probe` for the self test, and
+  a `GarageServiceHost` of the embed worker's shape for the model servers and image models); GarageXPCService runs
+  it (`GarageRustService`, on GarageXPCKit, with `GarageEmbedWorkerHost` carrying the host calls), on the
+  `garage.json` in the app's working directory and the bundled schema (`GARAGE_SQL_DIR`), so no Python runs for
+  the backend either.
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
-  `garage-text-ffi` and `garage-embed-ffi`; add a crate to `CRATES` in `rust/headergen/src/main.rs`.
+  `garage-text-ffi`, `garage-embed-ffi` and `garage-service-ffi`; add a crate to `CRATES` in
+  `rust/headergen/src/main.rs`.
 - **UniFFI** (pilot, [docs/plans/uniffi.md](docs/plans/uniffi.md)): `rust/garage-embed-uniffi` is the embed worker
   with typed records, errors and an `EmbedHost` protocol, beside its C ABI. `rust/uniffi-bindgen` (no
   `cargo-metadata`, so it runs in Bazel's sandbox) generates the bindings; `//rust/garage-embed-uniffi:GarageEmbedUniFFI`
@@ -788,7 +794,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     and links Python.framework.
   - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
     `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService`,
-    `GarageEmbedXPCService` (the Rust embed worker) and `GarageMCPServerService` (the Rust MCP server), with their client modules (`ModelDownloadClient`,
+    `GarageEmbedXPCService` (the Rust embed worker), `GarageMCPServerService` (the Rust MCP server) and
+    `GarageXPCService` (the Rust backend, `garage-service-ffi`), with their client modules (`ModelDownloadClient`,
     `LlamaClient`, `ImageEmbedClient`, `EmbedClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
     a Python-free core (`LlamaModelLoaderCore`, `ImageEmbedBridgeCore`) plus the C entry points handed to
     Python, which re-export the core. The services are moving off Python one at a time

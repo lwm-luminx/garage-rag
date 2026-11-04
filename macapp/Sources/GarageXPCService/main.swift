@@ -1,4 +1,4 @@
-import PythonXPCService
+import GarageXPCKit
 import GarageXPCServiceCore
 
 // MARK: - Process Entry Point

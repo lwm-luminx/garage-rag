@@ -1096,6 +1096,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-service-ffi"
+version = "0.1.0"
+dependencies = [
+ "garage-embed",
+ "garage-service",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "garage-text"
 version = "0.1.0"
 dependencies = [
