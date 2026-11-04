@@ -4,6 +4,12 @@ load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_foreign_cc//foreign_cc:defs.bzl", "configure_make")
 load("//bazel:codesign.bzl", "EXPECTED_SIGNING_IDENTITY", "HARDENED_RUNTIME_EXPECTED", "STORE_EXPECTED", "codesign", "codesign_test")
 
+# This package's folder under the execution root: `ext/python` when garage-rag is the root module, and
+# `external/garage_rag+/ext/python` when another module (garage-enterprise) depends on it. The
+# extension modules' -I flags below are relative to $EXT_BUILD_ROOT, so they must name it this way
+# rather than hard-code ext/python, which is missing under a dependent module.
+_PACKAGE_DIR = "/".join([part for part in [Label(":BUILD.bazel").workspace_root, package_name()] if part])
+
 configure_make(
     name = "python_3_14t",
     args = [
@@ -37,9 +43,9 @@ configure_make(
     env = {
         "AR": "/usr/bin/ar",
         "ARFLAGS": "crs",
-        "MODULE__GARAGE_GIT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/ext/python/garage_git -I$$EXT_BUILD_DEPS$$/libgit2/include",
+        "MODULE__GARAGE_GIT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/" + _PACKAGE_DIR + "/garage_git -I$$EXT_BUILD_DEPS$$/libgit2/include",
         "MODULE__GARAGE_GIT_LDFLAGS": "$$EXT_BUILD_DEPS$$/libgit2/lib/libgit2.a -lz -liconv",
-        "MODULE__GARAGE_TESSERACT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/ext/python/garage_tesseract -I$$EXT_BUILD_DEPS$$/tesseract/include",
+        "MODULE__GARAGE_TESSERACT_CFLAGS": "-I$$EXT_BUILD_ROOT$$/" + _PACKAGE_DIR + "/garage_tesseract -I$$EXT_BUILD_DEPS$$/tesseract/include",
         "MODULE__GARAGE_TESSERACT_LDFLAGS": "$$EXT_BUILD_DEPS$$/tesseract/lib/libtesseract.a $$EXT_BUILD_DEPS$$/leptonica/lib/libleptonica.a -lc++",
         "PYTHONAPPSDIR": "$$INSTALLDIR$$/",
     },
