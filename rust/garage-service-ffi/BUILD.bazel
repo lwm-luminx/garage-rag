@@ -20,10 +20,21 @@ rust_static_library(
     deps = _DEPS,
 )
 
+# The system libraries the static library's dependencies need (libgit2's zlib and iconv, whoami's
+# SystemConfiguration), which a Rust static library does not carry to its linker; GarageXPCService links
+# no framework that brings them. The same list as //rust/garage-cli.
 cc_library(
     name = "garage-service-ffi",
     hdrs = ["include/garage_service.h"],
     includes = ["include"],
+    linkopts = ["-lz"] + select({
+        "@platforms//os:macos": [
+            "-liconv",
+            "-framework",
+            "SystemConfiguration",
+        ],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [":garage_service_ffi_static"],
 )
