@@ -5,7 +5,8 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@bazelrc-preset.bzl", "bazelrc_preset")
-load("@garage_signing_identity//:identity.bzl", "AUTO_SIGNING_IDENTITY", "AUTO_SIGNING_TEAM")
+load("@garage_signing_identity//:identity.bzl", "AUTO_SIGNING_IDENTITY", "AUTO_SIGNING_TEAM", "DEVELOPER_ID_IDENTITY", "DEVELOPER_ID_PROFILES")
+load(":platforms.bzl", "signed_macos_platform")
 load(":signing.bzl", "APP_GROUP_TEAM", "LOCAL_SIGNING_IDENTITY", "UNCHAINED_IDENTITIES")
 
 package(default_visibility = ["//visibility:public"])
@@ -172,6 +173,20 @@ platform(
         "--apple_platform_type=macos",
         "--@rules_apple//apple/build_settings:signing_certificate_name=" + AUTO_SIGNING_IDENTITY,
     ],
+)
+
+# 2. The Developer ID build, for GitHub releases (`--config=developer_id`, //macapp/package): the
+# keychain's "Developer ID Application" certificate and the Developer ID profiles installed for
+# Xcode, both found by signing_identity.bzl, so nothing secret or team-specific is checked in. It
+# is the same distribution garage-enterprise builds (entitlements, hardened runtime, Sparkle), and
+# like that one it cannot run tests. A Mac without the certificate or a profile fails saying which.
+signed_macos_platform(
+    name = "developer_id",
+    app_provisioning_profile = DEVELOPER_ID_PROFILES["app"],
+    distribution = "developer_id",
+    garage_cli_provisioning_profile = DEVELOPER_ID_PROFILES["garage_cli"],
+    garage_mcp_provisioning_profile = DEVELOPER_ID_PROFILES["garage_mcp"],
+    signing_identity = DEVELOPER_ID_IDENTITY,
 )
 
 alias(

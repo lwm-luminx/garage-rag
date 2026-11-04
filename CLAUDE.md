@@ -742,9 +742,12 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `select()` in an inert backend instead, since Apple rejects self-updating apps, and Sparkle
   never enters that dependency graph. The appcast lives at `docs/appcast.xml` on the Jekyll
   site; the signing key and the release flow are garage-enterprise's (`docs/RELEASING.md` there).
-- **Signed builds are not made here.** The Developer ID and App Store builds come from
-  garage-enterprise (Rick, 2026-11-01), which holds the identities, the provisioning profiles, the
-  notarize, upload and appcast targets and their tests. This repository keeps the seam they plug
+- **Signed builds.** The App Store build and the Sparkle feed come from garage-enterprise (Rick,
+  2026-11-01). A notarized Developer ID build for GitHub releases can also be made here (Rick,
+  2026-11-04): `--config=developer_id` (`//bazel:developer_id`) and `//macapp/package`
+  (`GarageApp`, `notarize_all`, `install`) sign with the keychain's Developer ID certificates and the
+  installed Developer ID profiles, found by `bazel/signing_identity.bzl`; nothing team-specific is
+  checked in (RELEASING.md, "GitHub release"). This repository keeps the seam they plug
   into, `bazel/platforms.bzl`: `signed_macos_platform` sets rules_apple's `signing_certificate_name`,
   `//bazel:distribution` (`developer_id` | `store`, behind `//bazel:is_developer_id` / `is_store`) and
   the three provisioning-profile label flags; `codesign` targets name no identity and take the flag's.
@@ -752,8 +755,8 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `bazel/signing_identity.bzl`): an Apple Development certificate (Team ID, no profile, no hardened
   runtime; `//bazel:is_local_development`, and the App Group too when it is the group's team,
   `//bazel:is_local_app_group`), else the self-signed local identity, else ad hoc.
-  `--config=adhoc` (CI) and `--config=local_signed` force one; `--repo_env=GARAGE_SIGNING_IDENTITY=`
-  names one.
+  `--config=adhoc` (CI) and `--config=local_signed` force one; `GARAGE_SIGNING_IDENTITY` in the environment
+  (or `build --repo_env=` in `user.bazelrc`; `aspect` rejects it on the command line) names one.
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It

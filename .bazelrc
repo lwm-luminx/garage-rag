@@ -58,9 +58,11 @@ build:local_signed --platforms=//bazel:local_signed
 # CI runners have no local signing identity (and no Keychain to put one in), so
 # `aspect` runs there with --config=ci and sign ad hoc instead.
 build:ci --platforms=//bazel:adhoc
-# The signed distributions (Developer ID, App Store) have no config here: their platforms,
-# identities, profiles and release targets live in garage-enterprise, which builds them against
-# this repository's signing seam (bazel/platforms.bzl).
+# The Developer ID build for GitHub releases (//macapp/package), signed with the keychain's
+# Developer ID certificate and the installed Developer ID profiles (bazel/signing_identity.bzl).
+# Build-only: its platform cannot run tests. The App Store build lives in garage-enterprise, which
+# builds against this repository's signing seam (bazel/platforms.bzl).
+build:developer_id --platforms=//bazel:developer_id
 
 # On a Linux host (the devcontainer, CI's Linux jobs) build for that host: the macOS platforms above
 # have no matching execution platform there, so no test could run. The macOS-only targets are not
