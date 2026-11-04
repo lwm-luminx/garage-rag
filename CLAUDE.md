@@ -235,6 +235,14 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
   GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
   neither it keeps the Python loop.
+- **The MCP server** (`rust/garage-mcp`) ports `mcp_server/` with no search or database code: it reads
+  the corpus through GarageService's `Corpus*` calls, whose handlers run the Python tools' own functions
+  and return their results as JSON, each carrying a `CorpusCaller` for the access hooks. It ports the
+  protocol, pydantic's argument errors, `rag_ask`/`rag_generate`/`rag_agent` (the local model through
+  `garage-embed`'s host and egress rules) and the streamable HTTP transport (GET answers 405).
+  `garage-mcp-ffi` is its C ABI (`include/garage_mcp.h`); `tests/test_mcp_rust.py` holds it to the Python
+  server when `GARAGE_MCP_FFI_LIBRARY` names the build or `rust/target` has it. GarageMCPServerService runs
+  it on GarageXPCKit (`GarageMCPRustServer`); the stdio `garage-mcp` launcher is still Python.
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far
@@ -743,8 +751,8 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     embeds Python subclasses `GaragePythonXPCServiceBase` in `PythonXPCService`, which re-exports the kit
     and links Python.framework.
   - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
-    `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService` and
-    `GarageEmbedXPCService` (the Rust embed worker), with their client modules (`ModelDownloadClient`,
+    `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService`,
+    `GarageEmbedXPCService` (the Rust embed worker) and `GarageMCPServerService` (the Rust MCP server), with their client modules (`ModelDownloadClient`,
     `LlamaClient`, `ImageEmbedClient`, `EmbedClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
     a Python-free core (`LlamaModelLoaderCore`, `ImageEmbedBridgeCore`) plus the C entry points handed to
     Python, which re-export the core. The services are moving off Python one at a time

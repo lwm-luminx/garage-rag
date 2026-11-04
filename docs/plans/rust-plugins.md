@@ -162,6 +162,17 @@ step leaves the app working, with the Python reference still there for the servi
    the reads. Next: the readers, from `markdown-extract`, then OCR and contact names, after which the
    service drops Python.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
+   `rust/garage-mcp` is the MCP server with no search or database code of its own: it reads the corpus
+   through new GarageService calls (`CorpusSearch`, `CorpusDocument`, `CorpusSources`, `CorpusAuthors`,
+   `CorpusStats`) whose Python handlers run the MCP tools' own functions and return their results as
+   JSON, so every tool answers as the Python one does. Each call carries a `CorpusCaller` (the transport
+   and the client's registration token), the place the search result access hooks
+   (`docs/plans/access-hooks.md`) decide what a caller sees. The server ports the protocol, pydantic's
+   argument errors, `rag_ask`, `rag_generate` and `rag_agent` (the local model through the embed worker's
+   host and egress rules) and the streamable HTTP transport; `garage-mcp-ffi` is its C ABI, and
+   `tests/test_mcp_rust.py` holds it to the Python server message for message. GarageMCPServerService
+   runs it on GarageXPCKit alone. The stdio launcher (`garage-mcp`) stays on Python for now, since a
+   terminal has no per-launch token for GarageService.
 
 ## Privacy
 

@@ -1,134 +1,99 @@
 import Foundation
-import Darwin
+import GarageXPCKit
+import LlamaModelLoaderCore
 import OSLog
-import ImageEmbedBridge
-import LlamaModelLoader
-import PythonXPCService
-import PythonKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.mcp-server-xpc", category: "GarageMCPServerService")
 
-/// Hosts the Garage MCP server (`garage_rag.mcp_server.server`) as a managed background service so the host
-/// can restart it gracefully or immediately.
-///
-/// All Python access is funnelled through `GaragePythonRuntime.withGIL`.
-final class GarageMCPManagedServer: GarageManagedService {
+/// Hosts Garage's MCP server (`rust/garage-mcp`, `GarageMCPRustServer`) as a managed background
+/// service, so the host can restart it gracefully or immediately. It links no Python.
+final class GarageMCPManagedServer: GarageManagedService, @unchecked Sendable {
     let name = "mcp-server"
 
-    private let lock = NSLock()
-    private var running = false
-    private(set) var host: String = "127.0.0.1"
-    private(set) var port: Int = 8765
-    private(set) var path: String = "/mcp"
-    private var options: [String: String] = [:]
-    private var autoStart = false
+    struct Endpoint: Equatable {
+        var host: String
+        var port: Int
+        var path: String
+    }
 
-    /// Configures the endpoint / environment used by the next `start()`.
-    func configure(host: String, port: Int, path: String, options: [String: String]) {
+    private let lock = NSLock()
+    private var server: GarageMCPRustServer?
+    private var endpoint: Endpoint?
+    /// Where GarageService listens and its token, read when the server starts.
+    private let backend: () -> (GarageMCPRustServer.GRPCTarget?, String?)
+
+    init(backend: @escaping () -> (GarageMCPRustServer.GRPCTarget?, String?)) {
+        self.backend = backend
+    }
+
+    /// Sets the endpoint the next `start()` listens on.
+    func configure(_ endpoint: Endpoint) {
         lock.lock()
-        self.host = host
-        self.port = port
-        self.path = path
-        self.options = options
-        self.autoStart = true
+        self.endpoint = endpoint
         lock.unlock()
+    }
+
+    /// Whether the app asked for the server (`startServer`) and has not stopped it since.
+    var isWanted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return endpoint != nil
     }
 
     var isRunning: Bool {
         lock.lock()
-        let flag = running
+        let current = server
         lock.unlock()
-        // Prefer the Python side's view when the interpreter is available.
-        let pyRunning: Bool? = try? GaragePythonRuntime.shared.withGIL { () -> Bool? in
-            guard let mcpModule = try? Python.attemptImport("garage_rag.mcp_server.server") else { return nil }
-            return Bool(mcpModule.is_background_server_running())
-        }
-        return pyRunning ?? flag
+        return current?.isRunning ?? false
     }
 
     func start() throws {
         lock.lock()
-        let shouldStart = autoStart
-        let (h, p, pth, opts) = (host, port, path, options)
+        let wanted = endpoint
         lock.unlock()
-        guard shouldStart else {
+        guard let wanted else {
             logger.info("mcp-server not configured yet; waiting for startServer")
             return
         }
-
-        // A PythonError is converted to a string error inside the GIL scope, so the host can report it safely.
-        try GaragePythonRuntime.shared.withGILDescribingErrors {
-            let os = Python.import("os")
-            for (key, value) in opts {
-                if key == GarageXPCConfigurationKey.workingDirectory {
-                    try FileManager.default.createDirectory(atPath: value, withIntermediateDirectories: true)
-                    os.chdir(PythonObject(value))
-                } else {
-                    os.environ[key] = PythonObject(value)
-                }
-            }
-            if let dbURL = opts[GarageXPCConfigurationKey.databaseURL] ?? opts["database_url"] {
-                // Normalize database URL to ensure psycopg is used
-                os.environ[GarageXPCConfigurationKey.databaseURL] = PythonObject(XPCSitePathSetup.ensurePsycopgDatabaseURL(dbURL))
-            }
-            if opts[GarageXPCConfigurationKey.workingDirectory] != nil {
-                // Settings cached under the previous directory would miss its garage.json.
-                let config = try Python.attemptImport("garage_rag.config")
-                _ = config.reset_settings()
-            }
-            let mcpModule = try Python.attemptImport("garage_rag.mcp_server.server")
-            let started = try mcpModule.start_background_server.throwing.dynamicallyCall(withKeywordArguments: [
-                ("host", h),
-                ("port", p),
-                ("path", pth)
-            ])
-            let success = Bool(started) ?? true
-            guard success else {
-                var reason = "start_background_server returned False"
-                if let errorFn = mcpModule.checking.background_server_error, errorFn != Python.None,
-                   let detail = String(errorFn()), !detail.isEmpty {
-                    reason = detail
-                }
-                throw GarageXPCServiceError.notRunning(reason)
-            }
-            lock.lock()
-            running = true
-            lock.unlock()
-            logger.info("Garage MCP server started on \(h, privacy: .public):\(p, privacy: .public)\(pth, privacy: .public)")
-            GarageXPCOutputCapture.shared.log(message: "MCP server listening on \(h):\(p)\(pth)")
+        let (target, token) = backend()
+        guard let target else {
+            throw GarageXPCServiceError.notRunning("The app has not told the MCP service where GarageService listens yet")
         }
+        let started = try GarageMCPRustServer.start(grpc: target, token: token, httpHost: wanted.host, port: wanted.port, path: wanted.path)
+        lock.lock()
+        let previous = server
+        server = started
+        lock.unlock()
+        previous?.stop()
+        logger.info("Garage MCP server listening on \(started.address, privacy: .public)\(started.path, privacy: .public), reading GarageService at \(target.description, privacy: .public)")
+        GarageXPCOutputCapture.shared.log(message: "MCP server listening on \(started.address)\(started.path)")
     }
 
     func stop(graceful: Bool) throws {
         lock.lock()
-        let wasRunning = running
-        running = false
+        let running = server
+        server = nil
         lock.unlock()
-        guard wasRunning else { return }
+        guard let running else { return }
+        running.stop()
+        logger.info("Garage MCP server stopped (graceful: \(graceful, privacy: .public))")
+    }
 
-        do {
-            try GaragePythonRuntime.shared.withGILDescribingErrors {
-                let mcpModule = try Python.attemptImport("garage_rag.mcp_server.server")
-                _ = try mcpModule.stop_background_server.throwing.dynamicallyCall(withArguments: [])
-            }
-            logger.info("Garage MCP server stopped (graceful: \(graceful, privacy: .public))")
-        } catch {
-            // Mirror the previous behaviour: a failing stop is a warning, the server is considered stopped.
-            // The error was already described inside the GIL scope; do not call back into Python here.
-            logger.warning("MCP server stopped with warning: \(error.localizedDescription, privacy: .public)")
-        }
+    /// Forgets the endpoint: the app stopped the server, so a configuration change must not start it.
+    func forgetEndpoint() {
+        lock.lock()
+        endpoint = nil
+        lock.unlock()
     }
 }
 
-final class GarageMCPServerServiceDelegate: GaragePythonXPCServiceBase, GarageMCPServerServiceProtocol {
-    private let mcpServer = GarageMCPManagedServer()
+final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServerServiceProtocol {
+    private lazy var mcpServer = GarageMCPManagedServer { [weak self] in
+        (self?.grpc, self?.configurationValue(GarageXPCConfigurationKey.grpcToken))
+    }
 
     init() {
-        super.init(
-            serviceName: "GarageMCPServerService",
-            logFileName: "mcp-server-xpc.log",
-            requiredPythonModules: ["grpc", "psycopg", "google.protobuf", "typer", "garage_rag"]
-        )
+        super.init(serviceName: "GarageMCPServerService", logFileName: "mcp-server-xpc.log")
     }
 
     override var exportedInterface: NSXPCInterface {
@@ -137,35 +102,94 @@ final class GarageMCPServerServiceDelegate: GaragePythonXPCServiceBase, GarageMC
 
     override func additionalSelfTests() -> [GarageXPCSelfTest] {
         [
-            GarageXPCStandardSelfTests.serviceModule("garage_rag.mcp_server"),
-            GarageXPCStandardSelfTests.serviceModule("garage_rag.mcp_server.server", attributes: ["start_background_server", "stop_background_server", "is_background_server_running", "background_server_error"]),
-            GarageXPCStandardSelfTests.sitePackages(modules: ["uvicorn", "starlette", "mcp.server.streamable_http_manager"]),
-            LlamaModelLoaderBridge.selfTest(),
-            ImageEmbedBridge.selfTest(),
+            GarageXPCSelfTest(
+                name: "MCP Server",
+                description: "The Rust MCP server is linked into this process and answers initialize and tools/list.",
+                requiresPython: false
+            ) {
+                // Neither message reads the corpus, so no backend is needed.
+                let target = GarageMCPRustServer.GRPCTarget.tcp(host: "127.0.0.1", port: 1)
+                let initialize: [String: Any] = [
+                    "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                    "params": ["protocolVersion": "2025-06-18", "capabilities": [:] as [String: Any], "clientInfo": ["name": "self-test", "version": "1"]],
+                ]
+                let list: [String: Any] = ["jsonrpc": "2.0", "id": 2, "method": "tools/list"]
+                do {
+                    let hello = try GarageMCPRustServer.handle(message: initialize, grpc: target, token: nil)
+                    let tools = try GarageMCPRustServer.handle(message: list, grpc: target, token: nil)
+                    let info = (hello?["result"] as? [String: Any])?["serverInfo"] as? [String: Any]
+                    let names = ((tools?["result"] as? [String: Any])?["tools"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
+                    guard !names.isEmpty else {
+                        throw GarageXPCSelfTestFailure("The MCP server listed no tools")
+                    }
+                    return "Server: \(info?["name"] as? String ?? "unnamed")\nTools: \(names.joined(separator: ", "))"
+                } catch let failure as GarageXPCSelfTestFailure {
+                    throw failure
+                } catch {
+                    throw GarageXPCSelfTestFailure("The MCP server did not answer", details: error.localizedDescription)
+                }
+            },
+            GarageXPCSelfTest(
+                name: "gRPC Connection",
+                description: "The MCP server reaches GarageService (its socket, or host and port) with the app's token and reads the corpus statistics.",
+                requiresPython: false
+            ) { [weak self] in
+                guard let self, let target = self.grpc else {
+                    throw GarageXPCSelfTestSkipped("GARAGE_GRPC_SOCKET / GARAGE_GRPC_PORT are not configured")
+                }
+                let token = self.configurationValue(GarageXPCConfigurationKey.grpcToken)
+                let call: [String: Any] = [
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": ["name": "rag_stats", "arguments": [:] as [String: Any]],
+                ]
+                let reply = try GarageMCPRustServer.handle(message: call, grpc: target, token: token)
+                let result = reply?["result"] as? [String: Any]
+                guard let result, result["isError"] as? Bool == false else {
+                    let text = ((result?["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "no result"
+                    throw GarageXPCSelfTestFailure("GarageService at \(target.description) did not answer rag_stats", details: text)
+                }
+                let stats = result["structuredContent"] as? [String: Any] ?? [:]
+                return "Target: \(target.description)\nDocuments: \(stats["documents"] ?? "?"), chunks: \(stats["chunks"] ?? "?")"
+            },
+            LlamaEndpointSelfTest.make(),
         ]
-    }
-
-    /// rag_search / rag_ask load their llama_xpc models on demand over NSXPC, through the
-    /// LlamaXPCService endpoint the app hands this process (`setLlamaEndpoint`).
-    override func pythonDidBecomeReady(_ environment: GaragePythonEnvironment) {
-        LlamaModelLoaderBridge.install()
-        ImageEmbedBridge.install()
     }
 
     override func registerManagedServices(in host: GarageXPCServiceHost) {
         host.register(mcpServer)
     }
 
+    /// A server the app asked for before it said where GarageService listens starts once it does.
+    override func didMergeConfiguration(_ options: [String: String]) {
+        if let token = options["GARAGE_LMSTUDIO_API_TOKEN"], !token.isEmpty {
+            // The server's LM Studio client reads it as Python's does.
+            setenv("GARAGE_LMSTUDIO_API_TOKEN", token, 1)
+        }
+        guard mcpServer.isWanted, !mcpServer.isRunning, grpc != nil else { return }
+        host.restart(named: mcpServer.name, graceful: true) { state in
+            logger.info("MCP server restarted after configuration: \(state.name, privacy: .public)")
+        }
+    }
+
+    /// GarageService's address from the configuration: its socket wins over host and port.
+    private var grpc: GarageMCPRustServer.GRPCTarget? {
+        if let socket = configurationValue(GarageXPCConfigurationKey.grpcSocket), !socket.isEmpty {
+            return .socket(socket)
+        }
+        guard let portText = configurationValue(GarageXPCConfigurationKey.grpcPort), let port = Int(portText), port > 0 else {
+            return nil
+        }
+        return .tcp(host: configurationValue(GarageXPCConfigurationKey.grpcHost) ?? "127.0.0.1", port: port)
+    }
+
     // MARK: - GarageMCPServerServiceProtocol
 
     func startServer(host: String, port: Int, path: String, options: [String: String], with reply: @escaping (Bool, String?) -> Void) {
         logger.info("startServer requested for \(host, privacy: .public):\(port, privacy: .public)\(path, privacy: .public) (\(options.count, privacy: .public) options)")
-        guard ensurePythonReady() else {
-            reply(false, "Python initialization error: \(runtime.statusSnapshot().error ?? "unavailable")")
-            return
-        }
+        // Merged while no endpoint is wanted, so the merge does not start a server of its own.
+        mcpServer.forgetEndpoint()
         mergeConfiguration(options)
-        mcpServer.configure(host: host, port: port, path: path, options: options)
+        mcpServer.configure(.init(host: host, port: port, path: path))
 
         self.host.restart(named: mcpServer.name, graceful: true) { state in
             switch state {
@@ -182,6 +206,8 @@ final class GarageMCPServerServiceDelegate: GaragePythonXPCServiceBase, GarageMC
 
     func stopServer(with reply: @escaping (Bool, String?) -> Void) {
         logger.info("stopServer requested")
+        // Forgotten first, so a configuration that arrives later does not start it again.
+        mcpServer.forgetEndpoint()
         guard mcpServer.isRunning else {
             reply(true, "MCP server was not running")
             return

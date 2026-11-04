@@ -206,6 +206,23 @@ py_test(
 )
 
 py_test(
+    name = "test_mcp_rust",
+    srcs = ["test_mcp_rust.py"],
+    # The HTTP case binds 127.0.0.1. --nosandbox_default_allow_network (the preset) makes the darwin
+    # sandbox refuse even a loopback bind.
+    tags = ["requires-network"],  # keep
+    deps = [
+        ":conftest",
+        "//garage_python/src/garage_rag/config",
+        "//garage_python/src/garage_rag/enrich",
+        "//garage_python/src/garage_rag/mcp_server",
+        "//garage_python/src/garage_rag/search",
+        "//garage_python/src/garage_rag/service",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
     name = "test_mcp_server",
     srcs = ["test_mcp_server.py"],
     deps = [

@@ -258,6 +258,31 @@ class GarageServiceStub:
                 request_serializer=garage__pb2.BackfillDistilledRequest.SerializeToString,
                 response_deserializer=garage__pb2.BackfillDistilledResponse.FromString,
                 _registered_method=True)
+        self.CorpusSearch = channel.unary_unary(
+                '/garage.GarageService/CorpusSearch',
+                request_serializer=garage__pb2.CorpusSearchRequest.SerializeToString,
+                response_deserializer=garage__pb2.CorpusReadResponse.FromString,
+                _registered_method=True)
+        self.CorpusDocument = channel.unary_unary(
+                '/garage.GarageService/CorpusDocument',
+                request_serializer=garage__pb2.CorpusDocumentRequest.SerializeToString,
+                response_deserializer=garage__pb2.CorpusReadResponse.FromString,
+                _registered_method=True)
+        self.CorpusSources = channel.unary_unary(
+                '/garage.GarageService/CorpusSources',
+                request_serializer=garage__pb2.CorpusSourcesRequest.SerializeToString,
+                response_deserializer=garage__pb2.CorpusReadResponse.FromString,
+                _registered_method=True)
+        self.CorpusAuthors = channel.unary_unary(
+                '/garage.GarageService/CorpusAuthors',
+                request_serializer=garage__pb2.CorpusAuthorsRequest.SerializeToString,
+                response_deserializer=garage__pb2.CorpusReadResponse.FromString,
+                _registered_method=True)
+        self.CorpusStats = channel.unary_unary(
+                '/garage.GarageService/CorpusStats',
+                request_serializer=garage__pb2.CorpusStatsRequest.SerializeToString,
+                response_deserializer=garage__pb2.CorpusReadResponse.FromString,
+                _registered_method=True)
 
 
 class GarageServiceServicer:
@@ -548,6 +573,40 @@ class GarageServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CorpusSearch(self, request, context):
+        """--- Corpus Reads for the MCP Server ---
+        What the MCP tools read, for the Rust MCP server in GarageMCPServerService. Each reply is the
+        tool's result, JSON-encoded exactly as the Python tool returns it (`result_json`), so the two
+        servers answer alike. Every request names its caller for the access hooks (docs/plans/access-hooks.md).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CorpusDocument(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CorpusSources(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CorpusAuthors(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CorpusStats(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_GarageServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -765,6 +824,31 @@ def add_GarageServiceServicer_to_server(servicer, server):
                     servicer.BackfillDistilled,
                     request_deserializer=garage__pb2.BackfillDistilledRequest.FromString,
                     response_serializer=garage__pb2.BackfillDistilledResponse.SerializeToString,
+            ),
+            'CorpusSearch': grpc.unary_unary_rpc_method_handler(
+                    servicer.CorpusSearch,
+                    request_deserializer=garage__pb2.CorpusSearchRequest.FromString,
+                    response_serializer=garage__pb2.CorpusReadResponse.SerializeToString,
+            ),
+            'CorpusDocument': grpc.unary_unary_rpc_method_handler(
+                    servicer.CorpusDocument,
+                    request_deserializer=garage__pb2.CorpusDocumentRequest.FromString,
+                    response_serializer=garage__pb2.CorpusReadResponse.SerializeToString,
+            ),
+            'CorpusSources': grpc.unary_unary_rpc_method_handler(
+                    servicer.CorpusSources,
+                    request_deserializer=garage__pb2.CorpusSourcesRequest.FromString,
+                    response_serializer=garage__pb2.CorpusReadResponse.SerializeToString,
+            ),
+            'CorpusAuthors': grpc.unary_unary_rpc_method_handler(
+                    servicer.CorpusAuthors,
+                    request_deserializer=garage__pb2.CorpusAuthorsRequest.FromString,
+                    response_serializer=garage__pb2.CorpusReadResponse.SerializeToString,
+            ),
+            'CorpusStats': grpc.unary_unary_rpc_method_handler(
+                    servicer.CorpusStats,
+                    request_deserializer=garage__pb2.CorpusStatsRequest.FromString,
+                    response_serializer=garage__pb2.CorpusReadResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1934,6 +2018,141 @@ class GarageService:
             '/garage.GarageService/BackfillDistilled',
             garage__pb2.BackfillDistilledRequest.SerializeToString,
             garage__pb2.BackfillDistilledResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CorpusSearch(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/CorpusSearch',
+            garage__pb2.CorpusSearchRequest.SerializeToString,
+            garage__pb2.CorpusReadResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CorpusDocument(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/CorpusDocument',
+            garage__pb2.CorpusDocumentRequest.SerializeToString,
+            garage__pb2.CorpusReadResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CorpusSources(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/CorpusSources',
+            garage__pb2.CorpusSourcesRequest.SerializeToString,
+            garage__pb2.CorpusReadResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CorpusAuthors(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/CorpusAuthors',
+            garage__pb2.CorpusAuthorsRequest.SerializeToString,
+            garage__pb2.CorpusReadResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CorpusStats(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/garage.GarageService/CorpusStats',
+            garage__pb2.CorpusStatsRequest.SerializeToString,
+            garage__pb2.CorpusReadResponse.FromString,
             options,
             channel_credentials,
             insecure,

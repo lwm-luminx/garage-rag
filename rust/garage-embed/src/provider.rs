@@ -163,7 +163,7 @@ pub fn get_embedder(
     let purpose = format!("inference:{}", backend.kind.name());
     egress::check_destination(&backend.base_url, &purpose, backend.kind == BackendKind::LlamaXpc, settings)
         .map_err(ProviderError::Refused)?;
-    Ok(Box::new(HttpEmbedder { backend, model_ref: model_ref.to_string(), host }))
+    Ok(Box::new(HttpEmbedder { server: ModelServer { backend, host }, model_ref: model_ref.to_string() }))
 }
 
 /// Where one inference server is and how to talk to it (`garage_rag.inference.Backend`).
@@ -208,21 +208,41 @@ fn is_transient(status: u16) -> bool {
 }
 
 /// An error from the server, with the HTTP status it came with.
-struct HttpFailure {
-    status: u16,
-    message: String,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HttpFailure {
+    pub status: u16,
+    pub message: String,
+}
+
+/// One model server and the host that carries its requests: `garage_rag.inference.InferenceClient`'s
+/// transport, shared by the embedders here and the MCP server's chat model.
+#[derive(Clone)]
+pub struct ModelServer {
+    pub backend: Backend,
+    pub host: Arc<dyn Host>,
 }
 
 /// Ollama, LM Studio and LlamaXPCService.
 struct HttpEmbedder {
-    backend: Backend,
+    server: ModelServer,
     model_ref: String,
-    host: Arc<dyn Host>,
 }
 
-impl HttpEmbedder {
+impl std::ops::Deref for HttpEmbedder {
+    type Target = ModelServer;
+
+    fn deref(&self) -> &ModelServer {
+        &self.server
+    }
+}
+
+impl ModelServer {
     /// One reply, after up to `max_retries` retries of a transient failure.
-    fn send(&self, method: &'static str, path: &str, body: &Value) -> Result<(u16, Vec<u8>), HttpFailure> {
+    ///
+    /// # Errors
+    ///
+    /// [`HttpFailure`] (503) when no reply came.
+    pub fn send(&self, method: &'static str, path: &str, body: &Value) -> Result<(u16, Vec<u8>), HttpFailure> {
         let mut headers = vec![("Accept".to_string(), "application/json".to_string())];
         headers.push(("Content-Type".to_string(), "application/json".to_string()));
         if let Some(token) = &self.backend.token {
@@ -261,7 +281,11 @@ impl HttpEmbedder {
     }
 
     /// One request whose reply must be a 2xx JSON object without an `error` key.
-    fn call(
+    ///
+    /// # Errors
+    ///
+    /// [`HttpFailure`] with the server's message and status.
+    pub fn call(
         &self,
         method: &'static str,
         path: &str,
@@ -328,7 +352,9 @@ impl HttpEmbedder {
             }),
         }
     }
+}
 
+impl HttpEmbedder {
     fn embed_once(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, HttpFailure> {
         if self.backend.kind == BackendKind::Ollama {
             let path = "/api/embed";
@@ -443,7 +469,7 @@ fn expect_one_each(
 
 /// Whether LlamaXPCService refused because its model is not resident: 503 `no model loaded`
 /// when nothing is, 404 `model X is not loaded (loaded: ...)` when others are.
-fn is_model_not_loaded(failure: &HttpFailure) -> bool {
+pub fn is_model_not_loaded(failure: &HttpFailure) -> bool {
     let text = failure.message.to_lowercase();
     matches!(failure.status, 404 | 503) && (text.contains("no model loaded") || text.contains("is not loaded"))
 }
@@ -475,7 +501,7 @@ fn check_count(vectors: Vec<Vec<f32>>, inputs: usize, path: &str) -> Result<Vec<
     }
 }
 
-fn bad_reply(message: String) -> HttpFailure {
+pub fn bad_reply(message: String) -> HttpFailure {
     HttpFailure { status: 502, message }
 }
 

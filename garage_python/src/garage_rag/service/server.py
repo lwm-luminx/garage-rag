@@ -41,6 +41,12 @@ from garage_rag.proto.garage_pb2 import (
     CheckDocumentStatResponse,
     ClusterFactsRequest,
     ClusterFactsStatus,
+    CorpusAuthorsRequest,
+    CorpusDocumentRequest,
+    CorpusReadResponse,
+    CorpusSearchRequest,
+    CorpusSourcesRequest,
+    CorpusStatsRequest,
     DocumentAuthorInfo,
     DocumentChunkInfo,
     DocumentDetail,
@@ -317,6 +323,20 @@ def _graph_vertex(vertex: Any) -> GraphVertex:
         title=vertex.title,
         properties_json=json.dumps(vertex.properties, sort_keys=True),
     )
+
+
+def _mcp_tools() -> Any:
+    """The Python MCP server's module, whose tools the corpus reads run (imported on first use)."""
+    from garage_rag.mcp_server import server as tools
+
+    return tools
+
+
+def _corpus_result(result: object) -> CorpusReadResponse:
+    """A tool's dataclass result as the JSON the Rust MCP server returns verbatim."""
+    import dataclasses
+
+    return CorpusReadResponse(result_json=json.dumps(dataclasses.asdict(cast("Any", result)), ensure_ascii=False))
 
 
 class GarageRpcServicer(GarageServiceServicer):
@@ -848,6 +868,56 @@ class GarageRpcServicer(GarageServiceServicer):
                 f"{source_count} sources, {len(models)} embedding models"
             ),
         )
+
+    # -----------------------------------------------------------------------
+    # Corpus reads for the MCP server (the Rust one in GarageMCPServerService)
+    # -----------------------------------------------------------------------
+    #
+    # Each runs the Python MCP tool itself and returns its result as JSON, so the Rust server's
+    # tools answer exactly as the Python server's do. `request.caller` is carried for the access
+    # hooks (docs/plans/access-hooks.md) and not read yet.
+
+    @_grpc_errors
+    def CorpusSearch(self, request: CorpusSearchRequest, context: grpc.ServicerContext) -> CorpusReadResponse:
+        """``rag_search``."""
+        tools = _mcp_tools()
+        result = tools.rag_search(
+            request.query,
+            limit=request.limit or 10,
+            mode=request.mode or "hybrid",
+            corpus_class=list(request.corpus_classes) or None,
+            trust=list(request.trust_tiers) or None,
+            source=list(request.sources) or None,
+            author=request.author if request.HasField("author") else None,
+            direction=request.direction if request.HasField("direction") else None,
+        )
+        return _corpus_result(result)
+
+    @_grpc_errors
+    def CorpusDocument(self, request: CorpusDocumentRequest, context: grpc.ServicerContext) -> CorpusReadResponse:
+        """``rag_get_document``."""
+        tools = _mcp_tools()
+        result = tools.rag_get_document(
+            document_id=request.document_id if request.HasField("document_id") else None,
+            location=request.location or None,
+            max_chars=request.max_chars or 20_000,
+        )
+        return _corpus_result(result)
+
+    @_grpc_errors
+    def CorpusSources(self, request: CorpusSourcesRequest, context: grpc.ServicerContext) -> CorpusReadResponse:
+        """``rag_list_sources``."""
+        return _corpus_result(_mcp_tools().rag_list_sources())
+
+    @_grpc_errors
+    def CorpusAuthors(self, request: CorpusAuthorsRequest, context: grpc.ServicerContext) -> CorpusReadResponse:
+        """``rag_list_authors``."""
+        return _corpus_result(_mcp_tools().rag_list_authors(limit=request.limit or 30))
+
+    @_grpc_errors
+    def CorpusStats(self, request: CorpusStatsRequest, context: grpc.ServicerContext) -> CorpusReadResponse:
+        """``rag_stats``."""
+        return _corpus_result(_mcp_tools().rag_stats())
 
     # -----------------------------------------------------------------------
     # Source operations (the app's `garage add-source` / `remove-source` / `scan` /
