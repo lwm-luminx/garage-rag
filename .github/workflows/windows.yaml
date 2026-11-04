@@ -314,7 +314,9 @@ jobs:
       - name: libgit2 and SQLite (vcpkg, static, dynamic CRT as rustc links it)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libgit2[core,pcre2]:x64-windows-static-md sqlite3:x64-windows-static-md
+          # pcre2 without its default `jit` feature, whose sljit download asks api.github.com, which
+          # refuses the runner's unauthenticated requests; libgit2 compiles its patterns, never JITs them.
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install pcre2[core]:x64-windows-static-md libgit2[core,pcre2]:x64-windows-static-md sqlite3:x64-windows-static-md
       - name: Build the service libraries
         working-directory: rust
         env:

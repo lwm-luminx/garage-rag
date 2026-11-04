@@ -107,7 +107,7 @@ internal static class SelfTests
         () =>
         {
             var endpoint = new GarageEndpoint(new UriBuilder(Uri.UriSchemeHttp, "127.0.0.1", port).Uri, Environment.GetEnvironmentVariable("GARAGE_GRPC_TOKEN"));
-            using Grpc.Net.Client.GrpcChannel channel = endpoint.OpenChannel();
+            using var channel = endpoint.OpenChannel();
             endpoint.CreateClient(channel).Ping(new Garage.PingRequest(), deadline: DateTime.UtcNow.AddSeconds(10));
             return $"Backend reachable at 127.0.0.1:{port}";
         });
