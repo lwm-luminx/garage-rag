@@ -161,8 +161,10 @@ by `bazel/signing_identity.bzl`):
 3. otherwise **ad hoc**.
 
 `bazel/signing_identity.bzl` looks again whenever the login keychain changes. To choose, set
-`--repo_env=GARAGE_SIGNING_IDENTITY=` to a certificate's common name or SHA-1 (as
-`security find-identity -v -p codesigning` prints them), or to `-` for ad hoc, in `user.bazelrc`;
+`GARAGE_SIGNING_IDENTITY` to a certificate's common name or SHA-1 (as
+`security find-identity -v -p codesigning` prints them), or to `-` for ad hoc, in the environment or
+as `build --repo_env=GARAGE_SIGNING_IDENTITY=...` in `user.bazelrc` (`aspect` rejects `--repo_env` on
+its command line);
 `--config=adhoc` and `--config=local_signed` pick those two outright. A build of the Git checkout
 that signs with Apple Development and one signed by another identity are different applications to
 the Keychain, so the first launch after a switch asks for the Postgres password item once more.

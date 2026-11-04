@@ -27,7 +27,8 @@ nothing secret or team-specific is checked in (`bazel/signing_identity.bzl` find
 - the three **Developer ID provisioning profiles**, for `<team>.me.rickmark.garage-rag`,
   `.garage-cli` and `.mcp-server-cli`, installed for Xcode (double-click each, or Xcode, Settings,
   Accounts, Download Manual Profiles), or in a folder named by
-  `--repo_env=GARAGE_PROVISIONING_PROFILES=<dir>[:<dir>...]` (garage-enterprise's `macapp/` holds them);
+  the `GARAGE_PROVISIONING_PROFILES=<dir>[:<dir>...]` environment variable (`aspect` takes no
+  `--repo_env`; with plain `bazel`, `--repo_env` works too; garage-enterprise's `macapp/` holds them);
 - a notarytool keychain profile, `Primary` unless you pass another
   (`xcrun notarytool store-credentials Primary`).
 
