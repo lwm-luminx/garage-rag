@@ -163,6 +163,10 @@ on fakes.
   signs the CLI in to Aspect (the token on stdin, never in `GITHUB_ENV`). That turns on the CLI's GitHub
   features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings as
   review comments. BuildBuddy stays the remote cache. Without the token (forks) nothing changes.
+- `.mcp.json` registers `aspect mcp` for Claude Code: read-only tools over the builds CI sends to Aspect
+  Cloud (invocations, build logs, targets, action history). It needs the `aspect` CLI on `PATH` and a
+  signed-in CLI (`aspect auth login` once); signed in, `aspect build //... --remote` also uses Aspect's cache.
+  Aspect Cloud needs CLI 2026.41.24 or newer (`.aspect/version.axl`).
 
 ### Rust (`rust/`) and reader plugins
 
