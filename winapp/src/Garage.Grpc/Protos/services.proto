@@ -43,7 +43,8 @@ message ServiceStatusReport {
   string state = 4;
   // Why the service failed, when it has.
   string error = 5;
-  string python_version = 6;
+  // The GarageService version the process runs (the Rust library's), once it is running.
+  string runtime_version = 6;
   double uptime_seconds = 7;
   repeated SelfTestResult tests = 8;
 }

@@ -19,7 +19,7 @@ Uninstalling the MSIX removes its redirected data with it. Uninstalling the MSI 
 From `winapp\packaging`, in Windows PowerShell 5.1 or `pwsh`:
 
 ```powershell
-.\stage.ps1 -PythonHome C:\build\python -PostgresHome C:\build\pgsql   # out\stage-x64
+.\stage.ps1 -NativeDir C:\build\native -PostgresHome C:\build\pgsql    # out\stage-x64
 .\msix.ps1                                                             # out\Garage_1.5.0.0_x64.msix
 .\msi.ps1                                                              # out\Garage-1.5.0-x64.msi, out\Garage-Setup-1.5.0-x64.exe
 ```
@@ -27,14 +27,12 @@ From `winapp\packaging`, in Windows PowerShell 5.1 or `pwsh`:
 - **`stage.ps1`** lays out what `ServiceHostLayout.Locate` and `PostgresLayout.Locate` look for beside
   `Garage.exe`:
   - the app and `services\Garage.Services.exe`, both published self-contained;
-  - `python\`, the CPython 3.14 home (`windows.yaml`'s `python-windows-x64`) without headers, tests or
-    Tk;
-  - `site-packages\`, `garage_python` installed with uv (or pip) for that interpreter;
+  - `native\`, the Rust libraries the services run (`windows.yaml`'s `rust-windows-x64`:
+    `garage_service_ffi.dll`, `garage_ingest_ffi.dll`, `garage_mcp_ffi.dll`);
+  - `schema\`, `data\sql`;
   - `postgres\`, `windows.yaml`'s `postgres-windows-x64` without headers or symbols.
 
-  It also does two things to the files:
-  - compiles all Python to `unchecked-hash` `.pyc`, since the installed folder is read-only;
-  - fails if any DLL on the GPL or MinGW denylist ships (windows.md section 5.5).
+  It fails if any DLL on the GPL or MinGW denylist ships (windows.md section 5.5).
 
   The stage holds no Visual C++ runtime; see [The Visual C++ runtime](#the-visual-c-runtime).
 - **`msix.ps1`** packs the stage as it is, through a makeappx mapping file, with:

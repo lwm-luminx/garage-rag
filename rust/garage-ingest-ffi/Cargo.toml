@@ -15,8 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 # The C symbols (`#[no_mangle]`). A crate that calls this one from Rust and is itself linked beside the
 # ingest service's static library (garage-cli, in the app's unit tests) turns them off, or both
 # libraries would define every `garage_ingest_*`.
-default = ["exports"]
+default = ["exports", "tesseract"]
 exports = []
+# As garage-readers' feature: the Windows build of the DLL turns it off until the app ships Tesseract.
+tesseract = ["garage-readers/tesseract"]
 
 [dependencies]
 garage-git.workspace = true

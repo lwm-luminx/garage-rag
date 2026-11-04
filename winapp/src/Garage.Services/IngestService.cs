@@ -1,26 +1,25 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Text.Json.Nodes;
 using System.Threading.Channels;
 using Garage.Grpc.Services;
-using Garage.Python;
-using Garage.Python.Interop;
+using Garage.Services.Native;
 using Google.Protobuf;
 using Grpc.Core;
-using Py = Garage.Python.Python;
 
 namespace Garage.Services;
 
 /// <summary>
-/// <c>IngestControl</c>: runs <c>garage_rag.ingest.ingest_xpc</c>, which persists every document
-/// through the backend's <c>GarageService</c> (the database facade), as GarageIngestXPCService does.
-/// One ingest at a time: the Python side keeps one cancel flag per process.
+/// <c>IngestControl</c>: runs the Rust ingest (<c>garage_ingest_run</c> in <c>garage_ingest_ffi.dll</c>,
+/// the port of <c>ingest_xpc</c>) with the Rust readers, persisting every document through the
+/// backend's <c>GarageService</c> (the database facade), as GarageIngestXPCService does. One ingest
+/// at a time; the app's Stop cancels it at its next file.
 /// </summary>
 internal sealed class IngestService(ServiceRuntime runtime) : IngestControl.IngestControlBase
 {
     private static readonly JsonParser Parser = new(JsonParser.Settings.Default.WithIgnoreUnknownFields(true));
     private static readonly SemaphoreSlim OneAtATime = new(1, 1);
-    private static Channel<IngestProgress>? _progress;
-    private static bool _callbackRegistered;
+    private static Run? _current;
 
     public override async Task IngestSource(IngestSourceRequest request, IServerStreamWriter<IngestProgress> responseStream, ServerCallContext context)
     {
@@ -31,120 +30,162 @@ internal sealed class IngestService(ServiceRuntime runtime) : IngestControl.Inge
         {
             throw new RpcException(new Status(StatusCode.InvalidArgument, "source is required (a slug, or * for every source)"));
         }
-        if (!PythonHost.IsReady)
-        {
-            throw new RpcException(new Status(StatusCode.FailedPrecondition, $"Python did not start: {PythonHost.StartError}"));
-        }
         if (!await OneAtATime.WaitAsync(0, context.CancellationToken).ConfigureAwait(false))
         {
             throw new RpcException(new Status(StatusCode.FailedPrecondition, "An ingest is already running."));
         }
+        var run = new Run();
         try
         {
-            var channel = Channel.CreateUnbounded<IngestProgress>(new UnboundedChannelOptions { SingleReader = true });
-            Volatile.Write(ref _progress, channel);
-            RegisterCallback();
-
+            Volatile.Write(ref _current, run);
             runtime.Log.Info($"Ingest of {request.Source} started (include_code={request.IncludeCode}, force={request.Force})");
-            Task run = Task.Factory.StartNew(
-                () => Ingest(request, channel.Writer),
+            Task work = Task.Factory.StartNew(
+                () => Ingest(request, run),
                 CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-            // Cancelling the call (the app's Stop) stops the ingest at its next item.
-            using CancellationTokenRegistration cancel = context.CancellationToken.Register(RequestCancel);
-            await foreach (IngestProgress progress in channel.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
+            // Cancelling the call (the app's Stop) stops the ingest at its next file.
+            using CancellationTokenRegistration cancel = context.CancellationToken.Register(run.Cancel);
+            await foreach (IngestProgress progress in run.Progress.Reader.ReadAllAsync(CancellationToken.None).ConfigureAwait(false))
             {
                 if (!context.CancellationToken.IsCancellationRequested)
                 {
                     await responseStream.WriteAsync(progress, context.CancellationToken).ConfigureAwait(false);
                 }
             }
-            await run.ConfigureAwait(false);
+            await work.ConfigureAwait(false);
         }
         finally
         {
-            Volatile.Write(ref _progress, null);
+            Volatile.Write(ref _current, null);
+            run.Dispose();
             OneAtATime.Release();
         }
     }
 
     public override Task<CancelIngestReply> CancelIngest(CancelIngestRequest request, ServerCallContext context)
     {
-        bool running = OneAtATime.CurrentCount == 0;
-        if (running)
+        Run? running = Volatile.Read(ref _current);
+        if (running is not null)
         {
-            RequestCancel();
+            runtime.Log.Info("Ingest cancel requested");
+            running.Cancel();
         }
-        return Task.FromResult(new CancelIngestReply { WasRunning = running });
+        return Task.FromResult(new CancelIngestReply { WasRunning = running is not null });
     }
 
-    // On a thread of its own: ingest_xpc blocks for the whole run, holding the GIL only while
-    // Python code runs, so the service's other calls go on meanwhile.
-    private void Ingest(IngestSourceRequest request, ChannelWriter<IngestProgress> writer)
+    // On a thread of its own: garage_ingest_run blocks for the whole run, and the host's callbacks
+    // come back on this thread.
+    private unsafe void Ingest(IngestSourceRequest request, Run run)
     {
         try
         {
-            using PythonObject ingest = Py.Import("garage_rag.ingest");
-            ingest.Invoke(
-                "ingest_xpc",
-                [request.Source],
-                [
-                    new("include_code", request.IncludeCode),
-                    new("limit", request.Limit > 0 ? request.Limit : null),
-                    new("force", request.Force),
-                    new("grpc_host", "127.0.0.1"),
-                    new("grpc_port", runtime.Options.GrpcPort),
-                ]).Dispose();
-            runtime.Log.Info($"Ingest of {request.Source} finished");
-            writer.TryComplete();
-        }
-        catch (Exception ex)
-        {
-            string message = PythonHost.Describe(ex);
-            runtime.Log.Error($"Ingest of {request.Source} failed: {message}");
-            writer.TryComplete(new RpcException(new Status(StatusCode.Internal, message)));
-        }
-    }
-
-    private void RequestCancel()
-    {
-        runtime.Log.Info("Ingest cancel requested");
-        try
-        {
-            using PythonObject ingest = Py.Import("garage_rag.ingest");
-            ingest.Invoke("cancel_ingest").Dispose();
-        }
-        catch (PythonException ex)
-        {
-            runtime.Log.Error($"cancel_ingest failed: {PythonHost.Describe(ex)}");
-        }
-    }
-
-    private static unsafe void RegisterCallback()
-    {
-        if (_callbackRegistered)
-        {
-            return;
-        }
-        using PythonObject ingest = Py.Import("garage_rag.ingest");
-        ingest.Invoke("set_c_progress_callback", (nint)(delegate* unmanaged[Cdecl]<byte*, void>)&OnProgress).Dispose();
-        _callbackRegistered = true;
-    }
-
-    // void callback(const char *json): one garage_rag.ingest.IngestProgress as JSON.
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    private static unsafe void OnProgress(byte* json)
-    {
-        try
-        {
-            if (Volatile.Read(ref _progress) is { } channel && NativeUtf8.Read((nint)json) is { } text)
+            var json = new JsonObject
             {
-                channel.Writer.TryWrite(Parser.Parse<IngestProgress>(text));
+                ["facade"] = new JsonObject
+                {
+                    ["host"] = "127.0.0.1",
+                    ["port"] = runtime.Options.GrpcPort,
+                    ["token"] = Environment.GetEnvironmentVariable("GARAGE_GRPC_TOKEN") ?? "",
+                },
+                ["source"] = request.Source,
+                // Settings from GarageService's GetSetting, and the Rust readers with its extraction.* settings.
+                ["settings"] = "service",
+                ["readers"] = new JsonObject(),
+                ["include_code"] = request.IncludeCode,
+                ["force"] = request.Force,
+                // Git history through the libgit2 linked in.
+                ["read_git"] = true,
+            };
+            if (request.Limit > 0)
+            {
+                json["limit"] = request.Limit;
+            }
+            var host = new GarageNative.IngestHost
+            {
+                Context = (void*)GCHandle.ToIntPtr(run.Handle),
+                Read = null,
+                Release = &ReleaseEntry,
+                Progress = &ProgressEntry,
+                Cancelled = &CancelledEntry,
+                SharedNames = null,
+            };
+            byte* text = GarageNative.Request(json);
+            byte* result = null;
+            int status;
+            try
+            {
+                status = GarageNative.IngestRun(text, &host, &result);
+            }
+            finally
+            {
+                NativeString.Free(text);
+            }
+            JsonObject reply = GarageNative.TakeResult(status, result, &GarageNative.IngestStringFree, $"Ingest of {request.Source} failed");
+            if (reply["error"]?.GetValue<string>() is { Length: > 0 } error)
+            {
+                throw new InvalidOperationException(error);
+            }
+            runtime.Log.Info(reply["cancelled"]?.GetValue<bool>() == true ? $"Ingest of {request.Source} cancelled" : $"Ingest of {request.Source} finished");
+            run.Progress.Writer.TryComplete();
+        }
+        catch (Exception ex) when (ex is NativeCallException or InvalidOperationException)
+        {
+            runtime.Log.Error(ex.Message);
+            run.Progress.Writer.TryComplete(new RpcException(new Status(StatusCode.Internal, ex.Message)));
+        }
+    }
+
+    private static unsafe Run? From(void* context) =>
+        context is null ? null : GCHandle.FromIntPtr((nint)context).Target as Run;
+
+    // void progress(void *context, const char *event): one IngestProgress as JSON.
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static unsafe void ProgressEntry(void* context, byte* json)
+    {
+        try
+        {
+            if (From(context) is { } run && NativeString.Read(json) is { } text)
+            {
+                run.Progress.Writer.TryWrite(Parser.Parse<IngestProgress>(text));
             }
         }
         catch (Exception)
         {
-            // A malformed update is dropped; an exception must never cross back into Python's frame.
+            // A malformed update is dropped; an exception must never cross back into the native frame.
+        }
+    }
+
+    // bool cancelled(void *context): asked before each file.
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static unsafe byte CancelledEntry(void* context) => From(context)?.IsCancelled == true ? (byte)1 : (byte)0;
+
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static unsafe void ReleaseEntry(void* context, byte* reply) => NativeString.Free(reply);
+
+    /// <summary>One ingest in progress: its updates and its cancel flag, reachable from the native callbacks.</summary>
+    private sealed class Run : IDisposable
+    {
+        private int _cancelled;
+
+        public Run()
+        {
+            Handle = GCHandle.Alloc(this);
+        }
+
+        public GCHandle Handle { get; }
+
+        public Channel<IngestProgress> Progress { get; } = Channel.CreateUnbounded<IngestProgress>(new UnboundedChannelOptions { SingleReader = true });
+
+        public bool IsCancelled => Volatile.Read(ref _cancelled) != 0;
+
+        public void Cancel() => Volatile.Write(ref _cancelled, 1);
+
+        public void Dispose()
+        {
+            if (Handle.IsAllocated)
+            {
+                Handle.Free();
+            }
         }
     }
 }

@@ -7,9 +7,8 @@ public sealed class ServiceOptionsTests
 {
     private static string? Env(string name) => name switch
     {
-        "GARAGE_PYTHON_HOME" => @"C:\Python314",
-        "GARAGE_PYTHON_SITE_PACKAGES" => @"C:\venv\Lib\site-packages",
-        "GARAGE_PYTHON_PATH" => @"C:\src\garage_python\src; C:\extra ;",
+        "GARAGE_NATIVE_DIR" => @"C:\src\rust\target\release ",
+        "GARAGE_SQL_DIR" => @"C:\src\data\sql",
         _ => null,
     };
 
@@ -21,8 +20,7 @@ public sealed class ServiceOptionsTests
         Assert.Equal(ServiceRole.Ingest, options.Role);
         Assert.Equal("ingest", options.ServiceId);
         Assert.Equal(("Garage-x-ingest", 4242, 50123, @"C:\data"), (options.PipeName, options.ParentPid, options.GrpcPort, options.DataDirectory));
-        Assert.Equal(@"C:\Python314", options.PythonHome);
-        Assert.Equal([@"C:\src\garage_python\src", @"C:\extra"], options.ExtraPythonPaths);
+        Assert.Equal((@"C:\src\rust\target\release", @"C:\src\data\sql"), (options.NativeDirectory, options.SchemaDirectory));
     }
 
     [Theory]
@@ -38,11 +36,12 @@ public sealed class ServiceOptionsTests
     }
 
     [Fact]
-    public void No_python_home_is_an_error_not_a_guess()
+    public void The_native_and_schema_folders_are_optional()
     {
-        ArgumentException error = Assert.Throws<ArgumentException>(() =>
-            ServiceOptions.Parse(["--service", "core", "--pipe", "p", "--parent", "1", "--grpc-port", "1"], _ => null));
-        Assert.Contains("GARAGE_PYTHON_HOME", error.Message, StringComparison.Ordinal);
+        ServiceOptions options = ServiceOptions.Parse(["--service", "core", "--pipe", "p", "--parent", "1", "--grpc-port", "1"], _ => null);
+        Assert.Null(options.NativeDirectory);
+        Assert.Null(options.SchemaDirectory);
+        Assert.Equal(8787, options.McpPort);
     }
 }
 
@@ -129,15 +128,13 @@ public sealed class ServiceHostLayoutTests
         ServiceHostLayout layout = ServiceHostLayout.Locate(Path.GetTempPath(), name => name switch
         {
             "GARAGE_SERVICES_EXE" => @"C:\app\services\Garage.Services.exe",
-            "GARAGE_PYTHON_HOME" => @"C:\app\python",
-            "GARAGE_PYTHON_SITE_PACKAGES" => @"C:\app\site-packages",
-            "GARAGE_PYTHON_PATH" => @"C:\a;C:\b",
+            "GARAGE_NATIVE_DIR" => @"C:\app\native",
+            "GARAGE_SQL_DIR" => @"C:\app\schema",
             "GARAGE_DATA_DIR" => @"C:\data",
             _ => null,
         });
         Assert.Equal(@"C:\app\services\Garage.Services.exe", layout.ServicesExecutable);
-        Assert.Equal((@"C:\app\python", @"C:\app\site-packages", @"C:\data"), (layout.PythonHome, layout.SitePackages, layout.DataDirectory));
-        Assert.Equal([@"C:\a", @"C:\b"], layout.PythonPath);
+        Assert.Equal((@"C:\app\native", @"C:\app\schema", @"C:\data"), (layout.NativeDirectory, layout.SchemaDirectory, layout.DataDirectory));
     }
 
     [Fact]
@@ -145,9 +142,9 @@ public sealed class ServiceHostLayoutTests
     {
         string? checkout = ServiceHostLayout.FindCheckout(AppContext.BaseDirectory);
         Assert.NotNull(checkout);
-        ServiceHostLayout layout = ServiceHostLayout.Locate(AppContext.BaseDirectory, name => name == "GARAGE_PYTHON_HOME" ? @"C:\Python314" : null);
+        ServiceHostLayout layout = ServiceHostLayout.Locate(AppContext.BaseDirectory, _ => null);
         Assert.EndsWith(ServiceHostLayout.ExecutableName, layout.ServicesExecutable, StringComparison.Ordinal);
-        Assert.Equal([Path.Combine(checkout, "garage_python", "src")], layout.PythonPath);
+        Assert.Equal(Path.Combine(checkout, "data", "sql"), layout.SchemaDirectory);
         Assert.Equal(ServiceHostLayout.DefaultDataDirectory(), layout.DataDirectory);
     }
 }
