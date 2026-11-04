@@ -49,13 +49,14 @@ runs:
         fi
     # Sign in the way aspect-build/setup-aspect does: the token goes to the CLI on stdin, so it never
     # lands in GITHUB_ENV or another step's environment, and the CLI keeps a short-lived credential.
-    # A failed sign-in only costs the GitHub features, never the build.
+    # A failed sign-in only costs the GitHub features, never the build. Whitespace pasted into the secret
+    # (a trailing newline) is dropped: the token is client_id:secret, which holds none.
     - if: inputs.aspect-api-token != ''
       shell: bash
       env:
         ASPECT_API_TOKEN: ${{ inputs.aspect-api-token }}
       run: |
-        if printf '%s' "$ASPECT_API_TOKEN" | "$RUNNER_TEMP/bin/aspect" auth login --with-api-token; then
+        if printf '%s' "$ASPECT_API_TOKEN" | tr -d '[:space:]' | "$RUNNER_TEMP/bin/aspect" auth login --with-api-token; then
           "$RUNNER_TEMP/bin/aspect" auth status || true
         else
           echo "::warning::Aspect sign-in failed; tasks run without GitHub check runs or lint comments"
