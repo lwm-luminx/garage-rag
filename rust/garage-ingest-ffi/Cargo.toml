@@ -11,6 +11,11 @@ publish.workspace = true
 name = "garage_ingest_ffi"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["tesseract"]
+# As garage-readers' feature: the Windows build of the DLL turns it off until the app ships Tesseract.
+tesseract = ["garage-readers/tesseract"]
+
 [dependencies]
 garage-git.workspace = true
 garage-ingest.workspace = true

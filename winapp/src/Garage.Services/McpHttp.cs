@@ -1,54 +1,69 @@
-using Garage.Python;
-using Py = Garage.Python.Python;
+using System.Text.Json.Nodes;
+using Garage.Services.Native;
 
 namespace Garage.Services;
 
 /// <summary>
-/// The MCP service's work: <c>garage_rag.mcp_server.server.start_background_server</c>, the
-/// streamable-HTTP server at <c>http://127.0.0.1:&lt;port&gt;/mcp</c>, as GarageMCPServerService
-/// runs it on the Mac. Loopback only; it is the app's only listener an assistant connects to, and
-/// runs only while the MCP Server page's HTTP switch is on.
+/// The MCP service's work: the Rust MCP server's streamable-HTTP transport (<c>rust/garage-mcp</c>,
+/// through <c>garage_mcp_ffi.dll</c>) at <c>http://127.0.0.1:&lt;port&gt;/mcp</c>, over the backend on
+/// loopback, as GarageMCPServerService runs it on the Mac. Loopback only; it is the app's only listener
+/// an assistant connects to, and runs only while the MCP Server page's HTTP switch is on.
 /// </summary>
-internal sealed class McpHttp(ServiceRuntime runtime) : IDisposable
+internal sealed unsafe class McpHttp(ServiceRuntime runtime) : IDisposable
 {
-    private const string Module = "garage_rag.mcp_server.server";
+    private readonly ModelServerHost _host = new(runtime.Log);
+    private nint _server;
 
-    private bool _started;
+    /// <summary>Whether the server is serving.</summary>
+    public bool IsRunning => _server != 0 && GarageNative.McpHttpIsRunning(_server);
 
-    /// <summary>Starts the server; throws with Python's reason when it cannot bind or start.</summary>
+    /// <summary>Starts the server; throws with the server's reason when it cannot bind or start.</summary>
     public void Start()
     {
-        using PythonObject server = Py.Import(Module);
-        using PythonObject started = server.Invoke("start_background_server", [], [new("host", "127.0.0.1"), new("port", runtime.Options.McpPort)]);
-        if (!started.IsTrue())
+        var request = new JsonObject
         {
-            using PythonObject error = server.Invoke("background_server_error");
-            throw new InvalidOperationException(error.IsTrue() ? error.As<string>() : $"the MCP server did not start on 127.0.0.1:{runtime.Options.McpPort}");
+            ["grpc"] = new JsonObject
+            {
+                ["host"] = "127.0.0.1",
+                ["port"] = runtime.Options.GrpcPort,
+                ["token"] = Environment.GetEnvironmentVariable("GARAGE_GRPC_TOKEN") ?? "",
+            },
+            ["http"] = new JsonObject { ["host"] = "127.0.0.1", ["port"] = runtime.Options.McpPort, ["path"] = "/mcp" },
+        };
+        GarageNative.McpHost host = _host.McpHost;
+        byte* text = GarageNative.Request(request);
+        byte* result = null;
+        nint server = 0;
+        int status;
+        try
+        {
+            status = GarageNative.McpHttpStart(text, &host, &server, &result);
         }
-        _started = true;
-        runtime.Log.Info($"MCP listening on http://127.0.0.1:{runtime.Options.McpPort}/mcp");
+        finally
+        {
+            NativeString.Free(text);
+        }
+        JsonObject reply = GarageNative.TakeResult(status, result, &GarageNative.McpStringFree, $"the MCP server did not start on 127.0.0.1:{runtime.Options.McpPort}");
+        _server = server;
+        runtime.Log.Info($"MCP listening on http://{reply["address"]?.GetValue<string>() ?? $"127.0.0.1:{runtime.Options.McpPort}"}{reply["path"]?.GetValue<string>() ?? "/mcp"}");
     }
 
-    /// <summary>Stops the server.</summary>
+    /// <summary>Stops the server; requests in flight get up to ten seconds.</summary>
     public void Stop()
     {
-        if (!_started)
+        nint server = Interlocked.Exchange(ref _server, 0);
+        if (server == 0)
         {
             return;
         }
-        try
-        {
-            using PythonObject server = Py.Import(Module);
-            server.Invoke("stop_background_server").Dispose();
-            runtime.Log.Info("MCP server stopped");
-        }
-        catch (PythonException ex)
-        {
-            runtime.Log.Error($"The MCP server did not stop cleanly: {PythonHost.Describe(ex)}");
-        }
-        _started = false;
+        GarageNative.McpHttpStop(server);
+        runtime.Log.Info("MCP server stopped");
     }
 
     /// <inheritdoc/>
-    public void Dispose() => Stop();
+    public void Dispose()
+    {
+        Stop();
+        _host.Dispose();
+    }
 }

@@ -14,11 +14,14 @@ name: Windows build
 #   externals (OpenSSL, zlib, sqlite, xz, bzip2, libffi) rather than //ext's.
 # - `garage`: garage_rag installed on the built interpreter, running
 #   test_postgres.py against the built server (psycopg loads the built libpq.dll).
+# - `rust`: the Rust libraries the services run (garage_service_ffi, garage_ingest_ffi,
+#   garage_mcp_ffi, docs/plans/python-removal.md), built with Cargo for MSVC, with
+#   libgit2 and SQLite from vcpkg linked statically; uploaded as `rust-windows-x64`.
 # - `winapp`: the native Windows app (winapp/), built with the .NET SDK rather than
-#   Bazel. Its tests embed the built interpreter through Garage.Python and drive
-#   garage_rag's host contracts, with garage_rag's dependencies in a venv.
+#   Bazel. Its service tests start Garage.Services.exe on those libraries, as the app
+#   does; Garage.Python's tests still embed the built interpreter (stage 5 removes them).
 # - `package`: the MSIX, the MSI and Garage-Setup.exe (winapp/packaging), staged
-#   from the two builds above, uploaded unsigned as `garage-windows-x64`. The Visual
+#   from the builds above, uploaded unsigned as `garage-windows-x64`. The Visual
 #   C++ runtime comes from Microsoft's Redistributable, downloaded by the scripts.
 #   Signing and the Store's identity are release steps (winapp/packaging/README.md).
 #
@@ -40,6 +43,7 @@ on:
       - "garage_python/**"
       - "tools/windows/**"
       - "winapp/**"
+      - "rust/**"
       - ".github/workflows/windows.yaml"
   workflow_dispatch:
 
@@ -299,8 +303,40 @@ jobs:
           & "$env:RUNNER_TEMP\pgsql\bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -m fast -w stop
           Get-Content "$env:RUNNER_TEMP\postgres.log"
 
+  rust:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      # rustup reads rust/rust-toolchain.toml and installs that toolchain on first use.
+      - name: libgit2 and SQLite (vcpkg, static, dynamic CRT as rustc links it)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libgit2[core]:x64-windows-static-md sqlite3:x64-windows-static-md
+      - name: Build the service libraries
+        working-directory: rust
+        env:
+          # garage-git's build.rs: lib\git2.lib and lib\zlib.lib; garage-ingest's sqlite3 binding: lib\sqlite3.lib.
+          GARAGE_LIBGIT2_DIR: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md
+          RUSTFLAGS: -L native=${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md\lib
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # Without Tesseract until the app ships its own build (windows.md section 5.5): pictures read as no text.
+          cargo build --release --no-default-features -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
+          Get-ChildItem target\release\*.dll
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rust-windows-x64
+          path: |
+            rust/target/release/garage_service_ffi.dll
+            rust/target/release/garage_ingest_ffi.dll
+            rust/target/release/garage_mcp_ffi.dll
+          if-no-files-found: error
+
   winapp:
-    needs: [postgres, python]
+    needs: [postgres, python, rust]
     runs-on: windows-latest
     defaults:
       run:
@@ -320,6 +356,11 @@ jobs:
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
+      # The service tests start Garage.Services.exe on these.
+      - uses: actions/download-artifact@v4
+        with:
+          name: rust-windows-x64
+          path: ${{ runner.temp }}\native
       - name: garage_rag dependencies
         working-directory: garage_python
         run: |
@@ -333,6 +374,8 @@ jobs:
           GARAGE_TEST_PYTHON_SITE_PACKAGES: ${{ github.workspace }}\garage_python\.venv\Lib\site-packages
           GARAGE_TEST_REQUIRE_PYTHON: "1"
           GARAGE_TEST_POSTGRES_HOME: ${{ runner.temp }}\pgsql
+          GARAGE_TEST_NATIVE_DIR: ${{ runner.temp }}\native
+          GARAGE_TEST_REQUIRE_NATIVE: "1"
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           dotnet test --solution Garage.slnx -c Release
@@ -349,7 +392,7 @@ jobs:
           dotnet test --project tests/Garage.App.UITests/Garage.App.UITests.csproj -c Release --no-build
 
   package:
-    needs: [postgres, python]
+    needs: [postgres, rust]
     runs-on: windows-latest
     defaults:
       run:
@@ -362,14 +405,14 @@ jobs:
           global-json-file: winapp/global.json
       - uses: actions/download-artifact@v4
         with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
+          name: rust-windows-x64
+          path: ${{ runner.temp }}\native
       - uses: actions/download-artifact@v4
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
       - name: Stage
-        run: winapp/packaging/stage.ps1 -PythonHome "$env:RUNNER_TEMP\python" -PostgresHome "$env:RUNNER_TEMP\pgsql"
+        run: winapp/packaging/stage.ps1 -NativeDir "$env:RUNNER_TEMP\native" -PostgresHome "$env:RUNNER_TEMP\pgsql"
       - name: MSIX
         run: winapp/packaging/msix.ps1
       - name: MSI

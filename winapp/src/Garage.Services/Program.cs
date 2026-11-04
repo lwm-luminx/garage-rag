@@ -9,8 +9,8 @@ using Microsoft.Extensions.Logging;
 
 // One Garage service process (docs/plans/windows.md §2.1). The app's ServiceManager starts it, puts it
 // in a kill-on-close Job Object, and talks to it over the named pipe; see ServiceOptions for the command
-// line. The control plane answers at once; Python starts on a thread of its own, and the Status page
-// shows the service as starting until it is ready.
+// line. The control plane answers at once; the Rust service starts on a thread of its own, and the
+// Status page shows the service as starting until it is ready.
 
 ServiceOptions options;
 try
@@ -24,9 +24,9 @@ catch (ArgumentException ex)
 }
 
 Directory.CreateDirectory(options.DataDirectory);
-// garage_rag finds ./garage.json first, then ~/.garage.json (config/__init__.py): the data folder's
-// config is the app's, as the Mac's services run in theirs.
+// The data folder's garage.json is the app's configuration, as the Mac's services run in theirs.
 Environment.CurrentDirectory = options.DataDirectory;
+Garage.Services.Native.GarageNative.UseDirectory(options.NativeDirectory);
 
 using var log = new ServiceLog(options.ServiceId, Path.Combine(options.DataDirectory, "logs", $"{options.ServiceId}.log"));
 var runtime = new ServiceRuntime(options, log);
@@ -64,26 +64,23 @@ _ = WatchParentAsync(options.ParentPid, runtime);
 
 using var core = options.Role == ServiceRole.Core ? new CoreBackend(runtime) : null;
 using var mcp = options.Role == ServiceRole.Mcp ? new McpHttp(runtime) : null;
+runtime.Listening = mcp is null ? null : () => mcp.IsRunning;
 var startup = new Thread(() =>
 {
-    if (!PythonHost.Start(options, log))
-    {
-        runtime.MarkFailed($"Python did not start: {PythonHost.StartError}");
-        return;
-    }
     try
     {
         core?.Start();
         mcp?.Start();
+        runtime.RuntimeVersion = Garage.Services.Native.GarageNative.ServiceVersion();
         runtime.MarkRunning();
     }
-    catch (Exception ex)
+    catch (Exception ex) when (ex is Garage.Services.Native.NativeCallException or InvalidOperationException or DllNotFoundException or BadImageFormatException or EntryPointNotFoundException)
     {
-        runtime.MarkFailed(PythonHost.Describe(ex));
+        runtime.MarkFailed(ex.Message);
     }
     runtime.RunSelfTests();
 })
-{ IsBackground = true, Name = "python-startup" };
+{ IsBackground = true, Name = "service-startup" };
 startup.Start();
 
 try
