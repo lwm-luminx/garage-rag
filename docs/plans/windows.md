@@ -40,8 +40,9 @@ this is a guess until the Phase 0 spikes land.
 In scope:
 
 - **The app.** WinUI 3 (Windows App SDK) on .NET, packaged as MSIX, x64 first and arm64 second.
-- **The services.** One per-user process per service, each embedding CPython 3.14 from `//ext/python`
-  and `garage_rag` from `garage_python/`, except the llama and download services, which are native.
+- **The services.** One per-user process per service. Written for CPython 3.14 from `//ext/python` and
+  `garage_rag` from `garage_python/`; since the Python removal (python-removal.md, stage 4) each runs
+  its Rust library in-process instead, and the llama and download services were native from the start.
 - **Postgres** 18 + pgvector (+ AGE when built) from `//ext/postgres` pins, built by `windows.yaml`.
 - **llama.cpp** from `//ext/llama_cpp`, with Vulkan and CPU backends.
 - **Launchers:** `garage.exe` and `garage-mcp.exe`.
@@ -169,7 +170,9 @@ equivalent:
 
 **Built so far** (windows-ui.md U3): one `Garage.Services.exe`, run once per service (core, ingest,
 and mcp while its switch is on)
-rather than one executable each; `services.proto` with Ping, status, self tests, logs, the log stream,
+rather than one executable each, each service a Rust library loaded through P/Invoke
+(`garage_service_ffi`, `garage_ingest_ffi`, `garage_mcp_ffi`) since the Python removal's stage 4, with
+`ModelServerHost` carrying the model servers' HTTP in place of §2.4's in-process bridge; `services.proto` with Ping, status, self tests, logs, the log stream,
 Shutdown and the ingest calls; Kestrel on named pipes with `CurrentUserOnly`; the peer check (the app
 that started the service, or the service's own folder; the package check waits for the MSIX); the
 Job Object; and `ServiceManager` in `Garage.App.Core`. Not yet: `UpdateConfiguration`, restart

@@ -7,9 +7,15 @@ rust-version.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+default = ["tesseract"]
+# Pictures read with Tesseract where Vision is not there (Linux, Windows): needs libtesseract at build
+# time (garage-ocr's build.rs). Off, a picture reads as no text on those platforms.
+tesseract = ["garage-ocr/tesseract"]
+
 [dependencies]
 garage-ingest.workspace = true
-garage-ocr.workspace = true
+garage-ocr = { workspace = true, default-features = false, features = ["vision"] }
 garage-text.workspace = true
 mail-markdown.workspace = true
 office-markdown.workspace = true

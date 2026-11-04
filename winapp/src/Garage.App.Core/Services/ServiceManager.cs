@@ -27,7 +27,7 @@ public sealed class ServiceManager : IServiceHost, IDisposable
     /// </summary>
     public static readonly TimeSpan MonitorInterval = TimeSpan.FromSeconds(10);
 
-    /// <summary>How long a service has to start its Python and report itself running.</summary>
+    /// <summary>How long a service has to start its Rust library and report itself running.</summary>
     public static readonly TimeSpan StartTimeout = TimeSpan.FromSeconds(90);
 
     private static readonly TimeSpan CallTimeout = TimeSpan.FromSeconds(10);
@@ -295,7 +295,7 @@ public sealed class ServiceManager : IServiceHost, IDisposable
         service.Attach(process, ServicePipe.OpenChannel(service.PipeName));
         service.AppendLog($"Started process {process.Id}", LogLevel.Info);
 
-        // The control plane answers within a second; Python's start-up takes a few more.
+        // The control plane answers within a second; the service's own start-up takes a few more.
         DateTime deadline = DateTime.UtcNow + StartTimeout;
         bool following = false;
         while (DateTime.UtcNow < deadline)
@@ -352,9 +352,14 @@ public sealed class ServiceManager : IServiceHost, IDisposable
         }
         // Secrets and locations through the environment, never the command line (other processes of the
         // account can read a command line).
-        info.Environment["GARAGE_PYTHON_HOME"] = _layout.PythonHome;
-        info.Environment["GARAGE_PYTHON_SITE_PACKAGES"] = _layout.SitePackages;
-        info.Environment["GARAGE_PYTHON_PATH"] = string.Join(';', _layout.PythonPath);
+        if (_layout.NativeDirectory is { } native)
+        {
+            info.Environment["GARAGE_NATIVE_DIR"] = native;
+        }
+        if (_layout.SchemaDirectory is { } schema)
+        {
+            info.Environment["GARAGE_SQL_DIR"] = schema;
+        }
         info.Environment["GARAGE_GRPC_TOKEN"] = _token;
         info.Environment["GARAGE_GRPC_HOST"] = "127.0.0.1";
         info.Environment["GARAGE_GRPC_PORT"] = GrpcPort.ToString(System.Globalization.CultureInfo.InvariantCulture);

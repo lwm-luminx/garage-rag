@@ -324,10 +324,17 @@ The csproj files are the source of truth, and Bazel builds it too (below). So fa
 - **`Garage.Python`:** the owned CPython bridge (the PythonKit + `GaragePythonEmbed.c`
   counterpart). It calls `python314.dll` directly through PEP 741's `PyInitConfig`, with no C shim.
 - **`Garage.Services`:** `Garage.Services.exe`, one Garage service per process (`--service core`
-  runs `create_grpc_server`, `--service ingest` runs `garage_rag.ingest`, `--service mcp` the MCP HTTP
-  server while the MCP page's switch is on), each embedding CPython and
-  answering the app over `services.proto` on a named pipe. The app's `ServiceManager` starts them in
-  a kill-on-close Job Object.
+  runs GarageService, `--service ingest` the Rust ingest with the Rust readers, `--service mcp` the MCP
+  HTTP server while the MCP page's switch is on), each a Rust library loaded in-process through P/Invoke
+  (`garage_service_ffi.dll`, `garage_ingest_ffi.dll`, `garage_mcp_ffi.dll`, found beside the executable
+  or in `GARAGE_NATIVE_DIR`; the schema in `GARAGE_SQL_DIR`) and answering the app over `services.proto`
+  on a named pipe. `ModelServerHost` carries the model servers' requests (Ollama, LM Studio over
+  `HttpClient`, no proxy, no redirect); `llama_xpc` and the image models are the Mac's XPC services and
+  answer as unavailable. The app's `ServiceManager` starts them in a kill-on-close Job Object.
+  `windows.yaml`'s `rust` job builds the three DLLs with Cargo (libgit2 and SQLite from vcpkg, static;
+  no Tesseract yet, so pictures read as no text), and the service tests run them
+  (`GARAGE_TEST_NATIVE_DIR`). No service embeds Python any more; `Garage.Python` stays only for its own
+  tests until stage 5 of the Python removal.
 - **The UI through phase U5** ([docs/plans/windows-ui.md](docs/plans/windows-ui.md)):
   - `Garage.Grpc`: the client generated from `proto/garage.proto`, with the token interceptor, and
     `services.proto` with its named-pipe channel;

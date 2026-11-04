@@ -22,14 +22,14 @@ internal enum ServiceRole
 /// </summary>
 /// <remarks>
 /// <code>
-/// Garage.Services --service core|ingest --pipe NAME --parent PID [--grpc-port N] [--data-dir DIR]
+/// Garage.Services --service core|ingest|mcp --pipe NAME --parent PID --grpc-port N [--data-dir DIR] [--mcp-port N]
 /// </code>
 /// Environment:
 /// <list type="bullet">
-/// <item><c>GARAGE_PYTHON_HOME</c>: the CPython 3.14 home (<c>python314.dll</c>, <c>Lib</c>, <c>DLLs</c>);</item>
-/// <item><c>GARAGE_PYTHON_SITE_PACKAGES</c>: the site-packages holding <c>garage_rag</c>'s dependencies;</item>
-/// <item><c>GARAGE_PYTHON_PATH</c>: more <c>sys.path</c> entries, <c>;</c>-separated (a checkout's
-/// <c>garage_python\src</c> during development);</item>
+/// <item><c>GARAGE_NATIVE_DIR</c>: the folder holding the Rust libraries (<c>garage_service_ffi.dll</c>,
+/// <c>garage_ingest_ffi.dll</c>, <c>garage_mcp_ffi.dll</c>) when they are not beside the executable
+/// (a checkout's <c>rust\target\release</c> during development);</item>
+/// <item><c>GARAGE_SQL_DIR</c>: the schema <c>InitDb</c> applies (<c>data\sql</c>; the shipped <c>schema\</c>);</item>
 /// <item><c>GARAGE_GRPC_TOKEN</c>: the backend's per-launch token.</item>
 /// </list>
 /// </remarks>
@@ -40,9 +40,8 @@ internal sealed record ServiceOptions(
     int GrpcPort,
     string DataDirectory,
     int McpPort,
-    string PythonHome,
-    string? SitePackages,
-    IReadOnlyList<string> ExtraPythonPaths)
+    string? NativeDirectory,
+    string? SchemaDirectory)
 {
     /// <summary>The service's identifier in logs, pipe names and the Status page ("core", "ingest").</summary>
     public string ServiceId => Role switch
@@ -87,15 +86,8 @@ internal sealed record ServiceOptions(
             ? Path.GetFullPath(dir)
             : DefaultDataDirectory();
 
-        string pythonHome = environment("GARAGE_PYTHON_HOME") is { Length: > 0 } home
-            ? home
-            : throw new ArgumentException("GARAGE_PYTHON_HOME is not set: the service has no Python to run");
-        string? site = environment("GARAGE_PYTHON_SITE_PACKAGES") is { Length: > 0 } s ? s : null;
-        string[] extra = environment("GARAGE_PYTHON_PATH") is { Length: > 0 } paths
-            ? paths.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            : [];
-
-        return new ServiceOptions(role, Required("pipe"), parent, port, data, mcpPort, pythonHome, site, extra);
+        string? Folder(string name) => environment(name) is { Length: > 0 } value ? value.Trim() : null;
+        return new ServiceOptions(role, Required("pipe"), parent, port, data, mcpPort, Folder("GARAGE_NATIVE_DIR"), Folder("GARAGE_SQL_DIR"));
     }
 
     /// <summary>

@@ -1,8 +1,9 @@
 //! Finds libgit2 for a Cargo build. Bazel links `//ext/libgit2` (static, local reads only) and runs
 //! none of this.
 //!
-//! - `GARAGE_LIBGIT2_DIR` names an install prefix (`lib/libgit2.a`, as `//ext/libgit2` installs it):
-//!   linked statically, with zlib and, on macOS, iconv from the system.
+//! - `GARAGE_LIBGIT2_DIR` names an install prefix (`lib/libgit2.a`, as `//ext/libgit2` installs it, or
+//!   vcpkg's `lib/git2.lib` on Windows): linked statically, with zlib and, on macOS, iconv from the
+//!   system; on Windows with vcpkg's zlib, pcre2 and http-parser and the system libraries libgit2 calls.
 //! - Otherwise `pkg-config libgit2` (Homebrew's `libgit2`, Debian's `libgit2-dev`).
 
 use std::env;
@@ -16,9 +17,23 @@ fn main() {
         let lib = PathBuf::from(prefix).join("lib");
         println!("cargo:rustc-link-search=native={}", lib.display());
         println!("cargo:rustc-link-lib=static=git2");
-        println!("cargo:rustc-link-lib=z");
-        if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
-            println!("cargo:rustc-link-lib=iconv");
+        match env::var("CARGO_CFG_TARGET_OS").as_deref() {
+            Ok("windows") => {
+                // vcpkg's static libgit2 (x64-windows-static-md, `libgit2[core,pcre2]`): the zlib,
+                // pcre2 and http-parser it was built against, and the system libraries libgit2 calls
+                // for sockets, WinHTTP, UUIDs and the certificate stores.
+                for lib in ["zlib", "pcre2-8", "http_parser"] {
+                    println!("cargo:rustc-link-lib=static={lib}");
+                }
+                for lib in ["ws2_32", "winhttp", "rpcrt4", "crypt32", "ole32", "secur32", "advapi32"] {
+                    println!("cargo:rustc-link-lib={lib}");
+                }
+            }
+            Ok("macos") => {
+                println!("cargo:rustc-link-lib=z");
+                println!("cargo:rustc-link-lib=iconv");
+            }
+            _ => println!("cargo:rustc-link-lib=z"),
         }
         return;
     }

@@ -17,9 +17,9 @@ the WinUI app and its UI tests too, on macOS and Linux; see [Bazel](#bazel).
 
 | Path | What |
 |---|---|
-| `src/Garage.Python` | The owned Python bridge: the counterpart of PythonKit plus `GaragePythonEmbed.c` |
+| `src/Garage.Python` | The owned Python bridge: the counterpart of PythonKit plus `GaragePythonEmbed.c`. No service runs it any more; it leaves with the Python package (docs/plans/python-removal.md, stage 5) |
 | `src/Garage.Grpc` | The `GarageService` client generated from `proto/garage.proto`, the `x-garage-token` interceptor, and `services.proto` (the app's control plane to its services) with its named-pipe channel |
-| `src/Garage.Services` | `Garage.Services.exe`: one Garage service per process (`--service core` runs `GarageService`, `--service ingest` runs `garage_rag.ingest`), embedding CPython, answering the app over a named pipe |
+| `src/Garage.Services` | `Garage.Services.exe`: one Garage service per process (`--service core` runs `GarageService`, `--service ingest` the Rust ingest, `--service mcp` the MCP HTTP server), each a Rust library loaded in-process (`garage_service_ffi.dll`, `garage_ingest_ffi.dll`, `garage_mcp_ffi.dll`), answering the app over a named pipe |
 | `src/Garage.App.Core` | Everything the UI decides, with no UI framework: `AppState`, `OperationRunner` (ported from the Mac), the backends (`ServiceHostBackend` over `ServiceManager`, and `DevBackend`), the pipeline (`LibraryCoordinator`), navigation order, presentation values |
 | `src/Garage.App` | The WinUI 3 app (`Garage.exe`): window, `NavigationView`, pages, notification-area icon. Built unpackaged and self-contained |
 | `tests/Garage.Python.Tests` | xUnit v3 tests that embed a real CPython 3.14 and drive `garage_rag` |
@@ -31,9 +31,10 @@ the WinUI app and its UI tests too, on macOS and Linux; see [Bazel](#bazel).
 ## Run the app
 
 The app starts Garage's own services: the backend and ingest, each a `Garage.Services.exe`
-process that ends with the app. In a checkout it finds everything by itself once the services are
-built (`dotnet build Garage.slnx`), CPython 3.14 is installed for the `py` launcher, and
-`garage_python\.venv` exists (the root README's Windows quickstart):
+process that ends with the app, running its Rust library in-process. In a checkout it finds
+everything by itself once the services are built (`dotnet build Garage.slnx`) and the libraries are
+(`cargo build --release -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi` in `rust\`,
+with libgit2 and SQLite from vcpkg as `windows.yaml`'s `rust` job installs them):
 
 ```powershell
 dotnet run --project winapp\src\Garage.App
@@ -42,7 +43,8 @@ dotnet run --project winapp\src\Garage.App
 Data lives in `%LOCALAPPDATA%\Garage`: the services' `logs`, the app's `app-settings.json`, and
 optionally a `garage.json`. Without one there, the services read `~/.garage.json`, so the app works
 on the corpus the CLI set up. These variables override each piece: `GARAGE_SERVICES_EXE`,
-`GARAGE_PYTHON_HOME`, `GARAGE_PYTHON_SITE_PACKAGES`, `GARAGE_PYTHON_PATH` and `GARAGE_DATA_DIR`.
+`GARAGE_NATIVE_DIR` (the folder with the three DLLs), `GARAGE_SQL_DIR` (the schema `InitDb` applies)
+and `GARAGE_DATA_DIR`.
 
 With `GARAGE_POSTGRES_HOME` naming a Windows build of `//ext/postgres` (`windows.yaml`'s
 `postgres-windows-x64` artifact), or that build in `postgres\` beside the app, the app runs its own
@@ -87,7 +89,8 @@ screenshots and tests.
 
 ## Build and test
 
-Needs the .NET 10 SDK and, for the tests, a CPython 3.14 for Windows (x64):
+Needs the .NET 10 SDK and, for the service tests, the Rust libraries; for `Garage.Python.Tests`,
+a CPython 3.14 for Windows (x64) until stage 5 of the Python removal retires them:
 
 ```powershell
 cd winapp
@@ -95,7 +98,9 @@ dotnet build Garage.slnx
 dotnet test --solution Garage.slnx
 ```
 
-The tests find the interpreter from:
+The service tests find the Rust libraries from `GARAGE_TEST_NATIVE_DIR`, or a Cargo build in
+`rust\target\release` (then `debug`); without them they skip (`GARAGE_TEST_REQUIRE_NATIVE=1` turns
+the skip into a failure; CI sets it). The Python tests find the interpreter from:
 
 - `GARAGE_TEST_PYTHON_HOME`: a CPython home (the folder with `python314.dll`, `Lib`, `DLLs`).
   Without it, they ask the `py` launcher for 3.14. With neither, every test skips.
@@ -111,12 +116,13 @@ The tests find the interpreter from:
 
 - `GARAGE_TEST_REQUIRE_PYTHON=1` turns those skips into failures; CI sets it.
 - `GARAGE_TEST_DATABASE_URL`, a superuser URL as for `test_postgres.py`: the end-to-end ingest test
-  creates a throwaway `garage_test_*` database there and drops it. Without it, that test skips.
+  creates a throwaway `garage_test_*` database there (with `psql`, from `GARAGE_TEST_POSTGRES_HOME`
+  or the PATH) and drops it. Without it, that test skips.
 - `GARAGE_TEST_POSTGRES_HOME`, a Windows build of `//ext/postgres`: the `PostgresSupervisor` tests
   run clusters of their own from it, each in a temporary folder on a free port. Without it, they skip.
 
-CI runs the suite in the `winapp` job of `.github/workflows/windows.yaml`, against the CPython that
-job's `python` step builds from `ext/python`'s pins.
+CI runs the suite in the `winapp` job of `.github/workflows/windows.yaml`, against the libraries its
+`rust` job builds and the CPython its `python` job builds from `ext/python`'s pins.
 
 `dotnet format Garage.slnx --verify-no-changes` checks style. The build treats warnings, including
 the recommended analyzers, as errors.

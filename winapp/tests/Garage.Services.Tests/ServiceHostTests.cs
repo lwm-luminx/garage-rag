@@ -37,15 +37,16 @@ public sealed class ServiceHostTests
             Assert.NotNull(ingest);
             Dictionary<string, SelfTestResult> tests = ingest.Tests.ToDictionary(t => t.Name);
             Assert.Equal(
-                ["Python Runtime", "Standard Library Extensions", "Site Packages", "libpq", "libtesseract", "Service Module", "Database Connection", "gRPC Connection", "Logging"],
+                ["Native Libraries", "Database Connection", "gRPC Connection", "Logging"],
                 ingest.Tests.Select(t => t.Name));
-            foreach (string name in (string[])["Python Runtime", "Standard Library Extensions", "Site Packages", "libpq", "Service Module", "gRPC Connection", "Logging"])
+            foreach (string name in (string[])["Native Libraries", "gRPC Connection", "Logging"])
             {
                 Assert.True(tests[name].Status == "passed", $"{name}: {tests[name].Summary}\n{tests[name].Details}");
             }
             // The scratch config names a server that isn't there.
             Assert.Equal("failed", tests["Database Connection"].Status);
-            Assert.StartsWith("Python 3.14", tests["Python Runtime"].Summary, StringComparison.Ordinal);
+            Assert.StartsWith("GarageService ", tests["Native Libraries"].Summary, StringComparison.Ordinal);
+            Assert.False(string.IsNullOrEmpty(ingest.RuntimeVersion), "the report names the service's version");
 
             // The service's log reaches the app.
             await WaitUntil(() => manager.Core.Log.Any(l => l.Text.Contains("GarageService listening", StringComparison.Ordinal)));
@@ -135,8 +136,8 @@ public sealed class ServiceHostTests
         string server = ServiceFixture.DatabaseServer();
         string name = "garage_test_" + Guid.NewGuid().ToString("N")[..10];
         string admin = server.Replace("postgresql+psycopg://", "postgresql://", StringComparison.Ordinal);
-        ServiceFixture.RunPython($"import psycopg; c = psycopg.connect({Py(admin)}, autocommit=True); c.execute('CREATE DATABASE {name}')");
-        string url = new UriBuilder(admin) { Path = "/" + name }.Uri.ToString().Replace("postgresql://", "postgresql+psycopg://", StringComparison.Ordinal);
+        ServiceFixture.Psql(admin, $"CREATE DATABASE {name}");
+        string url = new UriBuilder(admin) { Path = "/" + name }.Uri.ToString();
         string data = ServiceFixture.DataDirectory(url);
         string notes = Path.Combine(data, "notes");
         Directory.CreateDirectory(notes);
@@ -184,12 +185,10 @@ public sealed class ServiceHostTests
         }
         finally
         {
-            ServiceFixture.RunPython($"import psycopg; c = psycopg.connect({Py(admin)}, autocommit=True); c.execute('DROP DATABASE IF EXISTS {name} WITH (FORCE)')");
+            ServiceFixture.Psql(admin, $"DROP DATABASE IF EXISTS {name} WITH (FORCE)");
             ServiceFixture.Delete(data);
         }
     }
-
-    private static string Py(string value) => "'" + value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("'", "\\'", StringComparison.Ordinal) + "'";
 
     private static string Logs(ServiceManager manager) =>
         string.Join('\n', manager.Services.SelectMany(s => s.Log.Select(l => $"[{s.Id}] {l.Text}")).TakeLast(60));

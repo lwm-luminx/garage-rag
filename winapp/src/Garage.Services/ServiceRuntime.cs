@@ -15,6 +15,12 @@ internal sealed class ServiceRuntime(ServiceOptions options, ServiceLog log)
     private string _error = "";
     private IReadOnlyList<SelfTestResult> _tests = [];
 
+    /// <summary>Whether the service's own listener (the MCP HTTP server) is up; set by the host.</summary>
+    public Func<bool>? Listening { get; set; }
+
+    /// <summary>The GarageService version the Rust library reports, once the service is running.</summary>
+    public string RuntimeVersion { get; set; } = "";
+
     /// <summary>The process's settings.</summary>
     public ServiceOptions Options { get; } = options;
 
@@ -58,7 +64,7 @@ internal sealed class ServiceRuntime(ServiceOptions options, ServiceLog log)
     /// <summary>Runs the self tests and keeps their results for <see cref="Report"/>.</summary>
     public ServiceStatusReport RunSelfTests()
     {
-        IReadOnlyList<SelfTestResult> results = SelfTests.Run(SelfTests.For(Options, Log));
+        IReadOnlyList<SelfTestResult> results = SelfTests.Run(SelfTests.For(Options, Log, Listening));
         lock (_lock)
         {
             _tests = results;
@@ -76,7 +82,7 @@ internal sealed class ServiceRuntime(ServiceOptions options, ServiceLog log)
             ServiceId = Options.ServiceId,
             DisplayName = DisplayName,
             Pid = Environment.ProcessId,
-            PythonVersion = PythonHost.IsReady ? Python.Python.Version : "",
+            RuntimeVersion = RuntimeVersion,
             UptimeSeconds = _uptime.Elapsed.TotalSeconds,
         };
         lock (_lock)
