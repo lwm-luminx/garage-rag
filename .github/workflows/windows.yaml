@@ -319,12 +319,15 @@ jobs:
           & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install pcre2[core]:x64-windows-static-md libgit2[core,pcre2]:x64-windows-static-md sqlite3:x64-windows-static-md
       - name: Build the service libraries
         working-directory: rust
-        env:
-          # garage-git's build.rs: lib\git2.lib with zlib, pcre2-8 and http_parser; garage-ingest's sqlite3 binding: lib\sqlite3.lib.
-          GARAGE_LIBGIT2_DIR: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md
-          RUSTFLAGS: -L native=${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md\lib
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
+          # garage-git's build.rs: lib\git2.lib with zlib, pcre2-8 and http_parser; garage-ingest's sqlite3
+          # binding: lib\sqlite3.lib. VCPKG_INSTALLATION_ROOT is the runner's own variable, which the
+          # workflow's `env` context does not see, so the paths are made here.
+          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
+          Get-ChildItem "$vcpkg\lib"
+          $env:GARAGE_LIBGIT2_DIR = $vcpkg
+          $env:RUSTFLAGS = "-L native=$vcpkg\lib"
           # Without Tesseract until the app ships its own build (windows.md section 5.5): pictures read as no text.
           cargo build --release --no-default-features -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
           Get-ChildItem target\release\*.dll
