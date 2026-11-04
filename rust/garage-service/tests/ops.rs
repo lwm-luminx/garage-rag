@@ -1,0 +1,595 @@
+//! The operations stage over gRPC against a real database: sources (add, remove, sync, import,
+//! scan, reconcile), models (register, default, drop, embed a text), settings and MCP client
+//! registration, each checked for Python's messages. Needs `GARAGE_TEST_DATABASE_URL`.
+
+#![allow(clippy::cast_possible_wrap, clippy::too_many_lines)]
+
+mod common;
+
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use garage_facade::proto;
+use garage_facade::proto::garage_service_client::GarageServiceClient;
+use garage_service::config::Config;
+use garage_service::models::EmbeddingModel;
+use garage_service::search::QueryEmbedder;
+use garage_service::server::{Endpoint, serve};
+use garage_service::service::{GarageService, sql_dir};
+use hyper_util::rt::TokioIo;
+use serde_json::{Value, json};
+use tonic::Code;
+use tonic::transport::{Channel, Uri};
+
+/// Answers every text with the same unit vector, so `EmbedText` has something to truncate.
+struct FixedEmbedder(Vec<f32>);
+
+impl QueryEmbedder for FixedEmbedder {
+    fn embed_query(&self, _: &EmbeddingModel, _: &str) -> garage_service::Result<Vec<f32>> {
+        Ok(self.0.clone())
+    }
+}
+
+type Client = GarageServiceClient<Channel>;
+
+/// A server on a Unix socket (so the config-changing methods are answered) over `database_url`,
+/// running on the config file at `config_path`; stopped when dropped.
+struct Running {
+    client: Client,
+    stop: Option<tokio::sync::oneshot::Sender<()>>,
+    task: Option<tokio::task::JoinHandle<std::io::Result<()>>>,
+}
+
+impl Running {
+    async fn start(database_url: &str, config_path: &Path) -> Self {
+        let mut config = Config::default();
+        config.set_field("database_url", Value::String(database_url.to_owned()));
+        config.path = Some(config_path.to_path_buf());
+        let mut vector = vec![0.0f32; 8];
+        vector[0] = 0.6;
+        vector[1] = 0.8;
+        let service = GarageService::new(config, Arc::new(FixedEmbedder(vector)), sql_dir(None), true).unwrap();
+        let socket = config_path.with_file_name("grpc");
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let endpoint = Endpoint::Unix(socket.clone());
+        let task = tokio::spawn(async move {
+            serve(service, &endpoint, None, async {
+                let _ = stopped.await;
+            })
+            .await
+        });
+        for _ in 0..200 {
+            if tokio::net::UnixStream::connect(&socket).await.is_ok() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+        let channel = tonic::transport::Endpoint::from_static("http://garage")
+            .connect_with_connector(tower::service_fn(move |_: Uri| {
+                let path = socket.clone();
+                async move { Ok::<_, std::io::Error>(TokioIo::new(tokio::net::UnixStream::connect(path).await?)) }
+            }))
+            .await
+            .unwrap();
+        Self { client: Client::new(channel), stop: Some(stop), task: Some(task) }
+    }
+
+    async fn stop(mut self) {
+        let _ = self.stop.take().unwrap().send(());
+        self.task.take().unwrap().await.unwrap().unwrap();
+    }
+}
+
+fn scratch() -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("garage-service-ops-{}-{}", std::process::id(), common::nonce()));
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+fn read_json(path: &Path) -> Value {
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn fixture_corpus() -> PathBuf {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../macapp/Tests/Fixtures/corpus");
+    std::fs::canonicalize(dir).unwrap()
+}
+
+#[test]
+fn sources_are_added_synced_imported_and_removed() {
+    common::with_db_url(|_, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let config_path = dir.join("garage.json");
+            let root = dir.join("notes");
+            std::fs::create_dir_all(&root).unwrap();
+            let mut server = Running::start(&url, &config_path).await;
+            let client = &mut server.client;
+
+            let add = |slug: &str, root: &Path, class: &str, trust: &str| proto::AddSourceRequest {
+                slug: slug.into(),
+                root: root.to_string_lossy().into_owned(),
+                kind: String::new(),
+                corpus_class: class.into(),
+                trust: trust.into(),
+            };
+            let added = client.add_source(add("notes", &root, "", "")).await.unwrap().into_inner();
+            assert!(added.created);
+            assert_eq!(added.root, root.to_string_lossy());
+            assert_eq!(added.message, format!("added source notes -> {} (document/authored)", root.display()));
+            let again = client.add_source(add("notes", &root, "code", "reference")).await.unwrap().into_inner();
+            assert!(!again.created);
+            assert_eq!(again.message, format!("updated source notes -> {}", root.display()));
+            let missing = client.add_source(add("gone", &dir.join("nope"), "", "")).await.unwrap_err();
+            assert_eq!(missing.code(), Code::InvalidArgument);
+            assert!(missing.message().ends_with("nope does not exist"));
+            let bad = client.add_source(add("x", &root, "", "secret")).await.unwrap_err();
+            assert_eq!(bad.code(), Code::InvalidArgument);
+            assert!(bad.message().contains("'secret' is not a valid TrustTier"));
+            let listed = client.list_sources(proto::ListSourcesRequest {}).await.unwrap().into_inner();
+            assert_eq!(listed.sources.len(), 1);
+            assert_eq!(
+                (listed.sources[0].corpus_class.as_str(), listed.sources[0].trust_tier.as_str()),
+                ("code", "reference")
+            );
+
+            // Nothing declared yet: Sync reports so, naming the file.
+            let sync = client.sync_sources(proto::SyncSourcesRequest { dry_run: true }).await.unwrap().into_inner();
+            assert_eq!(sync.declared, 0);
+            assert_eq!(sync.message, format!("no sources declared in {}", config_path.display()));
+
+            // Import copies the database's source into the file, with every field written.
+            let imported = client
+                .import_sources_to_config(proto::ImportSourcesToConfigRequest { path: String::new() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(imported.added, vec!["notes"]);
+            assert_eq!(imported.message, format!("added 1 sources to {}: notes", config_path.display()));
+            let document = read_json(&config_path);
+            assert_eq!(document["$schema"], json!("https://garagerag.app/.data/garage.schema.json"));
+            assert_eq!(
+                document["sources"][0],
+                json!({"slug": "notes", "root": root.to_string_lossy(), "kind": "filesystem", "class": "code",
+                       "trust": "reference", "include_code": false, "enabled": true})
+            );
+            let unchanged = client
+                .import_sources_to_config(proto::ImportSourcesToConfigRequest { path: String::new() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(unchanged.message, "config already lists every database source");
+
+            // The file is the source of truth: a changed entry and a new one reach the database on
+            // apply, and a source only the database has is reported, never deleted.
+            let mut document = read_json(&config_path);
+            document["sources"][0]["class"] = json!("document");
+            document["sources"][0]["include_code"] = json!(true);
+            document["sources"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"slug": "mail", "root": "~/Mail", "kind": "maildir"}));
+            std::fs::write(&config_path, document.to_string()).unwrap();
+            client.add_source(add("stray", &root, "", "")).await.unwrap();
+            let dry = client.sync_sources(proto::SyncSourcesRequest { dry_run: true }).await.unwrap().into_inner();
+            assert_eq!((dry.declared, dry.applied), (2, false));
+            assert_eq!((dry.created.clone(), dry.updated.clone()), (vec!["mail".to_owned()], vec!["notes".to_owned()]));
+            assert_eq!(
+                dry.message,
+                "would create: mail\nwould update: notes\nin the database but not declared (left untouched):\n  stray (0 documents)"
+            );
+            let applied = client.sync_sources(proto::SyncSourcesRequest { dry_run: false }).await.unwrap().into_inner();
+            assert_eq!(applied.message.lines().next(), Some("create: mail"));
+            let listed = client.list_sources(proto::ListSourcesRequest {}).await.unwrap().into_inner();
+            let notes = listed.sources.iter().find(|s| s.slug == "notes").unwrap();
+            assert_eq!(notes.corpus_class, "document");
+            let mail = listed.sources.iter().find(|s| s.slug == "mail").unwrap();
+            assert_eq!(mail.kind, "maildir");
+            assert!(mail.root.ends_with("/Mail") && !mail.root.starts_with('~'));
+            let settled = client.sync_sources(proto::SyncSourcesRequest { dry_run: false }).await.unwrap().into_inner();
+            assert!(settled.message.starts_with("database already matches the config\n"));
+
+            // Remove drops the source from the database and the file, so Sync cannot bring it back.
+            let removed =
+                client.remove_source(proto::RemoveSourceRequest { slug: "mail".into() }).await.unwrap().into_inner();
+            assert_eq!(removed.deleted_documents, 0);
+            assert_eq!(
+                removed.message,
+                format!("removed mail (0 documents) and dropped it from {}", config_path.display())
+            );
+            assert_eq!(read_json(&config_path)["sources"].as_array().unwrap().len(), 1);
+            let stray =
+                client.remove_source(proto::RemoveSourceRequest { slug: "stray".into() }).await.unwrap().into_inner();
+            assert_eq!(stray.message, "removed stray (0 documents)");
+            let unknown = client.remove_source(proto::RemoveSourceRequest { slug: "stray".into() }).await.unwrap_err();
+            assert_eq!((unknown.code(), unknown.message()), (Code::NotFound, "no such source: stray"));
+
+            server.stop().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        })
+    });
+}
+
+#[test]
+fn scan_streams_progress_and_records_the_count() {
+    common::with_db_url(|_, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let mut server = Running::start(&url, &dir.join("garage.json")).await;
+            let client = &mut server.client;
+            let corpus = fixture_corpus();
+            client
+                .add_source(proto::AddSourceRequest {
+                    slug: "corpus".into(),
+                    root: corpus.to_string_lossy().into_owned(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gone".into(),
+                    root: dir.to_string_lossy().into_owned(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            // The second source's root disappears before the scan: its result carries the problem.
+            let gone = dir.join("gone");
+            std::fs::create_dir_all(&gone).unwrap();
+            let changed = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gone".into(),
+                    root: gone.to_string_lossy().into_owned(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(!changed.created);
+            std::fs::remove_dir(&gone).unwrap();
+
+            let mut stream =
+                client.scan(proto::ScanRequest { source: "*".into(), include_code: true }).await.unwrap().into_inner();
+            let mut events = Vec::new();
+            while let Some(event) = stream.message().await.unwrap() {
+                events.push(event);
+            }
+            assert_eq!(
+                (events[0].phase.as_str(), events[0].source.as_str(), events[0].source_items),
+                ("progress", "corpus", 0)
+            );
+            let corpus_done = events.iter().find(|e| e.phase == "source" && e.source == "corpus").unwrap();
+            let result = corpus_done.result.as_ref().unwrap();
+            assert_eq!((result.item_count, result.item_type.as_str(), result.error.as_str()), (6, "files", ""));
+            assert_eq!(result.root, corpus.to_string_lossy());
+            assert_eq!(corpus_done.source_items, 6);
+            let gone_done = events.iter().find(|e| e.phase == "source" && e.source == "gone").unwrap();
+            assert!(gone_done.result.as_ref().unwrap().error.contains("does not exist"));
+            assert_eq!(gone_done.total_items, 6);
+            let finished = events.last().unwrap();
+            assert_eq!(finished.phase, "finished");
+            let summary = finished.summary.as_ref().unwrap();
+            assert_eq!((summary.total_items, summary.sources.len()), (6, 2));
+            assert_eq!(summary.message, "Scanned 2 source(s): 6 items");
+
+            let listed = client.list_sources(proto::ListSourcesRequest {}).await.unwrap().into_inner();
+            let corpus_row = listed.sources.iter().find(|s| s.slug == "corpus").unwrap();
+            assert_eq!(corpus_row.expected_elements, 6);
+
+            let unknown =
+                client.scan(proto::ScanRequest { source: "nope".into(), include_code: false }).await.unwrap_err();
+            assert_eq!((unknown.code(), unknown.message()), (Code::NotFound, "no such source: nope"));
+
+            server.stop().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        })
+    });
+}
+
+#[test]
+fn reconcile_trusts_only_a_completed_run_and_refuses_large_deletions() {
+    common::with_db_url(|pool, url| {
+        Box::pin(async move {
+            let db = pool.get().await.unwrap();
+            let source_id = common::source(&db, "notes", json!({})).await;
+            let mut uris = Vec::new();
+            for i in 0..8 {
+                let uri = format!("/tmp/doc{i}.md");
+                common::document(&db, source_id, &format!("doc{i}"), &format!("body {i}"), "document").await;
+                db.execute("UPDATE documents SET uri = $1 WHERE title = $2", &[&uri, &format!("doc{i}")])
+                    .await
+                    .unwrap();
+                uris.push(uri);
+            }
+            let dir = scratch();
+            let mut server = Running::start(&url, &dir.join("garage.json")).await;
+            let client = &mut server.client;
+            let reconcile = |apply: bool, force: bool| proto::ReconcileRequest { source: "notes".into(), apply, force };
+
+            let no_run = client.reconcile(reconcile(false, false)).await.unwrap().into_inner();
+            assert!(no_run.refused);
+            assert_eq!(
+                no_run.message,
+                "refused: no completed scan on record; run a full `garage ingest` (without --limit) before reconciling"
+            );
+
+            // An incomplete run does not count; a complete one that saw five of eight does.
+            db.execute("INSERT INTO ingest_runs (source_id, completed) VALUES ($1, false)", &[&source_id])
+                .await
+                .unwrap();
+            let run_id: i64 = db
+                .query_one(
+                    "INSERT INTO ingest_runs (source_id, completed) VALUES ($1, true) RETURNING id",
+                    &[&source_id],
+                )
+                .await
+                .unwrap()
+                .get(0);
+            for uri in &uris[..5] {
+                db.execute("INSERT INTO ingest_seen (run_id, uri) VALUES ($1, $2)", &[&run_id, uri]).await.unwrap();
+            }
+            let too_many = client.reconcile(reconcile(true, false)).await.unwrap().into_inner();
+            assert!(too_many.refused);
+            assert_eq!((too_many.candidates, too_many.total_documents), (3, 8));
+            assert_eq!(
+                too_many.message,
+                "refused: would delete 3 of 8 documents (38% > 25%); if the source really shrank that much, re-run with --force"
+            );
+            assert_eq!(common::count(&db, "SELECT count(*) FROM documents").await, 8);
+
+            let dry = client.reconcile(reconcile(false, true)).await.unwrap().into_inner();
+            assert!(!dry.refused && dry.deleted == 0);
+            assert!((dry.fraction - 0.375).abs() < 1e-9);
+            assert_eq!(dry.message, "dry run: 3 of 8 documents in notes are missing (37.5%)");
+            assert_eq!(common::count(&db, "SELECT count(*) FROM documents").await, 8);
+
+            let applied = client.reconcile(reconcile(true, true)).await.unwrap().into_inner();
+            assert_eq!(applied.deleted, 3);
+            assert_eq!(applied.message, "deleted 3 of 8 documents from notes");
+            assert_eq!(common::count(&db, "SELECT count(*) FROM documents").await, 5);
+            let nothing = client.reconcile(reconcile(true, false)).await.unwrap().into_inner();
+            assert_eq!(nothing.message, "nothing to reconcile for notes");
+            let unknown = client
+                .reconcile(proto::ReconcileRequest { source: "x".into(), apply: false, force: false })
+                .await
+                .unwrap_err();
+            assert_eq!(unknown.code(), Code::NotFound);
+
+            server.stop().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        })
+    });
+}
+
+#[test]
+fn models_are_registered_from_the_catalog_or_a_width_and_embed_a_text() {
+    common::with_db_url(|_, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let mut server = Running::start(&url, &dir.join("garage.json")).await;
+            let client = &mut server.client;
+
+            let uncatalogued = client
+                .register_model(proto::RegisterModelRequest { slug: "mystery".into(), ..Default::default() })
+                .await
+                .unwrap_err();
+            assert_eq!(uncatalogued.code(), Code::InvalidArgument);
+            assert_eq!(uncatalogued.message(), "model 'mystery' is not in models.json; pass --dims explicitly");
+
+            // The repository's models.json supplies the width, distance and provider.
+            let catalogued = client
+                .register_model(proto::RegisterModelRequest { slug: "nomic-embed-text".into(), ..Default::default() })
+                .await
+                .unwrap()
+                .into_inner();
+            let model = catalogued.model.unwrap();
+            assert_eq!((model.dims, model.provider.as_str(), model.distance.as_str()), (768, "llama_xpc", "cosine"));
+            assert!(model.is_default);
+            assert_eq!(
+                catalogued.message,
+                "registered nomic-embed-text: 768-dim -> vector(768), index=hnsw, distance=cosine, table=emb_nomic_embed_text"
+            );
+
+            let own = client
+                .register_model(proto::RegisterModelRequest {
+                    slug: "tiny".into(),
+                    dims: 8,
+                    provider: "ollama".into(),
+                    distance: "l2".into(),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(own.notes.is_empty());
+            assert_eq!(own.message, "registered tiny: 8-dim -> vector(8), index=hnsw, distance=l2, table=emb_tiny");
+            let wide = client
+                .register_model(proto::RegisterModelRequest { slug: "wide".into(), dims: 4096, ..Default::default() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(wide.notes, vec!["binary-quantized index; queries re-rank on exact cosine distance"]);
+            assert!(
+                wide.message
+                    .ends_with("table=emb_wide\nbinary-quantized index; queries re-rank on exact cosine distance")
+            );
+
+            let default = client
+                .set_default_model(proto::SetDefaultModelRequest { slug: "tiny".into() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(default.message, "default model = tiny");
+            let unknown =
+                client.set_default_model(proto::SetDefaultModelRequest { slug: "nope".into() }).await.unwrap_err();
+            assert_eq!(unknown.code(), Code::NotFound);
+            let models = client.list_models(proto::ListModelsRequest {}).await.unwrap().into_inner().models;
+            assert_eq!(models.iter().filter(|m| m.is_default).map(|m| m.slug.as_str()).collect::<Vec<_>>(), ["tiny"]);
+
+            // EmbedText asks the default model's provider and truncates on request.
+            let embedded = client
+                .embed_text(proto::EmbedTextRequest { text: "hello".into(), ..Default::default() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(
+                (embedded.model.as_str(), embedded.provider.as_str(), embedded.native_dims),
+                ("tiny", "ollama", 8)
+            );
+            assert_eq!(embedded.vector.len(), 8);
+            let short = client
+                .embed_text(proto::EmbedTextRequest { text: "hello".into(), model: "tiny".into(), dimensions: 1 })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(short.vector, vec![1.0]);
+            let wrong = client
+                .embed_text(proto::EmbedTextRequest { text: "hello".into(), model: String::new(), dimensions: 9 })
+                .await
+                .unwrap_err();
+            assert_eq!(
+                (wrong.code(), wrong.message()),
+                (Code::InvalidArgument, "tiny gives 8 dimensions; 9 is not between 1 and 8")
+            );
+            let empty = client
+                .embed_text(proto::EmbedTextRequest { text: "  ".into(), ..Default::default() })
+                .await
+                .unwrap_err();
+            assert_eq!((empty.code(), empty.message()), (Code::InvalidArgument, "nothing to embed: the text is empty"));
+
+            let dropped =
+                client.drop_model(proto::DropModelRequest { slug: "wide".into() }).await.unwrap().into_inner();
+            assert_eq!(dropped.message, "dropped wide");
+            assert_eq!(client.list_models(proto::ListModelsRequest {}).await.unwrap().into_inner().models.len(), 2);
+
+            server.stop().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        })
+    });
+}
+
+#[test]
+fn settings_are_written_and_reloaded_and_clients_are_registered() {
+    common::with_db_url(|_, url| {
+        Box::pin(async move {
+            let dir = scratch();
+            let config_path = dir.join("garage.json");
+            let mut server = Running::start(&url, &config_path).await;
+            let client = &mut server.client;
+
+            let set = |name: &str, value: &str| proto::SetSettingRequest {
+                name: name.into(),
+                value: value.into(),
+                path: String::new(),
+            };
+            let written =
+                client.set_setting(set("embedding.ollama_host", "http://gpu:11434")).await.unwrap().into_inner();
+            assert_eq!(
+                (written.name.as_str(), written.value_json.as_str()),
+                ("embedding.ollama_host", "\"http://gpu:11434\"")
+            );
+            assert_eq!(written.path, config_path.to_string_lossy());
+            assert_eq!(read_json(&config_path)["embedding"]["ollama_host"], json!("http://gpu:11434"));
+            // The process runs on the file it wrote.
+            let read = client
+                .get_setting(proto::GetSettingRequest { name: "embedding.ollama_host".into() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(read.value_json, "\"http://gpu:11434\"");
+            let flag = client.set_setting(set("extraction.index_images", "off")).await.unwrap().into_inner();
+            assert_eq!(flag.value_json, "false");
+            let bad = client.set_setting(set("extraction.index_images", "maybe")).await.unwrap_err();
+            assert_eq!(bad.code(), Code::InvalidArgument);
+            assert!(bad.message().starts_with("index_images: expected true/false"));
+            let off_box = client.set_setting(set("embedding.llama_host", "http://gpu:8790")).await.unwrap_err();
+            assert_eq!(off_box.code(), Code::InvalidArgument);
+            assert!(off_box.message().contains("must be a loopback URL"));
+            assert_eq!(read_json(&config_path)["embedding"]["llama_host"], json!("http://127.0.0.1:8790"));
+            let elsewhere = dir.join("other.json");
+            let other = client
+                .set_setting(proto::SetSettingRequest {
+                    name: "facts.provider".into(),
+                    value: "ollama".into(),
+                    path: elsewhere.to_string_lossy().into_owned(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(other.path, elsewhere.to_string_lossy());
+            assert_eq!(read_json(&elsewhere)["facts"]["provider"], json!("ollama"));
+
+            // MCP registration into a named file: the HTTP URL, then the stdio command.
+            let target = dir.join("mcp.json");
+            let install = |stdio: bool, force: bool, dry_run: bool| proto::McpInstallRequest {
+                target: String::new(),
+                path: target.to_string_lossy().into_owned(),
+                all: false,
+                name: String::new(),
+                stdio,
+                host: String::new(),
+                port: 0,
+                route: String::new(),
+                force,
+                dry_run,
+            };
+            let preview = client.mcp_install(install(false, false, true)).await.unwrap().into_inner();
+            assert_eq!(preview.url, "http://127.0.0.1:8787/mcp");
+            assert_eq!(preview.outcomes.len(), 1);
+            assert!(!preview.outcomes[0].written);
+            assert_eq!(
+                preview.outcomes[0].preview_json,
+                "{\"mcpServers\": {\"garage-rag\": {\"type\": \"http\", \"url\": \"http://127.0.0.1:8787/mcp\"}}}"
+            );
+            assert_eq!(
+                preview.message,
+                format!("url: http://127.0.0.1:8787/mcp\ncustom path -> {}: would write garage-rag", target.display())
+            );
+            assert!(!target.exists());
+            let installed = client.mcp_install(install(false, false, false)).await.unwrap().into_inner();
+            assert!(installed.outcomes[0].written && installed.outcomes[0].created_file);
+            assert_eq!(installed.message, format!("url: http://127.0.0.1:8787/mcp\ncreated {}", target.display()));
+            assert_eq!(read_json(&target)["mcpServers"]["garage-rag"]["url"], json!("http://127.0.0.1:8787/mcp"));
+            let twice = client.mcp_install(install(false, false, false)).await.unwrap_err();
+            assert_eq!(twice.code(), Code::AlreadyExists);
+            assert!(twice.message().starts_with("'garage-rag' is already configured in "));
+            let forced = client.mcp_install(install(true, true, false)).await.unwrap().into_inner();
+            assert!(!forced.command.is_empty());
+            assert_eq!(forced.args[0], "--config");
+            assert!(forced.outcomes[0].replaced_entry && !forced.outcomes[0].created_file);
+            assert!(forced.outcomes[0].backup_path.contains(".json.bak-"));
+            assert!(forced.message.starts_with("command: "));
+            assert!(forced.message.ends_with(')'));
+            // The file SetSetting last wrote to is the one in use, as Python's reload left it.
+            let entry = &read_json(&target)["mcpServers"]["garage-rag"];
+            assert!(entry["args"][1].as_str().unwrap().ends_with("other.json"), "{entry}");
+            let unknown = client
+                .mcp_install(proto::McpInstallRequest { target: "emacs".into(), ..Default::default() })
+                .await
+                .unwrap_err();
+            assert_eq!(unknown.code(), Code::InvalidArgument);
+            assert!(unknown.message().starts_with("unknown target 'emacs'; choose from project, "));
+
+            let status = client.mcp_status(proto::McpStatusRequest {}).await.unwrap().into_inner();
+            assert_eq!(status.clients.len(), 10);
+            assert_eq!(status.clients[0].key, "project");
+            assert!(status.server_command.contains("garage-mcp"));
+
+            let uninstall = || proto::McpUninstallRequest {
+                target: String::new(),
+                path: target.to_string_lossy().into_owned(),
+                name: String::new(),
+            };
+            let removed = client.mcp_uninstall(uninstall()).await.unwrap().into_inner();
+            assert!(removed.removed);
+            assert_eq!(removed.message, format!("removed garage-rag from {}", target.display()));
+            let gone = client.mcp_uninstall(uninstall()).await.unwrap().into_inner();
+            assert!(!gone.removed);
+            assert_eq!(gone.message, format!("garage-rag was not configured in {}", target.display()));
+
+            server.stop().await;
+            let _ = std::fs::remove_dir_all(&dir);
+        })
+    });
+}

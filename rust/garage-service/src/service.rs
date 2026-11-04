@@ -4,25 +4,33 @@
 
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use deadpool_postgres::Pool;
 use garage_facade::proto;
 use garage_facade::proto::garage_service_server::GarageService as GarageServiceTrait;
+use garage_ingest::WalkPolicy;
+use garage_ingest::scanner::{ScanOptions, ScanResult, Ticker, scan_source};
 use garage_mcp::pyjson;
 use serde_json::{Map, Value};
+use tokio::sync::mpsc;
 use tokio_stream::Stream;
+use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
-use crate::config::Config;
+use crate::catalog::{self, ModelRequest};
+use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
 use crate::db::{Client, isoformat_opt};
 use crate::embedding::{backfill_distilled, count_pending, pending_chunks, store_vectors};
 use crate::error::{Result, ServiceError};
 use crate::gateway::{self, AuthorPayload, ChunkPayload, DocumentPayload};
+use crate::mcp_install::{self, InstallRequest};
 use crate::migrate::{apply_migrations, pending_migrations};
-use crate::models::{count_vectors, get_model, list_models};
+use crate::models::{count_vectors, drop_model, get_model, list_models, register_model, set_default_model};
+use crate::registry::{StoragePlan, truncate_vector};
 use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
+use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
 use crate::{corpus, db};
 
 /// What `GetVersion` reports: the Python package's version, since the app shows it as the
@@ -36,11 +44,11 @@ pub const MAX_REQUEST_BYTES: usize = 256 * 1024 * 1024;
 /// `json.dumps(..., ensure_ascii=False)`, as the Corpus* results were written.
 const CORPUS_JSON: pyjson::Style = pyjson::Style { compact: false, ensure_ascii: false };
 
-/// The service: a pool on the database `garage.json` names, the configuration, and the process's
-/// query embedder.
+/// The service: a pool on the database `garage.json` names, the configuration (replaced by
+/// `SetSetting`, as Python reloaded its process-wide settings), and the process's query embedder.
 pub struct GarageService {
     pool: Pool,
-    config: Config,
+    config: RwLock<Config>,
     embedder: Arc<dyn QueryEmbedder>,
     sql_dir: PathBuf,
     /// Whether every caller is one the server can vouch for (the token, or the Unix socket), so
@@ -59,11 +67,26 @@ impl GarageService {
         callers_vouched_for: bool,
     ) -> Result<Self> {
         let pool = db::pool_for(&config.database_url())?;
-        Ok(Self { pool, config, embedder, sql_dir, callers_vouched_for })
+        Ok(Self { pool, config: RwLock::new(config), embedder, sql_dir, callers_vouched_for })
     }
 
-    pub fn config(&self) -> &Config {
-        &self.config
+    /// The configuration in effect.
+    pub fn config(&self) -> Config {
+        self.config.read().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    fn replace_config(&self, config: Config) {
+        *self.config.write().unwrap_or_else(PoisonError::into_inner) = config;
+    }
+
+    /// The configuration read again from its file (the in-memory one when there is no file), and
+    /// kept, as Python's `set_settings(load_config(path))` after a write.
+    fn reloaded_config(&self) -> Result<Config> {
+        let current = self.config();
+        let Some(path) = current.path.as_deref().filter(|p| p.is_file()) else { return Ok(current) };
+        let fresh = Config::load(Some(path))?;
+        self.replace_config(fresh.clone());
+        Ok(fresh)
     }
 
     async fn client(&self) -> Result<Client> {
@@ -82,8 +105,17 @@ impl GarageService {
     }
 
     fn default_model(&self) -> String {
-        self.config.default_embedding_model()
+        self.config().default_embedding_model()
     }
+}
+
+/// `text`, or `default` when it is empty (`request.field or default`).
+fn or_default<'a>(text: &'a str, default: &'a str) -> &'a str {
+    if text.is_empty() { default } else { text }
+}
+
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().into_owned()
 }
 
 fn opt(text: &str) -> Option<String> {
@@ -193,7 +225,7 @@ impl GarageServiceTrait for GarageService {
             mode,
             opt(&r.model).as_deref(),
             &self.default_model(),
-            self.config.hnsw_ef_search(),
+            self.config().hnsw_ef_search(),
             &filters,
             600,
         )
@@ -543,7 +575,7 @@ impl GarageServiceTrait for GarageService {
             limit,
             &mode,
             &self.default_model(),
-            self.config.hnsw_ef_search(),
+            self.config().hnsw_ef_search(),
             &filters,
         )
         .await?;
@@ -601,7 +633,7 @@ impl GarageServiceTrait for GarageService {
         let client = self.client().await?;
         let applied = apply_migrations(&client, &dir).await?;
         let mut lines: Vec<String> = applied.iter().map(|name| format!("applied {name}")).collect();
-        lines.push(format!("schema ready ({})", db::redact_url(&self.config.database_url())));
+        lines.push(format!("schema ready ({})", db::redact_url(&self.config().database_url())));
         ok(proto::InitDbResponse { applied, message: lines.join("\n") })
     }
 
@@ -610,7 +642,7 @@ impl GarageServiceTrait for GarageService {
         request: Request<proto::GetSettingRequest>,
     ) -> std::result::Result<Response<proto::GetSettingResponse>, Status> {
         let name = request.into_inner().name;
-        let value = self.config.setting(&name)?;
+        let value = self.config().setting(&name)?;
         ok(proto::GetSettingResponse { name, value_json: pyjson::dumps(&value, pyjson::DEFAULT) })
     }
 
@@ -622,7 +654,7 @@ impl GarageServiceTrait for GarageService {
     ) -> std::result::Result<Response<proto::BeginIngestSessionResponse>, Status> {
         let r = request.into_inner();
         let mut client = self.client().await?;
-        let ctx = gateway::begin_session(&mut client, &self.config, &r.source_slug).await?;
+        let ctx = gateway::begin_session(&mut client, &self.config(), &r.source_slug).await?;
         ok(proto::BeginIngestSessionResponse {
             source_id: ctx.source_id,
             slug: ctx.slug,
@@ -819,7 +851,7 @@ impl GarageServiceTrait for GarageService {
         let model = get_model(&client, opt(&r.model_slug).as_deref(), &self.default_model()).await?;
         // The worker posts these texts to the model's provider: an off-box one never gets
         // communication chunks.
-        let local = garage_embed::provider::provider_is_local(&model.provider, &self.config.embed_settings());
+        let local = garage_embed::provider::provider_is_local(&model.provider, &self.config().embed_settings());
         let pending_total = count_pending(&client, &model, local).await?;
         let withheld = if local { 0 } else { count_pending(&client, &model, true).await? - pending_total };
         let mut fetch_limit = if r.batch_size > 0 { i64::from(r.batch_size) } else { 64 };
@@ -879,86 +911,266 @@ impl GarageServiceTrait for GarageService {
         ok(proto::BackfillDistilledResponse { distilled })
     }
 
-    // -- later stages -----------------------------------------------------------------------
+    // -- sources ----------------------------------------------------------------------------
 
     async fn add_source(
         &self,
-        _r: Request<proto::AddSourceRequest>,
+        request: Request<proto::AddSourceRequest>,
     ) -> std::result::Result<Response<proto::AddSourceResponse>, Status> {
         self.config_change("AddSource")?;
-        unimplemented("AddSource")
+        let r = request.into_inner();
+        let mut client = self.client().await?;
+        let result = sources::add_source(
+            &mut client,
+            &r.slug,
+            &r.root,
+            or_default(&r.kind, "filesystem"),
+            or_default(&r.corpus_class, "document"),
+            or_default(&r.trust, "authored"),
+        )
+        .await?;
+        ok(proto::AddSourceResponse {
+            message: result.message(),
+            slug: result.slug,
+            root: path_text(&result.root),
+            created: result.created,
+        })
     }
 
     async fn remove_source(
         &self,
-        _r: Request<proto::RemoveSourceRequest>,
+        request: Request<proto::RemoveSourceRequest>,
     ) -> std::result::Result<Response<proto::RemoveSourceResponse>, Status> {
         self.config_change("RemoveSource")?;
-        unimplemented("RemoveSource")
+        let slug = request.into_inner().slug;
+        let config_path = self.config().path;
+        let mut client = self.client().await?;
+        let result = sources::remove_source(&mut client, config_path.as_deref(), &slug).await?;
+        if result.config_path.is_some() {
+            self.reloaded_config()?;
+        }
+        ok(proto::RemoveSourceResponse {
+            message: result.message(),
+            slug: result.slug,
+            deleted_documents: result.deleted_documents,
+        })
     }
 
-    async fn scan(&self, _r: Request<proto::ScanRequest>) -> std::result::Result<Response<Self::ScanStream>, Status> {
-        unimplemented("Scan")
+    async fn scan(
+        &self,
+        request: Request<proto::ScanRequest>,
+    ) -> std::result::Result<Response<Self::ScanStream>, Status> {
+        let r = request.into_inner();
+        let client = self.client().await?;
+        let targets = sources::scan_targets(&client, &r.source).await?;
+        drop(client);
+        let pool = self.pool.clone();
+        let (tx, rx) = mpsc::channel(64);
+        tokio::spawn(async move {
+            if let Err(status) = run_scan(&pool, targets, r.include_code, &tx).await {
+                let _ = tx.send(Err(status)).await;
+            }
+        });
+        ok(Box::pin(ReceiverStream::new(rx)) as Self::ScanStream)
     }
 
     async fn sync_sources(
         &self,
-        _r: Request<proto::SyncSourcesRequest>,
+        request: Request<proto::SyncSourcesRequest>,
     ) -> std::result::Result<Response<proto::SyncSourcesResponse>, Status> {
-        unimplemented("SyncSources")
+        let dry_run = request.into_inner().dry_run;
+        // The file is the source of truth, so it is read as it stands, not as it was loaded.
+        let config = self.reloaded_config()?;
+        let mut client = self.client().await?;
+        let result = sources::sync_sources(&mut client, &config, !dry_run).await?;
+        ok(proto::SyncSourcesResponse {
+            message: result.lines().join("\n"),
+            config_path: result.config_path.as_deref().map(path_text).unwrap_or_default(),
+            declared: i32::try_from(result.declared).unwrap_or(i32::MAX),
+            applied: result.applied,
+            created: result.created,
+            updated: result.updated,
+            undeclared: result
+                .undeclared
+                .into_iter()
+                .map(|(slug, document_count)| proto::UndeclaredSource { slug, document_count })
+                .collect(),
+        })
     }
 
     async fn import_sources_to_config(
         &self,
-        _r: Request<proto::ImportSourcesToConfigRequest>,
+        request: Request<proto::ImportSourcesToConfigRequest>,
     ) -> std::result::Result<Response<proto::ImportSourcesToConfigResponse>, Status> {
         self.config_change("ImportSourcesToConfig")?;
-        unimplemented("ImportSourcesToConfig")
+        let path = request.into_inner().path;
+        let target = if path.is_empty() {
+            self.config()
+                .path
+                .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")).join(CONFIG_FILENAME))
+        } else {
+            PathBuf::from(path)
+        };
+        let client = self.client().await?;
+        let result = sources::import_sources(&client, &target).await?;
+        if self.config().path.as_deref() == Some(target.as_path()) {
+            self.reloaded_config()?;
+        }
+        ok(proto::ImportSourcesToConfigResponse {
+            message: result.message(),
+            path: path_text(&result.path),
+            added: result.added,
+        })
     }
 
     async fn reconcile(
         &self,
-        _r: Request<proto::ReconcileRequest>,
+        request: Request<proto::ReconcileRequest>,
     ) -> std::result::Result<Response<proto::ReconcileResponse>, Status> {
-        unimplemented("Reconcile")
+        let r = request.into_inner();
+        let mut client = self.client().await?;
+        let result =
+            sources::reconcile_source(&mut client, &r.source, !r.apply, r.force, DEFAULT_MAX_DELETE_FRACTION).await?;
+        ok(proto::ReconcileResponse {
+            message: result.message(r.apply),
+            fraction: result.fraction(),
+            source: result.source,
+            total_documents: result.total_documents,
+            candidates: result.candidates,
+            deleted: result.deleted,
+            refused: result.refused,
+            reason: result.reason,
+        })
     }
+
+    // -- models -----------------------------------------------------------------------------
 
     async fn register_model(
         &self,
-        _r: Request<proto::RegisterModelRequest>,
+        request: Request<proto::RegisterModelRequest>,
     ) -> std::result::Result<Response<proto::RegisterModelResponse>, Status> {
         self.config_change("RegisterModel")?;
-        unimplemented("RegisterModel")
+        let r = request.into_inner();
+        let model_request = ModelRequest {
+            slug: r.slug,
+            dims: (r.dims > 0).then(|| usize::try_from(r.dims).unwrap_or(usize::MAX)),
+            model_ref: opt(&r.model_ref),
+            provider: opt(&r.provider),
+            model_id: opt(&r.model_id),
+            distance: opt(&r.distance),
+            modality: opt(&r.modality),
+        };
+        let spec = catalog::resolve_spec(&model_request, &catalog::known_models()?)?;
+        let mut client = self.client().await?;
+        let row = register_model(&mut client, &spec, r.make_default).await?;
+        let mut notes = Vec::new();
+        if row.stored_dims < row.dims {
+            notes.push(format!(
+                "truncated {} -> {} (Matryoshka) to fit the halfvec HNSW ceiling",
+                row.dims, row.stored_dims
+            ));
+        }
+        if row.index_kind == "hnsw_bq" {
+            notes.push(format!("binary-quantized index; queries re-rank on exact {} distance", row.distance));
+        }
+        let kind = if row.modality == "image" { " (image model)" } else { "" };
+        let headline = format!(
+            "registered {}{kind}: {}-dim -> {}({}), index={}, distance={}, table={}",
+            row.slug, row.dims, row.storage_kind, row.stored_dims, row.index_kind, row.distance, row.table_name
+        );
+        let mut lines = vec![headline];
+        lines.extend(notes.iter().cloned());
+        ok(proto::RegisterModelResponse {
+            model: Some(proto::ModelInfo {
+                slug: row.slug,
+                provider: row.provider,
+                model_ref: row.model_ref,
+                dims: row.dims,
+                stored_dims: row.stored_dims,
+                storage_kind: row.storage_kind,
+                index_kind: row.index_kind,
+                table_name: row.table_name,
+                is_default: row.is_default,
+                model_id: row.model_id.unwrap_or_default(),
+                distance: row.distance,
+                modality: row.modality,
+            }),
+            notes,
+            message: lines.join("\n"),
+        })
     }
 
     async fn set_default_model(
         &self,
-        _r: Request<proto::SetDefaultModelRequest>,
+        request: Request<proto::SetDefaultModelRequest>,
     ) -> std::result::Result<Response<proto::SetDefaultModelResponse>, Status> {
         self.config_change("SetDefaultModel")?;
-        unimplemented("SetDefaultModel")
+        let slug = request.into_inner().slug;
+        let mut client = self.client().await?;
+        get_model(&client, Some(&slug), &self.default_model()).await?;
+        set_default_model(&mut client, &slug).await?;
+        ok(proto::SetDefaultModelResponse { message: format!("default model = {slug}") })
     }
 
     async fn drop_model(
         &self,
-        _r: Request<proto::DropModelRequest>,
+        request: Request<proto::DropModelRequest>,
     ) -> std::result::Result<Response<proto::DropModelResponse>, Status> {
         self.config_change("DropModel")?;
-        unimplemented("DropModel")
+        let slug = request.into_inner().slug;
+        let mut client = self.client().await?;
+        drop_model(&mut client, &slug, &self.default_model()).await?;
+        ok(proto::DropModelResponse { message: format!("dropped {slug}") })
     }
+
+    async fn embed_text(
+        &self,
+        request: Request<proto::EmbedTextRequest>,
+    ) -> std::result::Result<Response<proto::EmbedTextResponse>, Status> {
+        let r = request.into_inner();
+        if r.text.trim().is_empty() {
+            return Err(Status::invalid_argument("nothing to embed: the text is empty"));
+        }
+        let client = self.client().await?;
+        let model = get_model(&client, opt(&r.model).as_deref(), &self.default_model()).await?;
+        drop(client);
+        let (embedder, embedded_model, text) = (self.embedder.clone(), model.clone(), r.text);
+        let mut vector = tokio::task::spawn_blocking(move || embedder.embed_query(&embedded_model, &text))
+            .await
+            .map_err(|e| ServiceError::failed(format!("embedding the text: {e}")))??;
+        let native = vector.len();
+        if r.dimensions != 0 {
+            let dimensions = usize::try_from(r.dimensions).unwrap_or(0);
+            if dimensions == 0 || dimensions > native {
+                return Err(Status::invalid_argument(format!(
+                    "{} gives {native} dimensions; {} is not between 1 and {native}",
+                    model.slug, r.dimensions
+                )));
+            }
+            let plan = StoragePlan {
+                stored_dims: dimensions,
+                storage_kind: "vector".to_owned(),
+                index_kind: "hnsw".to_owned(),
+                truncated_from: Some(native),
+            };
+            vector = truncate_vector(&vector, &plan)?;
+        }
+        ok(proto::EmbedTextResponse {
+            model: model.slug,
+            provider: model.provider,
+            model_ref: model.model_ref,
+            native_dims: i32::try_from(native).unwrap_or(i32::MAX),
+            vector,
+        })
+    }
+
+    // -- later stages -----------------------------------------------------------------------
 
     async fn backfill(
         &self,
         _r: Request<proto::BackfillRequest>,
     ) -> std::result::Result<Response<Self::BackfillStream>, Status> {
         unimplemented("Backfill")
-    }
-
-    async fn embed_text(
-        &self,
-        _r: Request<proto::EmbedTextRequest>,
-    ) -> std::result::Result<Response<proto::EmbedTextResponse>, Status> {
-        unimplemented("EmbedText")
     }
 
     async fn ensure_llama_model(
@@ -1012,34 +1224,211 @@ impl GarageServiceTrait for GarageService {
 
     async fn set_setting(
         &self,
-        _r: Request<proto::SetSettingRequest>,
+        request: Request<proto::SetSettingRequest>,
     ) -> std::result::Result<Response<proto::SetSettingResponse>, Status> {
         self.config_change("SetSetting")?;
-        unimplemented("SetSetting")
+        let r = request.into_inner();
+        let target = if r.path.is_empty() {
+            self.config().path.unwrap_or_else(default_config_path)
+        } else {
+            PathBuf::from(r.path)
+        };
+        let (written, stored) = update_config(&target, &r.name, &r.value)?;
+        // The process runs on the file it just wrote, as Python's `set_settings(load_config(target))`.
+        let path = written.path.unwrap_or(target);
+        self.replace_config(Config::load(Some(&path))?);
+        ok(proto::SetSettingResponse {
+            name: r.name,
+            value_json: pyjson::dumps(&stored, pyjson::DEFAULT),
+            path: path_text(&path),
+        })
     }
 
     async fn mcp_install(
         &self,
-        _r: Request<proto::McpInstallRequest>,
+        request: Request<proto::McpInstallRequest>,
     ) -> std::result::Result<Response<proto::McpInstallResponse>, Status> {
         self.config_change("McpInstall")?;
-        unimplemented("McpInstall")
+        let r = request.into_inner();
+        let install_request = InstallRequest {
+            target: or_default(&r.target, "project").to_owned(),
+            path: opt(&r.path).map(PathBuf::from),
+            all_configs: r.all,
+            name: or_default(&r.name, mcp_install::DEFAULT_SERVER_NAME).to_owned(),
+            stdio: r.stdio,
+            host: opt(&r.host),
+            port: (r.port != 0).then_some(i64::from(r.port)),
+            route: opt(&r.route),
+            force: r.force,
+            dry_run: r.dry_run,
+        };
+        let config = self.config();
+        let report = tokio::task::spawn_blocking(move || mcp_install::install_mcp_server(&config, &install_request))
+            .await
+            .map_err(|e| ServiceError::failed(format!("installing: {e}")))??;
+        ok(proto::McpInstallResponse {
+            message: report.lines().join("\n"),
+            url: report.url.unwrap_or_default(),
+            command: report.command.unwrap_or_default(),
+            args: report.args,
+            fell_back: report.fell_back,
+            outcomes: report
+                .outcomes
+                .into_iter()
+                .map(|o| proto::McpTargetOutcome {
+                    key: o.key,
+                    label: o.label,
+                    path: path_text(&o.path),
+                    written: o.written,
+                    created_file: o.created_file,
+                    replaced_entry: o.replaced_entry,
+                    backup_path: o.backup.as_deref().map(path_text).unwrap_or_default(),
+                    skipped: o.skipped.unwrap_or_default(),
+                    preview_json: o.preview.map(|p| pyjson::dumps(&p, pyjson::DEFAULT)).unwrap_or_default(),
+                })
+                .collect(),
+        })
     }
 
     async fn mcp_uninstall(
         &self,
-        _r: Request<proto::McpUninstallRequest>,
+        request: Request<proto::McpUninstallRequest>,
     ) -> std::result::Result<Response<proto::McpUninstallResponse>, Status> {
         self.config_change("McpUninstall")?;
-        unimplemented("McpUninstall")
+        let r = request.into_inner();
+        let name = or_default(&r.name, mcp_install::DEFAULT_SERVER_NAME).to_owned();
+        let target = or_default(&r.target, "project").to_owned();
+        let path = opt(&r.path).map(PathBuf::from);
+        let (config, removed) = {
+            let name = name.clone();
+            tokio::task::spawn_blocking(move || mcp_install::uninstall_mcp_server(&target, path.as_deref(), &name))
+                .await
+                .map_err(|e| ServiceError::failed(format!("uninstalling: {e}")))??
+        };
+        let message = if removed {
+            format!("removed {name} from {}", config.display())
+        } else {
+            format!("{name} was not configured in {}", config.display())
+        };
+        ok(proto::McpUninstallResponse { path: path_text(&config), removed, message })
     }
 
     async fn mcp_status(
         &self,
-        _r: Request<proto::McpStatusRequest>,
+        _request: Request<proto::McpStatusRequest>,
     ) -> std::result::Result<Response<proto::McpStatusResponse>, Status> {
-        unimplemented("McpStatus")
+        let (server_command, clients) = tokio::task::spawn_blocking(mcp_install::mcp_status)
+            .await
+            .map_err(|e| ServiceError::failed(format!("reading client configs: {e}")))?;
+        ok(proto::McpStatusResponse {
+            server_command,
+            clients: clients
+                .into_iter()
+                .map(|c| proto::McpClientInfo {
+                    key: c.key,
+                    label: c.label,
+                    path: path_text(&c.path),
+                    registered: c.registered,
+                    config_exists: c.config_exists,
+                })
+                .collect(),
+        })
     }
+}
+
+type ScanSender = mpsc::Sender<std::result::Result<proto::ScanStatus, Status>>;
+
+fn scan_status(result: &ScanResult) -> proto::SourceScanStatus {
+    proto::SourceScanStatus {
+        source: result.source_slug.clone(),
+        kind: result.kind.clone(),
+        root: path_text(&result.root),
+        item_count: i64::try_from(result.item_count).unwrap_or(i64::MAX),
+        item_type: result.item_type.clone(),
+        duration_seconds: result.duration_seconds,
+        error: result.error.clone().unwrap_or_default(),
+    }
+}
+
+fn scan_progress(source: &str, source_items: u64, total_items: u64) -> proto::ScanStatus {
+    proto::ScanStatus {
+        phase: "progress".to_owned(),
+        source: source.to_owned(),
+        source_items: i64::try_from(source_items).unwrap_or(i64::MAX),
+        total_items: i64::try_from(total_items).unwrap_or(i64::MAX),
+        result: None,
+        summary: None,
+    }
+}
+
+/// Scans each target in turn, as `scan_sources` did, sending the running count while a source is
+/// walked, each source's result when it is done, and the summary last. A closed channel (the
+/// client went away) ends the scan at its next step.
+async fn run_scan(
+    pool: &Pool,
+    targets: Vec<(String, String, PathBuf)>,
+    include_code: bool,
+    tx: &ScanSender,
+) -> std::result::Result<(), Status> {
+    let mut results: Vec<ScanResult> = Vec::new();
+    let mut found_before: u64 = 0;
+    for (slug, kind, root) in targets {
+        if tx.send(Ok(scan_progress(&slug, 0, found_before))).await.is_err() {
+            return Ok(());
+        }
+        let (progress, scanned_slug, before) = (tx.clone(), slug.clone(), found_before);
+        let result = tokio::task::spawn_blocking(move || {
+            let mut report = |count: u64| {
+                let _ = progress.blocking_send(Ok(scan_progress(&scanned_slug, count, before + count)));
+            };
+            let policy = WalkPolicy::default();
+            let options = ScanOptions { include_code, policy: &policy, read_git: true };
+            scan_source(&scanned_slug, &kind, &root, &options, &mut Ticker::new(Some(&mut report)))
+        })
+        .await
+        .map_err(|e| Status::internal(format!("scanning {slug}: {e}")))?;
+        let mut client = pool.get().await.map_err(ServiceError::from)?;
+        gateway::persist_scan(
+            &mut client,
+            &slug,
+            i64::try_from(result.item_count).unwrap_or(i64::MAX),
+            &result.item_type,
+            &Value::Object(result.details.clone()),
+        )
+        .await?;
+        found_before += result.item_count;
+        let done = proto::ScanStatus {
+            phase: "source".to_owned(),
+            source: slug.clone(),
+            source_items: i64::try_from(result.item_count).unwrap_or(i64::MAX),
+            total_items: i64::try_from(found_before).unwrap_or(i64::MAX),
+            result: Some(scan_status(&result)),
+            summary: None,
+        };
+        results.push(result);
+        if tx.send(Ok(done)).await.is_err() {
+            return Ok(());
+        }
+    }
+    let total = i64::try_from(found_before).unwrap_or(i64::MAX);
+    let message = if results.is_empty() {
+        "no sources registered to scan".to_owned()
+    } else {
+        format!("Scanned {} source(s): {} items", results.len(), thousands(total))
+    };
+    let summary =
+        proto::ScanResponse { sources: results.iter().map(scan_status).collect(), total_items: total, message };
+    let _ = tx
+        .send(Ok(proto::ScanStatus {
+            phase: "finished".to_owned(),
+            source: String::new(),
+            source_items: 0,
+            total_items: total,
+            result: None,
+            summary: Some(summary),
+        }))
+        .await;
+    Ok(())
 }
 
 /// Python's `repr()` of a string, for the messages that carried one (`{query!r}`).
@@ -1048,7 +1437,7 @@ fn pyrepr_str(text: &str) -> String {
 }
 
 /// `f"{n:,}"`.
-fn thousands(n: i64) -> String {
+pub fn thousands(n: i64) -> String {
     let digits = n.abs().to_string();
     let mut out = String::new();
     for (i, ch) in digits.chars().enumerate() {

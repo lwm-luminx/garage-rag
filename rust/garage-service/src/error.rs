@@ -19,6 +19,8 @@ pub enum ServiceError {
     PermissionDenied(String),
     /// `FileExistsError`: gRPC `ALREADY_EXISTS`.
     AlreadyExists(String),
+    /// A model server that did not answer or refused (`EmbeddingError`): gRPC `UNAVAILABLE`.
+    Unavailable(String),
     /// A server fault (the database, the file system): gRPC `UNKNOWN`.
     Failed(String),
 }
@@ -36,6 +38,10 @@ impl ServiceError {
         Self::Failed(message.into())
     }
 
+    pub fn unavailable(message: impl Into<String>) -> Self {
+        Self::Unavailable(message.into())
+    }
+
     /// The message, whatever the kind.
     pub fn message(&self) -> &str {
         match self {
@@ -43,6 +49,7 @@ impl ServiceError {
             | Self::InvalidArgument(m)
             | Self::PermissionDenied(m)
             | Self::AlreadyExists(m)
+            | Self::Unavailable(m)
             | Self::Failed(m) => m,
         }
     }
@@ -93,6 +100,7 @@ impl From<ServiceError> for Status {
             ServiceError::InvalidArgument(_) => Code::InvalidArgument,
             ServiceError::PermissionDenied(_) => Code::PermissionDenied,
             ServiceError::AlreadyExists(_) => Code::AlreadyExists,
+            ServiceError::Unavailable(_) => Code::Unavailable,
             ServiceError::Failed(_) => Code::Unknown,
         };
         Status::new(code, error.message().to_owned())

@@ -256,12 +256,18 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   registry and per-model DDL, the embed facade (`GetEmbeddingBatches`, `UpdateEmbeddings`, `BackfillDistilled`), the
   ingest facade (`BeginIngestSession` through `FinalizeIngestSession`, `gateway.rs`), hybrid search, the five
   `Corpus*` reads with the Python tools' JSON, `Ping`/`GetStatus`/`GetVersion`/`Search`/`ListDocuments`/
-  `GetDocument`/`ListSources`/`ListModels`/`GetStats`/`GetSetting`/`InitDb`, and `service/auth.py`'s token and
-  socket rules; the other RPCs answer `UNIMPLEMENTED` until their stage. `garage-service serve` is the binary
-  (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is `test_postgres.py`'s cases for what
-  is ported and `tests/grpc.rs` the service over a socket and a port; both need `GARAGE_TEST_DATABASE_URL` and
-  pass without running when it is unset (CI's rust job has a pgvector service). The query embedder goes through
-  `garage-embed`'s providers and egress rules; the binary's host speaks plain HTTP only.
+  `GetDocument`/`ListSources`/`ListModels`/`GetStats`/`GetSetting`/`InitDb`, `service/auth.py`'s token and
+  socket rules, and the operations (`ops/sources.py`, `ops/models.py`, `ops/settings.py`, `ops/mcp.py`,
+  `ingest/reconcile.py`): `AddSource`/`RemoveSource`/`SyncSources`/`ImportSourcesToConfig`/`Reconcile`
+  (`sources.rs`), `Scan` streaming `garage-ingest`'s scanners, `RegisterModel` over `models.json`
+  (`catalog.rs`)/`SetDefaultModel`/`DropModel`/`EmbedText`, `SetSetting` (the file rewritten in `config init`'s
+  layout and the process reloaded from it, `config.rs`) and `McpInstall`/`McpUninstall`/`McpStatus`
+  (`mcp_install.rs`), each with the Python message; the other RPCs answer `UNIMPLEMENTED` until their stage.
+  `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` is
+  `test_postgres.py`'s cases for what is ported, `tests/grpc.rs` the service over a socket and a port and
+  `tests/ops.rs` the operations over gRPC; all need `GARAGE_TEST_DATABASE_URL` and pass without running when it
+  is unset (CI's rust job has a pgvector service). The query embedder goes through `garage-embed`'s providers
+  and egress rules; the binary's host speaks plain HTTP only.
 - **C headers.** The FFI crates' `include/*.h` are generated from their Rust by cbindgen: `cargo run -p headergen`
   rewrites them (each crate's `cbindgen.toml` holds the prologue and renames; the Rust doc comments become the
   header's), and CI's `headergen -- --check` fails when one is stale. Edit the Rust, never the header. So far

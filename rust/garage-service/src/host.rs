@@ -64,7 +64,9 @@ impl Host for PlainHost {
     }
 }
 
-/// Embeds search queries through the embed worker's providers, with `settings` naming the servers.
+/// Embeds search queries and `EmbedText`'s texts through the embed worker's providers, with
+/// `settings` naming the servers. A provider that cannot be built (an unknown one, an origin the
+/// egress rules refuse) is the caller's mistake; a server that does not answer is `UNAVAILABLE`.
 pub struct HostEmbedder {
     pub host: Arc<dyn Host>,
     pub settings: Settings,
@@ -74,7 +76,10 @@ impl QueryEmbedder for HostEmbedder {
     fn embed_query(&self, model: &EmbeddingModel, query: &str) -> Result<Vec<f32>> {
         let embedder = get_embedder(&model.provider, &model.model_ref, &self.settings, self.host.clone())
             .map_err(|e| ServiceError::invalid(e.to_string()))?;
-        let mut vectors = embedder.embed(&[query.to_owned()]).map_err(|e| ServiceError::failed(e.to_string()))?;
-        vectors.pop().filter(|v| !v.is_empty()).ok_or_else(|| ServiceError::failed("the model returned no embedding"))
+        let mut vectors = embedder.embed(&[query.to_owned()]).map_err(|e| ServiceError::unavailable(e.to_string()))?;
+        vectors
+            .pop()
+            .filter(|v| !v.is_empty())
+            .ok_or_else(|| ServiceError::unavailable("the model returned no embedding"))
     }
 }

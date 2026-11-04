@@ -16,6 +16,7 @@ chrono.workspace = true
 deadpool-postgres.workspace = true
 garage-embed.workspace = true
 garage-facade.workspace = true
+garage-ingest.workspace = true
 garage-mcp.workspace = true
 garage-text.workspace = true
 http-body-util.workspace = true

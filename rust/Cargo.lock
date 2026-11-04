@@ -1078,6 +1078,7 @@ dependencies = [
  "deadpool-postgres",
  "garage-embed",
  "garage-facade",
+ "garage-ingest",
  "garage-mcp",
  "garage-text",
  "http-body-util",

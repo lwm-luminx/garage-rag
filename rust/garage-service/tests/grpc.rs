@@ -133,8 +133,10 @@ fn a_unix_socket_server_answers_without_a_token_and_vouches_for_its_callers() {
         // A method a later stage ports says so, and is not refused on the socket.
         let later = client.ensure_llama_model(proto::EnsureLlamaModelRequest::default()).await.unwrap_err();
         assert_eq!(later.code(), Code::Unimplemented);
-        let later = client.set_setting(proto::SetSettingRequest::default()).await.unwrap_err();
-        assert_eq!(later.code(), Code::Unimplemented);
+        // A config change is allowed on the socket: the empty name is what is refused.
+        let allowed = client.set_setting(proto::SetSettingRequest::default()).await.unwrap_err();
+        assert_eq!(allowed.code(), Code::InvalidArgument);
+        assert!(allowed.message().starts_with("expected SECTION.KEY"));
         // Without a database at the other end, GetStatus says so rather than failing the call.
         let status = client.get_status(proto::StatusRequest {}).await.unwrap().into_inner();
         assert!(!status.is_ready);
@@ -183,10 +185,10 @@ fn the_token_guards_every_call_but_ensure_llama_model() {
 
         let mut right = GarageServiceClient::with_interceptor(channel, with_token("s3cret-for-this-test"));
         assert_eq!(right.ping(proto::PingRequest::default()).await.unwrap().into_inner().message, "pong");
-        // The token vouches for the caller: a config change is allowed (and not yet ported).
+        // The token vouches for the caller: a config change is allowed (the empty name is refused).
         assert_eq!(
             right.set_setting(proto::SetSettingRequest::default()).await.unwrap_err().code(),
-            Code::Unimplemented
+            Code::InvalidArgument
         );
 
         server.stop().await;
