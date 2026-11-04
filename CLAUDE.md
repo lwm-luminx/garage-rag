@@ -142,8 +142,9 @@ on fakes.
   - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
     request reads its base branch's), pruned to what the build used, with each branch's older
     entries deleted, so they stay under the repository's 10 GB cache quota.
-    With the `BUILDBUDDY_API_KEY` secret set, it also uses BuildBuddy's remote cache, shared by
-    every branch. For CI only, it adds
+    Signed in to Aspect (`ASPECT_API_TOKEN`), it also uses Aspect Cloud's remote cache and build event
+    stream (`aspect test --remote`), shared by every branch; a fork's PR keeps the disk cache alone. For
+    CI only, it adds
     `--build_tests_only` and `--noapple_generate_dsym`.
 - Run it by hand from the Actions tab (workflow_dispatch) when a change outside its `paths` needs
   the Bazel build.
@@ -164,7 +165,7 @@ on fakes.
   runner's OS and CPU. Given the `ASPECT_API_TOKEN` secret (every job that runs `aspect` passes it), it
   signs the CLI in to Aspect (the token on stdin, never in `GITHUB_ENV`). That turns on the CLI's GitHub
   features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings as
-  review comments. BuildBuddy stays the remote cache. Without the token (forks) nothing changes.
+  review comments, and the macOS build's remote cache. Without the token (forks) nothing changes.
 - `.mcp.json` registers `aspect mcp` for Claude Code: read-only tools over the builds CI sends to Aspect
   Cloud (invocations, build logs, targets, action history). It needs the `aspect` CLI on `PATH` and a
   signed-in CLI (`aspect auth login` once); signed in, `aspect build //... --remote` also uses Aspect's cache.
