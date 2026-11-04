@@ -5,13 +5,12 @@
 #   Contents/Helpers/garage.app                    bundle ID me.rickmark.garage-rag.garage-cli
 #   Contents/Helpers/garage-mcp.app                bundle ID me.rickmark.garage-rag.mcp-server-cli
 #
-# with each helper's executable a Mach-O that reaches the app's Frameworks through its rpaths,
-# marked LSUIElement, and `garage version` running through the forwarder: the forwarder resolves
-# the helper, the helper resolves the app bundle, and the embedded interpreter starts from the
-# app's PythonXPCService.framework. `version` needs no database, so no app is started and no
-# Keychain is read. It also checks that PythonXPCService's code is only in the app's framework:
-# `garage version` prints no "Class ... is implemented in both" warning, and no helper or XPC
-# service binary defines the framework's types. Every versioned framework in Contents/Frameworks
+# with each helper's executable a Mach-O, marked LSUIElement, that runs the Rust CLI (//rust/garage-cli)
+# and links neither Python.framework nor PythonXPCService.framework, and `garage version` running
+# through the forwarder: the forwarder resolves the helper. `version` needs no database, so no app is
+# started and no Keychain is read. It also checks that PythonXPCService's code is only in the app's
+# framework: `garage version` prints no "Class ... is implemented in both" warning, and no helper or
+# XPC service binary defines the framework's types. Every versioned framework in Contents/Frameworks
 # is versioned and keeps its links (Versions/Current and the top-level entries), which App Store
 # validation needs.
 set -euo pipefail
@@ -111,14 +110,11 @@ check_helper() {
 
     [ -x "$executable" ] || { fail "$name: helper executable missing or not executable"; return; }
     file -b "$executable" | grep -q "Mach-O" || fail "$name: helper executable is not a Mach-O"
-    local load_commands linked
-    load_commands="$(otool -l "$executable" 2>/dev/null || true)"
+    local linked
     linked="$(otool -L "$executable" 2>/dev/null || true)"
-    grep -qF -- "path @executable_path/../../../../Frameworks (offset" <<<"$load_commands" \
-        || fail "$name: helper lacks the @executable_path/../../../../Frameworks rpath"
-    grep -q -- "Python.framework" <<<"$linked" || fail "$name: helper does not link Python.framework"
-    grep -q -- "PythonXPCService.framework" <<<"$linked" \
-        || fail "$name: helper does not link PythonXPCService.framework"
+    if grep -q -- "Python.framework/" <<<"$linked" || grep -q -- "PythonXPCService.framework/" <<<"$linked"; then
+        fail "$name: helper links Python.framework or PythonXPCService.framework; the launchers run the Rust CLI"
+    fi
 
     local signing_id
     signing_id="$(codesign -dv "$helper" 2>&1 | sed -n 's/^Identifier=//p')"
@@ -177,8 +173,10 @@ fi
 # and under pipefail the writer's SIGPIPE would turn that match into a failure.
 kit_module='12GarageXPCKit'
 python_modules=('9PythonKit' '16PythonXPCService')
-# The XPC services that run no Python (GarageXPCKit alone).
+# The launchers (the Rust CLI) and the XPC services (GarageXPCKit alone) that run no Python.
 python_free_services=(
+    'garage'
+    'garage-mcp'
     'ModelDownloadXPCService'
     'LlamaXPCService'
     'GarageImageEmbedXPCService'
@@ -217,7 +215,7 @@ for binary in "$app"/Contents/Helpers/*.app/Contents/MacOS/* "$app"/Contents/XPC
         elif [ -n "$python_code" ]; then
             fail "$name runs no Python but carries Python code:$python_code"
         else
-            pass "$name is built on GarageXPCKit alone and links no Python"
+            pass "$name runs no Python: it links neither framework and carries none of their code"
         fi
     elif [ -n "$python_code" ] || defines_module "$symbols" "$kit_module"; then
         fail "$name defines what PythonXPCService.framework already carries:$python_code"
