@@ -21,7 +21,10 @@ _DEPS = [
 # linked statically into the launcher helpers (//macapp/Sources/GarageLauncher).
 rust_static_library(
     name = "garage_cli_static",
-    srcs = glob(["src/**/*.rs"], exclude = ["src/bin/**"]),
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/bin/**"],
+    ),
     crate_name = "garage_cli",
     edition = "2024",
     deps = _DEPS,
@@ -37,7 +40,10 @@ cc_library(
 
 rust_library(
     name = "garage_cli_lib",
-    srcs = glob(["src/**/*.rs"], exclude = ["src/bin/**"]),
+    srcs = glob(
+        ["src/**/*.rs"],
+        exclude = ["src/bin/**"],
+    ),
     crate_name = "garage_cli",
     edition = "2024",
     deps = _DEPS,
