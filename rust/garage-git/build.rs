@@ -21,8 +21,13 @@ fn main() {
             Ok("windows") => {
                 // vcpkg's static libgit2 (x64-windows-static-md, `libgit2[core,pcre2]`): the zlib,
                 // pcre2 and http-parser it was built against, and the system libraries libgit2 calls
-                // for sockets, WinHTTP, UUIDs and the certificate stores.
-                for lib in ["zlib", "pcre2-8", "http_parser"] {
+                // for sockets, WinHTTP, UUIDs and the certificate stores. zlib's static library is
+                // `zs.lib` since 1.3.2 (vcpkg's `zlib@1.3.2`) and `zlib.lib` before it.
+                let zlib = ["zs", "zlib", "zlibstatic"]
+                    .into_iter()
+                    .find(|name| lib.join(format!("{name}.lib")).is_file())
+                    .unwrap_or("zlib");
+                for lib in [zlib, "pcre2-8", "http_parser"] {
                     println!("cargo:rustc-link-lib=static={lib}");
                 }
                 for lib in ["ws2_32", "winhttp", "rpcrt4", "crypt32", "ole32", "secur32", "advapi32"] {

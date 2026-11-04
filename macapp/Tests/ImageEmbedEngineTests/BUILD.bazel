@@ -8,9 +8,9 @@ swift_library(
     module_name = "ImageEmbedEngineTests",
     visibility = ["//visibility:public"],
     deps = [
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/ImageEmbedClient",
         "//macapp/Sources/ImageEmbedEngine",
-        "//macapp/Sources/GarageXPCKit",
     ],
 )
 
