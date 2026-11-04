@@ -24,7 +24,7 @@ from garage_rag.enrich.local_provider import LocalLanguageModel
 from garage_rag.inference import ChatResult
 
 try:
-    import langextract_rs as rust
+    import langextract_rs as rust  # gazelle:ignore langextract_rs
 except ImportError:
     rust = None
 
