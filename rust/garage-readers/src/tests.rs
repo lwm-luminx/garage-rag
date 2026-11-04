@@ -5,9 +5,19 @@ use garage_ocr::{HostEngine, OcrError, Recognized, Span};
 use super::*;
 
 /// The tests' fixtures: the PDF and Office files are the `pdf-markdown` and `office-markdown` crates'
-/// own, the picture `garage-ocr`'s (900x240).
+/// own, the picture `garage-ocr`'s (900x240). They are compiled in, as `garage-ocr`'s are: Bazel's test
+/// runs where `CARGO_MANIFEST_DIR` (the compile sandbox) no longer exists.
 fn fixture(name: &str) -> Vec<u8> {
-    std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata").join(name)).unwrap()
+    let bytes: &[u8] = match name {
+        "blank.pdf" => include_bytes!("../testdata/blank.pdf"),
+        "counts.xlsx" => include_bytes!("../testdata/counts.xlsx"),
+        "minutes.docx" => include_bytes!("../testdata/minutes.docx"),
+        "report.pdf" => include_bytes!("../testdata/report.pdf"),
+        "review.pptx" => include_bytes!("../testdata/review.pptx"),
+        "two-lines.png" => include_bytes!("../testdata/two-lines.png"),
+        other => panic!("no fixture {other}"),
+    };
+    bytes.to_vec()
 }
 
 /// A fresh folder for one test.
