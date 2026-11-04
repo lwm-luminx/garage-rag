@@ -1,6 +1,7 @@
 """Rules for codesigning binaries and directories of binaries on macOS."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+load("@garage_signing_identity//:identity.bzl", "AUTO_SIGNING_IDENTITY_NAME")
 load("@rules_apple//apple/internal:providers.bzl", "new_appleresourceinfo")
 load("//bazel:codesign_test.bzl", _codesign_test = "codesign_test", _codesign_validation_test = "codesign_validation_test", _codesign_verify_test = "codesign_verify_test")
 load("//bazel:signing.bzl", "LOCAL_SIGNING_IDENTITY", "UNCHAINED_IDENTITIES")
@@ -45,6 +46,7 @@ HARDENED_RUNTIME_EXPECTED = select({
 # signing_certificate_name flag, the one the distribution's platform set (platforms.bzl).
 EXPECTED_SIGNING_IDENTITY = select({
     "//bazel:is_developer_id": "",
+    "//bazel:is_local_development": AUTO_SIGNING_IDENTITY_NAME,
     "//bazel:is_local_signed": LOCAL_SIGNING_IDENTITY,
     "//bazel:is_store": "",
     "//conditions:default": "-",
@@ -132,7 +134,13 @@ def _codesign_impl(ctx):
     # hardened runtime because the *distribution* builds need it to notarize;
     # silently dropping it locally is what makes a locally built bundle
     # runnable. See HARDENED_RUNTIME_CODESIGNOPTS for the rules_apple side.
-    if signing_identity in UNCHAINED_IDENTITIES:
+    #
+    # A local build signed with an Apple Development certificate (//bazel:local_auto) could carry
+    # it, but the bundles rules_apple signs in that build do not (HARDENED_RUNTIME_CODESIGNOPTS
+    # keys on the distribution), so the pieces signed here follow them: hardened runtime only
+    # under a signed distribution.
+    distribution = ctx.attr._distribution[BuildSettingInfo].value
+    if signing_identity in UNCHAINED_IDENTITIES or distribution not in ("developer_id", "store"):
         codesign_args = _without_hardened_runtime(codesign_args)
 
     extra_inputs = []
@@ -529,6 +537,9 @@ codesign = rule(
         "timestamp": attr.bool(
             default = False,
             doc = "Whether to request a timestamp authority signature.",
+        ),
+        "_distribution": attr.label(
+            default = Label("//bazel:distribution"),
         ),
         "_macos_constraint": attr.label(
             default = Label("@platforms//os:macos"),

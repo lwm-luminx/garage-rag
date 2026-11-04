@@ -141,6 +141,32 @@ result is a line in the Database log (`keychain` source).
 
 The LM Studio API token (`LMStudioTokenStore`) stays in the login keychain: only the app reads it.
 
+## Which identity a local build signs with
+
+A plain `bazel build` signs with the best identity your keychain has (`//bazel:local_auto`, found
+by `bazel/signing_identity.bzl`):
+
+1. an **Apple Development** certificate, if you have one (any team; Xcode creates one when you sign
+   in with an Apple ID). The build gets a Team ID and a designated requirement anchored to Apple,
+   so Keychain ACLs survive rebuilds and `GarageXPCPeerRequirement` checks every XPC peer against
+   that team, as it does in a release. It embeds no provisioning profile and has no hardened
+   runtime, so the Postgres password stays in the login keychain. A certificate of the App Group's
+   own team (`APP_GROUP_TEAM` in `bazel/signing.bzl`) also gives the app, its XPC services and the
+   launchers the App Group (`macapp/externals/GarageAppGroup.entitlements`, as in the Developer ID
+   build), so they keep their data in the group container the released builds share, which
+   `~/Library/Application Support/GarageApp` links to once one of those has run and which an
+   ad-hoc service cannot write. Another team's certificate signs without the group, and the data
+   folder stays `~/Library/Application Support/GarageApp`;
+2. otherwise the self-signed **Garage Local Signing** identity below, if you created it;
+3. otherwise **ad hoc**.
+
+`bazel/signing_identity.bzl` looks again whenever the login keychain changes. To choose, set
+`--repo_env=GARAGE_SIGNING_IDENTITY=` to a certificate's common name or SHA-1 (as
+`security find-identity -v -p codesigning` prints them), or to `-` for ad hoc, in `user.bazelrc`;
+`--config=adhoc` and `--config=local_signed` pick those two outright. A build of the Git checkout
+that signs with Apple Development and one signed by another identity are different applications to
+the Keychain, so the first launch after a switch asks for the Postgres password item once more.
+
 ## A stable local signing identity
 
 The app keeps two secrets in the macOS Keychain — the Postgres superuser
@@ -171,7 +197,8 @@ bazel run //tools/signing:local_identity          # create it (asks for your pas
 bazel run //tools/signing:local_identity -- show  # what it is, and the requirement it yields
 ```
 
-Then build against it by putting this in `user.bazelrc` (git-ignored):
+A default build uses it when the keychain has no Apple Development certificate. To use it even
+when there is one, put this in `user.bazelrc` (git-ignored):
 
 ```
 build --config=local_signed

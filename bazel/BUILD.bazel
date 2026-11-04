@@ -5,7 +5,8 @@
 
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@bazelrc-preset.bzl", "bazelrc_preset")
-load(":signing.bzl", "LOCAL_SIGNING_IDENTITY")
+load("@garage_signing_identity//:identity.bzl", "AUTO_SIGNING_IDENTITY", "AUTO_SIGNING_TEAM")
+load(":signing.bzl", "APP_GROUP_TEAM", "LOCAL_SIGNING_IDENTITY", "UNCHAINED_IDENTITIES")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -80,6 +81,35 @@ config_setting(
     },
 )
 
+# Local builds signed with an Apple Development certificate from the keychain (//bazel:local_auto,
+# the default when the keychain has one; see signing_identity.bzl). They carry a Team ID and an
+# Apple-anchored designated requirement, but no provisioning profile, entitlements or hardened
+# runtime beyond the ad-hoc build's: //bazel:distribution stays "none". When local_auto signs ad
+# hoc or with the local identity, :is_adhoc or :is_local_signed matches instead and this matches
+# nothing.
+config_setting(
+    name = "is_local_development",
+    flag_values = {
+        "@rules_apple//apple/build_settings:signing_certificate_name": (
+            "(no Apple Development identity)" if AUTO_SIGNING_IDENTITY in UNCHAINED_IDENTITIES else AUTO_SIGNING_IDENTITY
+        ),
+    },
+)
+
+# The same, when the certificate belongs to the App Group's team: the app, its XPC services and the
+# launcher bundles then claim the App Group (macapp/externals/GarageAppGroup.entitlements), as in the
+# Developer ID build, and so reach the group container the data folder lives in. Whenever it
+# matches, :is_local_development matches too, with the same flag value: never put both in one
+# select, where Bazel would call the match ambiguous.
+config_setting(
+    name = "is_local_app_group",
+    flag_values = {
+        "@rules_apple//apple/build_settings:signing_certificate_name": (
+            AUTO_SIGNING_IDENTITY if AUTO_SIGNING_TEAM == APP_GROUP_TEAM and AUTO_SIGNING_IDENTITY not in UNCHAINED_IDENTITIES else "(no Apple Development identity of the App Group's team)"
+        ),
+    },
+)
+
 config_setting(
     name = "is_developer_id",
     flag_values = {":distribution": "developer_id"},
@@ -124,6 +154,23 @@ platform(
     flags = [
         "--apple_platform_type=macos",
         "--@rules_apple//apple/build_settings:signing_certificate_name=" + LOCAL_SIGNING_IDENTITY,
+    ],
+)
+
+# 1c. The default: the identity signing_identity.bzl found, which is an Apple Development
+# certificate when the keychain has one, else the local identity of 1b when that exists, else ad
+# hoc. `--repo_env=GARAGE_SIGNING_IDENTITY=<name, SHA-1 or ->` picks one; `--config=adhoc` and
+# `--config=local_signed` still choose 1 and 1b outright. Like them, it carries no constraint the
+# host cannot serve, so tests run under it.
+platform(
+    name = "local_auto",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+    flags = [
+        "--apple_platform_type=macos",
+        "--@rules_apple//apple/build_settings:signing_certificate_name=" + AUTO_SIGNING_IDENTITY,
     ],
 )
 

@@ -310,7 +310,9 @@ cmd_ensure() {
     verify_identity
     cat <<NEXT
 
-Build with it by adding this line to user.bazelrc:
+A default build signs with it whenever the keychain holds no Apple Development
+certificate (//bazel:local_auto). To sign with it even when one does, add this
+line to user.bazelrc:
 
     build --config=local_signed
 

@@ -59,6 +59,9 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         entitlements = select({
             "//bazel:is_store": "//macapp/Sources/GarageApp:Garage.entitlements",
             "//bazel:is_developer_id": "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
+            # Signed with an Apple Development certificate of the App Group's team: the group alone,
+            # since without a profile there is no application identifier (//bazel:BUILD.bazel).
+            "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
             "//conditions:default": None,
         }),
         executable_name = "GarageApp",

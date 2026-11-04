@@ -38,16 +38,22 @@ build --apple_platform_type=macos
 build --macos_cpus=arm64
 build --workspace_status_command=bazel/workspace_status.sh
 
-build --platforms=//bazel:local_signed
+# The default signs with the best identity the keychain has (//bazel:local_auto, see
+# bazel/signing_identity.bzl): an Apple Development certificate, else the self-signed local
+# identity below, else ad hoc. Choose one with `--repo_env=GARAGE_SIGNING_IDENTITY=<common name,
+# SHA-1 or ->` (in user.bazelrc to keep it), or outright with the presets that follow.
+build --platforms=//bazel:local_auto
 # Platform configuration presets
+build:local_auto --platforms=//bazel:local_auto
 build:adhoc --platforms=//bazel:adhoc
 build:local --platforms=//bazel:local
 # Like adhoc, but signed with the self-signed certificate from
 # `bazel run //tools/signing:local_identity`. Ad-hoc signatures pin the cdhash,
 # so every rebuild is a new identity and the app's Keychain items (the Postgres
 # password, the LM Studio token) prompt again; a certificate pins its own hash
-# instead, which a rebuild does not change. Put `build --config=local_signed` in
-# user.bazelrc to make it the local default.
+# instead, which a rebuild does not change. The default already picks it when the
+# keychain has no Apple Development certificate; `build --config=local_signed` in
+# user.bazelrc keeps it even when it does.
 build:local_signed --platforms=//bazel:local_signed
 # CI runners have no local signing identity (and no Keychain to put one in), so
 # `aspect` runs there with --config=ci and sign ad hoc instead.
@@ -61,7 +67,7 @@ build:ci --platforms=//bazel:adhoc
 # buildable on Linux either way; winapp/ and the Rust crates are. --enable_platform_specific_config
 # applies `build:linux` only when Bazel runs on Linux. It is repeated here as a `build` option, after
 # the --platforms above: the presets' `common` copy expands before every `build` line, so the
-# local_signed default would win again.
+# local_auto default would win again.
 build --enable_platform_specific_config
 build:linux --platforms=//bazel:linux_gnu
 build:linux --host_platform=//bazel:linux_gnu
