@@ -2874,3 +2874,2686 @@ pub mod garage_service_client {
         }
     }
 }
+/// Generated server implementations.
+pub mod garage_service_server {
+    #![allow(
+        unused_variables,
+        dead_code,
+        missing_docs,
+        clippy::wildcard_imports,
+        clippy::let_unit_value,
+    )]
+    use tonic::codegen::*;
+    /// Generated trait containing gRPC methods that should be implemented for use with GarageServiceServer.
+    #[async_trait]
+    pub trait GarageService: std::marker::Send + std::marker::Sync + 'static {
+        /// Ping / Healthcheck
+        async fn ping(
+            &self,
+            request: tonic::Request<super::PingRequest>,
+        ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
+        /// Inspect server state
+        async fn get_status(
+            &self,
+            request: tonic::Request<super::StatusRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatusResponse>, tonic::Status>;
+        /// Version info
+        async fn get_version(
+            &self,
+            request: tonic::Request<super::VersionRequest>,
+        ) -> std::result::Result<tonic::Response<super::VersionResponse>, tonic::Status>;
+        /// --- Search ---
+        async fn search(
+            &self,
+            request: tonic::Request<super::SearchRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        /// --- Documents & Chunks ---
+        async fn list_documents(
+            &self,
+            request: tonic::Request<super::ListDocumentsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListDocumentsResponse>,
+            tonic::Status,
+        >;
+        async fn get_document(
+            &self,
+            request: tonic::Request<super::GetDocumentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetDocumentResponse>,
+            tonic::Status,
+        >;
+        /// --- Facts ---
+        async fn list_facts(
+            &self,
+            request: tonic::Request<super::ListFactsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFactsResponse>,
+            tonic::Status,
+        >;
+        async fn get_fact_stats(
+            &self,
+            request: tonic::Request<super::FactStatsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FactStatsResponse>,
+            tonic::Status,
+        >;
+        /// --- Sources ---
+        async fn list_sources(
+            &self,
+            request: tonic::Request<super::ListSourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListSourcesResponse>,
+            tonic::Status,
+        >;
+        async fn add_source(
+            &self,
+            request: tonic::Request<super::AddSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AddSourceResponse>,
+            tonic::Status,
+        >;
+        async fn remove_source(
+            &self,
+            request: tonic::Request<super::RemoveSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveSourceResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the Scan method.
+        type ScanStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ScanStatus, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn scan(
+            &self,
+            request: tonic::Request<super::ScanRequest>,
+        ) -> std::result::Result<tonic::Response<Self::ScanStream>, tonic::Status>;
+        async fn sync_sources(
+            &self,
+            request: tonic::Request<super::SyncSourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SyncSourcesResponse>,
+            tonic::Status,
+        >;
+        async fn import_sources_to_config(
+            &self,
+            request: tonic::Request<super::ImportSourcesToConfigRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ImportSourcesToConfigResponse>,
+            tonic::Status,
+        >;
+        async fn reconcile(
+            &self,
+            request: tonic::Request<super::ReconcileRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ReconcileResponse>,
+            tonic::Status,
+        >;
+        /// --- Embedding Models ---
+        async fn list_models(
+            &self,
+            request: tonic::Request<super::ListModelsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListModelsResponse>,
+            tonic::Status,
+        >;
+        async fn register_model(
+            &self,
+            request: tonic::Request<super::RegisterModelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RegisterModelResponse>,
+            tonic::Status,
+        >;
+        async fn set_default_model(
+            &self,
+            request: tonic::Request<super::SetDefaultModelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetDefaultModelResponse>,
+            tonic::Status,
+        >;
+        async fn drop_model(
+            &self,
+            request: tonic::Request<super::DropModelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DropModelResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the Backfill method.
+        type BackfillStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::BackfillStatus, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn backfill(
+            &self,
+            request: tonic::Request<super::BackfillRequest>,
+        ) -> std::result::Result<tonic::Response<Self::BackfillStream>, tonic::Status>;
+        /// Embed one text with a registered model, for the app's Test an Embedding.
+        async fn embed_text(
+            &self,
+            request: tonic::Request<super::EmbedTextRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::EmbedTextResponse>,
+            tonic::Status,
+        >;
+        /// Has LlamaXPCService load a llama_xpc model (over NSXPC) unless it is already resident. For
+        /// processes outside the app's XPC services (the stdio launchers), which cannot reach it themselves.
+        async fn ensure_llama_model(
+            &self,
+            request: tonic::Request<super::EnsureLlamaModelRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::EnsureLlamaModelResponse>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the EnrichFacts method.
+        type EnrichFactsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::EnrichFactsStatus, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        /// --- Facts ---
+        async fn enrich_facts(
+            &self,
+            request: tonic::Request<super::EnrichFactsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::EnrichFactsStream>,
+            tonic::Status,
+        >;
+        /// Server streaming response type for the ClusterFacts method.
+        type ClusterFactsStream: tonic::codegen::tokio_stream::Stream<
+                Item = std::result::Result<super::ClusterFactsStatus, tonic::Status>,
+            >
+            + std::marker::Send
+            + 'static;
+        async fn cluster_facts(
+            &self,
+            request: tonic::Request<super::ClusterFactsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<Self::ClusterFactsStream>,
+            tonic::Status,
+        >;
+        async fn list_fact_prompts(
+            &self,
+            request: tonic::Request<super::ListFactPromptsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFactPromptsResponse>,
+            tonic::Status,
+        >;
+        /// --- Graph (Apache AGE; every reply says `available` where the server has none) ---
+        /// The graph's vertex and edge labels, with counts: the Graph page's filters.
+        async fn get_graph_labels(
+            &self,
+            request: tonic::Request<super::GraphLabelsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GraphLabelsResponse>,
+            tonic::Status,
+        >;
+        /// Vertices by title text or relational id, to pick where a walk starts.
+        async fn find_graph_vertices(
+            &self,
+            request: tonic::Request<super::FindGraphVerticesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FindGraphVerticesResponse>,
+            tonic::Status,
+        >;
+        /// Everything within a few hops of one vertex, under label filters.
+        async fn get_graph_neighborhood(
+            &self,
+            request: tonic::Request<super::GraphNeighborhoodRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GraphNeighborhoodResponse>,
+            tonic::Status,
+        >;
+        /// --- Schema, Stats & Settings ---
+        async fn get_stats(
+            &self,
+            request: tonic::Request<super::StatsRequest>,
+        ) -> std::result::Result<tonic::Response<super::StatsResponse>, tonic::Status>;
+        async fn init_db(
+            &self,
+            request: tonic::Request<super::InitDbRequest>,
+        ) -> std::result::Result<tonic::Response<super::InitDbResponse>, tonic::Status>;
+        async fn get_setting(
+            &self,
+            request: tonic::Request<super::GetSettingRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetSettingResponse>,
+            tonic::Status,
+        >;
+        async fn set_setting(
+            &self,
+            request: tonic::Request<super::SetSettingRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetSettingResponse>,
+            tonic::Status,
+        >;
+        /// --- MCP Client Registration ---
+        async fn mcp_install(
+            &self,
+            request: tonic::Request<super::McpInstallRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::McpInstallResponse>,
+            tonic::Status,
+        >;
+        async fn mcp_uninstall(
+            &self,
+            request: tonic::Request<super::McpUninstallRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::McpUninstallResponse>,
+            tonic::Status,
+        >;
+        async fn mcp_status(
+            &self,
+            request: tonic::Request<super::McpStatusRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::McpStatusResponse>,
+            tonic::Status,
+        >;
+        /// --- Database Facade for Ingest & Embed Workers ---
+        async fn begin_ingest_session(
+            &self,
+            request: tonic::Request<super::BeginIngestSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BeginIngestSessionResponse>,
+            tonic::Status,
+        >;
+        async fn persist_scan(
+            &self,
+            request: tonic::Request<super::PersistScanRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PersistScanResponse>,
+            tonic::Status,
+        >;
+        async fn check_document_stat(
+            &self,
+            request: tonic::Request<super::CheckDocumentStatRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CheckDocumentStatResponse>,
+            tonic::Status,
+        >;
+        async fn persist_document(
+            &self,
+            request: tonic::Request<super::PersistDocumentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PersistDocumentResponse>,
+            tonic::Status,
+        >;
+        async fn finalize_ingest_session(
+            &self,
+            request: tonic::Request<super::FinalizeIngestSessionRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::FinalizeIngestSessionResponse>,
+            tonic::Status,
+        >;
+        async fn get_embedding_batches(
+            &self,
+            request: tonic::Request<super::GetEmbeddingBatchesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::GetEmbeddingBatchesResponse>,
+            tonic::Status,
+        >;
+        async fn update_embeddings(
+            &self,
+            request: tonic::Request<super::UpdateEmbeddingsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::UpdateEmbeddingsResponse>,
+            tonic::Status,
+        >;
+        /// After a worker has embedded a model's chunks: give its distilled facts their vectors, the
+        /// mean of their representatives' (nothing is embedded, so nothing is sent anywhere).
+        async fn backfill_distilled(
+            &self,
+            request: tonic::Request<super::BackfillDistilledRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::BackfillDistilledResponse>,
+            tonic::Status,
+        >;
+        /// --- Corpus Reads for the MCP Server ---
+        /// What the MCP tools read, for the Rust MCP server in GarageMCPServerService. Each reply is the
+        /// tool's result, JSON-encoded exactly as the Python tool returns it (`result_json`), so the two
+        /// servers answer alike. Every request names its caller for the access hooks (docs/plans/access-hooks.md).
+        async fn corpus_search(
+            &self,
+            request: tonic::Request<super::CorpusSearchRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+        async fn corpus_document(
+            &self,
+            request: tonic::Request<super::CorpusDocumentRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+        async fn corpus_sources(
+            &self,
+            request: tonic::Request<super::CorpusSourcesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+        async fn corpus_authors(
+            &self,
+            request: tonic::Request<super::CorpusAuthorsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+        async fn corpus_stats(
+            &self,
+            request: tonic::Request<super::CorpusStatsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+    }
+    /// The GarageService is how the macOS app drives the Python pipeline: corpus
+    /// reads for its views, every operation it would otherwise shell out to the
+    /// `garage` CLI for (sources, models, backfill, fact distillation, schema,
+    /// settings, MCP client registration), and the database facade the ingest and
+    /// embed XPC workers persist through. Each RPC is a thin wrapper over the same
+    /// garage_rag.ops function the CLI command calls.
+    #[derive(Debug)]
+    pub struct GarageServiceServer<T> {
+        inner: Arc<T>,
+        accept_compression_encodings: EnabledCompressionEncodings,
+        send_compression_encodings: EnabledCompressionEncodings,
+        max_decoding_message_size: Option<usize>,
+        max_encoding_message_size: Option<usize>,
+    }
+    impl<T> GarageServiceServer<T> {
+        pub fn new(inner: T) -> Self {
+            Self::from_arc(Arc::new(inner))
+        }
+        pub fn from_arc(inner: Arc<T>) -> Self {
+            Self {
+                inner,
+                accept_compression_encodings: Default::default(),
+                send_compression_encodings: Default::default(),
+                max_decoding_message_size: None,
+                max_encoding_message_size: None,
+            }
+        }
+        pub fn with_interceptor<F>(
+            inner: T,
+            interceptor: F,
+        ) -> InterceptedService<Self, F>
+        where
+            F: tonic::service::Interceptor,
+        {
+            InterceptedService::new(Self::new(inner), interceptor)
+        }
+        /// Enable decompressing requests with the given encoding.
+        #[must_use]
+        pub fn accept_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.accept_compression_encodings.enable(encoding);
+            self
+        }
+        /// Compress responses with the given encoding, if the client supports it.
+        #[must_use]
+        pub fn send_compressed(mut self, encoding: CompressionEncoding) -> Self {
+            self.send_compression_encodings.enable(encoding);
+            self
+        }
+        /// Limits the maximum size of a decoded message.
+        ///
+        /// Default: `4MB`
+        #[must_use]
+        pub fn max_decoding_message_size(mut self, limit: usize) -> Self {
+            self.max_decoding_message_size = Some(limit);
+            self
+        }
+        /// Limits the maximum size of an encoded message.
+        ///
+        /// Default: `usize::MAX`
+        #[must_use]
+        pub fn max_encoding_message_size(mut self, limit: usize) -> Self {
+            self.max_encoding_message_size = Some(limit);
+            self
+        }
+    }
+    impl<T, B> tonic::codegen::Service<http::Request<B>> for GarageServiceServer<T>
+    where
+        T: GarageService,
+        B: Body + std::marker::Send + 'static,
+        B::Error: Into<StdError> + std::marker::Send + 'static,
+    {
+        type Response = http::Response<tonic::body::Body>;
+        type Error = std::convert::Infallible;
+        type Future = BoxFuture<Self::Response, Self::Error>;
+        fn poll_ready(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<std::result::Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+        fn call(&mut self, req: http::Request<B>) -> Self::Future {
+            match req.uri().path() {
+                "/garage.GarageService/Ping" => {
+                    #[allow(non_camel_case_types)]
+                    struct PingSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::PingRequest> for PingSvc<T> {
+                        type Response = super::PingResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PingRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::ping(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PingSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetStatusSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::StatusRequest>
+                    for GetStatusSvc<T> {
+                        type Response = super::StatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_status(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetVersion" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetVersionSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::VersionRequest>
+                    for GetVersionSvc<T> {
+                        type Response = super::VersionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::VersionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_version(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetVersionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/Search" => {
+                    #[allow(non_camel_case_types)]
+                    struct SearchSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::SearchRequest>
+                    for SearchSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SearchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::search(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SearchSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListDocuments" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListDocumentsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListDocumentsRequest>
+                    for ListDocumentsSvc<T> {
+                        type Response = super::ListDocumentsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListDocumentsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_documents(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListDocumentsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetDocument" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetDocumentSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::GetDocumentRequest>
+                    for GetDocumentSvc<T> {
+                        type Response = super::GetDocumentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetDocumentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_document(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetDocumentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListFacts" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListFactsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListFactsRequest>
+                    for ListFactsSvc<T> {
+                        type Response = super::ListFactsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListFactsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_facts(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListFactsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetFactStats" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetFactStatsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::FactStatsRequest>
+                    for GetFactStatsSvc<T> {
+                        type Response = super::FactStatsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FactStatsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_fact_stats(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetFactStatsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListSources" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListSourcesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListSourcesRequest>
+                    for ListSourcesSvc<T> {
+                        type Response = super::ListSourcesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListSourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_sources(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListSourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/AddSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddSourceSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::AddSourceRequest>
+                    for AddSourceSvc<T> {
+                        type Response = super::AddSourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AddSourceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::add_source(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = AddSourceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/RemoveSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveSourceSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::RemoveSourceRequest>
+                    for RemoveSourceSvc<T> {
+                        type Response = super::RemoveSourceResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoveSourceRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::remove_source(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveSourceSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/Scan" => {
+                    #[allow(non_camel_case_types)]
+                    struct ScanSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::ServerStreamingService<super::ScanRequest>
+                    for ScanSvc<T> {
+                        type Response = super::ScanStatus;
+                        type ResponseStream = T::ScanStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ScanRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::scan(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ScanSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/SyncSources" => {
+                    #[allow(non_camel_case_types)]
+                    struct SyncSourcesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::SyncSourcesRequest>
+                    for SyncSourcesSvc<T> {
+                        type Response = super::SyncSourcesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SyncSourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::sync_sources(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SyncSourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ImportSourcesToConfig" => {
+                    #[allow(non_camel_case_types)]
+                    struct ImportSourcesToConfigSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ImportSourcesToConfigRequest>
+                    for ImportSourcesToConfigSvc<T> {
+                        type Response = super::ImportSourcesToConfigResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ImportSourcesToConfigRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::import_sources_to_config(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ImportSourcesToConfigSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/Reconcile" => {
+                    #[allow(non_camel_case_types)]
+                    struct ReconcileSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ReconcileRequest>
+                    for ReconcileSvc<T> {
+                        type Response = super::ReconcileResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ReconcileRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::reconcile(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ReconcileSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListModels" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListModelsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListModelsRequest>
+                    for ListModelsSvc<T> {
+                        type Response = super::ListModelsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListModelsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_models(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListModelsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/RegisterModel" => {
+                    #[allow(non_camel_case_types)]
+                    struct RegisterModelSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::RegisterModelRequest>
+                    for RegisterModelSvc<T> {
+                        type Response = super::RegisterModelResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RegisterModelRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::register_model(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RegisterModelSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/SetDefaultModel" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetDefaultModelSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::SetDefaultModelRequest>
+                    for SetDefaultModelSvc<T> {
+                        type Response = super::SetDefaultModelResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetDefaultModelRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::set_default_model(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetDefaultModelSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/DropModel" => {
+                    #[allow(non_camel_case_types)]
+                    struct DropModelSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::DropModelRequest>
+                    for DropModelSvc<T> {
+                        type Response = super::DropModelResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DropModelRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::drop_model(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = DropModelSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/Backfill" => {
+                    #[allow(non_camel_case_types)]
+                    struct BackfillSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::ServerStreamingService<super::BackfillRequest>
+                    for BackfillSvc<T> {
+                        type Response = super::BackfillStatus;
+                        type ResponseStream = T::BackfillStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BackfillRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::backfill(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BackfillSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/EmbedText" => {
+                    #[allow(non_camel_case_types)]
+                    struct EmbedTextSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::EmbedTextRequest>
+                    for EmbedTextSvc<T> {
+                        type Response = super::EmbedTextResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EmbedTextRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::embed_text(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EmbedTextSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/EnsureLlamaModel" => {
+                    #[allow(non_camel_case_types)]
+                    struct EnsureLlamaModelSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::EnsureLlamaModelRequest>
+                    for EnsureLlamaModelSvc<T> {
+                        type Response = super::EnsureLlamaModelResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EnsureLlamaModelRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::ensure_llama_model(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EnsureLlamaModelSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/EnrichFacts" => {
+                    #[allow(non_camel_case_types)]
+                    struct EnrichFactsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::ServerStreamingService<super::EnrichFactsRequest>
+                    for EnrichFactsSvc<T> {
+                        type Response = super::EnrichFactsStatus;
+                        type ResponseStream = T::EnrichFactsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::EnrichFactsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::enrich_facts(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = EnrichFactsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ClusterFacts" => {
+                    #[allow(non_camel_case_types)]
+                    struct ClusterFactsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::ServerStreamingService<super::ClusterFactsRequest>
+                    for ClusterFactsSvc<T> {
+                        type Response = super::ClusterFactsStatus;
+                        type ResponseStream = T::ClusterFactsStream;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::ResponseStream>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ClusterFactsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::cluster_facts(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ClusterFactsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListFactPrompts" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListFactPromptsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListFactPromptsRequest>
+                    for ListFactPromptsSvc<T> {
+                        type Response = super::ListFactPromptsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListFactPromptsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_fact_prompts(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListFactPromptsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetGraphLabels" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetGraphLabelsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::GraphLabelsRequest>
+                    for GetGraphLabelsSvc<T> {
+                        type Response = super::GraphLabelsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GraphLabelsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_graph_labels(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetGraphLabelsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/FindGraphVertices" => {
+                    #[allow(non_camel_case_types)]
+                    struct FindGraphVerticesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::FindGraphVerticesRequest>
+                    for FindGraphVerticesSvc<T> {
+                        type Response = super::FindGraphVerticesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FindGraphVerticesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::find_graph_vertices(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = FindGraphVerticesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetGraphNeighborhood" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetGraphNeighborhoodSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::GraphNeighborhoodRequest>
+                    for GetGraphNeighborhoodSvc<T> {
+                        type Response = super::GraphNeighborhoodResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GraphNeighborhoodRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_graph_neighborhood(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetGraphNeighborhoodSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetStats" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetStatsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::StatsRequest>
+                    for GetStatsSvc<T> {
+                        type Response = super::StatsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::StatsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_stats(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetStatsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/InitDb" => {
+                    #[allow(non_camel_case_types)]
+                    struct InitDbSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::InitDbRequest>
+                    for InitDbSvc<T> {
+                        type Response = super::InitDbResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InitDbRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::init_db(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = InitDbSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetSetting" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetSettingSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::GetSettingRequest>
+                    for GetSettingSvc<T> {
+                        type Response = super::GetSettingResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetSettingRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_setting(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetSettingSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/SetSetting" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetSettingSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::SetSettingRequest>
+                    for SetSettingSvc<T> {
+                        type Response = super::SetSettingResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetSettingRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::set_setting(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetSettingSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/McpInstall" => {
+                    #[allow(non_camel_case_types)]
+                    struct McpInstallSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::McpInstallRequest>
+                    for McpInstallSvc<T> {
+                        type Response = super::McpInstallResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::McpInstallRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::mcp_install(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = McpInstallSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/McpUninstall" => {
+                    #[allow(non_camel_case_types)]
+                    struct McpUninstallSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::McpUninstallRequest>
+                    for McpUninstallSvc<T> {
+                        type Response = super::McpUninstallResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::McpUninstallRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::mcp_uninstall(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = McpUninstallSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/McpStatus" => {
+                    #[allow(non_camel_case_types)]
+                    struct McpStatusSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::McpStatusRequest>
+                    for McpStatusSvc<T> {
+                        type Response = super::McpStatusResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::McpStatusRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::mcp_status(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = McpStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/BeginIngestSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct BeginIngestSessionSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::BeginIngestSessionRequest>
+                    for BeginIngestSessionSvc<T> {
+                        type Response = super::BeginIngestSessionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BeginIngestSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::begin_ingest_session(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BeginIngestSessionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/PersistScan" => {
+                    #[allow(non_camel_case_types)]
+                    struct PersistScanSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::PersistScanRequest>
+                    for PersistScanSvc<T> {
+                        type Response = super::PersistScanResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PersistScanRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::persist_scan(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PersistScanSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CheckDocumentStat" => {
+                    #[allow(non_camel_case_types)]
+                    struct CheckDocumentStatSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CheckDocumentStatRequest>
+                    for CheckDocumentStatSvc<T> {
+                        type Response = super::CheckDocumentStatResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CheckDocumentStatRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::check_document_stat(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CheckDocumentStatSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/PersistDocument" => {
+                    #[allow(non_camel_case_types)]
+                    struct PersistDocumentSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::PersistDocumentRequest>
+                    for PersistDocumentSvc<T> {
+                        type Response = super::PersistDocumentResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PersistDocumentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::persist_document(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PersistDocumentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/FinalizeIngestSession" => {
+                    #[allow(non_camel_case_types)]
+                    struct FinalizeIngestSessionSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::FinalizeIngestSessionRequest>
+                    for FinalizeIngestSessionSvc<T> {
+                        type Response = super::FinalizeIngestSessionResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::FinalizeIngestSessionRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::finalize_ingest_session(
+                                        &inner,
+                                        request,
+                                    )
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = FinalizeIngestSessionSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/GetEmbeddingBatches" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetEmbeddingBatchesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::GetEmbeddingBatchesRequest>
+                    for GetEmbeddingBatchesSvc<T> {
+                        type Response = super::GetEmbeddingBatchesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetEmbeddingBatchesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::get_embedding_batches(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = GetEmbeddingBatchesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/UpdateEmbeddings" => {
+                    #[allow(non_camel_case_types)]
+                    struct UpdateEmbeddingsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::UpdateEmbeddingsRequest>
+                    for UpdateEmbeddingsSvc<T> {
+                        type Response = super::UpdateEmbeddingsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::UpdateEmbeddingsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::update_embeddings(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = UpdateEmbeddingsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/BackfillDistilled" => {
+                    #[allow(non_camel_case_types)]
+                    struct BackfillDistilledSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::BackfillDistilledRequest>
+                    for BackfillDistilledSvc<T> {
+                        type Response = super::BackfillDistilledResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::BackfillDistilledRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::backfill_distilled(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = BackfillDistilledSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusSearch" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusSearchSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusSearchRequest>
+                    for CorpusSearchSvc<T> {
+                        type Response = super::CorpusReadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusSearchRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_search(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusSearchSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusDocument" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusDocumentSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusDocumentRequest>
+                    for CorpusDocumentSvc<T> {
+                        type Response = super::CorpusReadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusDocumentRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_document(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusDocumentSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusSources" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusSourcesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusSourcesRequest>
+                    for CorpusSourcesSvc<T> {
+                        type Response = super::CorpusReadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusSourcesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_sources(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusSourcesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusAuthors" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusAuthorsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusAuthorsRequest>
+                    for CorpusAuthorsSvc<T> {
+                        type Response = super::CorpusReadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusAuthorsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_authors(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusAuthorsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusStats" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusStatsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusStatsRequest>
+                    for CorpusStatsSvc<T> {
+                        type Response = super::CorpusReadResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusStatsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_stats(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusStatsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                _ => {
+                    Box::pin(async move {
+                        let mut response = http::Response::new(
+                            tonic::body::Body::default(),
+                        );
+                        let headers = response.headers_mut();
+                        headers
+                            .insert(
+                                tonic::Status::GRPC_STATUS,
+                                (tonic::Code::Unimplemented as i32).into(),
+                            );
+                        headers
+                            .insert(
+                                http::header::CONTENT_TYPE,
+                                tonic::metadata::GRPC_CONTENT_TYPE,
+                            );
+                        Ok(response)
+                    })
+                }
+            }
+        }
+    }
+    impl<T> Clone for GarageServiceServer<T> {
+        fn clone(&self) -> Self {
+            let inner = self.inner.clone();
+            Self {
+                inner,
+                accept_compression_encodings: self.accept_compression_encodings,
+                send_compression_encodings: self.send_compression_encodings,
+                max_decoding_message_size: self.max_decoding_message_size,
+                max_encoding_message_size: self.max_encoding_message_size,
+            }
+        }
+    }
+    /// Generated gRPC service name
+    pub const SERVICE_NAME: &str = "garage.GarageService";
+    impl<T> tonic::server::NamedService for GarageServiceServer<T> {
+        const NAME: &'static str = SERVICE_NAME;
+    }
+}

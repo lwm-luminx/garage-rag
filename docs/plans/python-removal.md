@@ -3,7 +3,7 @@ layout: default
 title: The Backend in Rust, and the End of Python in the App
 description: What Python is still in Garage after the Rust XPC services, module by module; how GarageService (the gRPC backend) moves to a Rust crate on tokio-postgres; and the order in which the launchers, the Windows services, Python.framework and garage_python then leave.
 date: 2026-11-04
-status: Active (inventory done; stage 1, the storage facade and corpus reads, in progress)
+status: Active (inventory done; stage 1, `rust/garage-service` with the storage facade and corpus reads, landed in the branch; stage 2 next)
 status_kind: active
 ---
 
@@ -139,9 +139,10 @@ Each stage is a pull request to `next`, stacked on the previous one while it is 
 
 ## 4. Open questions
 
-- **"All Python" and the CLI.** The plan reads it as the whole repository: the `garage` CLI and the
-  PyPI package become the Rust binary too. If the Python CLI should survive as a client for
-  scripting, stage 4 keeps `garage_python` as a thin gRPC client package instead.
+- **"All Python" and the CLI.** Settled (Rick, 2026-11-04): the whole repository. The `garage` CLI
+  and the PyPI package go with the rest, and the Rust binary takes the commands over. A *new* thin
+  Python wrapper exposing the same `garage` CLI over the Rust service may be written afterwards; it
+  is not a reason to keep anything in `garage_python`.
 - **Windows.** The Windows app embeds CPython the way the Mac app did. Stage 4 moves it to the
   Rust binaries; until then it keeps working on the Python backend.
 - **Apache AGE.** The graph RPCs are the only place openCypher is sent. They port as they are; a
