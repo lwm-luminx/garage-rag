@@ -132,13 +132,32 @@ pub async fn pending_migrations(client: &Client, dir: &Path) -> Result<Vec<PathB
 mod tests {
     use super::*;
 
+    /// A folder of SQL files is read in name order, with 001 first. The repository's own `data/sql`
+    /// is held to the same when it is reachable (a Cargo run; Bazel's sandbox has no checkout).
     #[test]
-    fn the_repository_sql_is_found_and_ordered() {
-        let dir = default_sql_dir();
+    fn migrations_are_found_and_ordered() {
+        let dir = std::env::temp_dir().join(format!("garage-service-migrate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for name in ["003_core.sql", "001_extensions.sql", "010_facts.sql", "002_types.sql", "README.md"] {
+            std::fs::write(dir.join(name), "SELECT 1;\n").unwrap();
+        }
         let files = migration_files(&dir).unwrap();
-        assert!(files.len() >= 18, "{files:?}");
+        assert_eq!(
+            files.iter().map(|f| file_name(f)).collect::<Vec<_>>(),
+            ["001_extensions.sql", "002_types.sql", "003_core.sql", "010_facts.sql"]
+        );
         assert!(is_extension_migration(&files[0]));
-        assert!(files.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(!is_extension_migration(&files[1]));
+        std::fs::remove_dir_all(&dir).unwrap();
         assert!(migration_files(Path::new("/nonexistent")).is_err());
+
+        let repository = default_sql_dir();
+        if repository.is_dir() {
+            let files = migration_files(&repository).unwrap();
+            assert!(files.len() >= 18, "{files:?}");
+            assert!(is_extension_migration(&files[0]));
+            assert!(files.windows(2).all(|pair| pair[0] < pair[1]));
+        }
     }
 }
