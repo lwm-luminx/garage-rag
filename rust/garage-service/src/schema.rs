@@ -357,8 +357,11 @@ mod tests {
 
     #[test]
     fn the_schema_path_is_found_from_the_repository_root() {
-        let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let path = repo_schema_path(here).expect("the crate is in the repository");
+        // Cargo runs the test where it was built; Bazel bakes in a sandbox path that is gone by the
+        // time the test runs, from its runfiles root (which carries MODULE.bazel).
+        let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let here = if manifest.is_dir() { manifest } else { std::env::current_dir().expect("a working directory") };
+        let path = repo_schema_path(&here).expect("the crate is in the repository");
         assert!(path.ends_with("docs/.data/garage.schema.json"), "{}", path.display());
         assert!(repo_schema_path(std::path::Path::new("/")).is_none());
     }

@@ -39,6 +39,8 @@ rust_test(
     # schema.rs's test compares the generated schema with the committed copy (include_str!).
     compile_data = ["//docs:config_schema"],
     crate = ":garage-service",
+    # repo_schema_path's test walks up to MODULE.bazel; under Bazel it starts from the runfiles root.
+    data = ["//:MODULE.bazel"],
 )
 
 # The backend as its own process: `garage-service serve`.

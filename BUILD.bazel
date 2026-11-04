@@ -16,6 +16,7 @@
 exports_files(
     [
         "LICENSE",
+        "MODULE.bazel",
         "README.md",
         "ruff.toml",
     ],
