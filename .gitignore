@@ -34,3 +34,6 @@ user.bazelrc
 # Cargo's build output (rust/)
 rust/target/
 .swiftcheck-venv/
+
+
+dist/
