@@ -212,6 +212,51 @@ impl ChatModel {
     }
 }
 
+impl ChatModel {
+    /// [`Chat::complete`] with a `response_format` too (Ollama's JSON mode for fact distillation;
+    /// LM Studio refuses one, so its caller sends none).
+    ///
+    /// # Errors
+    ///
+    /// As [`Chat::complete`].
+    pub fn complete_with(
+        &self,
+        messages: &[Value],
+        max_tokens: Option<i64>,
+        temperature: Option<f64>,
+        response_format: Option<Value>,
+    ) -> Result<ChatReply, ChatError> {
+        let mut body = Map::new();
+        body.insert("messages".into(), Value::Array(messages.to_vec()));
+        if !self.model_ref.is_empty() {
+            body.insert("model".into(), json!(self.model_ref));
+        }
+        if let Some(max_tokens) = max_tokens {
+            body.insert("max_tokens".into(), json!(max_tokens));
+        }
+        if let Some(temperature) = temperature {
+            body.insert("temperature".into(), json!(temperature));
+        }
+        if let Some(response_format) = response_format {
+            body.insert("response_format".into(), response_format);
+        }
+        let body = Value::Object(body);
+        match self.chat_once(&body) {
+            Ok(reply) => Ok(reply),
+            // LlamaXPCService holds only the models it was asked to load: have it load this one.
+            Err(failure) if self.server.backend.kind == BackendKind::LlamaXpc && is_model_not_loaded(&failure) => {
+                match self.server.host.ensure_llama_model(&self.model_ref) {
+                    Ok(_) => self.chat_once(&body).map_err(|failure| self.unavailable(&failure.message)),
+                    Err(reason) => {
+                        Err(self.unavailable(&format!("{}; loading it on demand failed: {reason}", failure.message)))
+                    }
+                }
+            }
+            Err(failure) => Err(self.unavailable(&failure.message)),
+        }
+    }
+}
+
 impl Chat for ChatModel {
     fn provider(&self) -> &str {
         &self.provider
@@ -231,31 +276,7 @@ impl Chat for ChatModel {
         max_tokens: Option<i64>,
         temperature: Option<f64>,
     ) -> Result<ChatReply, ChatError> {
-        let mut body = Map::new();
-        body.insert("messages".into(), Value::Array(messages.to_vec()));
-        if !self.model_ref.is_empty() {
-            body.insert("model".into(), json!(self.model_ref));
-        }
-        if let Some(max_tokens) = max_tokens {
-            body.insert("max_tokens".into(), json!(max_tokens));
-        }
-        if let Some(temperature) = temperature {
-            body.insert("temperature".into(), json!(temperature));
-        }
-        let body = Value::Object(body);
-        match self.chat_once(&body) {
-            Ok(reply) => Ok(reply),
-            // LlamaXPCService holds only the models it was asked to load: have it load this one.
-            Err(failure) if self.server.backend.kind == BackendKind::LlamaXpc && is_model_not_loaded(&failure) => {
-                match self.server.host.ensure_llama_model(&self.model_ref) {
-                    Ok(_) => self.chat_once(&body).map_err(|failure| self.unavailable(&failure.message)),
-                    Err(reason) => {
-                        Err(self.unavailable(&format!("{}; loading it on demand failed: {reason}", failure.message)))
-                    }
-                }
-            }
-            Err(failure) => Err(self.unavailable(&failure.message)),
-        }
+        self.complete_with(messages, max_tokens, temperature, None)
     }
 }
 

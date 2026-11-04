@@ -212,6 +212,23 @@ jobs:
   rust:
     name: "Rust: fmt, clippy and tests (rust/)"
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      # garage-service's tests (rust/garage-service/tests) create and drop their own
+      # garage_test_* databases, as test_postgres.py does; a superuser, since pgvector is not
+      # a trusted extension.
+      GARAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     defaults:
       run:
         working-directory: rust

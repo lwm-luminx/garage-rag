@@ -91,6 +91,7 @@ py_test(
 py_test(
     name = "test_langextract_rs",
     srcs = ["test_langextract_rs.py"],
+    data = ["//macapp/Tests/Fixtures:corpus"],  # keep
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/config",
@@ -431,8 +432,11 @@ py_test(
 py_test(
     name = "test_ingest_rust",
     srcs = ["test_ingest_rust.py"],
-    # The chunking golden test's cases, loaded from its file.
-    data = ["test_chunking_golden.py"],  # keep
+    # The chunking golden test's cases, loaded from its file, and the corpus its chunking cases read.
+    data = [
+        "test_chunking_golden.py",  # keep
+        "//garage_python/tests/corpora:second_brain_os",  # keep
+    ],
     deps = [
         ":conftest",
         "//garage_python/src/garage_rag/attribute",

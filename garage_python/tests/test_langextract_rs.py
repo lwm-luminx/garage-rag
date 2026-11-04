@@ -23,7 +23,14 @@ from garage_rag.enrich.facts import default_prompt, langextract_examples
 from garage_rag.enrich.local_provider import LocalLanguageModel
 from garage_rag.inference import ChatResult
 
-rust = pytest.importorskip("langextract_rs")
+try:
+    import langextract_rs as rust
+except ImportError:
+    rust = None
+
+# A mark rather than a module-level importorskip: a module skipped whole collects nothing, and pytest's
+# "no tests ran" (exit 5) fails the Bazel target, which has no langextract_rs.
+pytestmark = pytest.mark.skipif(rust is None, reason="langextract_rs is not installed")
 
 CORPUS = repo_root() / "macapp" / "Tests" / "Fixtures" / "corpus"
 
@@ -97,7 +104,7 @@ def _both(text: str, **kwargs) -> None:
     assert rust_out == vendored_out
 
 
-@pytest.mark.parametrize("path", sorted(p.name for p in CORPUS.iterdir() if p.is_file()))
+@pytest.mark.parametrize("path", sorted(p.name for p in CORPUS.iterdir() if p.is_file()) if CORPUS.is_dir() else [])
 def test_fixture_corpus(path: str) -> None:
     _both((CORPUS / path).read_text(errors="replace"), max_char_buffer=300)
 

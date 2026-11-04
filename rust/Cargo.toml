@@ -15,6 +15,7 @@ members = [
     "garage-ocr",
     "garage-plugin",
     "garage-readers",
+    "garage-service",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -36,6 +37,7 @@ default-members = [
     "garage-ocr",
     "garage-plugin",
     "garage-readers",
+    "garage-service",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -57,6 +59,7 @@ garage-ingest = { path = "garage-ingest" }
 garage-mcp = { path = "garage-mcp" }
 garage-ocr = { path = "garage-ocr" }
 garage-readers = { path = "garage-readers" }
+garage-service = { path = "garage-service" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"
@@ -86,6 +89,10 @@ bytes = "1.12"
 http-body-util = "0.1"
 hyper = { version = "1.12", features = ["http1", "server"] }
 tower = "0.5"
+# The Rust GarageService (rust/garage-service, docs/plans/python-removal.md): pure-Rust Postgres.
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-chrono-0_4"] }
+deadpool-postgres = "0.14"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # The XPC hosts' bindings (docs/plans/uniffi.md). uniffi-bindgen must stay on the same version.
 uniffi = { version = "0.32", default-features = false }
 
