@@ -20,7 +20,9 @@ rust_static_library(
     deps = _DEPS,
 )
 
-# The system libraries libgit2 needs, which a Rust static library does not carry to its linker.
+# A static Rust library carries no link options of its own, so the system libraries libgit2 needs
+# (//rust/garage-git:libgit2_linked: zlib, and iconv on macOS) are named again here. The ingest service
+# used to get them through Python.framework.
 cc_library(
     name = "garage-ingest-ffi",
     hdrs = ["include/garage_ingest.h"],

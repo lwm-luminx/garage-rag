@@ -183,6 +183,8 @@ python_free_services=(
     'LlamaXPCService'
     'GarageImageEmbedXPCService'
     'GarageEmbedXPCService'
+    'GarageIngestXPCService'
+    'GarageMCPServerService'
 )
 defines_module() { # symbols module
     grep -Eq -- "^_?\\\$s$2.*Mn\$" <<<"$1"

@@ -240,8 +240,8 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   again once; `CheckDocumentStat` and the no-text and failed `PersistDocument`s carry the reader's revision
   (`extractor_revision`), which GarageService remembers in place of its own Python reader's. `extraction.plugins`
   does not apply to the Rust readers yet. GarageIngestXPCService runs it (`GarageIngestRunner`, linked
-  statically) with the Rust readers whenever it has GarageService's socket or port, so no Python runs for an
-  ingest; with neither it keeps the Python loop.
+  statically) with the Rust readers, so no Python runs for an ingest. The service is built on GarageXPCKit alone
+  and needs GarageService's socket or port; with neither an ingest fails.
 - **The MCP server** (`rust/garage-mcp`) ports `mcp_server/` with no search or database code: it reads
   the corpus through GarageService's `Corpus*` calls, whose handlers run the Python tools' own functions
   and return their results as JSON, each carrying a `CorpusCaller` for the access hooks. It ports the
@@ -807,9 +807,10 @@ built-in `default`; `enrich-facts` runs every enabled one (or `--prompt NAME`), 
     and links Python.framework.
   - A service on the kit alone links neither framework, and reports Python as `notUsed`: so far
     `ModelDownloadXPCService`, `LlamaXPCService`, `GarageImageEmbedXPCService`,
-    `GarageEmbedXPCService` (the Rust embed worker), `GarageMCPServerService` (the Rust MCP server) and
-    `GarageXPCService` (the Rust backend, `garage-service-ffi`), with their client modules (`ModelDownloadClient`,
-    `LlamaClient`, `ImageEmbedClient`, `EmbedClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
+    `GarageEmbedXPCService` (the Rust embed worker), `GarageIngestXPCService` (the Rust ingest loop),
+    `GarageMCPServerService` (the Rust MCP server) and `GarageXPCService` (the Rust backend,
+    `garage-service-ffi`), with their client modules (`ModelDownloadClient`, `LlamaClient`, `ImageEmbedClient`,
+    `EmbedClient`, `IngestClient`). `LlamaModelLoader` and `ImageEmbedBridge` are each
     a Python-free core (`LlamaModelLoaderCore`, `ImageEmbedBridgeCore`) plus the C entry points handed to
     Python, which re-export the core. The services are moving off Python one at a time
     ([docs/plans/rust-plugins.md](docs/plans/rust-plugins.md), "Python-free XPC services").
