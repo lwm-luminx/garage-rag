@@ -1,4 +1,4 @@
-From 871eff1aa5aa2d7edeee78effda351fa0004244d Mon Sep 17 00:00:00 2001
+From 89cba2038f60a2da3b417553db07179046d0674b Mon Sep 17 00:00:00 2001
 From: Rick Mark-Penwell <rickmark@outlook.com>
 Date: Sun, 27 Sep 2026 20:32:16 +0000
 Subject: [PATCH v1 3/3] Add a TAP test for the data directory interlock
