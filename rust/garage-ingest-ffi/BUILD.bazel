@@ -20,10 +20,15 @@ rust_static_library(
     deps = _DEPS,
 )
 
+# The system libraries libgit2 needs, which a Rust static library does not carry to its linker.
 cc_library(
     name = "garage-ingest-ffi",
     hdrs = ["include/garage_ingest.h"],
     includes = ["include"],
+    linkopts = ["-lz"] + select({
+        "@platforms//os:macos": ["-liconv"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
     deps = [":garage_ingest_ffi_static"],
 )
