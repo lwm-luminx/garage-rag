@@ -156,7 +156,11 @@ step leaves the app working, with the Python reference still there for the servi
    (`markdown-extract`), with Garage keeping the glue: Messages is a container read thread by thread, not a
    one-file reader, and is the first one in: `conversations.rs` stores each thread from `messages-markdown`
    as `ingest/conversations.py` does, its host supplying only the names contacts shared. Containers like
-   PST are read the same way, streamed item by item, since a source may sit on slow storage (NFS, SMB). Next: the service's Swift host on `garage_ingest_run_source`, then the readers.
+   PST are read the same way, streamed item by item, since a source may sit on slow storage (NFS, SMB). `garage_ingest_run` is
+   the service's whole run (`ingest_xpc`: every enabled source, the settings from GarageService, the
+   app's progress events), and GarageIngestXPCService now runs it, linked in, with Python answering only
+   the reads. Next: the readers, from `markdown-extract`, then OCR and contact names, after which the
+   service drops Python.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
    `rust/garage-mcp` is the MCP server with no search or database code of its own: it reads the corpus
    through new GarageService calls (`CorpusSearch`, `CorpusDocument`, `CorpusSources`, `CorpusAuthors`,

@@ -152,7 +152,9 @@ database directly rather than parsing Rich tables.
   - a newer push waits for a running build instead of cancelling it.
   - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
     request reads its base branch's), pruned to what the build used, with each branch's older
-    entries deleted, so they stay under the repository's 10 GB cache quota. For CI only, it adds
+    entries deleted, so they stay under the repository's 10 GB cache quota.
+    With the `BUILDBUDDY_API_KEY` secret set, it also uses BuildBuddy's remote cache, shared by
+    every branch. For CI only, it adds
     `--build_tests_only` and `--noapple_generate_dsym`.
 - Run it by hand from the Actions tab (workflow_dispatch) when a Python-only change needs the Bazel
   build.
@@ -227,7 +229,12 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   file's text read through a host callback (`ingest/host_read.py`'s `read_for_host` is the reply, so the readers
   can stay Python until each is ported; for a Messages source the host gives only the names contacts shared,
   `shared_names_for_host`); `test_ingest_rust.py` holds it to `_ingest_source`, Messages runs over
-  `fake_messages.py` included. Nothing calls them yet.
+  `fake_messages.py` included. `garage_ingest_run` is the service's whole run, `ingest_xpc`'s port: one source or
+  every enabled one (`"*"`, `ListSources`), the settings GarageService runs with (`"settings": "service"`, over
+  `GetSetting`) and the app's `IngestProgress` events field for field; `test_ingest_rust.py` holds it to
+  `ingest_xpc`. GarageIngestXPCService runs it (`GarageIngestRunner`, linked statically) whenever it has
+  GarageService's socket or port, answering only `read` and `shared_names` with the Python readers; with
+  neither it keeps the Python loop.
 - **The MCP server** (`rust/garage-mcp`) ports `mcp_server/` with no search or database code: it reads
   the corpus through GarageService's `Corpus*` calls, whose handlers run the Python tools' own functions
   and return their results as JSON, each carrying a `CorpusCaller` for the access hooks. It ports the
