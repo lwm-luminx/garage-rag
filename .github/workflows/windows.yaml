@@ -314,11 +314,11 @@ jobs:
       - name: libgit2 and SQLite (vcpkg, static, dynamic CRT as rustc links it)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libgit2[core]:x64-windows-static-md sqlite3:x64-windows-static-md
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install libgit2[core,pcre2]:x64-windows-static-md sqlite3:x64-windows-static-md
       - name: Build the service libraries
         working-directory: rust
         env:
-          # garage-git's build.rs: lib\git2.lib and lib\zlib.lib; garage-ingest's sqlite3 binding: lib\sqlite3.lib.
+          # garage-git's build.rs: lib\git2.lib with zlib, pcre2-8 and http_parser; garage-ingest's sqlite3 binding: lib\sqlite3.lib.
           GARAGE_LIBGIT2_DIR: ${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md
           RUSTFLAGS: -L native=${{ env.VCPKG_INSTALLATION_ROOT }}\installed\x64-windows-static-md\lib
         run: |

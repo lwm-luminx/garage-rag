@@ -3,7 +3,7 @@
 //!
 //! - `GARAGE_LIBGIT2_DIR` names an install prefix (`lib/libgit2.a`, as `//ext/libgit2` installs it, or
 //!   vcpkg's `lib/git2.lib` on Windows): linked statically, with zlib and, on macOS, iconv from the
-//!   system; on Windows with vcpkg's `zlib.lib` and the system libraries libgit2 calls.
+//!   system; on Windows with vcpkg's zlib, pcre2 and http-parser and the system libraries libgit2 calls.
 //! - Otherwise `pkg-config libgit2` (Homebrew's `libgit2`, Debian's `libgit2-dev`).
 
 use std::env;
@@ -19,9 +19,12 @@ fn main() {
         println!("cargo:rustc-link-lib=static=git2");
         match env::var("CARGO_CFG_TARGET_OS").as_deref() {
             Ok("windows") => {
-                // vcpkg's static libgit2 (x64-windows-static-md): its zlib, and the system libraries
-                // libgit2 calls for sockets, WinHTTP, UUIDs and the certificate stores.
-                println!("cargo:rustc-link-lib=static=zlib");
+                // vcpkg's static libgit2 (x64-windows-static-md, `libgit2[core,pcre2]`): the zlib,
+                // pcre2 and http-parser it was built against, and the system libraries libgit2 calls
+                // for sockets, WinHTTP, UUIDs and the certificate stores.
+                for lib in ["zlib", "pcre2-8", "http_parser"] {
+                    println!("cargo:rustc-link-lib=static={lib}");
+                }
                 for lib in ["ws2_32", "winhttp", "rpcrt4", "crypt32", "ole32", "secur32", "advapi32"] {
                     println!("cargo:rustc-link-lib={lib}");
                 }

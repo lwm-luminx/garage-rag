@@ -14,5 +14,6 @@ garage_csharp_binary(
     deps = [
         "//winapp/src/Garage.Grpc",
         "@winapp_nuget//grpc.aspnetcore.server",
+        "@winapp_nuget//grpc.net.client",
     ],
 )
