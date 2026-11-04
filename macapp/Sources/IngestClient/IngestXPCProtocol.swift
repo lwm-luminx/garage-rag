@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// Objective-C protocol for receiving progress updates and log entries from GarageIngestXPCService across XPC.
 @objc(GarageIngestProgressReceiverProtocol)

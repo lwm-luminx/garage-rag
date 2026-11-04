@@ -97,6 +97,22 @@ final class GarageIngestRunner {
         return .success(Outcome(error: object["error"] as? String, cancelled: object["cancelled"] as? Bool ?? false))
     }
 
+    /// Whether the ingest library is linked and answers: the walker's default rules, summarized.
+    static func libraryCheck() -> Result<String, Error> {
+        var result: UnsafeMutablePointer<CChar>?
+        let status = "{}".withCString { garage_ingest_policy($0, &result) }
+        defer { garage_ingest_string_free(result) }
+        let reply = result.map { Data(String(cString: $0).utf8) } ?? Data()
+        let object = (try? JSONSerialization.jsonObject(with: reply)) as? [String: Any]
+        guard status == 0, let object else {
+            let message = object?["error"] as? String ?? String(decoding: reply, as: UTF8.self)
+            return .failure(GarageIngestRunnerError(message.isEmpty ? "the ingest library failed (\(status))" : message))
+        }
+        let excluded = (object["exclude_dirs"] as? [Any])?.count ?? 0
+        let extensions = (object["indexable_extensions"] as? [Any])?.count ?? 0
+        return .success("Linked; \(excluded) excluded folder names, \(extensions) indexable extensions")
+    }
+
     // MARK: - The C host
 
     private static let releaseEntry: @convention(c) (UnsafeMutableRawPointer?, UnsafeMutablePointer<CChar>?) -> Void = { _, reply in

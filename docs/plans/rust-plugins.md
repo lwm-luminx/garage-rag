@@ -164,8 +164,8 @@ step leaves the app working, with the Python reference still there for the servi
    names, so the service's ingest runs no Python. Mail, PDF, Office and pictures read differently from the
    Python readers, so they carry new revisions and each such file is read once more; the client sends its
    reader's revision with the stat check and the no-text and failed outcomes, so GarageService remembers the
-   right one. Next: drop the service's Python fallback (the loop it runs with no GarageService) and the
-   `extraction.plugins` route for the Rust readers, then Tesseract, Leptonica and tessdata leave the Mac app.
+   right one. The service's Python fallback is gone too: GarageIngestXPCService is built on GarageXPCKit
+   alone, links no Python, and needs GarageService. Next: the `extraction.plugins` route for the Rust readers, then Tesseract, Leptonica and tessdata leave the Mac app.
 4. **The MCP server and the GarageXPCService backend**, last, since they serve the corpus itself.
    `rust/garage-mcp` is the MCP server with no search or database code of its own: it reads the corpus
    through new GarageService calls (`CorpusSearch`, `CorpusDocument`, `CorpusSources`, `CorpusAuthors`,
