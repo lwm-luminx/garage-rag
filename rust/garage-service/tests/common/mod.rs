@@ -78,10 +78,13 @@ where
     }
 }
 
-/// A few hex digits unlikely to repeat within a run.
+/// A few hex digits that do not repeat within a run: the clock alone does not do (macOS counts
+/// microseconds, and parallel tests start together), so a counter tells them apart.
 pub fn nonce() -> String {
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-    format!("{:x}{:x}", std::process::id(), nanos)
+    let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{:x}{:x}{n:x}", std::process::id(), nanos)
 }
 
 /// A source of kind `filesystem` at `/tmp` (`_source`).
