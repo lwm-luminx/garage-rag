@@ -22,6 +22,7 @@ pub mod facts;
 pub mod gateway;
 pub mod graph;
 pub mod host;
+pub mod langextract;
 pub mod mcp_install;
 pub mod migrate;
 pub mod models;

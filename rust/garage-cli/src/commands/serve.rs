@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use garage_service::auth::{config_change_allowed, token_from_env};
 use garage_service::host::{HostEmbedder, PlainHost};
+use garage_service::langextract::LangExtractor;
 use garage_service::server::{Endpoint, serve};
 use garage_service::service::{GarageService, sql_dir};
 
@@ -40,7 +41,9 @@ pub const SERVE: Command = Command {
         let vouched = config_change_allowed(token.is_some(), matches!(endpoint, Endpoint::Unix(_)));
         let host: Arc<dyn garage_embed::Host> = Arc::new(PlainHost::new(runtime.handle().clone()));
         let embedder = Arc::new(HostEmbedder { host: host.clone(), settings: config.embed_settings() });
-        let service = GarageService::new(config, embedder, sql_dir(None), vouched)?.with_host(host);
+        let service = GarageService::new(config, embedder, sql_dir(None), vouched)?
+            .with_extractor(Arc::new(LangExtractor::new(host.clone())))
+            .with_host(host);
         println!("Garage gRPC server listening on {endpoint} (PID: {})", std::process::id());
         let result = runtime.block_on(serve(service, &endpoint, token.as_deref(), async {
             tokio::task::spawn_blocking(super::mcp::wait_for_interrupt).await.ok();

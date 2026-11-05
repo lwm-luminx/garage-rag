@@ -16,6 +16,7 @@ use std::sync::Arc;
 use garage_service::auth::{config_change_allowed, token_from_env};
 use garage_service::config::Config;
 use garage_service::host::{HostEmbedder, PlainHost};
+use garage_service::langextract::LangExtractor;
 use garage_service::server::{Endpoint, serve};
 use garage_service::service::{GarageService, sql_dir};
 
@@ -79,6 +80,7 @@ fn run() -> Result<(), String> {
     let embedder = Arc::new(HostEmbedder { host: host.clone(), settings: config.embed_settings() });
     let service = GarageService::new(config, embedder, sql_dir(options.sql_dir.as_deref()), vouched)
         .map_err(|e| e.to_string())?
+        .with_extractor(Arc::new(LangExtractor::new(host.clone())))
         .with_host(host);
     println!("Garage gRPC server listening on {endpoint} (PID: {})", std::process::id());
     let result = runtime.block_on(serve(service, &endpoint, token.as_deref(), stopped()));

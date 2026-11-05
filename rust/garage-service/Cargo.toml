@@ -22,6 +22,7 @@ garage-text.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client"] }
 hyper-util = { workspace = true, features = ["client-legacy", "http1"] }
+langextract-rs.workspace = true
 libc.workspace = true
 prost.workspace = true
 regex.workspace = true
