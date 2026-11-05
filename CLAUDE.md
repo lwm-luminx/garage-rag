@@ -129,11 +129,13 @@ on fakes.
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
     cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `buildifier` (the Aspect CLI's task, which posts `aspect / buildifier`)
-    and `winapp-bazel`
+    binding's tests), `swiftcheck`, `buildifier` (one job for two Aspect CLI tasks: `aspect buildifier`,
+    which posts `aspect / buildifier`, and `aspect lint`, Ruff over the Python tools' packages, not
+    `//...`, so it needs no Mac) and `winapp-bazel`
     (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
-  - Nothing else: `aspect format` (Ruff), `aspect lint` (Ruff) and `aspect gazelle` (only
-    `proto/BUILD.bazel` since the Python package left) run locally, not in CI (Rick, 2026-11-04).
+  - No job runs on macOS unless it needs a Mac, since macOS runners cost more and wait longer (Rick,
+    2026-11-05). `aspect format` (Ruff) and `aspect gazelle` (only `proto/BUILD.bazel` since the
+    Python package left) run locally, not in CI (Rick, 2026-11-04).
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);

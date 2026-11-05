@@ -7,7 +7,8 @@ name: CI
 #   running), the protogen and cbindgen output checks, the third-party notices
 #   check, and the .NET binding's tests against the built library.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
-# - `buildifier`: the Aspect CLI's Starlark formatting task (`aspect / buildifier`).
+# - `buildifier`: the Aspect CLI's Starlark formatting task (`aspect / buildifier`) and
+#   Ruff lint over the Python tools (`aspect / lint`), on Linux.
 #
 # The Bazel build and test of //... (the app, Postgres, ICU and llama.cpp from
 # source) is in macos.yaml. It runs only when the build could have changed, and
@@ -137,11 +138,13 @@ jobs:
             ~/.cache/bazel-repo
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
-  # Starlark formatting. The Python package left (docs/plans/python-removal.md), and with it
-  # the format (Ruff), lint (Ruff) and gazelle (one proto BUILD file) tasks: what Python is
-  # left is a dozen development scripts run outside CI.
+  # Starlark formatting, then Ruff lint over the Python development tools that are Bazel targets,
+  # in one Linux job so they share a clone and an Aspect setup. Lint names those packages rather
+  # than //..., whose Apple targets would need a macOS runner. The format (Ruff) and gazelle (one
+  # proto BUILD file) tasks left with the Python package (docs/plans/python-removal.md) and run
+  # locally.
   buildifier:
-    name: "Buildifier: Starlark files"
+    name: "Buildifier and Ruff lint (Linux)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -150,3 +153,10 @@ jobs:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
         run: aspect buildifier --task:name buildifier
+      # Aspect adds --config=ci (a macOS platform) on CI; build for the Linux host instead.
+      - name: aspect lint
+        if: always()
+        run: >-
+          aspect lint --task:name lint --bazel-flag=--platforms=//bazel:linux_gnu
+          --bazel-flag=--host_platform=//bazel:linux_gnu
+          -- //tools:all //data/notices/... //winapp/bazel/... -//tools:bazel_env
