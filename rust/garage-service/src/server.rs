@@ -4,11 +4,15 @@
 use std::future::Future;
 use std::io;
 use std::net::SocketAddr;
+#[cfg(unix)]
 use std::os::fd::AsRawFd;
+#[cfg(unix)]
 use std::path::Path;
 
 use garage_facade::proto::garage_service_server::GarageServiceServer;
+#[cfg(unix)]
 use tokio::net::UnixListener;
+#[cfg(unix)]
 use tokio_stream::wrappers::UnixListenerStream;
 
 use crate::auth::TokenAuthLayer;
@@ -48,6 +52,7 @@ fn routes(service: GarageService, token: Option<&str>) -> tonic::service::Routes
 /// its server task runs (the app's `startServer` reply), and learn the port of a `:0` bind.
 pub enum Bound {
     /// The socket, and its path, removed when serving ends.
+    #[cfg(unix)]
     Unix(UnixListener, std::path::PathBuf),
     Tcp(tokio::net::TcpListener),
 }
@@ -56,6 +61,7 @@ impl Bound {
     /// Where the listener is: the socket path, or the address with the port the kernel chose.
     pub fn endpoint(&self) -> Endpoint {
         match self {
+            #[cfg(unix)]
             Self::Unix(_, path) => Endpoint::Unix(path.clone()),
             Self::Tcp(listener) => Endpoint::Tcp(listener.local_addr().unwrap_or_else(|_| ([127, 0, 0, 1], 0).into())),
         }
@@ -67,10 +73,17 @@ impl Bound {
 /// # Errors
 ///
 /// When the endpoint cannot be bound (another server answers on the socket, the path is not
-/// absolute, something that is not a socket is there, the port is taken).
+/// absolute, something that is not a socket is there, the port is taken), or it is a Unix-domain
+/// socket on a platform without them (Windows, where the services answer on a port).
 pub async fn bind(endpoint: &Endpoint) -> io::Result<Bound> {
     match endpoint {
+        #[cfg(unix)]
         Endpoint::Unix(path) => Ok(Bound::Unix(bind_unix_socket(path)?, path.clone())),
+        #[cfg(not(unix))]
+        Endpoint::Unix(path) => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            format!("Unix-domain sockets are not available on this platform: {}", path.display()),
+        )),
         Endpoint::Tcp(addr) => Ok(Bound::Tcp(tokio::net::TcpListener::bind(addr).await?)),
     }
 }
@@ -90,6 +103,7 @@ pub async fn serve_bound(
     let mut builder = tonic::transport::Server::builder();
     let router = builder.add_routes(routes(service, token));
     match bound {
+        #[cfg(unix)]
         Bound::Unix(listener, path) => {
             let result = router.serve_with_incoming_shutdown(UnixListenerStream::new(listener), shutdown).await;
             let _ = std::fs::remove_file(path);
@@ -131,6 +145,7 @@ pub async fn serve(
 /// # Errors
 ///
 /// As above, or any I/O error of the folder, the lock or the bind.
+#[cfg(unix)]
 pub fn bind_unix_socket(path: &Path) -> io::Result<UnixListener> {
     use std::os::unix::fs::{DirBuilderExt, FileTypeExt, PermissionsExt};
 
@@ -181,6 +196,7 @@ pub fn bind_unix_socket(path: &Path) -> io::Result<UnixListener> {
 }
 
 /// Opens `<socket>.lock` (0600) and takes an exclusive `flock` on it (`_socket_recovery_lock`).
+#[cfg(unix)]
 fn socket_recovery_lock(socket: &Path) -> io::Result<std::fs::File> {
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -198,6 +214,7 @@ fn socket_recovery_lock(socket: &Path) -> io::Result<std::fs::File> {
 
 /// True when nothing accepts connections on the socket file: a connect is refused, or the file
 /// is gone (`_unix_socket_is_stale`). Any other failure means in use, or not ours to judge.
+#[cfg(unix)]
 pub fn unix_socket_is_stale(socket: &Path) -> bool {
     match std::os::unix::net::UnixStream::connect(socket) {
         Ok(_) => false,
@@ -205,7 +222,7 @@ pub fn unix_socket_is_stale(socket: &Path) -> bool {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, unix))]
 mod tests {
     use super::*;
 

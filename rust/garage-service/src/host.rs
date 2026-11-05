@@ -68,6 +68,7 @@ impl PlainHost {
     }
 
     /// Sends `request` over the Unix-domain socket at `path` (one HTTP/1.1 connection per request).
+    #[cfg(unix)]
     fn over_socket(&self, request: &HttpRequest, path: &Path) -> std::result::Result<HttpResponse, String> {
         let outgoing = Self::build(request, &format!("http://localhost{}", request.path))?;
         let timeout = request.timeout;
@@ -88,6 +89,13 @@ impl PlainHost {
             .await
             .map_err(|_| format!("timed out after {timeout:?}"))?
         })
+    }
+
+    /// Without Unix-domain sockets there is no LlamaXPCService to reach: the request fails as the
+    /// Windows services' host answers for `llama_xpc`.
+    #[cfg(not(unix))]
+    fn over_socket(&self, _request: &HttpRequest, path: &Path) -> std::result::Result<HttpResponse, String> {
+        Err(format!("cannot reach LlamaXPCService at {}: Unix-domain sockets are not available here", path.display()))
     }
 }
 
