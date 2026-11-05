@@ -203,7 +203,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect format
         run: aspect format --task:name format
 
@@ -212,7 +214,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect gazelle
         run: aspect gazelle --task:name gazelle
 
@@ -221,7 +225,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
         run: aspect buildifier --task:name buildifier
 
@@ -230,7 +236,9 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       # //tools:bazel_env has no sources to lint, and analyzing it fetches cosmopolitan binaries
       # (bazel_env.bzl -> rules_coreutils -> ape) from hosts outside our control.
       - name: aspect lint //...

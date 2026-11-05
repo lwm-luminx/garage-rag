@@ -9,8 +9,8 @@ name: macOS build
 #   (workflow_dispatch) when in doubt.
 # - A push does not cancel a run in progress. The newest push waits for it, and
 #   GitHub keeps only the latest waiting run, so a finished run always reports.
-# - main runs it on every push, plus a nightly run that keeps main's Bazel caches
-#   warm; pull requests restore main's caches.
+# - main runs it on every push, plus a nightly run on main. Its cache is
+#   Aspect Cloud's remote cache, shared by every branch.
 on:
   push:
     branches: [main]
@@ -38,7 +38,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  # Required by the Aspect CLI artifact upload feature.
+  # The Aspect CLI's artifact upload feature.
   id-token: write
   contents: read
 
@@ -51,56 +51,31 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-      # A cold build of //... runs past the hosted runner's 6h job limit, so
-      # Bazel's disk and repository caches carry the work across runs.
-      - name: Restore Bazel caches
-        id: bazel-cache
-        uses: actions/cache/restore@v4
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
         with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.sha }}
-          restore-keys: |
-            bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
-            bazel-test-${{ runner.os }}-${{ runner.arch }}-
-      - name: Configure Bazel for CI
-        # user.bazelrc is git-ignored and try-imported last by .bazelrc.
-        #
-        # - Writing the site-packages tree artifacts (tens of thousands of files)
-        #   into the disk cache ran Bazel out of file descriptors ("Too many open
-        #   files"), even at 65536. The actions that produce them only copy and
-        #   sign files, so they stay out of the cache (no-cache; no-remote-cache
-        #   still uses the disk cache) and re-run on each fresh runner.
-        # - --build_tests_only: build what the tests need, not every non-manual
-        #   target in //....
-        # - --noapple_generate_dsym: .bazelrc asks for dSYMs on every build, and
-        #   dsymutil over llama.cpp, Python and Postgres is slow; tests never use them.
-        run: |
-          {
-            echo "common --disk_cache=$HOME/.cache/bazel-disk --repository_cache=$HOME/.cache/bazel-repo"
-            echo "common --modify_execution_info=^(PythonSitePackages|CopyToDirectory|Codesign)\$=+no-cache"
-            echo "startup --host_jvm_args=-XX:-MaxFDLimit"
-            echo "test --build_tests_only"
-            echo "build --noapple_generate_dsym"
-          } >> user.bazelrc
-          cat user.bazelrc
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
+          # Caching is Aspect Cloud's remote cache, which setup-aspect wires in once the token
+          # signs the CLI in: shared by every branch and job, and --config=ci uploads local
+          # results as they finish, so a run stopped by the timeout keeps its work.
+          #
+          # Appended to ~/.bazelrc, read after the workspace's .bazelrc:
+          # - Caching the site-packages and copied/signed tree artifacts ran Bazel out of file
+          #   descriptors ("Too many open files"), even at 65536. Those actions only copy and
+          #   sign files, so they stay out of the cache and re-run on each fresh runner.
+          # - -XX:-MaxFDLimit: on macOS the JVM caps Bazel at 10240 descriptors otherwise.
+          # - --build_tests_only: build what the tests need, not every non-manual target.
+          # - --noapple_generate_dsym: tests never use dSYMs, and dsymutil is slow.
+          bazelrc: |
+            common --modify_execution_info=^(PythonSitePackages|CopyToDirectory|Codesign)$=+no-cache
+            startup --host_jvm_args=-XX:-MaxFDLimit
+            test --build_tests_only
+            build --noapple_generate_dsym
       - run: |
           # Headroom for the rest: the runner's shell default is 256, and on macOS
-          # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit above).
+          # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit in setup-aspect's bazelrc).
           ulimit -n 65536 2>/dev/null || ulimit -n "$(sysctl -n kern.maxfilesperproc)"
           echo "open file limit: $(ulimit -n)"
           aspect test --task:name test -- //...
-        # Stop before the 6h limit: a job the runner kills skips its remaining
-        # steps, so the save below would never run and the next run would start
-        # cold again.
+        # Stop before the hosted runner's 6h job limit, so the job reports (and
+        # the remote cache keeps what finished) instead of being killed.
         timeout-minutes: 320
-      - name: Save Bazel caches
-        if: always() && steps.bazel-cache.outputs.cache-primary-key != ''
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
