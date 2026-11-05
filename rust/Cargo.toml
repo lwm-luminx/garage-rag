@@ -4,6 +4,7 @@
 resolver = "3"
 members = [
     "garage-cli",
+    "garage-cli-uniffi",
     "garage-embed",
     "garage-embed-ffi",
     "garage-embed-uniffi",
@@ -29,6 +30,7 @@ members = [
 # protogen needs protoc; everything else builds without it.
 default-members = [
     "garage-cli",
+    "garage-cli-uniffi",
     "garage-embed",
     "garage-embed-ffi",
     "garage-embed-uniffi",
@@ -61,6 +63,7 @@ publish = false
 
 [workspace.dependencies]
 garage-embed = { path = "garage-embed" }
+garage-cli-uniffi = { path = "garage-cli-uniffi" }
 garage-embed-uniffi = { path = "garage-embed-uniffi" }
 garage-facade = { path = "garage-facade" }
 garage-git = { path = "garage-git" }
@@ -120,3 +123,6 @@ doc_markdown = "allow"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+# macOS 27's dyld rejects a Mach-O that rustc's rust-objcopy stripped ("mis-aligned LINKEDIT string
+# pool"), as .bazelrc's -Cstrip=none says; the garage_rag wheel's library would not load.
+strip = "none"

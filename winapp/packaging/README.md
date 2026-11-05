@@ -20,8 +20,8 @@ From `winapp\packaging`, in Windows PowerShell 5.1 or `pwsh`:
 
 ```powershell
 .\stage.ps1 -NativeDir C:\build\native -PostgresHome C:\build\pgsql    # out\stage-x64
-.\msix.ps1                                                             # out\Garage_1.5.0.0_x64.msix
-.\msi.ps1                                                              # out\Garage-1.5.0-x64.msi, out\Garage-Setup-1.5.0-x64.exe
+.\msix.ps1                                                             # out\Garage_1.5.1.0_x64.msix
+.\msi.ps1                                                              # out\Garage-1.5.1-x64.msi, out\Garage-Setup-1.5.1-x64.exe
 ```
 
 - **`stage.ps1`** lays out what `ServiceHostLayout.Locate` and `PostgresLayout.Locate` look for beside

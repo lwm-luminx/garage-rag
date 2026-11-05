@@ -58,6 +58,7 @@ rust_library(
     ),
     crate_name = "garage_cli",
     edition = "2024",
+    visibility = ["//rust/garage-cli-uniffi:__pkg__"],
     deps = _DEPS,
 )
 

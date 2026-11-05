@@ -63,4 +63,8 @@ rescue G::EmbedError::Failed
   nil
 end
 
+check(GarageRag::VERSION == Gem.loaded_specs["garage_rag"]&.version&.to_s || !Gem.loaded_specs["garage_rag"],
+      "the library's version #{GarageRag::VERSION} is not the gem's")
+check(GarageRag::GarageCli.run_garage(["--version"]).zero?, "garage --version, in this process")
+
 puts "UniFFI Ruby round trip: ok"

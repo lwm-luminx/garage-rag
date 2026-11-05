@@ -960,6 +960,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-cli-uniffi"
+version = "0.1.0"
+dependencies = [
+ "garage-cli",
+ "garage-service",
+ "uniffi",
+]
+
+[[package]]
 name = "garage-embed"
 version = "0.1.0"
 dependencies = [
@@ -1075,8 +1084,9 @@ dependencies = [
 
 [[package]]
 name = "garage-rag"
-version = "0.1.0"
+version = "1.5.1"
 dependencies = [
+ "garage-cli-uniffi",
  "garage-embed-uniffi",
 ]
 

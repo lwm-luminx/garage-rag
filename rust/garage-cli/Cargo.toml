@@ -19,13 +19,20 @@ path = "src/bin/garage.rs"
 name = "garage-mcp"
 path = "src/bin/garage-mcp.rs"
 
+[features]
+default = ["tesseract"]
+# Pictures read with Tesseract where Vision is not there (Linux, Windows), as garage-readers' feature:
+# needs libtesseract at build time. The garage_rag wheel and gem turn it off (rust/garage-cli-uniffi),
+# so they link no Tesseract and a picture reads as no text off the Mac.
+tesseract = ["garage-ingest-ffi/tesseract", "garage-readers/tesseract"]
+
 [dependencies]
 garage-embed.workspace = true
 garage-facade.workspace = true
 garage-ingest.workspace = true
-garage-ingest-ffi = { path = "../garage-ingest-ffi", default-features = false, features = ["tesseract"] }
+garage-ingest-ffi = { path = "../garage-ingest-ffi", default-features = false }
 garage-mcp.workspace = true
-garage-readers = { workspace = true, features = ["tesseract"] }
+garage-readers.workspace = true
 garage-service.workspace = true
 libc.workspace = true
 serde_json.workspace = true

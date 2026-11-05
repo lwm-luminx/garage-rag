@@ -164,14 +164,19 @@ Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
   requests that touch it; only `main` deploys it to GitHub Pages.
 - **`.github/workflows/release.yaml`** publishes packages from a `v*` tag whose commit is on `main`,
   each by trusted publishing (OIDC, no stored token), in the `crates-io`, `pypi` and `rubygems`
-  environments. Packages take the workspace's version (`rust/Cargo.toml`), and a version a registry
-  already has is skipped.
+  environments. The crates take the workspace's version (`rust/Cargo.toml`); the wheel and the gem
+  take the app's release version (`rust/garage-rag`'s own `version`, held by a test and the `check`
+  job to GarageService's `VERSION`, which `garage --version` prints; it must stay above the
+  pure-Python 1.5.0 on PyPI). A version a registry already has is skipped.
   - crates.io: every crate whose `publish` is not false (the workspace default is false, so a crate
     opts in), with `cargo publish --workspace`. crates.io trusts a publisher only for an existing
     crate: publish a crate's first version by hand, then add the workflow as its trusted publisher.
   - PyPI and RubyGems: `garage_rag`, the umbrella of the UniFFI crates (`rust/garage-rag`, one
     cdylib, one module per namespace): maturin wheels and platform gems (`ruby/build.sh`) for macOS
-    arm64, Linux x86-64 and arm64, and Windows x64, each tested with a round trip before upload.
+    arm64, Linux x86-64 and arm64 (manylinux_2_28), and Windows x64, each tested with a round trip
+    (and the wheel's `garage --version`) before upload. libgit2 is linked statically, built from its
+    pin by `tools/wheels/build_libgit2.sh` (vcpkg's on Windows). The PyPI project's trusted publisher
+    must name `release.yaml` and the `pypi` environment.
 - **`.github/workflows/windows.yaml`** builds Postgres (with pgvector, ICU and zlib) from source on
   `windows-latest`, from the pins in `ext/*/*.MODULE.bazel` (read by `tools/windows/fetch_ext.py`),
   with each project's own MSVC build rather than Bazel; the three Rust service libraries with Cargo
@@ -314,7 +319,17 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   is the Swift module, and CI's rust job runs `tests/python_roundtrip.py` over the generated Python bindings.
   `rust/garage-rag` links every UniFFI crate into one cdylib, packaged as `garage_rag` for PyPI
   (maturin, `pyproject.toml`) and RubyGems (`ruby/`, its round trip in `ruby/test/roundtrip.rb`);
-  a new UniFFI crate joins it as a dependency and a `pub use`.
+  a new UniFFI crate joins it as a dependency and a `pub use`. The PyPI package is the successor of the
+  pure-Python 1.5.0 ([docs/plans/python-package-parity.md](docs/plans/python-package-parity.md)): hand-written
+  Python in `python/garage_rag` (maturin's `python-source`) keeps the 1.5.0 names and calls the generated
+  bindings in `garage_rag._native`, so the Rust exports stay small and generic and the 1.5.0 naming,
+  defaults and result types live in Python. `rust/garage-cli-uniffi` (namespace `garage_cli`:
+  `run_garage`/`run_garage_mcp`, argv in and exit code out, and `version`) is behind the `garage` and
+  `garage-mcp` console scripts (`garage_rag.cli:main_cli`, `garage_rag.mcp_server.server:main`), built
+  without garage-cli's `tesseract` feature. `build.rs` copies `data/sql` and `models.json` into the
+  package (`_data`, git-ignored), and `_runtime.py` points `GARAGE_SQL_DIR`, `GARAGE_MODEL_MANIFEST` and
+  `GARAGE_MCP_EXECUTABLE` at them when unset. The release profile does not strip (`strip = "none"`):
+  macOS 27's dyld refuses what rust-objcopy strips.
   Rust calling Swift-only APIs goes through swift-rs (`ext/swift_rs`, `garage-ocr`'s `vision-documents`).
 - **Hosts.** `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`); the Rust readers do not route to them yet. Swift:
