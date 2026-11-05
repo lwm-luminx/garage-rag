@@ -27,6 +27,7 @@ impl FactExtractor for Fake {
         &self,
         model: &FactModel,
         _servers: &Settings,
+        _corpus_class: &str,
         prompt: &EffectivePrompt,
         text: &str,
     ) -> Result<Vec<Extracted>, String> {
@@ -332,6 +333,187 @@ fn documents_are_enriched_with_metadata_and_prompt_facts() {
             let missing = documents_to_enrich(&client, "*", Some(999_999)).await.unwrap_err();
             assert_eq!(missing.message(), "document 999999 not found");
             assert!(documents_to_enrich(&client, "nothing", None).await.unwrap().is_empty());
+        })
+    });
+}
+
+/// A model server on loopback that answers every chat as the UI tests' `DeterministicLlamaEngine`
+/// does: LangExtract's fenced JSON with one `fact` per sentence (of five words or more) of the
+/// prompt's final `Q: ` text. Returns its URL and the prompts it was sent.
+fn sentence_server() -> (String, Arc<Mutex<Vec<String>>>) {
+    use std::io::{BufRead, BufReader, Read, Write};
+
+    fn answer(prompt: &str) -> String {
+        let question = prompt
+            .trim_end()
+            .strip_suffix("\nA:")
+            .and_then(|body| body.rfind("\nQ: ").map(|i| body[i + 4..].to_owned()))
+            .unwrap_or_default();
+        let extractions: Vec<serde_json::Value> = question
+            .lines()
+            .flat_map(|line| line.split_inclusive(['.', '!', '?']))
+            .map(str::trim)
+            .filter(|s| s.ends_with(['.', '!', '?']) && s.split(' ').count() >= 5)
+            .map(|s| json!({"fact": s}))
+            .collect();
+        format!("```json\n{}\n```", serde_json::to_string_pretty(&json!({"extractions": extractions})).unwrap())
+    }
+
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let prompts: Arc<Mutex<Vec<String>>> = Arc::default();
+    let seen = prompts.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { return };
+            let mut reader = BufReader::new(stream.try_clone().unwrap());
+            let (mut line, mut length) = (String::new(), 0usize);
+            reader.read_line(&mut line).unwrap();
+            assert!(line.starts_with("POST /v1/chat/completions "), "{line}");
+            loop {
+                line.clear();
+                reader.read_line(&mut line).unwrap();
+                if line.trim().is_empty() {
+                    break;
+                }
+                if let Some((name, value)) = line.split_once(':')
+                    && name.eq_ignore_ascii_case("content-length")
+                {
+                    length = value.trim().parse().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            let request: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            let prompt =
+                request["messages"].as_array().unwrap().last().unwrap()["content"].as_str().unwrap().to_owned();
+            let reply =
+                json!({"choices": [{"message": {"role": "assistant", "content": answer(&prompt)}}]}).to_string();
+            seen.lock().unwrap().push(prompt);
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                reply.len()
+            )
+            .unwrap();
+        }
+    });
+    (url, prompts)
+}
+
+#[test]
+fn langextract_distils_grounded_facts_through_a_local_model_server() {
+    use garage_service::host::PlainHost;
+    use garage_service::langextract::LangExtractor;
+
+    with_db(|pool| {
+        Box::pin(async move {
+            let mut client = pool.get().await.unwrap();
+            let notes = source(&client, "notes", json!({})).await;
+            let text = "# Acme\n\nAcme was founded in 1998 by Zoë Smith. It makes anvils for the whole valley.\n\
+                        Short one. The roof was replaced after the storm last spring!";
+            let note = document(&client, notes, "acme.md", text, "document").await;
+            let thread = document(
+                &client,
+                notes,
+                "thread",
+                "Ada: the plumber is coming on Tuesday at nine.\nBob: ok",
+                "communication",
+            )
+            .await;
+
+            let (url, prompts) = sentence_server();
+            let servers = Settings { llama_host: url.clone(), ..Settings::default() };
+            let host = Arc::new(PlainHost::with_sockets(tokio::runtime::Handle::current(), None, None));
+            let extractor = Arc::new(LangExtractor::new(host));
+            let mut on_event = |_: &EnrichEvent| true;
+            let documents = documents_to_enrich(&client, "notes", None).await.unwrap();
+            let summary = enrich_facts(
+                &mut client,
+                EnrichRun {
+                    documents,
+                    selected: effective_prompts(&[]).unwrap(),
+                    model: model("llama_xpc", "gemma2-2b", &servers),
+                    servers: servers.clone(),
+                    stale_only: false,
+                    extractor: Some(extractor),
+                    on_event: &mut on_event,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!((summary.total, summary.enriched, summary.failed, summary.facts), (2, 2, 0, 4), "{summary:?}");
+            assert_eq!(prompts.lock().unwrap().len(), 2, "one prompt per document, each to the loopback server");
+
+            let rows = |document_id: i64| {
+                let client = &client;
+                async move {
+                    client
+                        .query(
+                            "SELECT fact, fact_class, extractor, extractor_model, char_start, char_end, \
+                                    (SELECT content FROM documents WHERE id = document_id) \
+                             FROM facts WHERE document_id = $1 ORDER BY ord",
+                            &[&document_id],
+                        )
+                        .await
+                        .unwrap()
+                }
+            };
+            let facts = rows(note).await;
+            assert_eq!(
+                facts.iter().map(|r| r.get::<_, String>(0)).collect::<Vec<_>>(),
+                [
+                    "Acme was founded in 1998 by Zoë Smith.",
+                    "It makes anvils for the whole valley.",
+                    "The roof was replaced after the storm last spring!"
+                ]
+            );
+            for row in facts.iter().chain(rows(thread).await.iter()) {
+                let (fact, start, end, content): (String, i32, i32, String) =
+                    (row.get(0), row.get(4), row.get(5), row.get(6));
+                let (start, end) = (usize::try_from(start).unwrap(), usize::try_from(end).unwrap());
+                assert_eq!(content.chars().skip(start).take(end - start).collect::<String>(), fact, "grounded");
+                assert_eq!(
+                    (row.get::<_, String>(1), row.get::<_, String>(2), row.get::<_, String>(3)),
+                    ("fact".to_owned(), "langextract".to_owned(), "gemma2-2b".to_owned())
+                );
+            }
+            let chunks: i64 = scalar(
+                &client,
+                "SELECT count(*) FROM chunks WHERE fact_id IS NOT NULL AND chunker = 'facts:langextract:gemma2-2b'",
+                &[],
+            )
+            .await;
+            assert_eq!(chunks, 4);
+            let run: i32 = scalar(
+                &client,
+                "SELECT facts FROM fact_runs WHERE document_id = $1 AND prompt_name = 'default'",
+                &[&note],
+            )
+            .await;
+            assert_eq!(run, 3);
+
+            // An off-box Ollama: the communication is refused before anything is sent.
+            let before = prompts.lock().unwrap().len();
+            let documents = documents_to_enrich(&client, "*", Some(thread)).await.unwrap();
+            let elsewhere = Settings { ollama_host: "http://models.example.net:11434".into(), ..Settings::default() };
+            let host = Arc::new(PlainHost::with_sockets(tokio::runtime::Handle::current(), None, None));
+            let summary = enrich_facts(
+                &mut client,
+                EnrichRun {
+                    documents,
+                    selected: effective_prompts(&[]).unwrap(),
+                    model: model("ollama", "gemma2:2b", &elsewhere),
+                    servers: elsewhere,
+                    stale_only: false,
+                    extractor: Some(Arc::new(LangExtractor::new(host))),
+                    on_event: &mut on_event,
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(summary.failed, 1);
+            assert_eq!(prompts.lock().unwrap().len(), before, "nothing was sent");
         })
     });
 }

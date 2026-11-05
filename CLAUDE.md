@@ -277,9 +277,11 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `garage_mcp::chat` run in `spawn_blocking`, one transaction, progress streamed; `tests/clusters.rs`) and
   `EnrichFacts` (`enrich/facts.py`, `enrich/metadata.py` and `ops/facts.py`'s loop in `enrich.rs`: the metadata facts
   with no model, `fact_runs` and `stale_only`, the egress rule per document, each prompt's facts replaced in their
-  own transaction, `tests/enrich.rs`; the model's side is a `FactExtractor` the binary supplies, the LangExtract
-  adapter over the langextract-rs crate once it is on crates.io, and a service without one writes the metadata
-  facts and fails each prompt as unavailable), `EnsureLlamaModel` through the host's loader (`FAILED_PRECONDITION` outside the app) and `Backfill` (`ops/backfill.py`: `garage-embed`'s worker run in-process over `LocalFacade`, the pool answering its facade calls, with its progress streamed, `backfill.rs`), so every RPC of `garage.proto` is answered.
+  own transaction, `tests/enrich.rs`; the model's side is a `FactExtractor`: `langextract.rs`'s `LangExtractor`,
+  the langextract-rs crate (crates.io; prompting, parsing and alignment, no I/O of its own) over `garage_mcp::chat`'s
+  `ChatModel` on `facts.provider`'s local server, each prompt sent through the host after the document's class
+  passed `check_egress`, which the serve binary, `garage-service-ffi` and the CLI's in-process service set with
+  `with_extractor`; a service without one writes the metadata facts and fails each prompt as unavailable), `EnsureLlamaModel` through the host's loader (`FAILED_PRECONDITION` outside the app) and `Backfill` (`ops/backfill.py`: `garage-embed`'s worker run in-process over `LocalFacade`, the pool answering its facade calls, with its progress streamed, `backfill.rs`), so every RPC of `garage.proto` is answered.
   `garage-service serve` is the binary (`--socket` or `--host`/`--port`, `GARAGE_GRPC_*`). `tests/postgres.rs` holds
   the SQL to a server, `tests/grpc.rs` the service over a socket and a port and
   `tests/ops.rs` the operations over gRPC and `tests/facts.rs` the facts listing and the graph (its graph cases run

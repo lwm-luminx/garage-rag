@@ -22,6 +22,7 @@ rust_library(
         "@crates//:http-body-util",
         "@crates//:hyper",
         "@crates//:hyper-util",
+        "@crates//:langextract-rs",
         "@crates//:libc",
         "@crates//:prost",
         "@crates//:regex",

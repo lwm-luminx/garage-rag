@@ -23,6 +23,7 @@ use garage_embed::{Host, HttpRequest, HttpResponse};
 use garage_service::auth::{config_change_allowed, token_from_env};
 use garage_service::config::Config;
 use garage_service::host::HostEmbedder;
+use garage_service::langextract::LangExtractor;
 use garage_service::server::{Endpoint, bind, serve_bound};
 use garage_service::service::{GarageService, sql_dir};
 use garage_service::{VERSION, db};
@@ -223,8 +224,10 @@ fn start(request: &Map<String, Value>, host: Arc<dyn Host>) -> Result<(GarageSer
         .map_err(|e| failed(format!("tokio runtime: {e}")))?;
     let vouched = config_change_allowed(token.is_some(), matches!(endpoint, Endpoint::Unix(_)));
     let embedder = Arc::new(HostEmbedder { host: host.clone(), settings: config.embed_settings() });
-    let service =
-        GarageService::new(config, embedder, sql, vouched).map_err(|e| failed(e.to_string()))?.with_host(host);
+    let service = GarageService::new(config, embedder, sql, vouched)
+        .map_err(|e| failed(e.to_string()))?
+        .with_extractor(Arc::new(LangExtractor::new(host.clone())))
+        .with_host(host);
     let bound = runtime.block_on(bind(&endpoint)).map_err(|e| failed(e.to_string()))?;
     let listening = bound.endpoint();
     let (shutdown, stopped) = oneshot::channel::<()>();
