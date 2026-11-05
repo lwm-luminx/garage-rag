@@ -232,7 +232,8 @@ jobs:
           $env:GARAGE_LIBGIT2_DIR = $vcpkg
           $env:RUSTFLAGS = "-L native=$vcpkg\lib"
           # Without Tesseract until the app ships its own build (windows.md section 5.5): pictures read as no text.
-          cargo build --release --no-default-features -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
+          # --no-default-features also drops garage-ingest-ffi's `exports` (its C symbols), so it is named again.
+          cargo build --release --no-default-features --features garage-ingest-ffi/exports -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
           Get-ChildItem target\release\*.dll
       - uses: actions/upload-artifact@v4
         with:
