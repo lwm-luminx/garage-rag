@@ -140,9 +140,12 @@ Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
   a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
     cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `format`, `gazelle`, `buildifier` and `winapp-bazel`
-    (`aspect test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
-  - On macOS: `lint`, which analyzes Apple targets.
+    binding's tests), `swiftcheck`, `winapp-bazel` (`aspect test //winapp/...`, the Windows app's
+    projects but the WinUI app; see "Windows app") and `aspect`.
+  - `aspect` runs the four Aspect CLI tasks (buildifier, format, gazelle, lint) in one Linux job.
+    Each still reports its own `aspect / <task>` check, which the branch ruleset requires. Lint
+    covers the Python dev tools that are Bazel targets (`//tools:third_party_notices`,
+    `//winapp/bazel/...`), which need no Mac.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);
