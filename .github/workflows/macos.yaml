@@ -112,6 +112,9 @@ jobs:
       - id: test
         env:
           ASPECT_REMOTE: ${{ secrets.ASPECT_API_TOKEN != '' && 'yes' || '' }}
+          # Only main and next write to the remote cache, as only they save the Actions caches:
+          # a pull request reads what they built and uploads nothing of its own.
+          ASPECT_REMOTE_UPLOAD: ${{ github.event_name == 'pull_request' && '--bazel-flag=--noremote_upload_local_results' || '' }}
         run: |
           # Headroom for the rest: the runner's shell default is 256, and on macOS
           # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit above).
@@ -122,7 +125,8 @@ jobs:
           # and is shared by every branch. A fork's pull request gets no secrets, signs
           # in to nothing and keeps the disk cache alone.
           if [ -n "$ASPECT_REMOTE" ]; then
-            aspect test --remote --task:name test -- //...
+            # shellcheck disable=SC2086 # empty, or one flag
+            aspect test --remote $ASPECT_REMOTE_UPLOAD --task:name test -- //...
           else
             aspect test --task:name test -- //...
           fi
