@@ -1,0 +1,80 @@
+name: Site
+
+# The garagerag.app site (docs/), built by Bazel: `//docs:site` runs Jekyll 4 from
+# docs/Gemfile.lock under rules_ruby and copies the model catalog into
+# /.data/models.json (site_files), so CI builds exactly what `bazel run //docs:site`
+# serves locally. (GitHub's jekyll-build-pages action pins Jekyll 3 and its own
+# plugin set, not the Gemfile's.)
+#
+# Every push and pull request that touches the site builds it; only main, which
+# releases publish from, deploys it to GitHub Pages.
+on:
+  push:
+    branches: [main, next]
+  pull_request:
+    paths:
+      - "docs/**"
+      - "data/models/**"
+      - "bazel/jekyll.bzl"
+      - "MODULE.bazel"
+      - "MODULE.bazel.lock"
+      - ".aspect/**"
+      - ".github/workflows/pages.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  # The Aspect CLI's artifact upload feature, and the Pages deployment.
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: "Site: aspect build //docs:site"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
+        with:
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
+      - name: aspect build //docs:site
+        # --config=ci downloads no outputs from the remote cache (remote_download_outputs=minimal);
+        # the site is the one output this job needs on disk.
+        run: aspect build --task:name site --remote_download_outputs=toplevel //docs:site
+      - name: Stage the built site
+        # Bazel's outputs are read-only and reached through the bazel-bin symlink; copy them out
+        # as plain, readable files for the Pages artifact.
+        run: |
+          rm -rf "$RUNNER_TEMP/_site"
+          cp -RL bazel-bin/docs/site "$RUNNER_TEMP/_site"
+          chmod -R u+w,a+rX "$RUNNER_TEMP/_site"
+          test -f "$RUNNER_TEMP/_site/index.html"
+          test -f "$RUNNER_TEMP/_site/.data/models.json"
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: ${{ runner.temp }}/_site
+          # The site serves /.data/ (models.json, garage.schema.json), which the action
+          # leaves out by default like every dot folder.
+          include-hidden-files: true
+
+  deploy:
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # One deployment at a time, and never cancel one that is running.
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

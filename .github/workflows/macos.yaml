@@ -9,9 +9,13 @@ name: macOS build
 #   (workflow_dispatch) when in doubt.
 # - A push does not cancel a run in progress. The newest push waits for it, and
 #   GitHub keeps only the latest waiting run, so a finished run always reports.
-# - main and next run it on every push, plus a nightly run on main. Those runs
-#   are the only ones that save Bazel caches; pull requests restore their base
-#   branch's (next's, or main's for a bugfix) and save nothing. See "Caches" below.
+# - main and next run it on every push, plus a nightly run on main.
+#
+# Caching is Aspect Cloud's remote cache, which setup-aspect wires in once the
+# ASPECT_API_TOKEN org secret signs the CLI in. It is shared by every branch and
+# job, action by action, and --config=ci uploads local results as they finish,
+# so a run stopped by the timeout below still leaves its work for the next one.
+# A fork's pull request gets no secret and builds cold.
 on:
   push:
     branches: [main, next]
@@ -32,17 +36,14 @@ on:
       - ".bazelversion"
       - ".aspect/**"
       - ".github/workflows/macos.yaml"
-      - ".github/actions/**"
   schedule:
     - cron: "17 7 * * *"
   workflow_dispatch:
 
 permissions:
-  # Required by the Aspect CLI artifact upload feature.
+  # The Aspect CLI's artifact upload feature.
   id-token: write
   contents: read
-  # Deleting a branch's superseded cache entries (the last step).
-  actions: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
@@ -50,119 +51,41 @@ concurrency:
 
 jobs:
   test:
+    name: "macOS: aspect test //..."
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
         with:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      # Caches. A cold build of //... runs past the hosted runner's 6h job limit,
-      # so Bazel's disk and repository caches carry the work across runs. A warm
-      # one takes minutes. Keeping them warm under the repository's 10 GB cache
-      # quota is what makes this workflow fast:
-      #
-      # - Only pushes to main and next (and the nightly and manual runs) save.
-      #   A pull request's entry is readable by that pull request alone, and
-      #   each was a full copy (0.3 to 1.3 GB) that evicted main's entry, which
-      #   left every run cold.
-      # - A pull request restores its base branch's entry (GitHub lets it read
-      #   the base branch's and the default branch's caches).
-      # - After a passing build, disk-cache entries this run did not read or
-      #   write are pruned before saving, so the entry tracks the tree instead
-      #   of growing with every run. Bazel sets an entry's mtime whenever it
-      #   stores or retrieves it.
-      # - Once saved, the branch's older entries are deleted.
-      #
-      # The key carries the run id, so a re-run of a run that timed out saves
-      # its progress instead of colliding with the first attempt's key.
-      - name: Restore Bazel caches
-        id: bazel-cache
-        uses: actions/cache/restore@v4
-        with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: |
-            bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
-            bazel-test-${{ runner.os }}-${{ runner.arch }}-
-      - name: Configure Bazel for CI
-        # user.bazelrc is git-ignored and try-imported last by .bazelrc.
-        #
-        # - Writing the copied and signed tree artifacts (Postgres, the bundle's
-        #   resources) into the disk cache ran Bazel out of file descriptors ("Too
-        #   many open files"), even at 65536. The actions that produce them only
-        #   copy and sign files, so they stay out of the cache (no-cache;
-        #   no-remote-cache still uses the disk cache) and re-run on each fresh runner.
-        # - --build_tests_only: build what the tests need, not every non-manual
-        #   target in //....
-        # - --noapple_generate_dsym: .bazelrc asks for dSYMs on every build, and
-        #   dsymutil over llama.cpp and Postgres is slow; tests never use them.
-        run: |
-          {
-            echo "common --disk_cache=$HOME/.cache/bazel-disk --repository_cache=$HOME/.cache/bazel-repo"
-            echo "common --modify_execution_info=^(CopyToDirectory|Codesign)\$=+no-cache"
-            echo "startup --host_jvm_args=-XX:-MaxFDLimit"
-            echo "test --build_tests_only"
-            echo "build --noapple_generate_dsym"
-          } >> user.bazelrc
-          cat user.bazelrc
-          # Disk-cache entries older than this were not touched by this run.
-          touch "$RUNNER_TEMP/bazel-start"
-      - id: test
+          # Appended to ~/.bazelrc, which Bazel reads after the workspace's .bazelrc.
+          #
+          # - Caching the copied and signed tree artifacts (Postgres, the bundle's
+          #   resources) ran Bazel out of file descriptors ("Too many open files"),
+          #   even at 65536. Those actions only copy and sign files, so they stay out
+          #   of the cache and re-run on each fresh runner.
+          # - -XX:-MaxFDLimit: on macOS the JVM caps Bazel at 10240 descriptors
+          #   unless told not to.
+          # - --build_tests_only: build what the tests need, not every non-manual
+          #   target in //....
+          # - --noapple_generate_dsym: .bazelrc asks for dSYMs on every build, and
+          #   dsymutil over llama.cpp and Postgres is slow; tests never use them.
+          bazelrc: |
+            common --modify_execution_info=^(CopyToDirectory|Codesign)$=+no-cache
+            startup --host_jvm_args=-XX:-MaxFDLimit
+            test --build_tests_only
+            build --noapple_generate_dsym
+      - name: aspect test //...
         env:
-          ASPECT_REMOTE: ${{ secrets.ASPECT_API_TOKEN != '' && 'yes' || '' }}
-          # Only main and next write to the remote cache, as only they save the Actions caches:
-          # a pull request reads what they built and uploads nothing of its own.
-          ASPECT_REMOTE_UPLOAD: ${{ github.event_name == 'pull_request' && '--bazel-flag=--noremote_upload_local_results' || '' }}
+          # Only main and next write to the remote cache: a pull request reads what they built
+          # and uploads nothing of its own (a cold upload from a PR ran past an hour, #326).
+          REMOTE_UPLOAD: ${{ github.event_name == 'pull_request' && '--bazel-flag=--noremote_upload_local_results' || '' }}
         run: |
-          # Headroom for the rest: the runner's shell default is 256, and on macOS
-          # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit above).
+          # Headroom for the rest: the runner's shell default is 256.
           ulimit -n 65536 2>/dev/null || ulimit -n "$(sysctl -n kern.maxfilesperproc)"
           echo "open file limit: $(ulimit -n)"
-          # Aspect Cloud's remote cache and build event stream (--remote), through the
-          # sign-in setup-aspect made with ASPECT_API_TOKEN. It caches action by action
-          # and is shared by every branch. A fork's pull request gets no secrets, signs
-          # in to nothing and keeps the disk cache alone.
-          if [ -n "$ASPECT_REMOTE" ]; then
-            # shellcheck disable=SC2086 # empty, or one flag
-            aspect test --remote $ASPECT_REMOTE_UPLOAD --task:name test -- //...
-          else
-            aspect test --task:name test -- //...
-          fi
-        # Stop before the 6h limit: a job the runner kills skips its remaining
-        # steps, so the save below would never run and the next run would start
-        # cold again.
-        timeout-minutes: 320
-      - name: Prune the disk cache to what this build used
-        # Only after a passing build: a run that failed early touched little,
-        # and pruning it would throw the warm cache away.
-        if: github.event_name != 'pull_request' && steps.test.outcome == 'success'
-        run: |
-          du -sh ~/.cache/bazel-disk
-          find ~/.cache/bazel-disk -type f ! -newer "$RUNNER_TEMP/bazel-start" -delete
-          find ~/.cache/bazel-disk -type d -empty -delete
-          du -sh ~/.cache/bazel-disk
-      - name: Save Bazel caches
-        id: bazel-cache-save
-        if: always() && github.event_name != 'pull_request' && steps.bazel-cache.outputs.cache-primary-key != ''
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
-      - name: Delete this branch's older Bazel caches
-        # The entry just saved holds everything the older ones did that this
-        # tree still uses (it was restored from them, then pruned or added to).
-        if: always() && steps.bazel-cache-save.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          SAVED: ${{ steps.bazel-cache.outputs.cache-primary-key }}
-          PREFIX: bazel-test-${{ runner.os }}-${{ runner.arch }}-
-        run: |
-          gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "$PREFIX" \
-            --limit 100 --json id,key --jq '.[] | select(.key != env.SAVED) | .id' |
-            while read -r id; do
-              gh cache delete "$id" --repo "$GITHUB_REPOSITORY" || true
-            done
+          # shellcheck disable=SC2086 # empty, or one flag
+          aspect test $REMOTE_UPLOAD --task:name test -- //...
+        # Stop before the hosted runner's 6h job limit, so the job reports (and
+        # the remote cache keeps what finished) instead of being killed.
+        timeout-minutes: 330

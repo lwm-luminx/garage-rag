@@ -223,7 +223,7 @@ jobs:
         with:
           path: ${{ runner.temp }}\pgsql
           key: ${{ steps.pgsql-cache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
@@ -280,7 +280,7 @@ jobs:
         with:
           path: ${{ runner.temp }}\vcpkg-archives
           key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: rust-windows-x64
           path: |
@@ -301,12 +301,12 @@ jobs:
         with:
           global-json-file: winapp/global.json
       # PostgresSupervisor's tests run the app's own cluster from this build.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
       # The service tests start Garage.Services.exe on these.
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rust-windows-x64
           path: ${{ runner.temp }}\native
@@ -342,11 +342,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: winapp/global.json
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: rust-windows-x64
           path: ${{ runner.temp }}\native
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
@@ -356,7 +356,7 @@ jobs:
         run: winapp/packaging/msix.ps1
       - name: MSI
         run: winapp/packaging/msi.ps1
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: garage-windows-x64
           path: |

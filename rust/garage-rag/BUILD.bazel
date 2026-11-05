@@ -1,0 +1,11 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+
+# Garage's UniFFI crates in one library (src/lib.rs), packaged for PyPI and RubyGems as garage_rag
+# by .github/workflows/release.yaml with Cargo and maturin; Bazel checks that it still builds.
+rust_library(
+    name = "garage_rag",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_rag",
+    edition = "2024",
+    deps = ["//rust/garage-embed-uniffi:garage_embed_uniffi_lib"],
+)

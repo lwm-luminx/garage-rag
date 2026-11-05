@@ -220,9 +220,11 @@ alignment): [langextract-rs](https://github.com/lwm-luminx/langextract-rs), the
 FOSS Rust port, behind the service's `FactExtractor` trait. Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
 OpenAI, is not vendored, and a cloud model id is refused with an error. The
-model is always `facts_language_model(...)`, a `LocalLanguageModel`
-(`enrich/local_provider.py`) that posts each prompt to the server's
-`/v1/chat/completions` through the [inference client](#local-inference-client).
+model is always Garage's own chat client (`LangExtractor` in
+`rust/garage-service/src/langextract.rs`, over `garage_mcp::chat::ChatModel`),
+which posts each prompt to the server's `/v1/chat/completions` through the
+[inference client](#local-inference-client), after the document's class has
+passed the egress rules.
 Like the rest of local inference, content never leaves the machine. Ollama
 keeps the JSON mode and temperature (0.1) that LangExtract's own Ollama provider
 sent (GPT-OSS models get a JSON-only system instruction instead); LM Studio and

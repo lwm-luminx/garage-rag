@@ -12,6 +12,7 @@ use std::time::Duration;
 use garage_facade::{Client, Connection, FacadeError, GrpcTarget};
 use garage_service::config::Config;
 use garage_service::host::{HostEmbedder, PlainHost};
+use garage_service::langextract::LangExtractor;
 use garage_service::server::{Endpoint, bind, serve_bound};
 use garage_service::service::{GarageService, sql_dir};
 use tokio::sync::oneshot;
@@ -111,6 +112,7 @@ impl Backend {
         let embedder = Arc::new(HostEmbedder { host: host.clone(), settings: config.embed_settings() });
         let service = GarageService::new(config.clone(), embedder, sql_dir(None), true)
             .map_err(|e| Failure::usage(format!("[red]config error[/red]: {e}")))?
+            .with_extractor(Arc::new(LangExtractor::new(host.clone())))
             .with_host(host);
         let folder = std::env::temp_dir().join(format!("garage-cli-{}", std::process::id()));
         let socket = folder.join("grpc");

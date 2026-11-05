@@ -25,11 +25,12 @@ enum FixtureCorpus {
 
     /// What the model UI tests' deterministic engine (`DeterministicLlamaEngine` in LlamaTestSupport)
     /// distills from `indexedWithoutCode`: one fact per sentence of five words or more, of kind
-    /// `event` when it holds a four-digit year and `fact` otherwise. `test_fixture_corpus.py` checks
-    /// these counts against the vendored LangExtract.
-    static let distilledFacts = 20
+    /// `event` when it holds a four-digit year and `fact` otherwise (20, 3 of them the mail's), plus
+    /// the mail's two metadata facts, its sender and its recipient, which `EnrichFacts` writes with
+    /// no model. `garage-service`'s `tests/enrich.rs` runs the same sentence rule through LangExtract.
+    static let distilledFacts = 22
     static let distilledEvents = 11
-    static let distilledFromMail = 3
+    static let distilledFromMail = 5
     /// The one sentence that carries the Markdown note's token, and so the one fact that does.
     static let zorvexineFact = "Townspeople call the middle arch the zorvexine arch, after the swallows that nest under it."
 }

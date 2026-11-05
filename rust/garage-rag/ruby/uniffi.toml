@@ -1,0 +1,5 @@
+# UniFFI's Ruby settings for the garage_rag gem (ruby/build.sh passes this file to uniffi-bindgen).
+# cdylib_path is written into the generated `ffi_lib` call as Ruby, so the bindings load the library
+# shipped beside them in the gem rather than searching the system's library path.
+[defaults.bindings.ruby]
+cdylib_path = "File.join(__dir__, FFI.map_library_name('garage_rag'))"

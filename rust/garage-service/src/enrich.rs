@@ -14,7 +14,7 @@
 //!
 //! The model's part is behind [`FactExtractor`]: what to extract (the prompt's description and
 //! examples), from which text, with which model; the LangExtract loop that drives the model lives
-//! in that implementation. Before anything is deleted, the document's class goes through the
+//! in that implementation ([`crate::langextract::LangExtractor`], over the process's host). Before anything is deleted, the document's class goes through the
 //! egress rules: a server that is not approved, or a communication for a server that is not
 //! loopback, refuses the run for that document.
 
@@ -438,7 +438,9 @@ pub struct Extracted {
 /// host (`extract_facts`). Only grounded extractions come back: an ungrounded one is the model
 /// quoting its own few-shot example, which cannot be traced to the source text.
 pub trait FactExtractor: Send + Sync {
-    /// The facts `prompt` finds in `text` with `model`, on the configured `servers`.
+    /// The facts `prompt` finds in `text` with `model`, on the configured `servers`. `text` is of
+    /// `corpus_class`, which an implementation that sends it anywhere runs through the egress
+    /// rules ([`FactModel::check_egress`]) before it does.
     ///
     /// # Errors
     ///
@@ -447,6 +449,7 @@ pub trait FactExtractor: Send + Sync {
         &self,
         model: &FactModel,
         servers: &Settings,
+        corpus_class: &str,
         prompt: &EffectivePrompt,
         text: &str,
     ) -> std::result::Result<Vec<Extracted>, String>;
@@ -739,9 +742,14 @@ async fn run_prompt(
                     "fact extraction with a model is not available in this build; metadata facts were written".into(),
                 ));
             };
-            let (model, servers, prompt_copy, text) =
-                (run.model.clone(), run.servers.clone(), prompt.clone(), text.to_owned());
-            tokio::task::spawn_blocking(move || extractor.extract(&model, &servers, &prompt_copy, &text))
+            let (model, servers, corpus_class, prompt_copy, text) = (
+                run.model.clone(),
+                run.servers.clone(),
+                document.corpus_class.clone(),
+                prompt.clone(),
+                text.to_owned(),
+            );
+            tokio::task::spawn_blocking(move || extractor.extract(&model, &servers, &corpus_class, &prompt_copy, &text))
                 .await
                 .unwrap_or_else(|e| Err(format!("extractor panicked: {e}")))
                 .map_err(ServiceError::Unavailable)?
