@@ -64,27 +64,40 @@ jobs:
           "SRC=$env:RUNNER_TEMP\src" >> $env:GITHUB_ENV
           "DEPS=$env:RUNNER_TEMP\deps" >> $env:GITHUB_ENV
           "PGROOT=$env:RUNNER_TEMP\pgsql" >> $env:GITHUB_ENV
+      # The finished Postgres install (ICU, zlib, pgvector) depends only on the pinned sources, the
+      # fetch script and this workflow, so a hit skips the whole build; the smoke test still runs,
+      # since it applies data/sql. Pushes to main save, as the other caches do.
+      - name: Restore the Postgres build
+        id: pgsql-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\pgsql
+          key: pgsql-windows-x64-${{ hashFiles('ext/postgres/**', 'ext/pgvector/**', 'ext/libicu/**', 'ext/libzlib/**', 'tools/windows/**', '.github/workflows/windows.yaml') }}
       - name: Build tools
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install --upgrade meson ninja pkgconf
           choco install winflexbison3 --no-progress -y
       - uses: ilammy/msvc-dev-cmd@v1
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         with:
           arch: x64
       - name: Fetch sources
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python tools/windows/fetch_ext.py --dest $env:SRC postgres libicu libzlib pgvector
 
       - name: Restore ICU
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         id: icu-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\icu
           key: icu-windows-x64-${{ hashFiles('ext/libicu/libicu.MODULE.bazel') }}
       - name: Build ICU
-        if: steps.icu-cache.outputs.cache-hit != 'true'
+        if: steps.pgsql-cache.outputs.cache-hit != 'true' && steps.icu-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           # ICU's projects name one toolset; build with whichever this Visual Studio has.
@@ -99,6 +112,7 @@ jobs:
           Copy-Item "$env:SRC\libicu\lib64\icu*.lib" "$icu\lib"
           Copy-Item -Recurse "$env:SRC\libicu\include\unicode" "$icu\include"
       - name: Build zlib
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           cmake -S "$env:SRC\libzlib" -B "$env:SRC\zlib-build" -G Ninja `
@@ -108,6 +122,7 @@ jobs:
           cmake --install "$env:SRC\zlib-build"
           Get-ChildItem -Recurse "$env:DEPS" | Select-Object -ExpandProperty FullName
       - name: pkg-config files for ICU and zlib
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         # Neither ICU's MSBuild nor meson's MSVC zlib lookup gives meson something to
         # find, so describe both, and nothing else: PKG_CONFIG_LIBDIR replaces the
         # default search path, which keeps Strawberry Perl's MinGW .pc files out. The
@@ -150,6 +165,7 @@ jobs:
           "PKG_CONFIG_LIBDIR=$pc" >> $env:GITHUB_ENV
 
       - name: Build Postgres
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         # The same feature set as the macOS configure: ICU and zlib, no OpenSSL.
         # Everything else is off rather than auto, so nothing the runner happens to
         # have installed (Strawberry Perl, OpenSSL, Python) sneaks in.
@@ -164,6 +180,7 @@ jobs:
           # Ship the ICU and zlib DLLs next to the binaries that load them.
           Copy-Item "$env:RUNNER_TEMP\icu\bin\*.dll", "$env:DEPS\bin\*.dll" "$env:PGROOT\bin"
       - name: Build pgvector
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         working-directory: ${{ runner.temp }}\src\pgvector
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -200,6 +217,12 @@ jobs:
             & "$bin\pg_ctl.exe" -D $data -m fast -w stop
             Get-Content "$env:RUNNER_TEMP\postgres.log"
           }
+      - name: Save the Postgres build
+        if: github.event_name != 'pull_request' && steps.pgsql-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\pgsql
+          key: ${{ steps.pgsql-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: postgres-windows-x64
@@ -214,6 +237,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       # rustup reads rust/rust-toolchain.toml and installs that toolchain on first use.
+      # Cargo's registry and rust/target, and vcpkg's built packages: pushes to main save, pull
+      # requests restore and save nothing (ci.yaml's `rust` job does the same).
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: vcpkg binary cache location
+        run: |
+          "VCPKG_DEFAULT_BINARY_CACHE=$env:RUNNER_TEMP\vcpkg-archives" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\vcpkg-archives" | Out-Null
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg-archives
+          key: vcpkg-windows-x64-static-md-${{ hashFiles('.github/workflows/windows.yaml') }}
       - name: libgit2 and SQLite (vcpkg, static, dynamic CRT as rustc links it)
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -234,6 +273,12 @@ jobs:
           # Without Tesseract until the app ships its own build (windows.md section 5.5): pictures read as no text.
           cargo build --release --no-default-features -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
           Get-ChildItem target\release\*.dll
+      - name: Save vcpkg packages
+        if: github.event_name != 'pull_request' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg-archives
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
       - uses: actions/upload-artifact@v4
         with:
           name: rust-windows-x64
