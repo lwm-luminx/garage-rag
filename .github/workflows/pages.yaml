@@ -56,6 +56,9 @@ jobs:
       - uses: actions/upload-pages-artifact@v5
         with:
           path: ${{ runner.temp }}/_site
+          # The site serves /.data/ (models.json, garage.schema.json), which the action
+          # leaves out by default like every dot folder.
+          include-hidden-files: true
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
