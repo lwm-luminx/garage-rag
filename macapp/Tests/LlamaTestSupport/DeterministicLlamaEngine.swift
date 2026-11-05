@@ -318,15 +318,20 @@ public final class DeterministicLlamaEngine: LlamaInferenceEngine, @unchecked Se
         return nil
     }
 
-    /// Sentences of `text` worth a fact: runs ending in `.`, `!` or `?` within one line, trimmed,
-    /// of at least five words (so headings, greetings and mail headers are left out).
+    /// Sentences of `text` worth a fact: runs ending in `.`, `!` or `?` followed by whitespace or the
+    /// end of the line, within one line, trimmed, of at least five words (so headings, greetings and
+    /// mail headers are left out; the dot inside an address such as `oren.pask@...` ends nothing).
     static func sentences(in text: String) -> [String] {
         var found: [String] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
             var current = ""
-            for character in line {
+            var index = line.startIndex
+            while index < line.endIndex {
+                let character = line[index]
+                index = line.index(after: index)
                 current.append(character)
-                if character == "." || character == "!" || character == "?" {
+                let atBoundary = index == line.endIndex || line[index].isWhitespace
+                if (character == "." || character == "!" || character == "?") && atBoundary {
                     let sentence = current.trimmingCharacters(in: .whitespaces)
                     if sentence.split(separator: " ").count >= 5 {
                         found.append(sentence)
