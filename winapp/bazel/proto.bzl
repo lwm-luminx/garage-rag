@@ -60,6 +60,7 @@ def _csharp_proto_srcs_impl(ctx):
     if grpc_options != None:
         args += ["--plugin=protoc-gen-grpc=$PLUGIN", "--grpc_out=" + out_dir]
         args += ["--grpc_opt=" + option for option in grpc_options]
+
     # The folder the .proto's name is taken from, which the descriptor embeds. Grpc.Tools uses
     # the project folder (ProtoRoot) for a .proto inside the project, `Protos/services.proto`,
     # and a linked one's own folder, `garage.proto`.
