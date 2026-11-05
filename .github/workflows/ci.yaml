@@ -59,6 +59,13 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: winapp/global.json
+      # Cargo's registry and rust/target, keyed on the toolchain and Cargo.lock. Pushes to main
+      # save; pull requests restore it and save nothing, as the Bazel caches do (macos.yaml,
+      # "Caches"), so they do not evict main's entries from the 10 GB quota.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          save-if: ${{ github.event_name != 'pull_request' }}
       - name: Install protoc, libgit2 and SQLite
         # garage-git links libgit2, found through pkg-config; garage-ingest links the system SQLite;
         # garage-ocr links libtesseract, and its tests read with the English data.
