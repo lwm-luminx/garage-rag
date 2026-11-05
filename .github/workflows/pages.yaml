@@ -43,7 +43,7 @@ jobs:
       - name: aspect build //docs:site
         # --config=ci downloads no outputs from the remote cache (remote_download_outputs=minimal);
         # the site is the one output this job needs on disk.
-        run: aspect build --task:name site -- //docs:site --remote_download_outputs=toplevel
+        run: aspect build --task:name site --remote_download_outputs=toplevel //docs:site
       - name: Stage the built site
         # Bazel's outputs are read-only and reached through the bazel-bin symlink; copy them out
         # as plain, readable files for the Pages artifact.
