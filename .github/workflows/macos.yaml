@@ -76,11 +76,16 @@ jobs:
             test --build_tests_only
             build --noapple_generate_dsym
       - name: aspect test //...
+        env:
+          # Only main and next write to the remote cache: a pull request reads what they built
+          # and uploads nothing of its own (a cold upload from a PR ran past an hour, #326).
+          REMOTE_UPLOAD: ${{ github.event_name == 'pull_request' && '--bazel-flag=--noremote_upload_local_results' || '' }}
         run: |
           # Headroom for the rest: the runner's shell default is 256.
           ulimit -n 65536 2>/dev/null || ulimit -n "$(sysctl -n kern.maxfilesperproc)"
           echo "open file limit: $(ulimit -n)"
-          aspect test --task:name test -- //...
+          # shellcheck disable=SC2086 # empty, or one flag
+          aspect test $REMOTE_UPLOAD --task:name test -- //...
         # Stop before the hosted runner's 6h job limit, so the job reports (and
         # the remote cache keeps what finished) instead of being killed.
         timeout-minutes: 330

@@ -146,6 +146,8 @@ Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
     Each still reports its own `aspect / <task>` check, which the branch ruleset requires. Lint
     covers the Python dev tools that are Bazel targets (`//tools:third_party_notices`,
     `//winapp/bazel/...`), which need no Mac.
+  - No job runs on macOS unless it needs a Mac, since macOS runners cost more and wait longer (Rick,
+    2026-11-05), and checks share a job where they can, since each job waits for a runner and clones.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);
@@ -183,6 +185,10 @@ Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
   reference (`LlamaKnownAnswers`). The reference, `ext/nomic_embed/known_answers.json`, is not
   committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
   `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
+- `.mcp.json` registers `aspect mcp` for Claude Code: read-only tools over the builds CI sends to Aspect
+  Cloud (invocations, build logs, targets, action history). It needs the `aspect` CLI on `PATH` and a
+  signed-in CLI (`aspect auth login` once); signed in, `aspect build //... --remote` also uses Aspect's cache.
+  Aspect Cloud needs CLI 2026.41.24 or newer (`.aspect/version.axl`).
 
 ### Rust (`rust/`) and reader plugins
 
@@ -863,11 +869,15 @@ are dated so a stale one can be spotted.
   repository as a submodule tracking `next` (Rick, 2026-10-05).
 - New PRs target **`next`** (the next feature release). Only bugfixes target `main`, which is what releases and
   the site (garagerag.app, GitHub Pages) publish from. `main` flows into `next` through a merge PR merged with
-  "Create a merge commit" (Rick, 2026-09-30). Both branches are ruleset-protected: PR required, no force-push.
-- Required checks (rulesets, 2026-09-27): `python`, `swiftcheck`, `format`, `gazelle`, `buildifier`, `lint`.
-  The `python` job left with the Python package (2026-11-04); the ruleset needs `rust` in its place.
-  The macOS, Windows, known-answers and free-threaded jobs are not required; the notarized
-  Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job means updating the ruleset with it.
+  "Create a merge commit" (Rick, 2026-09-30). Both branches are protected by one ruleset, "Protected: main and
+  next": PR required (merge or squash), signed commits, no force-push or deletion.
+- Required checks (Rick, 2026-11-04): `aspect / buildifier`, `aspect / format`, `aspect / gazelle` and `aspect / lint`,
+  the check runs the Aspect Workflows GitHub App posts for the `aspect` job's tasks (they take precedence over the
+  job's own check), plus the Actions jobs "Swift:
+  syntax check (tree-sitter)" and "Rust: fmt, clippy and tests (rust/)". The `aspect /` check appears only when CI
+  signs in to Aspect (`ASPECT_API_TOKEN`), so a fork's PR needs an admin bypass. winapp-bazel and the macOS, Windows and known-answers jobs are not required;
+  the notarized Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job or
+  task means updating the ruleset with it.
 - A PR that contains merge commits cannot be rebase-merged on GitHub; it needs "Create a merge commit".
 - Stacked PRs: when another branch or open PR already works on the same part of the app, base new work on it
   rather than on `main`/`next`, and name the base in the PR (Rick, 2026-09-24). When stacked PRs merge top-down

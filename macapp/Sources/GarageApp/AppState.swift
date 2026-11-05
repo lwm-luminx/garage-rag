@@ -363,8 +363,9 @@ final class AppState: ObservableObject {
             }
             if postgres.status == .running {
                 // Each daemon starts independently: an MCP failure must not keep the gRPC backend down.
-                try? await mcp.startIfEnabled()
+                // The backend first, since the MCP server reads the corpus through it.
                 await startBackend()
+                try? await mcp.startIfEnabled()
             }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -743,11 +744,11 @@ final class AppState: ObservableObject {
             await fetchRegisteredSources()
             await fetchCorpusStats()
             if postgres.status == .running {
-                if mcp.status == .stopped {
-                    try? await mcp.startIfEnabled()
-                }
                 if grpc.status == .stopped {
                     await startBackend()
+                }
+                if mcp.status == .stopped {
+                    try? await mcp.startIfEnabled()
                 }
             }
             lastCommandSucceeded = true
@@ -762,11 +763,11 @@ final class AppState: ObservableObject {
         Task {
             await postgres.refreshPendingMigrations()
             guard postgres.status == .running else { return }
-            if mcp.status == .stopped {
-                try? await mcp.startIfEnabled()
-            }
             if grpc.status == .stopped {
                 await startBackend()
+            }
+            if mcp.status == .stopped {
+                try? await mcp.startIfEnabled()
             }
         }
     }
