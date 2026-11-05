@@ -165,8 +165,9 @@ Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
 - **`.github/workflows/release.yaml`** publishes packages from a `v*` tag whose commit is on `main`,
   each by trusted publishing (OIDC, no stored token), in the `crates-io`, `pypi` and `rubygems`
   environments. The crates take the workspace's version (`rust/Cargo.toml`); the wheel and the gem
-  take the app's release version (`rust/garage-rag`'s own `version`, held by a test and the `check`
-  job to GarageService's `VERSION`, which `garage --version` prints; it must stay above the
+  take the app's release version (`rust/garage-rag`'s own `version`, and its `BUILD.bazel`'s, held by
+  a test and the `check` job to GarageService's `VERSION`, which `garage --version` prints and the
+  Windows installers read: bump the three together; it must stay above the
   pure-Python 1.5.0 on PyPI). A version a registry already has is skipped.
   - crates.io: every crate whose `publish` is not false (the workspace default is false, so a crate
     opts in), with `cargo publish --workspace`. crates.io trusts a publisher only for an existing

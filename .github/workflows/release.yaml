@@ -158,7 +158,7 @@ jobs:
           manylinux: "2_28"
           # Runs in the manylinux container, in the same shell as maturin, from rust/garage-rag.
           before-script-linux: |
-            (dnf install -y cmake zlib-devel python3 || yum install -y cmake zlib-devel python3) >/dev/null
+            (dnf install -y cmake zlib-devel || yum install -y cmake zlib-devel) >/dev/null
             ../../tools/wheels/build_libgit2.sh /tmp/libgit2
             export GARAGE_LIBGIT2_DIR=/tmp/libgit2
           args: --release --locked --out ${{ github.workspace }}/dist

@@ -7,7 +7,8 @@
 #
 #     tools/wheels/build_libgit2.sh PREFIX     # then: export GARAGE_LIBGIT2_DIR=PREFIX
 #
-# Needs cmake, a C compiler, python3 and zlib's headers. Windows takes vcpkg's instead (windows.yaml).
+# Needs cmake, a C compiler, curl and zlib's headers (no Python: the manylinux container's is 3.6).
+# Windows takes vcpkg's instead (windows.yaml).
 set -euo pipefail
 
 prefix="$(mkdir -p "$1" && cd "$1" && pwd)"
@@ -15,8 +16,12 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-python3 "$repo/tools/windows/fetch_ext.py" --dest "$work/src" libgit2
-cmake -S "$work/src/libgit2" -B "$work/build" \
+# The pin is a commit of libgit2's repository, as Bazel's git_repository takes it.
+commit="$(sed -n 's/.*commit = "\([0-9a-f]*\)".*/\1/p' "$repo/ext/libgit2/libgit2.MODULE.bazel")"
+[ -n "$commit" ] || { echo "no commit in ext/libgit2/libgit2.MODULE.bazel" >&2; exit 1; }
+mkdir -p "$work/src"
+curl -fsSL "https://github.com/libgit2/libgit2/archive/$commit.tar.gz" | tar -xz -C "$work/src"
+cmake -S "$work/src/libgit2-$commit" -B "$work/build" \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$prefix" \
   -DCMAKE_INSTALL_LIBDIR=lib \
