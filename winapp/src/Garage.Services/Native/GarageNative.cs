@@ -43,10 +43,21 @@ internal static unsafe partial class GarageNative
     }
 
     /// <summary>Loads <paramref name="library"/> as a native call would, to check it is there.</summary>
+    /// <remarks>
+    /// <c>NativeLibrary.Load(name, assembly, searchPath)</c> never asks the import resolver (only a
+    /// <c>LibraryImport</c> does), so the folder is tried here first, as the resolver would. Before this,
+    /// a library no call had loaded yet failed here with "module not found".
+    /// </remarks>
     public static string Load(string library)
     {
+        if (_directory is { } dir && File.Exists(Path.Combine(dir, library + ".dll")))
+        {
+            string path = Path.Combine(dir, library + ".dll");
+            _ = NativeLibrary.Load(path);
+            return path;
+        }
         _ = NativeLibrary.Load(library, typeof(GarageNative).Assembly, null);
-        return _directory is { } dir && File.Exists(Path.Combine(dir, library + ".dll")) ? Path.Combine(dir, library + ".dll") : library + ".dll";
+        return library + ".dll";
     }
 
     private static nint Resolve(string name, Assembly assembly, DllImportSearchPath? searchPath)
