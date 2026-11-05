@@ -87,8 +87,6 @@ jobs:
             bazel-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
             bazel-test-${{ runner.os }}-${{ runner.arch }}-
       - name: Configure Bazel for CI
-        env:
-          BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
         # user.bazelrc is git-ignored and try-imported last by .bazelrc.
         #
         # - Writing the copied and signed tree artifacts (Postgres, the bundle's
@@ -109,27 +107,29 @@ jobs:
             echo "build --noapple_generate_dsym"
           } >> user.bazelrc
           cat user.bazelrc
-          # BuildBuddy's remote cache, when the BUILDBUDDY_API_KEY secret is set
-          # (a fork's pull request gets no secrets and keeps the disk cache alone).
-          # It caches action by action and is shared by every branch, so a pull
-          # request also reuses its own earlier pushes. Written after the `cat`
-          # so the key is not echoed (GitHub masks it in --announce_rc too).
-          if [ -n "$BUILDBUDDY_API_KEY" ]; then
-            {
-              echo "common --remote_cache=grpcs://remote.buildbuddy.io"
-              echo "common --remote_header=x-buildbuddy-api-key=$BUILDBUDDY_API_KEY"
-            } >> user.bazelrc
-            echo "remote cache: BuildBuddy"
-          fi
           # Disk-cache entries older than this were not touched by this run.
           touch "$RUNNER_TEMP/bazel-start"
       - id: test
+        env:
+          ASPECT_REMOTE: ${{ secrets.ASPECT_API_TOKEN != '' && 'yes' || '' }}
+          # Only main and next write to the remote cache, as only they save the Actions caches:
+          # a pull request reads what they built and uploads nothing of its own.
+          ASPECT_REMOTE_UPLOAD: ${{ github.event_name == 'pull_request' && '--bazel-flag=--noremote_upload_local_results' || '' }}
         run: |
           # Headroom for the rest: the runner's shell default is 256, and on macOS
           # the JVM caps Bazel at 10240 unless told not to (-MaxFDLimit above).
           ulimit -n 65536 2>/dev/null || ulimit -n "$(sysctl -n kern.maxfilesperproc)"
           echo "open file limit: $(ulimit -n)"
-          aspect test --task:name test -- //...
+          # Aspect Cloud's remote cache and build event stream (--remote), through the
+          # sign-in setup-aspect made with ASPECT_API_TOKEN. It caches action by action
+          # and is shared by every branch. A fork's pull request gets no secrets, signs
+          # in to nothing and keeps the disk cache alone.
+          if [ -n "$ASPECT_REMOTE" ]; then
+            # shellcheck disable=SC2086 # empty, or one flag
+            aspect test --remote $ASPECT_REMOTE_UPLOAD --task:name test -- //...
+          else
+            aspect test --task:name test -- //...
+          fi
         # Stop before the 6h limit: a job the runner kills skips its remaining
         # steps, so the save below would never run and the next run would start
         # cold again.

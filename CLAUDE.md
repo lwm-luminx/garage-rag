@@ -129,9 +129,13 @@ on fakes.
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
     cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `format`, `gazelle`, `buildifier` and `winapp-bazel`
+    binding's tests), `swiftcheck`, `aspect` (one job for the Aspect CLI tasks `buildifier`,
+    `format`, `gazelle` and `lint`, each posting its own `aspect /` check; lint covers the Python
+    tools' packages rather than `//...`, so it needs no Mac, and `.aspect/config.axl` adds
+    `--config=linux` on a Linux runner) and `winapp-bazel`
     (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
-  - On macOS: `lint`, which analyzes Apple targets.
+  - No job runs on macOS unless it needs a Mac, since macOS runners cost more and wait longer (Rick,
+    2026-11-05), and checks share a job where they can, since each job waits for a runner and clones.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
   vendored Postgres, ICU and llama.cpp. Because it is slow:
   - pull requests run it only when build inputs change (see its `paths`);
@@ -140,8 +144,9 @@ on fakes.
   - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
     request reads its base branch's), pruned to what the build used, with each branch's older
     entries deleted, so they stay under the repository's 10 GB cache quota.
-    With the `BUILDBUDDY_API_KEY` secret set, it also uses BuildBuddy's remote cache, shared by
-    every branch. For CI only, it adds
+    Signed in to Aspect (`ASPECT_API_TOKEN`), it also uses Aspect Cloud's remote cache and build event
+    stream (`aspect test --remote`), shared by every branch; a fork's PR keeps the disk cache alone. For
+    CI only, it adds
     `--build_tests_only` and `--noapple_generate_dsym`.
 - Run it by hand from the Actions tab (workflow_dispatch) when a change outside its `paths` needs
   the Bazel build.
@@ -162,7 +167,11 @@ on fakes.
   runner's OS and CPU. Given the `ASPECT_API_TOKEN` secret (every job that runs `aspect` passes it), it
   signs the CLI in to Aspect (the token on stdin, never in `GITHUB_ENV`). That turns on the CLI's GitHub
   features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings as
-  review comments. BuildBuddy stays the remote cache. Without the token (forks) nothing changes.
+  review comments, and the macOS build's remote cache. Without the token (forks) nothing changes.
+- `.mcp.json` registers `aspect mcp` for Claude Code: read-only tools over the builds CI sends to Aspect
+  Cloud (invocations, build logs, targets, action history). It needs the `aspect` CLI on `PATH` and a
+  signed-in CLI (`aspect auth login` once); signed in, `aspect build //... --remote` also uses Aspect's cache.
+  Aspect Cloud needs CLI 2026.41.24 or newer (`.aspect/version.axl`).
 
 ### Rust (`rust/`) and reader plugins
 
@@ -840,11 +849,15 @@ are dated so a stale one can be spotted.
   repository as a submodule tracking `next` (Rick, 2026-10-05).
 - New PRs target **`next`** (the next feature release). Only bugfixes target `main`, which is what releases and
   the site (garagerag.app, GitHub Pages) publish from. `main` flows into `next` through a merge PR merged with
-  "Create a merge commit" (Rick, 2026-09-30). Both branches are ruleset-protected: PR required, no force-push.
-- Required checks (rulesets, 2026-09-27): `python`, `swiftcheck`, `format`, `gazelle`, `buildifier`, `lint`.
-  The `python` job left with the Python package (2026-11-04); the ruleset needs `rust` in its place.
-  The macOS, Windows, known-answers and free-threaded jobs are not required; the notarized
-  Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job means updating the ruleset with it.
+  "Create a merge commit" (Rick, 2026-09-30). Both branches are protected by one ruleset, "Protected: main and
+  next": PR required (merge or squash), signed commits, no force-push or deletion.
+- Required checks (Rick, 2026-11-04): `aspect / buildifier`, `aspect / format`, `aspect / gazelle` and `aspect / lint`,
+  the check runs the Aspect Workflows GitHub App posts for the `aspect` job's tasks (they take precedence over the
+  job's own check), plus the Actions jobs "Swift:
+  syntax check (tree-sitter)" and "Rust: fmt, clippy and tests (rust/)". The `aspect /` check appears only when CI
+  signs in to Aspect (`ASPECT_API_TOKEN`), so a fork's PR needs an admin bypass. winapp-bazel and the macOS, Windows and known-answers jobs are not required;
+  the notarized Developer ID build (made from garage-enterprise) is the release gate. Renaming a required job or
+  task means updating the ruleset with it.
 - A PR that contains merge commits cannot be rebase-merged on GitHub; it needs "Create a merge commit".
 - Stacked PRs: when another branch or open PR already works on the same part of the app, base new work on it
   rather than on `main`/`next`, and name the base in the PR (Rick, 2026-09-24). When stacked PRs merge top-down
