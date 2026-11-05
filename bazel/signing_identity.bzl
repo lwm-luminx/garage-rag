@@ -196,9 +196,11 @@ def _developer_id_profiles(rctx):
                 found[app_id] = (expires, str(child))
     return found
 
+# Named .provisionprofile so rules_apple accepts it at analysis and the build fails here, saying which
+# profile to install, rather than with "does not produce any provisioning_profile files".
 _MISSING_PROFILE = """genrule(
     name = "{target}",
-    outs = ["{target}.missing"],
+    outs = ["missing/{target}.provisionprofile"],
     cmd = "echo '{message}' >&2; exit 1",
 )
 """

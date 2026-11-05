@@ -87,10 +87,13 @@ config_setting(
 # Apple-anchored designated requirement, but no provisioning profile, entitlements or hardened
 # runtime beyond the ad-hoc build's: //bazel:distribution stays "none". When local_auto signs ad
 # hoc or with the local identity, :is_adhoc or :is_local_signed matches instead and this matches
-# nothing.
+# nothing. It also requires distribution "none": a signed distribution may sign with the same Apple
+# Development certificate (garage-enterprise's store platform does), and :is_store or
+# :is_developer_id must then be the only match.
 config_setting(
     name = "is_local_development",
     flag_values = {
+        ":distribution": "none",
         "@rules_apple//apple/build_settings:signing_certificate_name": (
             "(no Apple Development identity)" if AUTO_SIGNING_IDENTITY in UNCHAINED_IDENTITIES else AUTO_SIGNING_IDENTITY
         ),
@@ -105,6 +108,7 @@ config_setting(
 config_setting(
     name = "is_local_app_group",
     flag_values = {
+        ":distribution": "none",
         "@rules_apple//apple/build_settings:signing_certificate_name": (
             AUTO_SIGNING_IDENTITY if AUTO_SIGNING_TEAM == APP_GROUP_TEAM and AUTO_SIGNING_IDENTITY not in UNCHAINED_IDENTITIES else "(no Apple Development identity of the App Group's team)"
         ),
