@@ -7,8 +7,10 @@ name: CI
 #   running), the protogen and cbindgen output checks, the third-party notices
 #   check, and the .NET binding's tests against the built library.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
-# - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
-# - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
+# - `aspect`: the Aspect CLI tasks (buildifier, format, gazelle, lint) in one
+#   Linux job. Each still reports its own `aspect / <task>` check through the
+#   Aspect GitHub App, which is what the branch ruleset requires. Lint covers the
+#   Python dev tools that are Bazel targets, which need no Mac.
 #
 # The Bazel build and test of //... (the app, Postgres, ICU and llama.cpp from
 # source) is in macos.yaml. It runs only when the build could have changed, and
@@ -104,28 +106,6 @@ jobs:
           uv pip install --python "$RUNNER_TEMP/venv" tree-sitter tree-sitter-swift
           "$RUNNER_TEMP/venv/bin/python" tools/swiftcheck/swift_syntax_check.py
 
-  format:
-    name: "Format: Python tools and Starlark formatting"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      - name: aspect format
-        run: aspect format --task:name format
-
-  gazelle:
-    name: "Gazelle: BUILD files match the proto sources"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      - name: aspect gazelle
-        run: aspect gazelle --task:name gazelle
-
   # The Bazel build of winapp/ (winapp/README.md, "Bazel"): every project but the WinUI app and
   # its FlaUI tests, compiled and tested on Linux, plus the check that each BUILD.bazel still
   # mirrors its csproj. Plain `bazel`, not `aspect`: Aspect adds --config=ci on CI, whose macOS
@@ -160,8 +140,10 @@ jobs:
             ~/.cache/bazel-repo
           key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
 
-  buildifier:
-    name: "Buildifier: Starlark files"
+  # One runner for all four tasks: they share the CLI download, the Bazel server and its
+  # caches. Every task runs even when an earlier one fails, so each check reports.
+  aspect:
+    name: "Aspect: buildifier, format, gazelle, lint"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -170,16 +152,14 @@ jobs:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
         run: aspect buildifier --task:name buildifier
-
-  lint:
-    name: "Lint: Ruff over //..., Apple targets included (macOS)"
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
-        with:
-          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
-      # //tools:bazel_env has no sources to lint, and analyzing it fetches cosmopolitan binaries
-      # (bazel_env.bzl -> rules_coreutils -> ape) from hosts outside our control.
-      - name: aspect lint //...
-        run: aspect lint --task:name lint -- //... -//tools:bazel_env
+      - name: aspect format
+        if: ${{ !cancelled() }}
+        run: aspect format --task:name format
+      - name: aspect gazelle
+        if: ${{ !cancelled() }}
+        run: aspect gazelle --task:name gazelle
+      # Ruff over the Python tools that are Bazel targets (tools/lint/linters.bzl). Not //...:
+      # the app's targets are macOS-only and do not analyze on Linux.
+      - name: aspect lint
+        if: ${{ !cancelled() }}
+        run: aspect lint --task:name lint -- //tools:third_party_notices //winapp/bazel/...
