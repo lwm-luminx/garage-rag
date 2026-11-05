@@ -1,0 +1,19 @@
+[package]
+name = "garage-rag"
+description = "Garage's language bindings in one library: every UniFFI crate of the workspace linked into one shared library, packaged as `garage_rag` for PyPI and RubyGems."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_rag"
+# Shared for maturin's wheel and the gem; rlib for the workspace's own tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+garage-embed-uniffi.workspace = true
+
+[lints]
+workspace = true

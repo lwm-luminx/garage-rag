@@ -1,0 +1,246 @@
+name: Release packages
+
+# Publishes Garage's packages from a signed `v*` tag on main, each by trusted publishing (OIDC): no
+# registry token is stored in the repository.
+#
+# - `crates`: every workspace crate that has opted in (`publish` not false in its Cargo.toml; the
+#   workspace default is false) goes to crates.io with `cargo publish --workspace`, in dependency
+#   order. A version already on crates.io is skipped, so a tag that changes no crate publishes
+#   nothing. crates.io trusts a publisher only for a crate that exists: publish each crate's first
+#   version by hand, then add this workflow as its trusted publisher.
+# - `wheels` -> `pypi`: `garage_rag` on PyPI, the umbrella of the UniFFI bindings
+#   (rust/garage-rag), one maturin wheel per platform, each tested before upload.
+# - `gems` -> `rubygems`: `garage_rag` on RubyGems, the same library with UniFFI's Ruby bindings,
+#   one platform gem each (rust/garage-rag/ruby/build.sh), each tested before upload.
+#
+# Packages take the workspace's version (rust/Cargo.toml), not the tag's: an app release tag
+# republishes nothing unless that version moved. Each registry job runs in its own environment
+# (crates-io, pypi, rubygems), which the registry's trusted publisher names; restrict each to `v*`
+# tags in the repository's settings.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: "The tag is on main"
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: The tagged commit is on main
+        run: |
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::$GITHUB_REF_NAME ($GITHUB_SHA) is not on main; packages publish from main only"
+            exit 1
+          fi
+      - id: version
+        name: The workspace's version
+        run: |
+          version="$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/.*= *"|".*/,"");print;exit}' rust/Cargo.toml)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Packages version: $version"
+
+  crates:
+    name: "crates.io"
+    needs: check
+    runs-on: ubuntu-latest
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install protoc, libgit2, SQLite and Tesseract
+        # cargo publish builds each crate it packages, with the same system libraries as ci.yaml's rust job.
+        working-directory: .
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng pkg-config
+      - id: plan
+        name: The crates to publish
+        # A crate publishes when its `publish` is not false (cargo metadata: null, or a registry list
+        # naming crates-io) and its version is not on crates.io yet.
+        run: |
+          cargo metadata --format-version 1 --no-deps --locked |
+            jq -r '.packages[] | select(.publish == null or (.publish | index("crates-io"))) | "\(.name) \(.version)"' > "$RUNNER_TEMP/publishable"
+          todo=() skip=()
+          while read -r name version; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -A "garage-rag release (github.com/lwm-luminx/garage-rag)" \
+              "https://crates.io/api/v1/crates/$name/$version")
+            if [ "$code" = 200 ]; then skip+=("$name"); else todo+=("$name"); fi
+          done < "$RUNNER_TEMP/publishable"
+          echo "to publish: ${todo[*]:-none}; already on crates.io: ${skip[*]:-none}"
+          excludes=""
+          for name in "${skip[@]}"; do excludes+=" --exclude $name"; done
+          echo "count=${#todo[@]}" >> "$GITHUB_OUTPUT"
+          echo "excludes=$excludes" >> "$GITHUB_OUTPUT"
+      - uses: rust-lang/crates-io-auth-action@v1.0.6
+        if: steps.plan.outputs.count != '0'
+        id: auth
+      - name: cargo publish
+        if: steps.plan.outputs.count != '0'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          EXCLUDES: ${{ steps.plan.outputs.excludes }}
+        run: |
+          # shellcheck disable=SC2086 # EXCLUDES is a list of flags.
+          cargo publish --locked --workspace $EXCLUDES
+
+  wheels:
+    name: "Wheel: ${{ matrix.name }}"
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: Linux x86-64 (manylinux)
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - name: Linux arm64 (manylinux)
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: Windows x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - uses: PyO3/maturin-action@v1.51.0
+        with:
+          working-directory: rust/garage-rag
+          target: ${{ matrix.target }}
+          manylinux: auto
+          args: --release --locked --out ${{ github.workspace }}/dist
+      - name: The wheel installs and its bindings call the library and back
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          py="$RUNNER_TEMP/venv/bin/python"; [ -x "$py" ] || py="$RUNNER_TEMP/venv/Scripts/python.exe"
+          "$py" -m pip install --quiet dist/*.whl
+          pkg="$("$py" -c 'import garage_rag, os; print(os.path.dirname(garage_rag.__file__))')"
+          "$py" -I rust/garage-embed-uniffi/tests/python_roundtrip.py "$pkg"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.target }}
+          path: dist/*.whl
+          if-no-files-found: error
+
+  pypi:
+    name: "PyPI: garage_rag"
+    needs: [check, wheels]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/garage_rag/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
+        with:
+          # A tag that did not move the workspace's version re-uploads nothing.
+          skip-existing: true
+
+  gems:
+    name: "Gem: ${{ matrix.platform }}"
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            platform: arm64-darwin
+            lib: libgarage_rag.dylib
+          # The oldest hosted Ubuntu, so the library asks for the oldest glibc we can give it.
+          - os: ubuntu-22.04
+            platform: x86_64-linux
+            lib: libgarage_rag.so
+          - os: ubuntu-22.04-arm
+            platform: aarch64-linux
+            lib: libgarage_rag.so
+          - os: windows-latest
+            platform: x64-mingw-ucrt
+            lib: garage_rag.dll
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ruby/setup-ruby@v1.336.0
+        with:
+          ruby-version: "3.4"
+      # rustup reads rust/rust-toolchain.toml and installs that toolchain on first use.
+      - name: Build the library and uniffi-bindgen
+        working-directory: rust
+        run: cargo build --release --locked -p garage-rag -p uniffi-bindgen
+      - name: Build the gem
+        run: rust/garage-rag/ruby/build.sh "rust/target/release/${{ matrix.lib }}" "${{ matrix.platform }}" gems
+      - name: The gem installs and its bindings call the library and back
+        run: |
+          gem install --local gems/*.gem
+          ruby rust/garage-rag/ruby/test/roundtrip.rb
+      - uses: actions/upload-artifact@v7
+        with:
+          name: gem-${{ matrix.platform }}
+          path: gems/*.gem
+          if-no-files-found: error
+
+  rubygems:
+    name: "RubyGems: garage_rag"
+    needs: [check, gems]
+    runs-on: ubuntu-latest
+    environment:
+      name: rubygems
+      url: https://rubygems.org/gems/garage_rag
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: gem-*
+          path: gems
+          merge-multiple: true
+      - uses: ruby/setup-ruby@v1.336.0
+        with:
+          ruby-version: "3.4"
+      - uses: rubygems/configure-rubygems-credentials@v2.1.0
+      - name: gem push
+        # A platform gem already on RubyGems at this version is skipped, as PyPI's skip-existing does.
+        env:
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          published="$(curl -fsS https://rubygems.org/api/v1/versions/garage_rag.json 2>/dev/null |
+            jq -r '.[] | "\(.number)-\(.platform)"' || true)"
+          for gem in gems/*.gem; do
+            platform="$(basename "$gem" .gem)"; platform="${platform#garage_rag-"$VERSION"-}"
+            if grep -qxF "$VERSION-$platform" <<<"$published"; then
+              echo "garage_rag $VERSION ($platform) is already on RubyGems"
+            else
+              gem push "$gem"
+            fi
+          done

@@ -1074,6 +1074,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-rag"
+version = "0.1.0"
+dependencies = [
+ "garage-embed-uniffi",
+]
+
+[[package]]
 name = "garage-readers"
 version = "0.1.0"
 dependencies = [
