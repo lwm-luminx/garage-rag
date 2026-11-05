@@ -4,8 +4,10 @@ name: CI
 #
 # - `rust`: rustfmt, clippy and cargo test over rust/ (with a pgvector Postgres
 #   service, so the tests that need a server run instead of passing without
-#   running), the protogen and cbindgen output checks, the third-party notices
-#   check, and the .NET binding's tests against the built library.
+#   running), the protogen and cbindgen output checks and the third-party notices
+#   check. `rust-bindings`, beside it: the UniFFI Python round trip and the .NET
+#   binding's tests against the built library. Both keep rust/target in a cache
+#   that main and next save.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
 # - `format`, `gazelle`, `buildifier`: the Aspect CLI tasks, which need no Mac.
 # - `lint`: stays on macOS, because it analyzes //..., Apple targets included.
@@ -54,9 +56,13 @@ jobs:
         working-directory: rust
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-dotnet@v4
+      # rust/target and Cargo's registry. Only main and next save it, as for the Bazel caches,
+      # so pull requests read their base branch's without spending the 10 GB quota.
+      - uses: Swatinem/rust-cache@v2
         with:
-          global-json-file: winapp/global.json
+          workspaces: rust
+          shared-key: rust-tests
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next' }}
       - name: Install protoc, libgit2 and SQLite
         # garage-git links libgit2, found through pkg-config; garage-ingest links the system SQLite;
         # garage-ocr links libtesseract, and its tests read with the English data.
@@ -76,6 +82,27 @@ jobs:
       - name: The third-party notices cover Cargo.lock and the bundled components
         working-directory: .
         run: python3 tools/third_party_notices.py --check
+
+  # The bindings, beside the rust job rather than after it: they need no Postgres and build
+  # their own crates, so the two run at once and the slower one sets the wall-clock time.
+  rust-bindings:
+    name: "Rust: UniFFI and .NET bindings"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v6
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+          shared-key: rust-bindings
+          save-if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/next' }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      - name: Install protoc, libgit2 and SQLite
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler libgit2-dev libsqlite3-dev pkg-config
       - name: UniFFI's Python bindings call the embed worker and back
         run: |
           cargo build --locked -p garage-embed-uniffi -p uniffi-bindgen

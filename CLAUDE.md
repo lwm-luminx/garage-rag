@@ -128,8 +128,9 @@ on fakes.
 
 - **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
-    cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `aspect` (one job for the Aspect CLI tasks `buildifier`,
+    cbindgen checks, the third-party notices check), `rust-bindings` beside it (the UniFFI Python round
+    trip and the .NET binding's tests; both keep `rust/target` in a cache only main and next save),
+    `swiftcheck`, `aspect` (one job for the Aspect CLI tasks `buildifier`,
     `format`, `gazelle` and `lint`, each posting its own `aspect /` check; lint covers the Python
     tools' packages rather than `//...`, so it needs no Mac, and `.aspect/config.axl` adds
     `--config=linux` on a Linux runner) and `winapp-bazel`
