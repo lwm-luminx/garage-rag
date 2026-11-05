@@ -126,14 +126,26 @@ on fakes.
 
 ### CI
 
-- **`.github/workflows/ci.yaml`** runs on every push, and a newer push cancels an older run.
+Every job that runs Bazel runs it through the Aspect CLI, set up by `aspect-build/setup-aspect`
+(pinned by SHA). With the `ASPECT_API_TOKEN` org secret it signs the CLI in to Aspect Cloud (the
+token on stdin, never in `GITHUB_ENV`), which wires Aspect's remote cache and BES into every
+`aspect` task and plain `bazel` call, shared by all branches and jobs, and turns on the CLI's GitHub
+features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings
+as review comments. A fork's pull request gets no secret and builds cold, without them. There is no
+GitHub Actions disk cache and no BuildBuddy. `.aspect/config.axl` adds `--config=ci` on CI, and on a
+Linux runner `--config=linux` after it, so Linux jobs target the host instead of ci's macOS platform.
+Aspect ships no Windows CLI, so nothing on a Windows runner uses it.
+
+- **`.github/workflows/ci.yaml`** runs on every push to `main` and `next` and every pull request;
+  a newer push cancels an older run.
   - On Linux: `rust` (rustfmt, clippy, `cargo test` with a Postgres service, the protogen and
     cbindgen checks, the third-party notices check, the UniFFI Python round trip and the .NET
-    binding's tests), `swiftcheck`, `aspect` (one job for the Aspect CLI tasks `buildifier`,
-    `format`, `gazelle` and `lint`, each posting its own `aspect /` check; lint covers the Python
-    tools' packages rather than `//...`, so it needs no Mac, and `.aspect/config.axl` adds
-    `--config=linux` on a Linux runner) and `winapp-bazel`
-    (`bazel test //winapp/...`, the Windows app's projects but the WinUI app; see "Windows app").
+    binding's tests), `swiftcheck`, `winapp-bazel` (`aspect test //winapp/...`, the Windows app's
+    projects but the WinUI app; see "Windows app") and `aspect`.
+  - `aspect` runs the four Aspect CLI tasks (buildifier, format, gazelle, lint) in one Linux job.
+    Each still reports its own `aspect / <task>` check, which the branch ruleset requires. Lint
+    covers the Python dev tools that are Bazel targets (`//tools:third_party_notices`,
+    `//winapp/bazel/...`), which need no Mac.
   - No job runs on macOS unless it needs a Mac, since macOS runners cost more and wait longer (Rick,
     2026-11-05), and checks share a job where they can, since each job waits for a runner and clones.
 - **`.github/workflows/macos.yaml`** runs `aspect test //...` on macOS, building the app and the
@@ -141,15 +153,25 @@ on fakes.
   - pull requests run it only when build inputs change (see its `paths`);
   - `main` and `next` run it on every push, and `main` nightly;
   - a newer push waits for a running build instead of cancelling it.
-  - It restores Bazel's disk and repository caches; only `main` and `next` save them (a pull
-    request reads its base branch's), pruned to what the build used, with each branch's older
-    entries deleted, so they stay under the repository's 10 GB cache quota.
-    Signed in to Aspect (`ASPECT_API_TOKEN`), it also uses Aspect Cloud's remote cache and build event
-    stream (`aspect test --remote`), shared by every branch; a fork's PR keeps the disk cache alone. For
-    CI only, it adds
-    `--build_tests_only` and `--noapple_generate_dsym`.
+  - Its cache is Aspect Cloud's; `--config=ci` uploads each local result as it finishes, so a run
+    stopped by the timeout still leaves its work for the next. For CI only, setup-aspect's `bazelrc`
+    adds `--build_tests_only`, `--noapple_generate_dsym`, no caching for the copy and codesign
+    actions (their tree artifacts ran Bazel out of file descriptors) and the JVM's FD limit off.
 - Run it by hand from the Actions tab (workflow_dispatch) when a change outside its `paths` needs
   the Bazel build.
+- **`.github/workflows/pages.yaml`** builds the site with `aspect build //docs:site` (Jekyll 4 from
+  `docs/Gemfile.lock` under rules_ruby, with the model catalog copied in) on pushes, and on pull
+  requests that touch it; only `main` deploys it to GitHub Pages.
+- **`.github/workflows/release.yaml`** publishes packages from a `v*` tag whose commit is on `main`,
+  each by trusted publishing (OIDC, no stored token), in the `crates-io`, `pypi` and `rubygems`
+  environments. Packages take the workspace's version (`rust/Cargo.toml`), and a version a registry
+  already has is skipped.
+  - crates.io: every crate whose `publish` is not false (the workspace default is false, so a crate
+    opts in), with `cargo publish --workspace`. crates.io trusts a publisher only for an existing
+    crate: publish a crate's first version by hand, then add the workflow as its trusted publisher.
+  - PyPI and RubyGems: `garage_rag`, the umbrella of the UniFFI crates (`rust/garage-rag`, one
+    cdylib, one module per namespace): maturin wheels and platform gems (`ruby/build.sh`) for macOS
+    arm64, Linux x86-64 and arm64, and Windows x64, each tested with a round trip before upload.
 - **`.github/workflows/windows.yaml`** builds Postgres (with pgvector, ICU and zlib) from source on
   `windows-latest`, from the pins in `ext/*/*.MODULE.bazel` (read by `tools/windows/fetch_ext.py`),
   with each project's own MSVC build rather than Bazel; the three Rust service libraries with Cargo
@@ -163,11 +185,6 @@ on fakes.
   reference (`LlamaKnownAnswers`). The reference, `ext/nomic_embed/known_answers.json`, is not
   committed yet: commit the macOS CPU job's `known-answers-macos-cpu` artifact (or the output of
   `tools/llama/gen_known_answers.sh` on an Apple silicon Mac); until then both skip.
-- `.github/actions/setup-aspect` installs the Aspect CLI pinned in `tools/tools.lock.json` for the
-  runner's OS and CPU. Given the `ASPECT_API_TOKEN` secret (every job that runs `aspect` passes it), it
-  signs the CLI in to Aspect (the token on stdin, never in `GITHUB_ENV`). That turns on the CLI's GitHub
-  features through Aspect's GitHub App: a check run per task, a PR summary comment, and lint findings as
-  review comments, and the macOS build's remote cache. Without the token (forks) nothing changes.
 - `.mcp.json` registers `aspect mcp` for Claude Code: read-only tools over the builds CI sends to Aspect
   Cloud (invocations, build logs, targets, action history). It needs the `aspect` CLI on `PATH` and a
   signed-in CLI (`aspect auth login` once); signed in, `aspect build //... --remote` also uses Aspect's cache.
@@ -293,6 +310,9 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   with typed records, errors and an `EmbedHost` protocol, beside its C ABI. `rust/uniffi-bindgen` (no
   `cargo-metadata`, so it runs in Bazel's sandbox) generates the bindings; `//rust/garage-embed-uniffi:GarageEmbedUniFFI`
   is the Swift module, and CI's rust job runs `tests/python_roundtrip.py` over the generated Python bindings.
+  `rust/garage-rag` links every UniFFI crate into one cdylib, packaged as `garage_rag` for PyPI
+  (maturin, `pyproject.toml`) and RubyGems (`ruby/`, its round trip in `ruby/test/roundtrip.rb`);
+  a new UniFFI crate joins it as a dependency and a `pub use`.
   Rust calling Swift-only APIs goes through swift-rs (`ext/swift_rs`, `garage-ocr`'s `vision-documents`).
 - **Hosts.** `extraction.plugins` lists `unix:` sockets or programs (started with
   `--socket <path> --exit-with-stdin`); the Rust readers do not route to them yet. Swift:
@@ -351,8 +371,8 @@ The csproj files are the source of truth, and Bazel builds it too (below). So fa
   - rules_dotnet is patched (`winapp/bazel/rules_dotnet_roslyn_analyzers.patch`) to take each
     package's analyzers from the right `roslyn<X.Y>` folder.
   - On Linux, `.bazelrc`'s `build:linux` targets the host platform, since the macOS default platform
-    has no Linux execution platform. The `winapp-bazel` CI job runs plain `bazel test //winapp/...`,
-    because Aspect adds `--config=ci` (a macOS platform) on CI.
+    has no Linux execution platform. On CI, `.aspect/config.axl` repeats `--config=linux` after
+    `--config=ci` (a macOS platform), so the `winapp-bazel` job runs `aspect test //winapp/...`.
 
 ```bash
 cd winapp
@@ -822,8 +842,8 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   built from the proto by Bazel and `dotnet build`.
 - The model catalog is `data/models/models.json` (`//data/models`): the app bundles it and
   `garage-service`'s `catalog.rs` reads it. The site serves a copy at `https://garagerag.app/.data/models.json`,
-  which the build puts in place (`site_files` on `//docs:site`, a copy step in
-  `.github/workflows/jekyll-gh-pages.yml`); `docs/.data/models.json` is git-ignored, never edited.
+  which the build puts in place (`site_files` on `//docs:site`, which `.github/workflows/pages.yaml`
+  publishes); `docs/.data/models.json` is git-ignored, never edited.
 - Keep licenses permissive: no AGPL or GPL dependency (`stage.ps1` refuses a DLL on its denylist,
   and the notices script lists every crate's license).
 - Engineering plans live in `docs/plans/` and are published at `https://garagerag.app/plans/`; the index page

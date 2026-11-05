@@ -1,0 +1,36 @@
+# `garage_rag` on PyPI: the umbrella package of Garage's UniFFI bindings (src/lib.rs), each
+# namespace a submodule (`garage_rag.garage_embed`), with the shared library in one platform wheel.
+# maturin generates the bindings with the workspace's own uniffi-bindgen (rust/uniffi-bindgen), so
+# they match the library's scaffolding.
+#
+#     cd rust/garage-rag && maturin build --release
+#
+# .github/workflows/release.yaml builds the wheels and publishes them by trusted publishing. The
+# version is the workspace's (rust/Cargo.toml), never set here.
+
+[build-system]
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
+
+[project]
+name = "garage_rag"
+description = "Garage's Rust components for Python: the embed worker, with typed records, errors and a host protocol for the model servers."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dynamic = ["version"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+]
+
+[project.urls]
+Homepage = "https://garagerag.app"
+Repository = "https://github.com/lwm-luminx/garage-rag"
+
+[tool.maturin]
+bindings = "uniffi"
+module-name = "garage_rag"
