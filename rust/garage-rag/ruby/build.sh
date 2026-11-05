@@ -24,9 +24,10 @@ mkdir -p "$stage/lib/garage_rag"
 "$bindgen" generate --library "$lib" --language ruby --no-format \
   --config "$here/uniffi.toml" --out-dir "$stage/lib/garage_rag"
 cp "$lib" "$stage/lib/garage_rag/"
-# The workspace's version: the first `version = "..."` after [workspace.package].
-version="$(awk '/^\[workspace\.package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/.*= *"|".*/,"");print;exit}' "$rust/Cargo.toml")"
-[ -n "$version" ] || { echo "no [workspace.package] version in $rust/Cargo.toml" >&2; exit 1; }
+# The library's version, which is the app's release version: the first `version = "..."` after
+# [package] in garage-rag's Cargo.toml (release.yaml reads it the same way).
+version="$(awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^version *=/{gsub(/.*= *"|".*/,"");print;exit}' "$rust/garage-rag/Cargo.toml")"
+[ -n "$version" ] || { echo "no [package] version in $rust/garage-rag/Cargo.toml" >&2; exit 1; }
 cd "$stage"
 GARAGE_RAG_VERSION="$version" GARAGE_RAG_GEM_PLATFORM="$platform" \
   gem build garage_rag.gemspec --output "$out/garage_rag-$version-$platform.gem"

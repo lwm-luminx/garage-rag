@@ -37,3 +37,5 @@ rust/target/
 
 
 dist/
+# The schema and model catalog rust/garage-rag/build.rs copies into the Python package for its wheel
+rust/garage-rag/python/garage_rag/_data/

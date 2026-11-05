@@ -102,6 +102,8 @@ fn exercise(database_url: &str) {
 
     let shown = ok(&garage(&scratch, &["version"]), "version");
     assert!(shown.contains(&format!("garage v{}", garage_service::VERSION)), "{shown}");
+    let flag = ok(&garage(&scratch, &["--version"]), "--version");
+    assert_eq!(flag, shown, "--version is the version command");
 
     let shown = ok(&garage(&scratch, &["config", "init", "--path", scratch.config.to_str().unwrap()]), "config init");
     assert!(shown.contains("wrote"), "{shown}");

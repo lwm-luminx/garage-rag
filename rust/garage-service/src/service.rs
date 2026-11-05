@@ -38,9 +38,10 @@ use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
 use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
 use crate::{backfill, corpus, db, graph, prompts};
 
-/// What `GetVersion` reports: the Python package's version, since the app shows it as the
-/// backend's and nothing about the contract changed.
-pub const VERSION: &str = "1.5.0";
+/// What `GetVersion` and `garage --version` report: the app's release version. The `garage_rag`
+/// packages on PyPI and RubyGems take it too (rust/garage-rag's `version`, held to this by a test),
+/// continuing from the pure-Python package's 1.5.0, and the Windows installers read it here.
+pub const VERSION: &str = "1.5.1";
 
 /// The largest message the server accepts (`MAX_REQUEST_BYTES`): `PersistDocument` carries a whole
 /// document's text and chunks.

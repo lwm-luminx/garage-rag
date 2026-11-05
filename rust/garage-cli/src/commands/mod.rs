@@ -70,7 +70,10 @@ pub struct Group {
     pub groups: &'static [&'static Group],
 }
 
-const GLOBAL: &[Opt] = &[Opt::short_flag("verbose", 'v'), Opt::short_value("config", 'c'), Opt::flag("help")];
+// `--version` is `garage version` as a flag, which a packaged command is expected to answer (the
+// garage_rag wheel's console script; `garage-mcp --version` already did).
+const GLOBAL: &[Opt] =
+    &[Opt::short_flag("verbose", 'v'), Opt::short_value("config", 'c'), Opt::flag("help"), Opt::flag("version")];
 
 static ROOT: Group = Group {
     name: "garage",
@@ -131,22 +134,19 @@ fn usage(group: &Group, path: &[&str]) -> String {
 
 /// Runs the command line; returns the exit code.
 pub fn main(args: &[String]) -> i32 {
-    // The global options come before the command, as Typer's callback takes them.
-    let command_at = args.iter().position(|arg| !arg.starts_with('-') && arg != "-").map_or(args.len(), |at| {
-        // `-c PATH`: the value after a value option is not the command.
+    // The global options come before the command, as Typer's callback takes them: the command is
+    // the first argument that is not an option, nor the value of `-c PATH`.
+    let command_at = {
         let mut i = 0;
-        while i < at {
-            if matches!(args[i].as_str(), "-c" | "--config") {
-                i += 2;
-                if i > at {
-                    return at + 1;
-                }
-                continue;
+        while i < args.len() {
+            match args[i].as_str() {
+                "-c" | "--config" => i += 2,
+                arg if arg.starts_with('-') && arg != "-" => i += 1,
+                _ => break,
             }
-            i += 1;
         }
-        at
-    });
+        i
+    };
     let global = match parse(&args[..command_at.min(args.len())], GLOBAL) {
         Ok(global) => global,
         Err(message) => {
@@ -157,6 +157,10 @@ pub fn main(args: &[String]) -> i32 {
         }
     };
     let rest = &args[command_at.min(args.len())..];
+    if global.has("version") && !global.has("help") {
+        out::print(&format!("garage v{}", garage_service::VERSION));
+        return 0;
+    }
     if global.has("help") || rest.is_empty() {
         print!("{}", usage(&ROOT, &["garage"]));
         return i32::from(!global.has("help"));
