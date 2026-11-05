@@ -5,24 +5,30 @@ name: CI
 # - `rust`: rustfmt, clippy and cargo test over rust/ (with a pgvector Postgres
 #   service, so the tests that need a server run instead of passing without
 #   running), the protogen and cbindgen output checks, the third-party notices
-#   check, and the .NET binding's tests against the built library.
+#   check, the UniFFI Python round trip and the .NET binding's tests.
 # - `swiftcheck`: the tree-sitter Swift syntax gate (tools/swiftcheck).
+# - `winapp-bazel`: `aspect test //winapp/...`, the Windows app's projects but the
+#   WinUI app, built and tested through rules_dotnet on Linux.
 # - `aspect`: the Aspect CLI tasks (buildifier, format, gazelle, lint) in one
 #   Linux job. Each still reports its own `aspect / <task>` check through the
 #   Aspect GitHub App, which is what the branch ruleset requires. Lint covers the
 #   Python dev tools that are Bazel targets, which need no Mac.
 #
-# The Bazel build and test of //... (the app, Postgres, ICU and llama.cpp from
-# source) is in macos.yaml. It runs only when the build could have changed, and
-# a newer push does not cancel it.
+# Every `aspect` job signs in to Aspect Cloud with the ASPECT_API_TOKEN org secret
+# (aspect-build/setup-aspect), which wires Aspect's remote cache and BES into the
+# build and turns on the CLI's GitHub check runs, PR summary comment and lint
+# review comments. A fork's pull request gets no secret and builds without them.
+#
+# The Bazel build and test of //... on macOS (the app, Postgres, ICU and
+# llama.cpp from source) is macos.yaml; the Windows app is windows.yaml.
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  # Required by the Aspect CLI artifact upload feature.
+  # The Aspect CLI's artifact upload feature.
   id-token: write
   contents: read
 
@@ -47,9 +53,8 @@ jobs:
           --health-timeout 5s
           --health-retries 20
     env:
-      # garage-service's tests (rust/garage-service/tests) create and drop their own
-      # garage_test_* databases, as test_postgres.py does; a superuser, since pgvector is not
-      # a trusted extension.
+      # garage-service's and garage-cli's tests create and drop their own garage_test_*
+      # databases; a superuser, since pgvector is not a trusted extension.
       GARAGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     defaults:
       run:
@@ -60,13 +65,13 @@ jobs:
         with:
           global-json-file: winapp/global.json
       # Cargo's registry and rust/target, keyed on the toolchain and Cargo.lock. Pushes to main
-      # save; pull requests restore it and save nothing, as the Bazel caches do (macos.yaml,
-      # "Caches"), so they do not evict main's entries from the 10 GB quota.
+      # save; pull requests restore it and save nothing, so they do not evict main's entries
+      # from the 10 GB quota.
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
           save-if: ${{ github.event_name != 'pull_request' }}
-      - name: Install protoc, libgit2 and SQLite
+      - name: Install protoc, libgit2, SQLite and Tesseract
         # garage-git links libgit2, found through pkg-config; garage-ingest links the system SQLite;
         # garage-ocr links libtesseract, and its tests read with the English data.
         run: sudo apt-get update -qq && sudo apt-get install -y -qq protobuf-compiler libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng pkg-config
@@ -115,37 +120,18 @@ jobs:
 
   # The Bazel build of winapp/ (winapp/README.md, "Bazel"): every project but the WinUI app and
   # its FlaUI tests, compiled and tested on Linux, plus the check that each BUILD.bazel still
-  # mirrors its csproj. Plain `bazel`, not `aspect`: Aspect adds --config=ci on CI, whose macOS
-  # platform has no Linux execution platform, where .bazelrc's build:linux targets the host.
+  # mirrors its csproj. .aspect/config.axl adds --config=linux after --config=ci on Linux, so
+  # the build targets the host rather than ci's macOS platform.
   winapp-bazel:
+    name: "Windows app: Bazel build and tests (winapp/, Linux)"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Restore Bazel caches
-        id: bazel-cache
-        uses: actions/cache/restore@v4
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
         with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: bazel-winapp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-${{ github.sha }}
-          restore-keys: |
-            bazel-winapp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('MODULE.bazel.lock') }}-
-      - name: bazel test //winapp/...
-        run: >-
-          bazel test //winapp/... --test_output=errors
-          --disk_cache="$HOME/.cache/bazel-disk" --repository_cache="$HOME/.cache/bazel-repo"
-      # Pushes to main save; pull requests restore main's entry and save nothing, because
-      # their entries are readable only by themselves and count against the repository's
-      # 10 GB cache quota, where they evict macos.yaml's (see its "Caches" comment).
-      - name: Save Bazel caches
-        if: always() && github.event_name != 'pull_request' && steps.bazel-cache.outputs.cache-primary-key != ''
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ~/.cache/bazel-disk
-            ~/.cache/bazel-repo
-          key: ${{ steps.bazel-cache.outputs.cache-primary-key }}
+          aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
+      - name: aspect test //winapp/...
+        run: aspect test --task:name winapp -- //winapp/...
 
   # One runner for all four tasks: they share the CLI download, the Bazel server and its
   # caches. Every task runs even when an earlier one fails, so each check reports.
@@ -154,7 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: ./.github/actions/setup-aspect
+      - uses: aspect-build/setup-aspect@ebca96eb49ef58c00d4226de8bd3a0813507dd87 # v2026.38.3
         with:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect buildifier
