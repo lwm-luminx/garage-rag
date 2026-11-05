@@ -76,7 +76,7 @@ internal sealed unsafe class ModelServerHost : IDisposable
     /// Sends one approved request: <c>{"backend", "method", "url", "path", "headers": [[name, value]],
     /// "body", "timeout"}</c> to <c>{"status", "body"}</c>. Throws when no reply came.
     /// </summary>
-    public string Http(JsonObject request)
+    public static string Http(JsonObject request)
     {
         string backend = request["backend"]?.GetValue<string>() ?? "";
         if (backend == "llama_xpc")
@@ -149,7 +149,7 @@ internal sealed unsafe class ModelServerHost : IDisposable
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int HttpEntry(void* context, byte* request, byte** reply) =>
-        Answer(context, request, reply, static (host, body) => host.Http(body));
+        Answer(context, request, reply, static (_, body) => Http(body));
 
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int UnavailableEntry(void* context, byte* request, byte** reply) =>
