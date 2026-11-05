@@ -37,6 +37,14 @@ def config(ctx: ConfigContext):
             "--config=ci",
         ])
 
+        # --config=ci builds for the ad hoc signed macOS platform, which has no execution platform
+        # on a Linux runner. There, build for the host as .bazelrc's build:linux does; --config=ci on
+        # the command line would otherwise override it.
+        if ctx.std.env.var("RUNNER_OS") == "Linux":
+            ctx.traits[BazelTrait].extra_flags.extend([
+                "--config=linux",
+            ])
+
     # Enable artifact uploads for testlogs, profile, and BEP.
     # upload_test_logs="failed" — the logs from passing tests are noise;
     # failing/flaky tests' logs are the ones anyone would actually open.
