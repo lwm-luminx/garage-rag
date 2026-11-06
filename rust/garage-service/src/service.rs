@@ -41,7 +41,7 @@ use crate::{backfill, corpus, db, graph, prompts};
 /// What `GetVersion` and `garage --version` report: the app's release version. The `garage_rag`
 /// packages on PyPI and RubyGems take it too (rust/garage-rag's `version`, held to this by a test),
 /// continuing from the pure-Python package's 1.5.0, and the Windows installers read it here.
-pub const VERSION: &str = "1.6.0";
+pub const VERSION: &str = "1.7.0";
 
 /// The largest message the server accepts (`MAX_REQUEST_BYTES`): `PersistDocument` carries a whole
 /// document's text and chunks.
