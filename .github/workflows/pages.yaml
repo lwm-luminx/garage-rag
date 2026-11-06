@@ -6,11 +6,11 @@ name: Site
 # serves locally. (GitHub's jekyll-build-pages action pins Jekyll 3 and its own
 # plugin set, not the Gemfile's.)
 #
-# Pushes to main build and deploy it to GitHub Pages; pull requests that touch the
-# site build it.
+# Every push and pull request that touches the site builds it; only main, which
+# releases publish from, deploys it to GitHub Pages.
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
     paths:
       - "docs/**"
@@ -41,13 +41,9 @@ jobs:
         with:
           aspect-api-token: ${{ secrets.ASPECT_API_TOKEN }}
       - name: aspect build //docs:site
-        # --config=ci builds for the ad hoc signed macOS platform, which has no execution platform
-        # here, so the site (Ruby only) targets the Linux host. --config=ci also downloads no
-        # outputs from the remote cache (remote_download_outputs=minimal); the site is the one
-        # output this job needs on disk.
-        run: >-
-          aspect build --task:name site --platforms=@platforms//host --host_platform=@platforms//host
-          --remote_download_outputs=toplevel //docs:site
+        # --config=ci downloads no outputs from the remote cache (remote_download_outputs=minimal);
+        # the site is the one output this job needs on disk.
+        run: aspect build --task:name site --remote_download_outputs=toplevel //docs:site
       - name: Stage the built site
         # Bazel's outputs are read-only and reached through the bazel-bin symlink; copy them out
         # as plain, readable files for the Pages artifact.

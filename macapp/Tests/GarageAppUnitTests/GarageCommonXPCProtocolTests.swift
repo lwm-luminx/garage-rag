@@ -1,6 +1,6 @@
 import XCTest
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class MockCommonXPCService: NSObject, GarageCommonXPCServiceProtocol {

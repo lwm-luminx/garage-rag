@@ -1,0 +1,23 @@
+[package]
+name = "garage-rag"
+description = "Garage's language bindings in one library: every UniFFI crate of the workspace linked into one shared library, packaged as `garage_rag` for PyPI and RubyGems."
+# The packages' version, which is the app's release version: GarageService's `VERSION`
+# (rust/garage-service/src/service.rs), which `garage --version` prints, the Windows installers
+# take and a test here holds this to. Not the workspace's, which versions the crates.
+version = "1.6.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_rag"
+# Shared for maturin's wheel and the gem; rlib for the workspace's own tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+garage-cli-uniffi.workspace = true
+garage-embed-uniffi.workspace = true
+
+[lints]
+workspace = true

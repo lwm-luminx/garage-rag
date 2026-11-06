@@ -2,7 +2,7 @@ import Foundation
 import Combine
 import Security
 import AppKit
-import PythonXPCService
+import GarageXPCKit
 
 public struct RegisteredModel: Identifiable, Hashable, Sendable {
     public var id: String { slug }
@@ -16,6 +16,8 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
     public let tableName: String
     public let isDefault: Bool
     public let modelId: String?
+    /// `text` or `image`: which chunks the model embeds.
+    public let modality: String
 
     public init(
         slug: String,
@@ -27,7 +29,8 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
         indexKind: String,
         tableName: String,
         isDefault: Bool,
-        modelId: String? = nil
+        modelId: String? = nil,
+        modality: String = "text"
     ) {
         self.slug = slug
         self.provider = provider
@@ -39,6 +42,7 @@ public struct RegisteredModel: Identifiable, Hashable, Sendable {
         self.tableName = tableName
         self.isDefault = isDefault
         self.modelId = modelId
+        self.modality = modality
     }
 }
 
@@ -503,16 +507,22 @@ final class PostgresService: ObservableObject {
             "-c", "shared_memory_type=mmap",
             "-c", "dynamic_shared_memory_type=mmap",
         ] + listen
-        // Apache AGE hooks the parser, so it has to be loaded into every backend, and
+        // Every loadable module the backends use is preloaded, so the postmaster opens each
+        // one once and the backends inherit it through fork instead of each dlopen-ing it.
+        // Passed here rather than in postgresql.conf so clusters initialized by an older
+        // build get it too; a library that isn't bundled is left out, since a missing preload
+        // stops the server.
+        let preload = Self.sharedPreloadLibraries { name in
+            FileManager.default.fileExists(atPath: Paths.postgresLibDir.appendingPathComponent("\(name).dylib").path)
+        }
+        if !preload.isEmpty {
+            postgresArguments.append(contentsOf: ["-c", "shared_preload_libraries=\(preload.joined(separator: ","))"])
+        }
+        // Apache AGE hooks the parser, so it has to be loaded into every backend (above), and
         // create_graph resolves its operator classes through search_path. ag_catalog goes
-        // last so Garage's own unqualified names still land in public. Passed here rather
-        // than in postgresql.conf so clusters initialized by an older build get it too;
-        // skipped when the library isn't bundled, since a missing preload stops the server.
-        if FileManager.default.fileExists(atPath: Paths.postgresLibDir.appendingPathComponent("age.dylib").path) {
-            postgresArguments.append(contentsOf: [
-                "-c", "shared_preload_libraries=age",
-                "-c", "search_path=\"$user\", public, ag_catalog",
-            ])
+        // last so Garage's own unqualified names still land in public.
+        if preload.contains("age") {
+            postgresArguments.append(contentsOf: ["-c", "search_path=\"$user\", public, ag_catalog"])
         }
         let configFile = Paths.postgresConfigFile
         if FileManager.default.fileExists(atPath: configFile.path) {
@@ -743,7 +753,7 @@ final class PostgresService: ObservableObject {
     /// Fetches all registered embedding models directly from the backing database.
     func listRegisteredModels() async throws -> [RegisteredModel] {
         try requireRunning()
-        let sql = "SELECT slug, provider, model_ref, dims, stored_dims, storage_kind, index_kind, table_name, is_default, coalesce(model_id, '') FROM embedding_models ORDER BY id;"
+        let sql = "SELECT slug, provider, model_ref, dims, stored_dims, storage_kind, index_kind, table_name, is_default, coalesce(model_id, ''), coalesce(modality, 'text') FROM embedding_models ORDER BY id;"
         let rows = try await commandRunner().query(sql)
         var models: [RegisteredModel] = []
         for parts in rows {
@@ -758,6 +768,7 @@ final class PostgresService: ObservableObject {
             let tableName = parts[7]
             let isDefault = parts[8] == "t" || parts[8] == "true"
             let modelId = parts.count >= 10 && !parts[9].isEmpty ? parts[9] : nil
+            let modality = parts.count >= 11 && !parts[10].isEmpty ? parts[10] : "text"
             models.append(RegisteredModel(
                 slug: slug,
                 provider: provider,
@@ -768,7 +779,8 @@ final class PostgresService: ObservableObject {
                 indexKind: indexKind,
                 tableName: tableName,
                 isDefault: isDefault,
-                modelId: modelId
+                modelId: modelId,
+                modality: modality
             ))
         }
         return models
@@ -1219,6 +1231,17 @@ final class PostgresService: ObservableObject {
     /// with embedded quotes doubled, so a comma in the path cannot split it (`SplitDirectoriesString`).
     nonisolated static func quotedSetting(_ value: String) -> String {
         "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// The loadable modules backends load: the extensions `001_extensions.sql` creates
+    /// (pgvector, pg_trgm, AGE), PL/pgSQL, and the Snowball stemmers the `english` text
+    /// search configuration behind every `tsvector` uses. pgoutput is left out: only a
+    /// logical replication walsender loads it, and Garage runs none.
+    nonisolated static let preloadedLibraries = ["vector", "pg_trgm", "age", "plpgsql", "dict_snowball"]
+
+    /// `shared_preload_libraries` for the libraries in `preloadedLibraries` that are bundled.
+    nonisolated static func sharedPreloadLibraries(isBundled: (String) -> Bool) -> [String] {
+        preloadedLibraries.filter(isBundled)
     }
 }
 

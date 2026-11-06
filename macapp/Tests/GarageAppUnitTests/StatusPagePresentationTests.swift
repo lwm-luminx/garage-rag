@@ -1,6 +1,6 @@
 import XCTest
 import SwiftUI
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class StatusPagePresentationTests: XCTestCase {
@@ -315,11 +315,10 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertFalse(plain.detailIsError)
         XCTAssertNil(plain.restartTint, "a healthy helper does not ask for a restart")
 
-        let python = GarageXPCPythonStatus(state: "ready")
         let report = GarageXPCStatusReport(
-            serviceName: "garage", bundleIdentifier: service.bundleId, pid: 42, uptimeSeconds: 10, lifecycle: "ready", python: python,
+            serviceName: "garage", bundleIdentifier: service.bundleId, pid: 42, uptimeSeconds: 10, lifecycle: "ready",
             tests: [
-                GarageXPCTestResult(name: "Python Runtime", testDescription: "", status: .passed, durationMs: 1, summary: "ok", details: ""),
+                GarageXPCTestResult(name: "Rust Backend", testDescription: "", status: .passed, durationMs: 1, summary: "ok", details: ""),
                 GarageXPCTestResult(name: "Llama Loader", testDescription: "", status: .failed, durationMs: 1, summary: "no reply", details: "", errorMessage: "timeout"),
             ]
         )
@@ -329,9 +328,9 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(reported.restartTint, .yellow, "a failed self test suggests a restart")
 
         let withSkips = GarageXPCStatusReport(
-            serviceName: "garage", bundleIdentifier: service.bundleId, pid: 42, uptimeSeconds: 10, lifecycle: "ready", python: python,
+            serviceName: "garage", bundleIdentifier: service.bundleId, pid: 42, uptimeSeconds: 10, lifecycle: "ready",
             tests: [
-                GarageXPCTestResult(name: "Python Runtime", testDescription: "", status: .passed, durationMs: 1, summary: "ok", details: ""),
+                GarageXPCTestResult(name: "Rust Backend", testDescription: "", status: .passed, durationMs: 1, summary: "ok", details: ""),
                 GarageXPCTestResult(name: "Database Connection", testDescription: "", status: .skipped, durationMs: 0, summary: "not configured", details: ""),
             ]
         )
@@ -574,6 +573,7 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "embed-xpc"), "Embeddings")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "llama-xpc"), "Built-in Engine")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "model-download-xpc"), "Model Downloads")
+        XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "image-embed-xpc"), "Image Embeddings")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "mcp-server-xpc"), "MCP Server")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "garage-xpc"), "Garage Backend")
         XCTAssertEqual(ServiceRowPresentation.name(forServiceId: "something-new"), "something-new")

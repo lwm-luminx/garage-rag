@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="Garage.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- Chrome (the title bar and the navigation pane) on surface-raised; pages on surface. -->
+    <Grid Background="{ThemeResource GarageSurfaceRaisedBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Custom title bar: the window extends into it. The app icon is Garage's only mark, with the
+             name beside it (the design system's Wordmark). -->
+        <Grid x:Name="AppTitleBar" Height="40" Padding="16,0,0,0">
+            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                <Image Source="ms-appx:///Assets/GarageIcon.png" Width="16" Height="16" AutomationProperties.AccessibilityView="Raw" />
+                <TextBlock x:Uid="MainWindow_1" Style="{StaticResource CaptionTextBlockStyle}" FontWeight="SemiBold"
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" VerticalAlignment="Center" />
+            </StackPanel>
+        </Grid>
+
+        <NavigationView
+            x:Name="Nav"
+            Grid.Row="1"
+            PaneDisplayMode="Left"
+            IsBackButtonVisible="Collapsed"
+            IsSettingsVisible="True"
+            OpenPaneLength="220"
+            SelectionChanged="OnSelectionChanged">
+            <Frame x:Name="ContentFrame" Padding="24" />
+        </NavigationView>
+
+        <!-- The setup assistant replaces the pages while it runs (the Mac's FirstRunView). -->
+        <ContentControl x:Name="FirstRunHost" Grid.Row="1" HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                        Visibility="Collapsed" IsTabStop="False" />
+    </Grid>
+</Window>

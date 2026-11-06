@@ -1,0 +1,60 @@
+load("@rules_rs//rs:rust_binary.bzl", "rust_binary")
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# GarageService in Rust, ported from garage_rag/service (docs/plans/python-removal.md): the gRPC
+# backend over Postgres + pgvector. The tests under tests/ need a server (GARAGE_TEST_DATABASE_URL)
+# and run from Cargo in CI's rust job; the unit tests run here.
+rust_library(
+    name = "garage-service",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_service",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rust/garage-embed",
+        "//rust/garage-facade",
+        "//rust/garage-ingest",
+        "//rust/garage-mcp",
+        "//rust/garage-text",
+        "@crates//:chrono",
+        "@crates//:deadpool-postgres",
+        "@crates//:http-body-util",
+        "@crates//:hyper",
+        "@crates//:hyper-util",
+        "@crates//:langextract-rs",
+        "@crates//:libc",
+        "@crates//:prost",
+        "@crates//:regex",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+        "@crates//:tokio-postgres",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@crates//:tower",
+    ],
+)
+
+rust_test(
+    name = "garage-service-test",
+    # schema.rs's test compares the generated schema with the committed copy (include_str!).
+    compile_data = ["//docs:config_schema"],
+    crate = ":garage-service",
+    # repo_schema_path's test walks up to MODULE.bazel; under Bazel it starts from the runfiles root.
+    data = ["//:MODULE.bazel"],
+)
+
+# The backend as its own process: `garage-service serve`.
+rust_binary(
+    name = "garage-service-bin",
+    srcs = ["src/main.rs"],
+    crate_name = "garage_service_bin",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":garage-service",
+        "//rust/garage-embed",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+    ],
+)

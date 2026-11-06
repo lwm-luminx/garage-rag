@@ -10,33 +10,18 @@ common --downloader_config=bazel/downloader.cfg
 
 
 
-# Select the uv hub's dependency group (matches project name in pyproject.toml).
-common --@pypi//dep_group=garage_rag
-# Select the hermetic free-threaded 3.14 (3.14t) interpreter from @python_interpreters.
-# Its toolchains are gated on these flags (target_settings = python_version_is_3_14 and
-# freethreaded_is_true); without them, resolution falls through to a transitively-registered
-# rules_python interpreter. The freethreaded flag also makes the uv hub pick cp314t wheels.
-common --@aspect_rules_py//py/private/interpreter:python_version=3.14
-common --@aspect_rules_py//py/private/interpreter:freethreaded=true
-common --@rules_python//python/config_settings:py_freethreaded=yes
+# winapp/: a C# target sees its dependencies' dependencies, as NuGet and MSBuild let a project use
+# every package and project it reaches transitively; the BUILD files mirror the csproj files'
+# direct references only.
+common --@rules_dotnet//dotnet/settings:strict_deps=false
 
 
 
 
-# Python tests that need a real Postgres (garage_python/tests/test_postgres.py) run
-# against the server this names and skip when it is unset; see "Testing against
-# Postgres" in CLAUDE.md.
+# The Rust tests that need a real Postgres (rust/garage-service/tests, rust/garage-cli/tests)
+# run against the server this names and pass without running when it is unset; see "Testing
+# against Postgres" in CLAUDE.md.
 test --test_env=GARAGE_TEST_DATABASE_URL
-
-# garage_python/tests/test_inference_live.py runs against a real LM Studio / Ollama
-# when these name a model (and skips otherwise); see that file's docstring.
-test --test_env=GARAGE_TEST_OLLAMA_EMBED_MODEL
-test --test_env=GARAGE_TEST_OLLAMA_URL
-test --test_env=GARAGE_TEST_LMSTUDIO_EMBED_MODEL
-test --test_env=GARAGE_TEST_LMSTUDIO_CHAT_MODEL
-test --test_env=GARAGE_TEST_LMSTUDIO_URL
-test --test_env=GARAGE_TEST_LMSTUDIO_AUTH_ON
-test --test_env=GARAGE_LMSTUDIO_API_TOKEN
 
 # Load settings & overrides specific to the current user from `user.bazelrc`.
 # That file is git-ignored so settings aren't shared with team members. This is
@@ -56,26 +41,49 @@ build --apple_platform_type=macos
 build --macos_cpus=arm64
 build --workspace_status_command=bazel/workspace_status.sh
 
-build --platforms=//bazel:local_signed
+# The default signs with the best identity the keychain has (//bazel:local_auto, see
+# bazel/signing_identity.bzl): an Apple Development certificate, else the self-signed local
+# identity below, else ad hoc. Choose one with `--repo_env=GARAGE_SIGNING_IDENTITY=<common name,
+# SHA-1 or ->` (in user.bazelrc to keep it), or outright with the presets that follow.
+build --platforms=//bazel:local_auto
 # Platform configuration presets
+build:local_auto --platforms=//bazel:local_auto
 build:adhoc --platforms=//bazel:adhoc
 build:local --platforms=//bazel:local
 # Like adhoc, but signed with the self-signed certificate from
 # `bazel run //tools/signing:local_identity`. Ad-hoc signatures pin the cdhash,
 # so every rebuild is a new identity and the app's Keychain items (the Postgres
 # password, the LM Studio token) prompt again; a certificate pins its own hash
-# instead, which a rebuild does not change. Put `build --config=local_signed` in
-# user.bazelrc to make it the local default.
+# instead, which a rebuild does not change. The default already picks it when the
+# keychain has no Apple Development certificate; `build --config=local_signed` in
+# user.bazelrc keeps it even when it does.
 build:local_signed --platforms=//bazel:local_signed
 # CI runners have no local signing identity (and no Keychain to put one in), so
 # `aspect` runs there with --config=ci and sign ad hoc instead.
 build:ci --platforms=//bazel:adhoc
+# The Developer ID build for GitHub releases (//macapp/package), signed with the keychain's
+# Developer ID certificate and the installed Developer ID profiles (bazel/signing_identity.bzl).
+# Build-only: its platform cannot run tests. The App Store build lives in garage-enterprise, which
+# builds against this repository's signing seam (bazel/platforms.bzl).
 build:developer_id --platforms=//bazel:developer_id
-build:appstore --platforms=//bazel:store
-# The App Store build to upload: optimized, which (unlike signing) changes every compile
-# action, so it shares nothing with the fastbuild configs above.
-build:appstore_release --config=appstore --compilation_mode=opt
-build:store --platforms=//bazel:store
+
+# On a Linux host (the devcontainer, CI's Linux jobs) build for that host: the macOS platforms above
+# have no matching execution platform there, so no test could run. The macOS-only targets are not
+# buildable on Linux either way; winapp/ and the Rust crates are. --enable_platform_specific_config
+# applies `build:linux` only when Bazel runs on Linux. It is repeated here as a `build` option, after
+# the --platforms above: the presets' `common` copy expands before every `build` line, so the
+# local_auto default would win again.
+build --enable_platform_specific_config
+build:linux --platforms=//bazel:linux_gnu
+build:linux --host_platform=//bazel:linux_gnu
+
+# macOS 27's dyld rejects Mach-O files that LLVM's objcopy has stripped ("mis-aligned LINKEDIT string
+# pool"; Apple's strip is fine), and rustc strips with rust-objcopy whenever it builds optimized. Tools
+# always build optimized, so no proc-macro loaded into rustc and every crate with a derive failed, and a
+# -c opt output can fail to load the same way. Rust keeps its debug info on macOS until Rust/LLVM fixes
+# rust-objcopy; then these two lines can go. @rules_rust is rules_rs's own (see MODULE.bazel).
+build:macos --@rules_rust//rust/settings:extra_exec_rustc_flag=-Cstrip=none
+build:macos --@rules_rust//rust/settings:extra_rustc_flag=-Cstrip=none
 
 # Build against the bundled PostgreSQL 19 beta instead of 18 (see //ext:postgres_version).
 common:pg19 --//ext:postgres_version=19

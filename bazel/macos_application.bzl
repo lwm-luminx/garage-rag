@@ -1,44 +1,31 @@
-"""Transitioned macos_application rules and macros."""
+"""A macos_application built for another platform: the signed distributions' app targets.
 
-load("@rules_apple//apple:macos.bzl", _raw_macos_application = "macos_application")
+The repository that holds the signing identities (garage-enterprise) declares a platform with
+`//bazel:platforms.bzl` and wraps `//macapp/Sources/GarageApp:GarageApp` in
+`platform_macos_application(platform = ...)`, which transitions the app onto it. The runner it
+writes unpacks the bundle into a fixed folder (see below) and execs the app.
+"""
+
 load(
     "@rules_apple//apple:providers.bzl",
     "AppleBundleInfo",
     "AppleExtraOutputsInfo",
 )
 
-def _appstore_transition_impl(settings, attr):
+def _platform_transition_impl(settings, attr):
     return {
-        "//command_line_option:platforms": ["//bazel:store"],
+        "//command_line_option:platforms": [str(attr.platform)],
         "//command_line_option:macos_cpus": ["arm64"],
     }
 
-_appstore_transition = transition(
-    implementation = _appstore_transition_impl,
+platform_transition = transition(
+    implementation = _platform_transition_impl,
     inputs = [],
     outputs = [
         "//command_line_option:platforms",
         "//command_line_option:macos_cpus",
     ],
 )
-
-def _developer_id_transition_impl(settings, attr):
-    return {
-        "//command_line_option:platforms": ["//bazel:developer_id"],
-        "//command_line_option:macos_cpus": ["arm64"],
-    }
-
-_developer_id_transition = transition(
-    implementation = _developer_id_transition_impl,
-    inputs = [],
-    outputs = [
-        "//command_line_option:platforms",
-        "//command_line_option:macos_cpus",
-    ],
-)
-
-# For other rules that stage the Developer ID app (lipo.bzl's macos_lipo_app).
-developer_id_transition = _developer_id_transition
 
 def _transition_app_impl(ctx):
     target = ctx.attr.app[0]
@@ -151,86 +138,22 @@ exec "$EXEC_FILE" "$@"
         providers.append(target[AppleExtraOutputsInfo])
     return providers
 
-appstore_macos_application_transition = rule(
+platform_macos_application = rule(
     implementation = _transition_app_impl,
     executable = True,
     attrs = {
         "app": attr.label(
-            cfg = _appstore_transition,
+            cfg = platform_transition,
             mandatory = True,
-            doc = "The raw macos_application target to build with appstore config.",
+            doc = "The macos_application to build for `platform`.",
+        ),
+        "platform": attr.label(
+            mandatory = True,
+            doc = "The platform to build it for, declared with //bazel:platforms.bzl's signed_macos_platform.",
         ),
         "_allowlist_function_transition": attr.label(
             default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
         ),
     },
-    doc = "Builds a macos_application target with the --config=appstore transition.",
+    doc = "Builds a macos_application for the given platform, with a runner that launches the bundle.",
 )
-
-developer_id_macos_application_transition = rule(
-    implementation = _transition_app_impl,
-    executable = True,
-    attrs = {
-        "app": attr.label(
-            cfg = _developer_id_transition,
-            mandatory = True,
-            doc = "The raw macos_application target to build with developer_id config.",
-        ),
-        "_allowlist_function_transition": attr.label(
-            default = "@bazel_tools//tools/allowlists/function_transition_allowlist",
-        ),
-    },
-    doc = "Builds a macos_application target with the --config=developer_id transition.",
-)
-
-def appstore_macos_application(name, app = None, application = None, bundle = None, **kwargs):
-    """Creates a macOS application target configured for App Store distribution via transition."""
-    target_app = app or application or bundle
-
-    # Manual whether or not the app is passed in: these sign with a distribution
-    # identity, so `//...` (and CI, which has none) must not build them.
-    tags = kwargs.pop("tags", [])
-    if "manual" not in tags:
-        tags = tags + ["manual"]
-    if not target_app:
-        raw_name = "_" + name.replace(".", "_") + "_raw"
-        _raw_macos_application(
-            name = raw_name,
-            tags = tags,
-            **kwargs
-        )
-        target_app = ":" + raw_name
-        kwargs = {}
-
-    appstore_macos_application_transition(
-        name = name,
-        app = target_app,
-        tags = tags,
-        **kwargs
-    )
-
-def developer_id_macos_application(name, app = None, application = None, bundle = None, **kwargs):
-    """Creates a macOS application target configured for Developer ID distribution via transition."""
-    target_app = app or application or bundle
-
-    # Manual whether or not the app is passed in: these sign with a distribution
-    # identity, so `//...` (and CI, which has none) must not build them.
-    tags = kwargs.pop("tags", [])
-    if "manual" not in tags:
-        tags = tags + ["manual"]
-    if not target_app:
-        raw_name = "_" + name.replace(".", "_") + "_raw"
-        _raw_macos_application(
-            name = raw_name,
-            tags = tags,
-            **kwargs
-        )
-        target_app = ":" + raw_name
-        kwargs = {}
-
-    developer_id_macos_application_transition(
-        name = name,
-        app = target_app,
-        tags = tags,
-        **kwargs
-    )

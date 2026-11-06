@@ -1,7 +1,7 @@
 import AppKit
 
 /// Single source of truth for the corpus taxonomy the Python side enforces
-/// (`garage_python/src/garage_rag/db/models.py`: `CorpusClass` / `TrustTier`).
+/// (`data/sql/001_core.sql`'s CHECK constraints, mirrored by rust/garage-service).
 /// Views that offer an "all" sentinel prepend it via `withAllSentinel`.
 enum CorpusTaxonomy {
     static let corpusClasses = ["document", "code", "communication"]

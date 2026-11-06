@@ -1,6 +1,6 @@
 import Foundation
 import Security
-import PythonXPCService
+import GarageXPCKit
 
 /// Detects whether the code is currently running within a test environment.
 public var isRunningInTestEnvironment: Bool {

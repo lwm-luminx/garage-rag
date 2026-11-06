@@ -1,5 +1,5 @@
 import XCTest
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class PostgresServiceTests: XCTestCase {
@@ -61,6 +61,19 @@ final class PostgresServiceTests: XCTestCase {
     func testSocketFolderIsQuotedAsOneListElement() {
         XCTAssertEqual(PostgresService.quotedSetting("/a b/s"), "\"/a b/s\"")
         XCTAssertEqual(PostgresService.quotedSetting("/a\"b,c"), "\"/a\"\"b,c\"")
+    }
+
+    func testEveryBundledLibraryIsPreloaded() {
+        XCTAssertEqual(
+            PostgresService.sharedPreloadLibraries { _ in true },
+            ["vector", "pg_trgm", "age", "plpgsql", "dict_snowball"]
+        )
+    }
+
+    func testMissingLibrariesAreNotPreloaded() {
+        // A preload the server cannot find stops it, so an unbundled library is left out.
+        XCTAssertEqual(PostgresService.sharedPreloadLibraries { $0 != "age" }, ["vector", "pg_trgm", "plpgsql", "dict_snowball"])
+        XCTAssertEqual(PostgresService.sharedPreloadLibraries { _ in false }, [])
     }
 
     func testSocketPathLimitIsSunPath() {

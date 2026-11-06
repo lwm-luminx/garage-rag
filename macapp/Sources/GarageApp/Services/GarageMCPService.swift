@@ -1,6 +1,6 @@
 import Foundation
 import MCPServerClient
-import PythonXPCService
+import GarageXPCKit
 
 enum GarageMCPStatus: Equatable {
     case stopped
@@ -806,6 +806,13 @@ final class GarageMCPService: ObservableObject {
         env[GarageXPCConfigurationKey.workingDirectory] = Paths.garageWorkingDirectory.path
         if let lmStudioToken = try LMStudioTokenStore.load() {
             env["GARAGE_LMSTUDIO_API_TOKEN"] = lmStudioToken
+        }
+        // The Rust server reads the corpus through GarageService, so it needs the backend's address
+        // and token. XPCServiceManager.configureHelpers hands them over too, but from a task of its
+        // own that a start can overtake; without them here, that start fails with "The app has not
+        // told the MCP service where GarageService listens yet" and the page stays on Couldn't Start.
+        if let grpc, grpc.status == .running, let backend = try? grpc.helperConfiguration() {
+            env.merge(backend) { own, _ in own }
         }
         return env
     }

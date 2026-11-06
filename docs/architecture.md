@@ -6,6 +6,14 @@ description: How Garage's local RAG pipeline works, from walking folders and ext
 
 # Architecture
 
+> **The pipeline is Rust.** Every stage below runs in the crates under `rust/` (`garage-ingest`,
+> `garage-readers`, `garage-embed`, `garage-service`, `garage-mcp`, `garage-cli`), inside the Mac
+> app's XPC services, the Windows app's `Garage.Services.exe` and the `garage` command. It was
+> written in Python first and ported one piece at a time
+> ([the plan]({{ '/plans/python-removal.html' | relative_url }})); the module names in this guide
+> (`walker.py`, `hybrid.py`, ...) are those originals, which each crate's documentation names, so the
+> guide reads the same against either. Where the two differ, the Rust code is right.
+
 ```
 sources ──▶ walker ──▶ [materialize] ──▶ extract ──▶ quality gate
                                                           │
@@ -129,6 +137,14 @@ the owner and `received` otherwise. See [`attribution.md`](attribution.md).
 See [`schema.md`](schema.md). Chunks are model-agnostic; each embedding model
 owns a table keyed on `chunk_id` with `ON DELETE CASCADE`.
 
+A picture (an image file whose OCR found little or no text, or a screenshot's
+title beside its OCR text) gets one `image` chunk (`chunker = 'image'`): its
+text is what full-text search sees, its vector comes from the file. Embedding
+models carry a `modality`: text models skip image chunks, and an image model
+(`image_xpc`, the app's `GarageImageEmbedXPCService`, a CLIP-style model on Core
+ML) embeds only them, from the file bytes, and embeds search queries through
+the model's text tower so a phrase finds pictures.
+
 ### 7. Distill facts (`enrich/facts.py`)
 
 An optional pass over stored documents, run as `garage enrich-facts` or the
@@ -199,13 +215,16 @@ Run `garage enrich-facts --prompt entities` and inspect the `facts` rows it
 produces (`fact_class` will be `person`/`place`/`organization`/`event`) before
 building schema on top of what a given local model actually extracts.
 
-Only the local part of LangExtract is used, vendored as
-`enrich/langextract` (prompting, chunking, parsing and alignment). Upstream's
+Only the local part of LangExtract is used (prompting, chunking, parsing and
+alignment): [langextract-rs](https://github.com/lwm-luminx/langextract-rs), the
+FOSS Rust port, behind the service's `FactExtractor` trait. Upstream's
 provider registry, which routes `gemini*`/`gpt-*` model ids to Google and
 OpenAI, is not vendored, and a cloud model id is refused with an error. The
-model is always `facts_language_model(...)`, a `LocalLanguageModel`
-(`enrich/local_provider.py`) that posts each prompt to the server's
-`/v1/chat/completions` through the [inference client](#local-inference-client).
+model is always Garage's own chat client (`LangExtractor` in
+`rust/garage-service/src/langextract.rs`, over `garage_mcp::chat::ChatModel`),
+which posts each prompt to the server's `/v1/chat/completions` through the
+[inference client](#local-inference-client), after the document's class has
+passed the egress rules.
 Like the rest of local inference, content never leaves the machine. Ollama
 keeps the JSON mode and temperature (0.1) that LangExtract's own Ollama provider
 sent (GPT-OSS models get a JSON-only system instruction instead); LM Studio and
@@ -223,14 +242,119 @@ Every fact also gets a `chunks` row of its own (`chunks.fact_id`,
 `chunker = 'facts:langextract:<model>'`). That is the entire embedding story: a
 chunk is a chunk regardless of where its text came from, so the ordinary
 backfill anti-join picks fact chunks up and every registered model ends up with
-a vector for them, with no fact-specific embedding path. Deleting a fact
-cascades into its chunk and, from there, into every `emb_*` table.
+a vector for them, with no fact-specific embedding path. The vector itself goes
+in the model's `potential_fact_emb_<slug>` table, keyed on the fact, so facts
+and passages each have an index of their own (`017_fact_vectors.sql`). Deleting
+a fact cascades into its chunk and its vectors.
+
+#### Distilled facts and the graph (`enrich/clusters.py`, `db/graph.py`)
+
+The facts above are *potential* facts. A claim restated across documents, or in
+every message of a quoted mail thread, is extracted once per statement.
+`garage cluster-facts` (the `ClusterFacts` RPC) links every potential fact to one
+row of `distilled_facts`, in two levels, from each fact's chunk vector under the
+default model:
+
+1. **Per document.** A document's facts of one class are compared pair by pair.
+   Those with the same normalized text, or at least
+   `facts.cluster_restate_threshold` similar (default 0.92), point at the
+   longest of them (`facts.restates_fact_id`). A document is compared again
+   when one of its facts gains a vector.
+2. **Guard.** Facts that disagree on numbers, dates or negation are never
+   grouped, at either level. Embeddings place "42 employees" beside "45
+   employees", and "on Tuesday" beside "not on Tuesday".
+3. **Across the corpus, full run** (`--full`, or a changed model or grouping
+   setting). The representatives' nearest neighbours
+   (`facts.cluster_neighbors`) give each a density. Densest first, a seed and
+   its neighbours at `facts.cluster_seed_threshold` or closer form a core,
+   whose mean is the group's seed. The group grows by the nearest neighbours of
+   its centroid while each is `facts.cluster_threshold` similar to it and to
+   the seed and keeps the centroid within `facts.cluster_max_drift` of the
+   seed, stopping at the first that is not. A group found again with the same
+   members keeps its row.
+4. **Across the corpus, incremental run.** Groups that lost members are
+   re-centred, and each new representative joins the nearest distilled fact
+   that passes the same tests (`facts.cluster_attach_candidates` tried), or
+   stands alone for later ones to join. Existing groups are never merged;
+   `--full` regroups after the corpus has grown a lot.
+5. **Distill.** A group whose farthest member is closer to its centroid than
+   members all `facts.cluster_tight_similarity` alike would be is kept as is.
+   The local chat model (`inference.*`, else `facts.*`) sees any other and
+   either confirms it with one sentence stating the claim, or says no, and the
+   group dissolves. A group containing a communication goes only to a loopback
+   model; when the model is elsewhere, such a group is not kept.
+
+Ground truth anchors groups. `enrich-facts` writes a mail's sender, recipients
+and subject and a Messages thread's participants as potential facts without a
+model (`enrich/metadata.py`: a person is keyed on their `authors` row where an
+identity matches, else the address; a subject on its text without `Re:`/`Fwd:`).
+Each distinct value becomes one anchored distilled fact (`anchor_key`,
+`018_fact_anchors.sql`). Its metadata facts link to it by key, whatever their
+vectors, and its centroid is its first fact's vector and never moves. Before a
+new inferred fact is grouped anywhere else, it joins the nearest anchor of its
+class that it is `facts.cluster_threshold` similar to and that passes the guard;
+no model is asked and nothing drifts. Metadata facts take no part in level 1 or
+in growing groups. Under other models an anchor's vector is its representative's.
+
+Nothing about a potential fact changes but its links. Each distilled fact
+records `nodes`, `spread`, `radius` and `drift`, and its normalized centroid and
+seed go in the clustering model's `fact_emb_<slug>` table. The backfill gives it
+a vector under every other model, the normalized mean of its nodes' vectors
+there, so nothing is embedded for it. A binary-quantized model cannot be the
+clustering model.
+
+Where the server has Apache AGE, the run then re-projects the tables into the
+graph `garage` (`garage graph rebuild` does only that). The vertices are
+`Document`, `Chunk`, `Author`, `PotentialFact` and `Fact`. The edges are
+`HAS_CHUNK`, `WROTE`/`RECEIVED`, `STATES` (Document to PotentialFact),
+`RESTATES` (a restatement to its representative) and `SUPPORTS` (a
+representative to its Fact). Vertices carry the relational ids; text,
+spans and vectors stay in the tables.
+
+New kinds of vertex and edge are configuration: a prompt in `facts.prompts` may
+carry a `graph` block, which the projection reads (`graph_schema` in
+`config/fact_prompts.py`, `projection` in `db/graph.py`). For example:
+
+```json
+"graph": {
+  "vertices": [{"class": "person", "label": "Person", "title": "name"},
+               {"class": "organization", "label": "Organization"}],
+  "edges": [{"class": "relation", "source": "subject", "source_class": "person",
+             "target": "object", "target_class": "organization",
+             "label_attribute": "predicate", "labels": ["WORKS_AT", "MEMBER_OF"]}]
+}
+```
+
+A vertex entry makes the distilled facts of its class (its potential facts,
+deduplicated by the pass above: entity resolution is the same grouping) vertices
+of its label instead of `Fact`, titled by the representative's `title`
+attribute; their `SUPPORTS` edges point there. An edge entry turns each
+potential fact of its class into an edge between the distilled facts its
+`source` and `target` attributes name, resolved in the fact's own document
+first and then by statement; its label is the `label_attribute` value when
+`labels` lists it (upper-cased, spaces as `_`), else `label` (`RELATED_TO`).
+Labels are plain identifiers and may not take a built-in one; a class given two
+labels, or a label two classes, is refused when the config loads. The block is
+not part of the prompt's hash, so changing it only needs `garage graph rebuild`.
+
+The app's Graph page reads it back: the labels with counts (its filters), a
+search of titles, names, facts and statements to pick a starting vertex, and
+that vertex's neighbourhood a few hops out, drawn with one ring per hop
+(`GetGraphLabels`, `FindGraphVertices`, `GetGraphNeighborhood`; the same
+functions behind `garage graph labels|find|neighbors`). The reads go over AGE's
+label tables with bound parameters rather than through `cypher()`, and take
+their labels from the catalog, so a label added later (a `RESTATES` edge) shows
+up in the page without a change to it, and a configured vertex label is
+searched by its `title` property.
 
 ### 8. Search (`search/hybrid.py`)
 
 Reciprocal Rank Fusion over vector KNN and Postgres FTS, `k = 60`, 200
 candidates per engine. RRF needs only each side's *ranking*, which matters
-because cosine distance and `ts_rank_cd` are not comparably scaled.
+because cosine distance and `ts_rank_cd` are not comparably scaled. The vector
+side takes the nearest content chunks from `emb_<slug>` and the nearest
+potential facts from `potential_fact_emb_<slug>`, each on its own index, and
+ranks the union by distance.
 
 The keyword half ORs its terms rather than ANDing them. `websearch_to_tsquery`
 would require every word of "secure enclave firmware validation" in one chunk and
@@ -335,31 +459,30 @@ Embedding is a single batching producer at 64 chunks per request: Ollama
 serializes model execution, so client fan-out buys contention, not throughput.
 The `llama_xpc` provider (embeddings and, with `--provider llama_xpc`, facts)
 talks to the app's `LlamaXPCService` through a llama-server-compatible API:
-over NSXPC from the app's own XPC services (`garage_rag.inference.bridge`),
-otherwise over HTTP on its socket in the App Group container
-(`GARAGE_LLAMA_SOCKET`, which the app's processes export), with `llama_host`
-naming the origin. Models are loaded over NSXPC only, never over HTTP. When a request finds its model not resident (503 `no model loaded`, 404
-`model X is not loaded`), `LlamaXPCClient` asks `garage_rag.xpc.host` to load
-it and retries once:
+over NSXPC from the app's own XPC services (the embed worker's Swift host,
+`GarageEmbedWorkerHost`), otherwise over HTTP on its socket in the App Group
+container (`GARAGE_LLAMA_SOCKET`, which the app's processes export), with
+`llama_host` naming the origin. Models are loaded over NSXPC only, never over
+HTTP. When a request finds its model not resident (503 `no model loaded`, 404
+`model X is not loaded`), the worker asks its host to load it and retries once:
 
-- inside the app's XPC services that embed Python (`GarageXPCService` for
-  search, backfill and enrich-facts, `GarageMCPServerService` for `rag_search`
-  and `rag_ask`, the embed worker) the Swift host installed a loader at start-up
-  (`LlamaModelLoaderBridge`, a C function Python calls through ctypes, which
-  releases the GIL); it resolves the slug to the downloaded GGUF and the Models
+- inside the app's XPC services (`GarageXPCService` for search, backfill and
+  enrich-facts, `GarageMCPServerService` for `rag_search` and `rag_ask`,
+  `GarageEmbedXPCService` for the embed worker) the host's loader
+  (`LlamaModelLoader`) resolves the slug to the downloaded GGUF and the Models
   page's load settings (`LlamaModelResolver`) and calls `ensureModel` on
   `LlamaXPCService` over NSXPC, through the endpoint of its anonymous listener,
   which the app hands each of these services at launch and after any of them
   restarts (a sibling XPC service cannot look `LlamaXPCService` up by name);
-- elsewhere (the `garage`/`garage-mcp` launchers, or a venv while the app runs)
-  it asks the app's `EnsureLlamaModel` RPC, which uses `GarageXPCService`'s
-  loader;
+- elsewhere (the `garage`/`garage-mcp` launchers, or a `garage` built with
+  Cargo while the app runs) it asks the app's `EnsureLlamaModel` RPC, which
+  uses `GarageXPCService`'s loader;
 - with neither, the error says to open Garage or load the model on its Models
   page, and a model that is not downloaded is named with where to download it.
 
 `ensureModel` checks and loads under the engine lock, so callers in different
 processes never load the same model twice, and a load waits for any running
-inference (they share the engine lock). Python never unloads. The app decides
+inference (they share the engine lock). The workers never unload. The app decides
 residency (`AppState+LlamaModels.swift`): it loads the default `llama_xpc`
 embedding model once Postgres is up, and again when the default changes, so a
 search finds it resident; it loads the facts model before a distillation run
@@ -367,30 +490,32 @@ and unloads it when the run ends, unless it is also the search model. Anything
 loaded on demand stays until the Models page's Unload, which the Providers box
 offers for every model Llama XPC holds.
 
-## gRPC bridge (`service/server.py`)
+## gRPC bridge (`rust/garage-service`)
 
-`GarageService` (`proto/garage.proto`) listens on loopback port 50051, hosted in
-the app's `GarageXPCService` helper, or run by hand with `garage serve`. Each handler is a thin
-presenter over the same function the CLI command calls (`ops/`), and a
-`_grpc_errors` decorator maps `LookupError`, `ValueError`, `FileExistsError` and
-`PermissionError` onto gRPC status codes. The RPCs fall in three groups:
+`GarageService` (`proto/garage.proto`) listens on the socket `s/grpc` in the App
+Group container (loopback port 50051 only when that path would be too long),
+hosted in the app's `GarageXPCService` helper, or run by hand with `garage
+serve`. Each handler is a thin presenter over the same function the CLI command
+calls (`sources.rs`, `models.rs`, `mcp_install.rs`, ...), and the service's error
+type maps onto gRPC status codes. The RPCs fall in three groups:
 
 - **Corpus reads** for the app's views: `Search`, `ListDocuments`,
   `GetDocument`, `ListFacts`, `GetFactStats`, `ListSources`, `ListModels`, `GetStats`,
   `GetStatus`, `GetVersion`, `Ping`.
 - **Operations**: `AddSource`, `RemoveSource`, `Scan` (streaming),
   `SyncSources`, `ImportSourcesToConfig`, `Reconcile`, `RegisterModel`,
-  `SetDefaultModel`, `DropModel`, `Backfill` and `EnrichFacts` (both streaming;
+  `SetDefaultModel`, `DropModel`, `EmbedText` (one text through a registered model, for the
+  Windows app's Test an Embedding), `Backfill` and `EnrichFacts` (both streaming;
   cancelling the call stops the work at its next progress step),
   `ListFactPrompts`, `InitDb`, `GetSetting` / `SetSetting`, `McpInstall` /
   `McpUninstall` / `McpStatus`, and `EnsureLlamaModel` for processes that cannot
   reach `LlamaXPCService` over NSXPC themselves.
 - **The database facade** the ingest and embed XPC workers persist through
-  (`GrpcIngestStorageGateway`): `BeginIngestSession`, `PersistScan`,
-  `CheckDocumentStat` (the stat and hashes the skip decisions need),
-  `PersistDocument`, `FinalizeIngestSession`, `GetEmbeddingBatches` and
-  `UpdateEmbeddings`. The server side is the same
-  `SqlAlchemyIngestStorageGateway` the in-process pipeline uses.
+  (`garage-ingest`'s `GrpcStorage`, `garage-facade`): `BeginIngestSession`,
+  `PersistScan`, `CheckDocumentStat` (the stat and hashes the skip decisions
+  need), `PersistDocument`, `FinalizeIngestSession`, `GetEmbeddingBatches` and
+  `UpdateEmbeddings`. The server side (`gateway.rs`) is the same code the
+  `garage` command's in-process service runs.
 
 The server accepts requests up to 256 MiB, since `PersistDocument` carries a
 document's whole text and chunks and a long Messages thread outgrows gRPC's
@@ -419,11 +544,16 @@ checks and no socket.
 
 ## Local inference client
 
-`garage_rag/inference/` is the one HTTP client for the three local inference
-servers — LM Studio, Ollama and the app's `LlamaXPCService` — used by the
-embedders (`embed/ollama.py`, `embed/lmstudio.py`, `embed/llama_xpc.py`),
-`LocalChatModel` and the LangExtract provider. There is no `ollama` or `openai`
-package behind it; it is httpx and a few hundred lines.
+`garage-embed`'s providers (`inference/` in the Python original) are the one
+client for the three local inference servers — LM Studio, Ollama and the app's
+`LlamaXPCService` — used by the embedders, the chat model behind `rag_ask` and
+the fact distiller. There is no `ollama` or `openai` crate behind it; the worker
+builds each request and its host sends it (`Host::http`) once the egress rules
+have approved the destination.
+
+Image models are the exception: they never speak HTTP. The host of each helper
+calls `GarageImageEmbedXPCService` over NSXPC through the endpoint the app hands
+over, so a `garage` built with Cargo cannot embed with an image model and says so.
 
 - **`Backend`** — `kind` (`lmstudio` | `ollama` | `llama_xpc`), `base_url` (the
   server root: a trailing `/v1`, as `lmstudio_host` carries, is dropped and

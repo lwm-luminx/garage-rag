@@ -15,13 +15,12 @@ swift_library(
         "//macapp/Sources/GarageApp:GarageApp_lib",
         "//macapp/Sources/GarageLauncher",
         "//macapp/Sources/GarageUpdater",
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/IngestClient",
         "//macapp/Sources/LlamaClient",
         "//macapp/Sources/LlamaModelLoader",
         "//macapp/Sources/MCPServerClient",
         "//macapp/Sources/ModelDownloadClient",
-        "//macapp/Sources/PythonXPCService",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_protocol",
         "//macapp/Tests/LlamaTestSupport",
     ],
 )
@@ -29,20 +28,11 @@ swift_library(
 macos_unit_test(
     name = "GarageAppUnitTests",
     timeout = "long",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-    ],
     bundle_id = "me.rickmark.garage-rag.GarageAppUnitTests",
     bundle_name = "GarageAppUnitTests",
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-    ],
     minimum_os_version = "14.0",
     visibility = ["//visibility:public"],
     deps = [
         ":GarageAppUnitTests_lib",
-        "//ext/python:python_framework",
     ],
 )

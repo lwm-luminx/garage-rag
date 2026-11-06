@@ -1,0 +1,27 @@
+load("@rules_apple//apple:macos.bzl", "macos_unit_test")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+swift_library(
+    name = "ImageEmbedEngineTests_lib",
+    testonly = True,
+    srcs = glob(["**/*.swift"]),
+    module_name = "ImageEmbedEngineTests",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageXPCKit",
+        "//macapp/Sources/ImageEmbedClient",
+        "//macapp/Sources/ImageEmbedEngine",
+    ],
+)
+
+macos_unit_test(
+    name = "ImageEmbedEngineTests",
+    bundle_id = "me.rickmark.garage-rag.ImageEmbedEngineTests",
+    bundle_name = "ImageEmbedEngineTests",
+    data = ["//data/models"],
+    minimum_os_version = "14.0",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":ImageEmbedEngineTests_lib",
+    ],
+)

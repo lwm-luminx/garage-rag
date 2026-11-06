@@ -1,0 +1,43 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+_SRCS = glob(["src/**/*.rs"])
+
+# The contract's messages and the C ABI helpers, without the gRPC transport: what a plugin linked
+# into the ingester's process needs.
+rust_library(
+    name = "garage-plugin",
+    srcs = _SRCS,
+    crate_name = "garage_plugin",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@crates//:prost"],
+)
+
+# The same crate with Cargo's `grpc` feature: tonic, tokio and the Unix-socket server.
+rust_library(
+    name = "garage-plugin-grpc",
+    srcs = _SRCS,
+    crate_features = ["grpc"],
+    crate_name = "garage_plugin",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@crates//:prost",
+        "@crates//:tokio",
+        "@crates//:tokio-stream",
+        "@crates//:tonic",
+        "@crates//:tonic-prost",
+    ],
+)
+
+rust_test(
+    name = "garage-plugin-test",
+    crate = ":garage-plugin-grpc",
+    crate_features = ["grpc"],
+    deps = [
+        "@crates//:hyper-util",
+        "@crates//:tempfile",
+        "@crates//:tower",
+    ],
+)

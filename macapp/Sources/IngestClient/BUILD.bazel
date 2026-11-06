@@ -8,6 +8,6 @@ swift_library(
     module_name = "IngestClient",
     visibility = ["//visibility:public"],
     deps = [
-        "//macapp/Sources/PythonXPCService",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )

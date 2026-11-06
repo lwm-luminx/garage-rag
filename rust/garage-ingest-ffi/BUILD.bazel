@@ -1,0 +1,52 @@
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_static_library.bzl", "rust_static_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+_DEPS = [
+    "//rust/garage-git",
+    "//rust/garage-ingest",
+    "//rust/garage-readers",
+    "@crates//:serde_json",
+]
+
+# The walker and the quality gate behind their C ABI (include/garage_ingest.h), for linking
+# statically into the ingest service.
+rust_static_library(
+    name = "garage_ingest_ffi_static",
+    srcs = glob(["src/**/*.rs"]),
+    crate_features = ["exports"],
+    crate_name = "garage_ingest_ffi",
+    edition = "2024",
+    deps = _DEPS,
+)
+
+# A static Rust library carries no link options of its own, so the system libraries libgit2 needs
+# (//rust/garage-git:libgit2_linked: zlib, and iconv on macOS) are named again here. The ingest service
+# used to get them through Python.framework.
+cc_library(
+    name = "garage-ingest-ffi",
+    hdrs = ["include/garage_ingest.h"],
+    includes = ["include"],
+    linkopts = ["-lz"] + select({
+        "@platforms//os:macos": ["-liconv"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":garage_ingest_ffi_static"],
+)
+
+# The crate itself, for `garage-cli` (which runs `garage_ingest_run` in the launcher's process) and the tests.
+rust_library(
+    name = "garage_ingest_ffi_lib",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_ingest_ffi",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = _DEPS,
+)
+
+rust_test(
+    name = "garage-ingest-ffi-test",
+    crate = ":garage_ingest_ffi_lib",
+)

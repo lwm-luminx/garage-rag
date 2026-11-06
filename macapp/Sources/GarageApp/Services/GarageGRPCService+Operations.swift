@@ -101,6 +101,7 @@ extension GarageGRPCService {
         provider: String? = nil,
         modelID: String? = nil,
         distance: String? = nil,
+        modality: String? = nil,
         makeDefault: Bool = false
     ) async throws -> Garage_RegisterModelResponse {
         var request = Garage_RegisterModelRequest()
@@ -111,6 +112,8 @@ extension GarageGRPCService {
         request.modelID = modelID ?? ""
         // Empty: models.json's metric for a catalogued model, cosine otherwise.
         request.distance = distance ?? ""
+        // Empty: the catalog's section for a catalogued model, text otherwise.
+        request.modality = modality ?? ""
         request.makeDefault = makeDefault
         return try await call { try await $0.registerModel(request, callOptions: $1) }
     }
@@ -167,6 +170,27 @@ extension GarageGRPCService {
         return try await call(timeout: nil) { client, options in
             var finished: Garage_EnrichFactsStatus?
             for try await status in client.enrichFacts(request, callOptions: options) {
+                onStatus(status)
+                if status.phase == "finished" {
+                    finished = status
+                }
+            }
+            return finished
+        }
+    }
+
+    /// Links every potential fact to a distilled fact (`garage cluster-facts`), handing each
+    /// status to `onStatus`; returns the final `finished` status (nil if the stream ended without one).
+    /// `full` regroups the whole corpus instead of placing only what is new.
+    func clusterFacts(
+        full: Bool = false,
+        onStatus: @MainActor (Garage_ClusterFactsStatus) -> Void
+    ) async throws -> Garage_ClusterFactsStatus? {
+        var request = Garage_ClusterFactsRequest()
+        request.full = full
+        return try await call(timeout: nil) { client, options in
+            var finished: Garage_ClusterFactsStatus?
+            for try await status in client.clusterFacts(request, callOptions: options) {
                 onStatus(status)
                 if status.phase == "finished" {
                     finished = status

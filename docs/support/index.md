@@ -25,7 +25,7 @@ description: Help for Garage, the local RAG app for macOS, Windows and Linux, wi
   <div class="card">
     <span class="card-icon">🚀</span>
     <h3>Getting Started & Setup</h3>
-    <p>Step-by-step setup for both the native macOS menu bar app and the Python CLI, including source registration and indexing.</p>
+    <p>Step-by-step setup for both the native macOS menu bar app and the `garage` command line, including source registration and indexing.</p>
     <a href="{{ '/support/guide.html' | relative_url }}#getting-started" class="card-link">View Setup Guide →</a>
   </div>
 

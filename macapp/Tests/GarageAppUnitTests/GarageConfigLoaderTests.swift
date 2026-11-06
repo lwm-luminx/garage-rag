@@ -1,7 +1,7 @@
 import XCTest
 import CryptoKit
 import ModelDownloadClient
-import PythonXPCService
+import GarageXPCKit
 @testable import GarageApp
 
 final class GarageConfigLoaderTests: XCTestCase {

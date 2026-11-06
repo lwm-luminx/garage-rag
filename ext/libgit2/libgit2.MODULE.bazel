@@ -1,0 +1,8 @@
+git_repo = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
+git_repo(
+    name = "libgit2",
+    build_file = "//ext/libgit2:libgit2.BUILD.bazel",
+    commit = "49e408b3208bc3093757a1c2db938d3590f3f412",  # "v1.9.7"
+    remote = "https://github.com/libgit2/libgit2.git",
+)

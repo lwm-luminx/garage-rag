@@ -3,9 +3,10 @@ import Foundation
 import SwiftUI
 import Combine
 import OSLog
+import EmbedClient
 import GarageUpdater
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "AppState")
 
@@ -76,6 +77,8 @@ final class AppState: ObservableObject {
     @Published private(set) var inferencePresets: [ModelPresetEntry] = []
     /// The inference presets tagged for fact distillation, which the setup assistant offers.
     @Published private(set) var factDistilPresets: [ModelPresetEntry] = []
+    /// The catalog's `image_embedding` presets: CLIP-style models the image embedding helper runs.
+    @Published private(set) var imageEmbeddingPresets: [ModelPresetEntry] = []
     /// The `facts` section of garage.json: which model answers `enrich-facts` and `rag_ask`.
     @Published private(set) var factsModel: String = GarageConfigLoader.defaultFactsModel
     @Published private(set) var factsProvider: String = GarageConfigLoader.defaultFactsProvider
@@ -360,8 +363,9 @@ final class AppState: ObservableObject {
             }
             if postgres.status == .running {
                 // Each daemon starts independently: an MCP failure must not keep the gRPC backend down.
-                try? await mcp.startIfEnabled()
+                // The backend first, since the MCP server reads the corpus through it.
                 await startBackend()
+                try? await mcp.startIfEnabled()
             }
             await fetchRegisteredModels()
             await fetchRegisteredSources()
@@ -372,10 +376,16 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// Every preset the Embedding page can register: text models, then image models.
+    var embeddingPresets: [ModelPresetEntry] {
+        presetModels + imageEmbeddingPresets
+    }
+
     func fetchPresetModels() {
         self.presetModels = GarageConfigLoader.loadModelPresets()
         self.inferencePresets = GarageConfigLoader.loadInferencePresets()
         self.factDistilPresets = inferencePresets.filter(\.isForDistillation)
+        self.imageEmbeddingPresets = GarageConfigLoader.loadImageEmbeddingPresets()
         fetchFactsSettings()
     }
 
@@ -734,11 +744,11 @@ final class AppState: ObservableObject {
             await fetchRegisteredSources()
             await fetchCorpusStats()
             if postgres.status == .running {
-                if mcp.status == .stopped {
-                    try? await mcp.startIfEnabled()
-                }
                 if grpc.status == .stopped {
                     await startBackend()
+                }
+                if mcp.status == .stopped {
+                    try? await mcp.startIfEnabled()
                 }
             }
             lastCommandSucceeded = true
@@ -753,11 +763,11 @@ final class AppState: ObservableObject {
         Task {
             await postgres.refreshPendingMigrations()
             guard postgres.status == .running else { return }
-            if mcp.status == .stopped {
-                try? await mcp.startIfEnabled()
-            }
             if grpc.status == .stopped {
                 await startBackend()
+            }
+            if mcp.status == .stopped {
+                try? await mcp.startIfEnabled()
             }
         }
     }
@@ -1157,26 +1167,51 @@ final class AppState: ObservableObject {
         return "\(failures.count) sources failed: \(failures.map(\.slug).joined(separator: ", "))"
     }
 
-    /// Embeds pending chunks for `model` (nil = every registered model) on the backfill
-    /// runner, logging each progress step the server streams back.
+    /// Embeds pending chunks for `model` (nil = every registered model) on the backfill runner,
+    /// logging each step. The work runs in GarageEmbedXPCService's Rust embed worker, which reaches
+    /// the database through the backend: the backend is started first, and the service is handed
+    /// its address and token before each run. Cancelling the runner stops the worker at its next
+    /// batch.
     @discardableResult
     func runBackfill(model: String? = nil) async -> Bool {
         let grpc = self.grpc
+        let embed = EmbedClient()
         backfillProgress = nil
         let result = await backfill.run { runner in
-            _ = try await grpc.backfill(model: model) { status in
-                if !status.message.isEmpty {
-                    runner.appendLog(status.message)
-                }
-                // "started" and "progress" carry the model's counts; the per-model outcomes end it.
-                if status.phase == "started" || status.phase == "progress" {
-                    self.backfillProgress = BackfillProgress(
-                        model: status.modelSlug,
-                        embedded: Int(status.embedded),
-                        total: Int(status.total)
-                    )
+            if grpc.status != .running {
+                try await grpc.start()
+            }
+            try await embed.updateConfiguration(try grpc.helperConfiguration())
+            // Steps arrive on an XPC queue; a stream keeps them in order on the main actor.
+            let (events, continuation) = AsyncStream<EmbedBackfillEvent>.makeStream()
+            let consumer = Task { @MainActor in
+                for await event in events {
+                    if !event.message.isEmpty {
+                        runner.appendLog(event.message)
+                    }
+                    // "started" and "progress" carry the model's counts; the per-model outcomes end it.
+                    if event.phase == "started" || event.phase == "progress" {
+                        self.backfillProgress = BackfillProgress(model: event.modelSlug, embedded: event.embedded, total: event.total)
+                    }
                 }
             }
+            do {
+                _ = try await withTaskCancellationHandler {
+                    try await embed.backfill(EmbedBackfillRequest(model: model)) { continuation.yield($0) }
+                } onCancel: {
+                    Task { try? await embed.cancelBackfill() }
+                }
+            } catch let error as EmbedBackfillError where error.status == .cancelled {
+                continuation.finish()
+                await consumer.value
+                throw CancellationError()
+            } catch {
+                continuation.finish()
+                await consumer.value
+                throw error
+            }
+            continuation.finish()
+            await consumer.value
             return ""
         }
         backfillProgress = nil
@@ -1211,6 +1246,31 @@ final class AppState: ObservableObject {
             return finished?.message ?? ""
         }
         enrichFactsProgress = nil
+        await unloadFactsModelAfterDistilling()
+        return result.succeeded
+    }
+
+    /// Distills the potential facts into distinct facts ("Distill Facts"): groups restatements by
+    /// their embeddings and has the local model state each group once, on the enrich-facts runner.
+    /// `full` ("Regroup All Facts") regroups the corpus; otherwise only new facts are placed.
+    @discardableResult
+    func runClusterFacts(full: Bool = false) async -> Bool {
+        let grpc = self.grpc
+        let result = await enrichFacts.run { runner in
+            await self.loadFactsModelForDistilling(runner)
+            let finished = try await grpc.clusterFacts(full: full) { status in
+                if status.phase != "finished", !status.message.isEmpty {
+                    runner.appendLog(status.message, stream: .stdout)
+                }
+                for error in status.errors {
+                    runner.appendLog(error, stream: .stderr)
+                }
+            }
+            if let finished, !finished.graph.isEmpty {
+                runner.appendLog(finished.graph, stream: .stdout)
+            }
+            return finished?.message ?? ""
+        }
         await unloadFactsModelAfterDistilling()
         return result.succeeded
     }

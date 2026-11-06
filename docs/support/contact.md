@@ -59,6 +59,7 @@ write log files, in `~/Library/Logs/Garage/` for the direct-download build:
 - **MCP HTTP Server**: `mcp-server-xpc.log`
 - **Index Manager** (search, embedding, facts): `garage-xpc.log`
 - **Built-in Model Engine**: `llama-xpc.log`
+- **Image Embeddings**: `image-embed-xpc.log`
 
 If you file through **Help → Report a Bug…**, the steps below are already applied to anything the
 reporter attaches — they matter when you paste log snippets by hand.

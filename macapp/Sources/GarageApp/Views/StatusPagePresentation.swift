@@ -1,5 +1,5 @@
 import SwiftUI
-import PythonXPCService
+import GarageXPCKit
 
 // What the Status page says, worked out from plain values so it can be tested without a view;
 // each type's `init(appState:)` reads them from the live one. Three questions, three types:
@@ -818,6 +818,7 @@ struct ServiceRowPresentation: Equatable, Identifiable {
         case "embed-xpc": "Embeddings"
         case "llama-xpc": "Built-in Engine"
         case "model-download-xpc": "Model Downloads"
+        case "image-embed-xpc": "Image Embeddings"
         case "mcp-server-xpc": "MCP Server"
         case "garage-xpc": "Garage Backend"
         default: id

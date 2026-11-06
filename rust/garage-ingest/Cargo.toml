@@ -1,0 +1,19 @@
+[package]
+name = "garage-ingest"
+description = "Garage's ingest pipeline, moving out of garage_rag.ingest one piece at a time: the walker, quality gate, chunking, materializing, attribution, the per-file and per-source loops and the scanners so far, persisting through GarageService's facade."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+garage-facade.workspace = true
+garage-git.workspace = true
+libc.workspace = true
+messages-markdown.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+
+[lints]
+workspace = true

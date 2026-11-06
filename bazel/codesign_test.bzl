@@ -1,7 +1,6 @@
 """Bazel test rules for verifying codesign signatures, hardened runtime, and identities."""
 
 load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
-load("//bazel:signing.bzl", "STORE_IDENTITY")
 
 def _codesign_test_impl(ctx):
     if not ctx.target_platform_has_constraint(ctx.attr._macos_constraint[platform_common.ConstraintValueInfo]):
@@ -49,7 +48,6 @@ set -euo pipefail
 
 signing_identity="{signing_identity}"
 is_store="{is_store}"
-store_authority="{store_authority}"
 hardened_runtime="{hardened_runtime}"
 deep_verify="{deep_verify}"
 
@@ -270,8 +268,8 @@ while IFS= read -r f; do
             # 5. Store-specific verification
             if [ "$is_store" = "1" ]; then
                 if [ -z "$signing_identity" ]; then
-                    if ! echo "$cs_out" | grep -q -F "Authority=$store_authority"; then
-                        echo "[FAIL] $rel_name: store binary not signed with $store_authority"
+                    if ! echo "$cs_out" | grep -q -E "^Authority=(Apple Development|Apple Distribution|3rd Party Mac Developer Application)"; then
+                        echo "[FAIL] $rel_name: store binary not signed with an Apple Development or Apple Distribution certificate"
                         bin_failed=1
                     fi
                 fi
@@ -306,8 +304,6 @@ exit 0
 """.format(
         signing_identity = signing_identity,
         is_store = is_store_str,
-        # "Apple Development" from "Apple Development: Name (ID)".
-        store_authority = STORE_IDENTITY.split(":")[0],
         hardened_runtime = hardened_runtime_str,
         deep_verify = deep_verify_str,
         excludes = excludes_str,

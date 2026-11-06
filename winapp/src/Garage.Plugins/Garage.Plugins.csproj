@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Garage's reader plugins (proto/garage_plugin.proto) from .NET: the contract's messages, and
+       the text reader linked in-process through its C ABI (rust/garage-text-ffi), whose requests
+       and responses are those messages, serialized. -->
+  <PropertyGroup>
+    <RootNamespace>Garage.Plugins</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- Generated protobuf code carries no XML docs. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\..\proto\garage_plugin.proto" GrpcServices="Client" Link="Protos\garage_plugin.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Google.Protobuf" />
+    <PackageReference Include="Grpc.Net.Client" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Garage.Plugins.Tests" />
+  </ItemGroup>
+
+</Project>

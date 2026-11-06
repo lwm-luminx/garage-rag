@@ -1,0 +1,15 @@
+load("//winapp/bazel:defs.bzl", "garage_xunit_test")
+
+# Mirrors Garage.Plugins.Tests.csproj. Without GARAGE_TEXT_FFI_LIBRARY every test skips, as under
+# `dotnet test`.
+garage_xunit_test(
+    name = "Garage.Plugins.Tests",
+    nowarn = [
+        "CA1707",
+        "CA1515",
+    ],
+    deps = [
+        "//winapp/src/Garage.Plugins",
+        "@winapp_nuget//google.protobuf",
+    ],
+)

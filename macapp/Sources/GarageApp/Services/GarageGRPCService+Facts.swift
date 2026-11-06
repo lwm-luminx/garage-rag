@@ -12,7 +12,9 @@ extension GarageGRPCService {
         corpusClass: String? = nil,
         documentID: Int64? = nil,
         limit: Int = 200,
-        offset: Int = 0
+        offset: Int = 0,
+        collapse: Bool = false,
+        distilledFactID: Int64? = nil
     ) async throws -> Garage_ListFactsResponse {
         if status != .running {
             try await start()
@@ -37,6 +39,10 @@ extension GarageGRPCService {
         }
         request.limit = Int32(limit)
         request.offset = Int32(offset)
+        request.collapse = collapse
+        if let distilledFactID {
+            request.distilledFactID = distilledFactID
+        }
 
         let callOptions = GarageGRPCAuth.callOptions(timeLimit: .timeout(.seconds(30)))
         do {

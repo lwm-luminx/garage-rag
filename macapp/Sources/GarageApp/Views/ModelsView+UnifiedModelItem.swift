@@ -49,6 +49,11 @@ extension ModelsView {
         var effectiveSha256: String? {
             sha256 ?? presetEntry?.sha256
         }
+
+        /// The files of a model that ships as several (image models); empty otherwise.
+        var downloadFileTargets: [(url: String, filename: String, sha256: String?)] {
+            presetEntry?.downloadFileTargets ?? []
+        }
     }
 
     var unifiedModels: [UnifiedModelItem] {
@@ -58,7 +63,7 @@ extension ModelsView {
         // are not registered yet are listed separately in `unregisteredPresetModels`.
         for reg in appState.registeredModels {
             let prov = ModelProvider.from(string: reg.provider)
-            let preset = appState.presetModels.first { $0.slug == reg.slug || $0.modelId == reg.modelRef }
+            let preset = appState.embeddingPresets.first { $0.slug == reg.slug || $0.modelId == reg.modelRef }
             items.append(
                 UnifiedModelItem(
                     name: preset?.name ?? reg.slug,
@@ -103,7 +108,7 @@ extension ModelsView {
     /// Presets from `models.json` that aren't registered yet, with featured presets surfaced first.
     var unregisteredPresetModels: [ModelPresetEntry] {
         let registeredSlugs = Set(appState.registeredModels.map(\.slug))
-        return appState.presetModels
+        return appState.embeddingPresets
             .filter { !registeredSlugs.contains($0.slug) }
             .sorted { lhs, rhs in
                 if lhs.featured != rhs.featured {

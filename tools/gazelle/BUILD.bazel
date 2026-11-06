@@ -1,14 +1,14 @@
 load("@aspect_gazelle_prebuilt//:def.bzl", "aspect_gazelle")
 
 # The default target for `aspect gazelle`. Uses the prebuilt aspect gazelle
-# binary, so no Go toolchain is needed to generate BUILD files. Languages and
-# Orion extensions are enabled to match the languages selected for this project.
+# binary, so no Go toolchain is needed to generate BUILD files. The Python
+# plugin is off since the Python package left (docs/plans/python-removal.md):
+# the Python scripts that remain are development tools run outside Bazel.
 aspect_gazelle(
     name = "gazelle",
     languages = [
         # Always on: keeps proto + visibility metadata in sync.
         "proto",
         "visibility_extension",
-        "python",
     ],
 )

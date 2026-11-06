@@ -1,10 +1,12 @@
 import Foundation
 import OSLog
 import Darwin
+import EmbedClient
 import IngestClient
 import ModelDownloadClient
+import ImageEmbedClient
 import LlamaClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "XPCServiceManager")
 
@@ -84,7 +86,7 @@ public struct ServiceDiagnosticTest: Equatable, Sendable {
 
     public static let selfTests = ServiceDiagnosticTest(
         name: "In-Service Self Tests",
-        description: "Runs the self tests embedded in the helper (Python runtime, imports, managed services)."
+        description: "Runs the self tests embedded in the helper (its Rust library, database, gRPC, managed services)."
     )
     public static let generic = ServiceDiagnosticTest(
         name: "Generic Service Check",
@@ -99,7 +101,7 @@ public struct ServiceDiagnosticTest: Equatable, Sendable {
         description: "Tests Llama inference service properties, model slots, and tokenizer on a fixed prompt."
     )
 
-    // Fallbacks run only when a Python-hosted helper does not answer its self tests.
+    // Fallbacks run only when a helper does not answer its self tests.
     public static let embed = ServiceDiagnosticTest(
         name: "Embeddings Model (mxbai-embed-xsmall) & Fixed-Value Vector Test",
         description: "Loads vector embedding module with mxbai-embed-xsmall and computes float vector coordinates for a fixed sample text."
@@ -123,7 +125,8 @@ public struct ServiceDiagnosticTest: Equatable, Sendable {
         case "embed-xpc", "me.rickmark.garage-rag.embed-xpc",
              "ingest-xpc", "me.rickmark.garage-rag.ingest-xpc",
              "mcp-server-xpc", "me.rickmark.garage-rag.mcp-server-xpc",
-             "garage-xpc", "me.rickmark.garage-rag.xpc":
+             "garage-xpc", "me.rickmark.garage-rag.xpc",
+             "image-embed-xpc", "me.rickmark.garage-rag.image-embed-xpc":
             return .selfTests
         case "model-download-xpc", "me.rickmark.garage-rag.model-download-xpc":
             return .modelDownload
@@ -263,6 +266,7 @@ private final class XPCLogReceiverAdapter: NSObject, GarageXPCLogReceiverProtoco
         case "garage-xpc", "me.rickmark.garage-rag.xpc": return .grpc
         case "llama-xpc", "me.rickmark.garage-rag.llama-xpc": return .llama
         case "model-download-xpc", "me.rickmark.garage-rag.model-download-xpc": return .modelDownload
+        case "image-embed-xpc", "me.rickmark.garage-rag.image-embed-xpc": return .imageEmbed
         default: return .unifiedLog
         }
     }
@@ -332,19 +336,22 @@ public final class XPCServiceManager: ObservableObject {
     /// Hands LlamaXPCService's endpoint to the services that load llama_xpc models on demand, which
     /// cannot look it up by name themselves. None in unit tests unless one is injected.
     let llamaEndpointBroker: LlamaEndpointBroker?
+    /// The same for GarageImageEmbedXPCService's endpoint, which the same services embed image
+    /// models through.
+    let imageEmbedEndpointBroker: LlamaEndpointBroker?
 
     public nonisolated static let defaultServices: [XPCServiceInfo] = [
         XPCServiceInfo(
             id: "ingest-xpc",
             name: "Document Ingestion Helper",
             bundleId: "me.rickmark.garage-rag.ingest-xpc",
-            serviceDescription: "Runs multi-threaded Python ingestion pipelines with crash isolation and sandboxed filesystem access."
+            serviceDescription: "Runs the ingest loop, which reads every file and stores it through GarageService, with crash isolation and sandboxed filesystem access."
         ),
         XPCServiceInfo(
             id: "embed-xpc",
             name: "Text Embeddings Helper",
             bundleId: "me.rickmark.garage-rag.embed-xpc",
-            serviceDescription: "Computes vector embeddings and coordinates batch text embedding models via PythonKit."
+            serviceDescription: "Embeds the chunks each model lacks with the Rust embed worker, through the Garage backend."
         ),
         XPCServiceInfo(
             id: "llama-xpc",
@@ -357,6 +364,12 @@ public final class XPCServiceManager: ObservableObject {
             name: "Model Downloader Helper",
             bundleId: "me.rickmark.garage-rag.model-download-xpc",
             serviceDescription: "Handles background downloads, progress tracking, and SHA256 integrity verification for models."
+        ),
+        XPCServiceInfo(
+            id: "image-embed-xpc",
+            name: "Image Embeddings Helper",
+            bundleId: "me.rickmark.garage-rag.image-embed-xpc",
+            serviceDescription: "Runs CLIP-style image embedding models on Core ML, embedding pictures and text queries into one vector space."
         ),
         XPCServiceInfo(
             id: "mcp-server-xpc",
@@ -377,6 +390,7 @@ public final class XPCServiceManager: ObservableObject {
         "GarageEmbedXPCService",
         "LlamaXPCService",
         "ModelDownloadXPCService",
+        "GarageImageEmbedXPCService",
         "GarageMCPServerService",
         "GarageXPCService"
     ]
@@ -391,8 +405,10 @@ public final class XPCServiceManager: ObservableObject {
         killExecutor: KillExecutor? = nil
     ) {
         let broker: LlamaEndpointBroker?
+        let imageBroker: LlamaEndpointBroker?
         if isRunningInTestEnvironment {
             broker = nil
+            imageBroker = nil
         } else {
             var bundleIds: [String: String] = [:]
             for service in initialServices {
@@ -400,17 +416,31 @@ public final class XPCServiceManager: ObservableObject {
             }
             let llamaBundleId = initialServices.first { $0.id == "llama-xpc" }?.bundleId ?? LlamaXPCConstants.serviceName
             broker = LlamaEndpointBroker(connector: .xpc(llamaBundleId: llamaBundleId, receiverBundleIds: bundleIds))
+            let imageEmbedBundleId = initialServices.first { $0.id == "image-embed-xpc" }?.bundleId ?? ImageEmbedXPCConstants.serviceName
+            imageBroker = LlamaEndpointBroker(
+                connector: .imageEmbedXPC(imageEmbedBundleId: imageEmbedBundleId, receiverBundleIds: bundleIds),
+                sourceName: "GarageImageEmbedXPCService",
+                sourceServiceId: "image-embed-xpc"
+            )
         }
-        self.init(initialServices: initialServices, pingExecutor: pingExecutor, killExecutor: killExecutor, llamaEndpointBroker: broker)
+        self.init(
+            initialServices: initialServices,
+            pingExecutor: pingExecutor,
+            killExecutor: killExecutor,
+            llamaEndpointBroker: broker,
+            imageEmbedEndpointBroker: imageBroker
+        )
     }
 
     init(
         initialServices: [XPCServiceInfo],
         pingExecutor: PingExecutor?,
         killExecutor: KillExecutor?,
-        llamaEndpointBroker: LlamaEndpointBroker?
+        llamaEndpointBroker: LlamaEndpointBroker?,
+        imageEmbedEndpointBroker: LlamaEndpointBroker? = nil
     ) {
         self.llamaEndpointBroker = llamaEndpointBroker
+        self.imageEmbedEndpointBroker = imageEmbedEndpointBroker
         self.services = initialServices
         self.pingExecutor = pingExecutor ?? { bundleId in
             try await Self.performXPCPing(bundleId: bundleId)
@@ -423,9 +453,12 @@ public final class XPCServiceManager: ObservableObject {
             }
             return true
         }
-        llamaEndpointBroker?.setReporter { [weak self] message, isError in
-            Task { @MainActor [weak self] in
-                self?.appendLog(message, stream: isError ? .stderr : .stdout, source: "llama-xpc", level: isError ? .error : .info)
+        for broker in [llamaEndpointBroker, imageEmbedEndpointBroker].compactMap({ $0 }) {
+            let source = broker.sourceServiceId
+            broker.setReporter { [weak self] message, isError in
+                Task { @MainActor [weak self] in
+                    self?.appendLog(message, stream: isError ? .stderr : .stdout, source: source, level: isError ? .error : .info)
+                }
             }
         }
     }
@@ -534,7 +567,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// Fetches the structured status report (lifecycle, Python runtime, managed services, self tests) of a service.
+    /// Fetches the structured status report (lifecycle, managed services, self tests) of a service.
     @discardableResult
     public func fetchStatusReport(serviceId: String) async -> GarageXPCStatusReport? {
         guard let service = resolveService(serviceId) else { return nil }
@@ -572,7 +605,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// The Python helpers that learn of the database and the gRPC backend only from the app:
+    /// The helpers that learn of the database and the gRPC backend only from the app:
     /// the backend helper gets both with `startServer`, and the others used to hear of them with
     /// their first job, so until then their Database Connection and gRPC Connection self tests
     /// were skipped.
@@ -699,7 +732,7 @@ public final class XPCServiceManager: ObservableObject {
             }
         }
         if total == 0 {
-            lines.append("The service did not report any self tests (lifecycle: \(report.lifecycle), python: \(report.python.state)).")
+            lines.append("The service did not report any self tests (lifecycle: \(report.lifecycle)).")
         }
 
         var summary = "\(passedCount) of \(total) self tests passed"
@@ -785,8 +818,11 @@ public final class XPCServiceManager: ObservableObject {
         // broker also notices the lost connection; this covers a kill it did not see.
         if service.id == "llama-xpc" {
             llamaEndpointBroker?.handOverAgain(refetch: true)
+        } else if service.id == "image-embed-xpc" {
+            imageEmbedEndpointBroker?.handOverAgain(refetch: true)
         } else if LlamaEndpointBroker.receiverServiceIds.contains(service.id) {
             llamaEndpointBroker?.handOverAgain()
+            imageEmbedEndpointBroker?.handOverAgain()
         }
         appendLog("[\(service.name)] Restart finished with state: \(newState.title)", source: service.id, level: newState.isRunning ? .info : .error)
         // The new process starts unconfigured: give it the database and the backend's address again.
@@ -819,6 +855,7 @@ public final class XPCServiceManager: ObservableObject {
         appendLog("Terminating all active XPC helper processes...", source: "xpc-services", level: .warning)
         // First, so the broker does not relaunch the helpers it sees go away.
         llamaEndpointBroker?.stop()
+        imageEmbedEndpointBroker?.stop()
         stopAllStreaming()
         for service in services {
             if let currentPid = service.pid, currentPid > 0, currentPid != getpid() {
@@ -941,6 +978,7 @@ public final class XPCServiceManager: ObservableObject {
             startStreamingLogs(for: service.id)
         }
         llamaEndpointBroker?.start()
+        imageEmbedEndpointBroker?.start()
     }
 
     /// Stops live log streaming for a given service.
@@ -1076,7 +1114,8 @@ public final class XPCServiceManager: ObservableObject {
         case "embed-xpc", "me.rickmark.garage-rag.embed-xpc",
              "ingest-xpc", "me.rickmark.garage-rag.ingest-xpc",
              "mcp-server-xpc", "me.rickmark.garage-rag.mcp-server-xpc",
-             "garage-xpc", "me.rickmark.garage-rag.xpc":
+             "garage-xpc", "me.rickmark.garage-rag.xpc",
+             "image-embed-xpc", "me.rickmark.garage-rag.image-embed-xpc":
             result = await runSelfTestDiagnostic(for: serviceId)
         case "model-download-xpc", "me.rickmark.garage-rag.model-download-xpc":
             result = await runModelDownloadDiagnosticTest()
@@ -1121,7 +1160,7 @@ public final class XPCServiceManager: ObservableObject {
         }
     }
 
-    /// Diagnostic for helpers built on the shared Python runtime base: run the in-service self tests and
+    /// Diagnostic for helpers built on GarageXPCKit: run the in-service self tests and
     /// fall back to the legacy bespoke check when the helper does not answer with a report.
     private func runSelfTestDiagnostic(for serviceId: String) async -> ServiceDiagnosticTestResult {
         let resolvedId = resolveService(serviceId)?.id ?? serviceId

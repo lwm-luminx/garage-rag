@@ -4,19 +4,9 @@ Copyright (c) 2026 Rick Mark-Penwell
 This product includes software developed by third parties:
 
 --------------------------------------------------------------------------------
-LangExtract (https://github.com/google/langextract), version 1.7.0
-Copyright 2025 Google LLC.
-Licensed under the Apache License, Version 2.0; a copy of the license is in
-garage_python/src/garage_rag/enrich/langextract/LICENSE.
-
-A subset is vendored, with modifications, in
-garage_python/src/garage_rag/enrich/langextract/. The package docstring there
-lists what was left out and changed; each modified file says so.
-
---------------------------------------------------------------------------------
 langchain-text-splitters (https://github.com/langchain-ai/langchain)
 Copyright (c) LangChain, Inc.
 Licensed under the MIT License.
 
-garage_python/src/garage_rag/ingest/splitters.py reimplements its recursive
-character splitter, language separator tables and markdown header splitter.
+rust/garage-ingest/src/splitters.rs reimplements its recursive character
+splitter, language separator tables and markdown header splitter.

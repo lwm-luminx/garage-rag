@@ -1,0 +1,26 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# The `garage` command line and the `garage-mcp` stdio server through UniFFI (src/lib.rs), linked
+# into //rust/garage-rag's library for the garage_rag wheel's console scripts. Cargo builds it
+# without garage-cli's tesseract feature; Bazel takes Tesseract from //ext/tesseract as the app does.
+rust_library(
+    name = "garage_cli_uniffi_lib",
+    srcs = glob(["src/**/*.rs"]),
+    # UniFFI's macros read the crate's Cargo.toml from CARGO_MANIFEST_DIR.
+    compile_data = ["Cargo.toml"],
+    crate_name = "garage_cli_uniffi",
+    edition = "2024",
+    visibility = ["//rust/garage-rag:__pkg__"],
+    deps = [
+        "//rust/garage-cli:garage_cli_lib",
+        "//rust/garage-service",
+        "@crates//:uniffi",
+    ],
+)
+
+rust_test(
+    name = "garage-cli-uniffi-test",
+    compile_data = ["Cargo.toml"],
+    crate = ":garage_cli_uniffi_lib",
+)

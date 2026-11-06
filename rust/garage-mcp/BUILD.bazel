@@ -1,0 +1,33 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# The MCP server, ported from garage_rag/mcp_server: the corpus through the GarageService facade
+# (//rust/garage-facade), the local model through its host, HTTP on hyper.
+rust_library(
+    name = "garage-mcp",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = [
+        "src/agent_prompt.txt",
+        "src/tools.json",
+    ],
+    crate_name = "garage_mcp",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rust/garage-embed",
+        "//rust/garage-facade",
+        "@crates//:bytes",
+        "@crates//:http-body-util",
+        "@crates//:hyper",
+        "@crates//:hyper-util",
+        "@crates//:regex",
+        "@crates//:serde_json",
+        "@crates//:tokio",
+        "@crates//:tonic",
+    ],
+)
+
+rust_test(
+    name = "garage-mcp-test",
+    crate = ":garage-mcp",
+)

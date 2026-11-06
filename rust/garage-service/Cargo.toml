@@ -1,0 +1,37 @@
+[package]
+name = "garage-service"
+description = "GarageService in Rust: the gRPC backend the Mac app, the workers and the MCP server read the corpus and persist through, over Postgres + pgvector (docs/plans/python-removal.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "garage-service"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+deadpool-postgres.workspace = true
+garage-embed.workspace = true
+garage-facade.workspace = true
+garage-ingest.workspace = true
+garage-mcp.workspace = true
+garage-text.workspace = true
+http-body-util.workspace = true
+hyper = { workspace = true, features = ["client"] }
+hyper-util = { workspace = true, features = ["client-legacy", "http1"] }
+langextract-rs.workspace = true
+libc.workspace = true
+prost.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["sync"] }
+tokio-postgres.workspace = true
+tokio-stream.workspace = true
+tonic.workspace = true
+tower.workspace = true
+
+[lints]
+workspace = true

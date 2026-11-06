@@ -16,6 +16,7 @@ load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
 GARAGE_XPC_SERVICES = [
     "//macapp/Sources/GarageMCPServerService:GarageMCPServerService",
     "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
+    "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
     "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
     "//macapp/Sources/GarageXPCService:GarageXPCService",
     "//macapp/Sources/ModelDownloadXPCService:ModelDownloadXPCService",
@@ -46,7 +47,7 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
             "//data/models": "Resources",
             "//docs:config_schema": "Resources",
             "//data/notices:third_party_notices": "Resources",
-            "//garage_python:LICENSE": "Resources",
+            "//:LICENSE": "Resources",
             "//macapp/Sources/GarageApp:PrivacyInfo.xcprivacy": "Resources",
         },
         app_icons = ["//macapp:GarageApp.xcassets"],
@@ -58,12 +59,12 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         entitlements = select({
             "//bazel:is_store": "//macapp/Sources/GarageApp:Garage.entitlements",
             "//bazel:is_developer_id": "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
+            # Signed with an Apple Development certificate of the App Group's team: the group alone,
+            # since without a profile there is no application identifier (//bazel:BUILD.bazel).
+            "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
             "//conditions:default": None,
         }),
         executable_name = "GarageApp",
-        frameworks = [
-            "//macapp/Sources/PythonXPCService:PythonXPCService_framework",
-        ],
         # Sparkle's SUFeedURL/SUPublicEDKey only belong in the builds that embed
         # Sparkle. The App Store build updates through the App Store, and carries the
         # export compliance answer App Store Connect reads on upload instead.
@@ -75,20 +76,18 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         # the bundle is signed (a symlink is what codesign accepts there; a script is not).
         ipa_post_processor = "//macapp/Sources/GarageApp:link_launchers.sh",
         minimum_os_version = "14.0",
-        # Store builds sign with Apple Development and this development profile, so they run on
-        # registered Macs; Xcode re-signs with Apple Distribution (GarageMacAppConnect) on upload.
-        # Developer ID builds embed the Developer ID profile, which backs the application identifier
-        # in GarageDeveloperID.entitlements (the data-protection keychain refuses one without it).
+        # The signed distributions embed the profile their platform names (//bazel:platforms.bzl):
+        # it backs the application identifier in the entitlements (the data-protection keychain
+        # refuses one without it). Ad-hoc and locally signed builds embed none.
         provisioning_profile = select({
-            "//bazel:is_store": "//macapp:GarageRAGDevelopmentApp.provisionprofile",
-            "//bazel:is_developer_id": "//macapp:GarageRAGDeveloperID.provisionprofile",
+            "//bazel:is_store": "//bazel:app_provisioning_profile",
+            "//bazel:is_developer_id": "//bazel:app_provisioning_profile",
             "//conditions:default": None,
         }),
         version = "//macapp/Sources/GarageApp:GarageAppVersion",
         xpc_services = [llama_xpc_service] + GARAGE_XPC_SERVICES,
         deps = [
             "//macapp/Sources/GarageApp:GarageApp_lib",
-            "//ext/python:python_framework",
         ],
         **kwargs
     )

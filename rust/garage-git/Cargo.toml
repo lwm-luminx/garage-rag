@@ -1,0 +1,13 @@
+[package]
+name = "garage-git"
+description = "Reads a repository's history, origin remote and index in-process through libgit2, as the app's _garage_git module does."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+links = "git2"
+build = "build.rs"
+
+[lints]
+workspace = true

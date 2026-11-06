@@ -1,0 +1,26 @@
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# The Rust text reader's C ABI as a Clang module, as //macapp/Sources/LlamaEngine:LlamaCAPI does
+# for llama.cpp. The static library comes along through deps.
+objc_library(
+    name = "GarageTextFFI",
+    hdrs = ["GarageTextFFI/GarageTextFFI.h"],
+    includes = ["GarageTextFFI"],
+    module_name = "GarageTextFFI",
+    visibility = ["//visibility:private"],
+    deps = ["//rust/garage-text-ffi"],
+)
+
+# Swift's side of the reader plugin contract (proto/garage_plugin.proto): the in-process text
+# reader, speaking the same messages as a plugin over gRPC.
+swift_library(
+    name = "GaragePlugins",
+    srcs = glob(["*.swift"]),
+    module_name = "GaragePlugins",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":GarageTextFFI",
+        "//proto:garage_plugin_proto_swift",
+    ],
+)

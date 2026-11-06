@@ -1,0 +1,35 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+_DEPS = [
+    "@crates//:indexmap",
+    "@crates//:serde_json",
+    "@crates//:unicode-normalization",
+    "@crates//:yaml-rust2",
+]
+
+# The text reader (Markdown, plain text, code), ported from garage_rag/extract/text.py.
+rust_library(
+    name = "garage-text",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_text",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = _DEPS + ["//rust/garage-plugin"],
+)
+
+# The same reader over the crate with the gRPC transport. Cargo unifies features into one crate;
+# Bazel builds each variant, and a binary must not link both, so the plugin program takes this one.
+rust_library(
+    name = "garage-text-grpc",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_text",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = _DEPS + ["//rust/garage-plugin:garage-plugin-grpc"],
+)
+
+rust_test(
+    name = "garage-text-test",
+    crate = ":garage-text",
+)

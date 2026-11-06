@@ -9,7 +9,9 @@ extension AppState {
         corpusClass: String? = nil,
         documentID: Int64? = nil,
         limit: Int = 200,
-        offset: Int = 0
+        offset: Int = 0,
+        collapse: Bool = false,
+        distilledFactID: Int64? = nil
     ) async throws -> FactListPage {
         let response = try await grpc.listFacts(
             query: query,
@@ -18,7 +20,9 @@ extension AppState {
             corpusClass: corpusClass,
             documentID: documentID,
             limit: limit,
-            offset: offset
+            offset: offset,
+            collapse: collapse,
+            distilledFactID: distilledFactID
         )
         return FactListPage(response: response)
     }

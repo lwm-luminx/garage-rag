@@ -1,8 +1,10 @@
 """The code-signing identities this repository knows about.
 
-One place to name them, because each one is referenced three times over: by the
-platform that selects it, by the config_setting that detects it, and by the
-codesign rule that decides what options make sense for it.
+Only the local ones. The Developer ID and App Store identities, their provisioning profiles and
+the release targets that use them live in the repository the signed builds are made from
+(garage-enterprise), which fills in this repository's signing seam: `//bazel:distribution`, the
+provisioning-profile label flags and rules_apple's `signing_certificate_name` (see
+`//bazel:platforms.bzl`). A build here is ad hoc or signed with the local identity.
 """
 
 # Self-signed, generated per developer by //tools/signing:local_identity. It
@@ -12,14 +14,13 @@ codesign rule that decides what options make sense for it.
 # pins the certificate's own hash instead. See that script's header.
 LOCAL_SIGNING_IDENTITY = "Garage Local Signing"
 
-DEVELOPER_ID_IDENTITY = "Developer ID Application: Richard Penwell (DWVXMLB45Y)"
-
-# The App Store configuration signs with Apple Development and the development profile
-# (macapp/GarageRAGDevelopmentApp.provisionprofile), so a store build runs on registered Macs.
-# Uploading re-signs the archive with Apple Distribution and GarageMacAppConnect in Xcode.
-STORE_IDENTITY = "Apple Development: Rick Penwell (23E5F7Z5L7)"
-
 # Identities with no Apple-issued chain: usable to establish a stable identity,
 # but not to notarize, and — because hardened runtime turns on library
 # validation, which these cannot satisfy — not to run with hardened runtime.
 UNCHAINED_IDENTITIES = ["-", LOCAL_SIGNING_IDENTITY]
+
+# The team whose App Group (`<team>.group.me.rickmark.garage-rag`) holds the shared data folder.
+# A local build signed with one of this team's Apple Development certificates claims the group
+# (`//bazel:is_local_app_group`); macOS grants a team-prefixed group without a provisioning
+# profile only to code signed by that team.
+APP_GROUP_TEAM = "DWVXMLB45Y"

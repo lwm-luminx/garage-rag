@@ -1,0 +1,143 @@
+syntax = "proto3";
+
+// The contract between Garage's ingester and its plugins: the readers that turn one file of a
+// document type (Markdown, an Office document, a mail message) into text.
+//
+// A plugin sees one file at a time and nothing else: no database, no network, no paths. The
+// ingester walks the sources, reads the file, sends its bytes, and stores what comes back. Because
+// a plugin is never handed a path, it needs no access to the user's folders, which is what lets the
+// app run one in a sandbox of its own.
+//
+// The same messages cross two transports:
+//
+// * gRPC, for a plugin in its own process. It serves `ExtractorPlugin` on a Unix-domain socket the
+//   ingester names (a named pipe on Windows), never on a TCP port.
+// * A C ABI, for a first-party plugin linked into the ingester's process. `Describe` and `Extract`
+//   take these requests and return these responses, serialized; `rust/garage-plugin`
+//   (module `ffi`) is the reference.
+//
+// Failures a plugin can explain (an unsupported file, a malformed one) are answered in the
+// response, so both transports report them the same way. A gRPC status other than OK means the
+// call itself failed: the plugin crashed, the socket closed, the message was too large.
+package garage.plugin.v1;
+
+option csharp_namespace = "Garage.Plugin.V1";
+
+service ExtractorPlugin {
+    // What the plugin reads. The ingester asks once, when it connects, and routes files to the
+    // plugin by the extensions and names listed here.
+    rpc Describe (DescribeRequest) returns (DescribeResponse);
+    // Read one file.
+    rpc Extract (ExtractRequest) returns (ExtractResponse);
+}
+
+// The version of this contract. A plugin reports the one it implements in DescribeResponse; the
+// ingester refuses a plugin whose contract it does not know.
+enum ContractVersion {
+    CONTRACT_VERSION_UNSPECIFIED = 0;
+    CONTRACT_VERSION_1 = 1;
+}
+
+// How the ingester should chunk the text. Not a MIME type: a CSV file is TABULAR, a `.py` file CODE.
+enum ContentKind {
+    CONTENT_KIND_UNSPECIFIED = 0;
+    CONTENT_KIND_PROSE = 1;
+    CONTENT_KIND_MARKDOWN = 2;
+    CONTENT_KIND_CODE = 3;
+    CONTENT_KIND_TABULAR = 4;
+    CONTENT_KIND_CONVERSATION = 5;
+    // A picture with no text worth indexing: one chunk, for image embedding models.
+    CONTENT_KIND_IMAGE = 6;
+}
+
+message DescribeRequest {
+    // The newest contract the ingester speaks.
+    ContractVersion contract = 1;
+}
+
+message DescribeResponse {
+    // The plugin's name, such as "garage-text". Unique among the plugins an ingester loads.
+    string name = 1;
+    // The plugin's own version, for logs and the Status page.
+    string version = 2;
+    // The contract this plugin implements.
+    ContractVersion contract = 3;
+    repeated Extractor extractors = 4;
+}
+
+// One reader inside a plugin. A plugin may hold several, as the text plugin holds Markdown, plain
+// text and code.
+message Extractor {
+    // Recorded on each document it reads (documents.extractor), such as "markdown".
+    string name = 1;
+    // Recorded beside the name. A file the extractor found no text in, or failed on, is retried
+    // when this changes, so bump it whenever the extractor would now read a file differently.
+    string version = 2;
+    // Lower-case file extensions with their leading dot, such as ".md".
+    repeated string extensions = 3;
+    // Lower-case names of files with no extension that this extractor reads, such as "makefile".
+    repeated string file_names = 4;
+    // The kind of text it produces.
+    ContentKind kind = 5;
+}
+
+message ExtractRequest {
+    // One of the names the plugin listed in DescribeResponse. Empty: the plugin chooses by
+    // file_name, as the ingester's routing would.
+    string extractor = 1;
+    // The file's name without its folders, such as "notes.md". Its extension selects the
+    // extractor; its stem is the title of last resort. Never a path.
+    string file_name = 2;
+    // Every byte of the file. The ingester enforces extraction.max_file_bytes before it sends one.
+    bytes content = 3;
+}
+
+message ExtractResponse {
+    oneof outcome {
+        // The file's text.
+        Document document = 1;
+        // The file was read without trouble and holds no text: empty, all whitespace, a photo.
+        // An outcome, not a failure: the ingester records the file as having no text and does
+        // not retry it until the file or the extractor's version changes.
+        NoText no_text = 2;
+        // The plugin could not read the file.
+        Failure failure = 3;
+    }
+}
+
+message Document {
+    // The extracted text, normalized as the extractor sees fit (NFC, "\n" line endings, no NULs).
+    string text = 1;
+    ContentKind kind = 2;
+    // The extractor that read it and its version, as in Extractor.
+    string extractor = 3;
+    string extractor_version = 4;
+    // A title, when the file names one (a Markdown H1, front matter, document properties).
+    optional string title = 5;
+    // An ISO 639 language code, when the extractor knows it.
+    optional string lang = 6;
+    // A JSON object of free-form provenance (encoding, page count, front matter). Kept with the
+    // document; nothing parses it beyond that.
+    string meta_json = 7;
+    // Names the file claims as its authors (document properties, front matter). Candidates only:
+    // attribution filters and weighs them.
+    repeated string author_hints = 8;
+}
+
+message NoText {
+    string reason = 1;
+}
+
+message Failure {
+    enum Code {
+        CODE_UNSPECIFIED = 0;
+        // The plugin has no extractor for this file, or the request named one it does not have.
+        CODE_UNSUPPORTED = 1;
+        // The file is not what its name says, or is damaged.
+        CODE_MALFORMED = 2;
+        // Anything else.
+        CODE_INTERNAL = 3;
+    }
+    Code code = 1;
+    string message = 2;
+}

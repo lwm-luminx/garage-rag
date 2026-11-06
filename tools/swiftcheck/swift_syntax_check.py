@@ -27,9 +27,7 @@ try:
     import tree_sitter_swift
     from tree_sitter import Language, Node, Parser
 except ImportError as exc:  # pragma: no cover - environment dependent
-    sys.stderr.write(
-        f"swift_syntax_check: {exc}\nInstall with: uv pip install tree-sitter tree-sitter-swift\n"
-    )
+    sys.stderr.write(f"swift_syntax_check: {exc}\nInstall with: uv pip install tree-sitter tree-sitter-swift\n")
     sys.exit(2)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -42,9 +40,7 @@ def iter_swift_files(paths: list[str]) -> list[Path]:
         if root.is_file():
             files.append(root)
         else:
-            files.extend(
-                sorted(p for p in root.rglob("*.swift") if ".build" not in p.parts)
-            )
+            files.extend(sorted(p for p in root.rglob("*.swift") if ".build" not in p.parts))
     return files
 
 
@@ -75,12 +71,7 @@ def describe(source: bytes, node: Node) -> str:
     line, col = node.start_point
     if node.is_missing:
         return f"{line + 1}:{col + 1}: missing {node.type!r}"
-    snippet = (
-        source[node.start_byte : node.end_byte]
-        .decode("utf-8", "replace")
-        .strip()
-        .splitlines()
-    )
+    snippet = source[node.start_byte : node.end_byte].decode("utf-8", "replace").strip().splitlines()
     head = snippet[0][:80] if snippet else ""
     return f"{line + 1}:{col + 1}: unexpected {head!r}"
 
@@ -97,11 +88,7 @@ def load_baseline() -> set[str]:
     """
     if not BASELINE.exists():
         return set()
-    return {
-        line.strip()
-        for line in BASELINE.read_text().splitlines()
-        if line.strip() and not line.startswith("#")
-    }
+    return {line.strip() for line in BASELINE.read_text().splitlines() if line.strip() and not line.startswith("#")}
 
 
 def baseline_key(rel: Path, message: str) -> str:
@@ -143,9 +130,7 @@ def main(argv: list[str]) -> int:
             "# construct: 'path: :col: message'. Regenerate with --update-baseline after verifying\n"
             "# each entry compiles with swiftc.\n"
         )
-        BASELINE.write_text(
-            header + "\n".join(sorted(new_keys)) + ("\n" if new_keys else "")
-        )
+        BASELINE.write_text(header + "\n".join(sorted(new_keys)) + ("\n" if new_keys else ""))
         print(f"wrote {BASELINE.relative_to(REPO_ROOT)} with {len(new_keys)} entries")
         return 0
     note = f", {suppressed} known grammar gap(s) ignored" if suppressed else ""

@@ -1,0 +1,22 @@
+[package]
+name = "garage-cli-uniffi"
+description = "The `garage` command line and the `garage-mcp` stdio server through UniFFI: two calls that take the arguments and return the exit code, for the garage_rag package's console scripts (docs/plans/python-package-parity.md)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_cli_uniffi"
+crate-type = ["rlib"]
+
+[dependencies]
+# Without Tesseract: the wheel and the gem link no libtesseract, so off the Mac a picture reads as no
+# text (Vision reads it on the Mac), as in the Windows app.
+garage-cli = { path = "../garage-cli", default-features = false }
+garage-service.workspace = true
+uniffi.workspace = true
+
+[lints]
+workspace = true

@@ -37,8 +37,12 @@ public struct DocumentsView: View {
     private let corpusClasses = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.corpusClasses)
     private let trustTiers = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.trustTiers)
 
-    public init(focus: Binding<DocumentFocus?> = .constant(nil)) {
+    /// Centers the Graph page on a document.
+    private let openGraph: (GraphFocus) -> Void
+
+    public init(focus: Binding<DocumentFocus?> = .constant(nil), openGraph: @escaping (GraphFocus) -> Void = { _ in }) {
         self._focus = focus
+        self.openGraph = openGraph
     }
 
     public var body: some View {
@@ -357,6 +361,12 @@ public struct DocumentsView: View {
                     metaField("Chunks", "\(detail.chunks.count)", identifier: "documents.detail.chunkCount")
                     if !detail.facts.isEmpty { metaField("Facts", "\(detail.facts.count)") }
                     Spacer()
+                    Button("Show in Graph") {
+                        openGraph(GraphFocus(label: "Document", key: detail.id))
+                    }
+                    .controlSize(.small)
+                    .accessibilityIdentifier("documents.detail.graph")
+                    .help("Center the Graph page on this document: its chunks, authors and facts")
                     Button {
                         glean(detail)
                     } label: {

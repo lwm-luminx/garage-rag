@@ -1,30 +1,29 @@
 import Darwin
 import Foundation
-import PythonKit
-import PythonXPCService
+import GarageCLIFFI
+import GarageXPCKit
 
 /// One of the launchers bundled as helper apps in `Garage.app/Contents/Helpers` (reached
 /// through `Contents/MacOS/<name>`, a link to the forwarder script in `Resources/launchers`):
-/// which Python entry point it runs and how.
+/// which entry point of the Rust CLI (`rust/garage-cli`, linked statically) it runs and how.
 public struct LauncherEntryPoint {
-    let module: String
-    let function: String
+    /// The C `main` the Rust library exports.
+    let main: (Int32, UnsafePointer<UnsafePointer<CChar>?>?) -> Int32
     /// Mirror stdout/stderr into the unified log. Off for `garage-mcp`: its stdout is
     /// the MCP protocol stream, which carries corpus text.
     let mirrorsOutputToLog: Bool
     /// Whether this invocation talks to the database, so the app has to be running.
     let needsDatabase: ([String]) -> Bool
-    /// Answer `quit` here, before Python and before anything could start the app: `garage` only.
+    /// Answer `quit` here, before the CLI and before anything could start the app: `garage` only.
     let answersQuit: Bool
-    /// Hold Python back until Postgres accepts connections. Off for `garage-mcp`: it
+    /// Hold the command back until Postgres accepts connections. Off for `garage-mcp`: it
     /// only opens the database inside tool calls, and an MCP client times out a
     /// server whose `initialize` waits on a cold start.
     let waitsForDatabase: Bool
 
     /// `garage`: the full CLI.
     public static let cli = LauncherEntryPoint(
-        module: "garage_rag.cli",
-        function: "main_cli",
+        main: garage_cli_main,
         mirrorsOutputToLog: true,
         needsDatabase: LauncherEntryPoint.cliNeedsDatabase,
         answersQuit: true,
@@ -33,8 +32,7 @@ public struct LauncherEntryPoint {
 
     /// `garage-mcp [--config PATH]`: the stdio MCP server that clients spawn.
     public static let mcp = LauncherEntryPoint(
-        module: "garage_rag.mcp_server.server",
-        function: "main",
+        main: garage_mcp_main,
         mirrorsOutputToLog: false,
         needsDatabase: { arguments in !arguments.contains("--help") && !arguments.contains("-h") },
         answersQuit: false,
@@ -70,14 +68,14 @@ public struct LauncherEntryPoint {
         return remaining.first
     }
 
-    /// Whether this is `garage quit`, which never reaches Python.
+    /// Whether this is `garage quit`, which never reaches the CLI.
     func isQuit(_ arguments: [String]) -> Bool {
         answersQuit && LauncherEntryPoint.command(in: arguments) == LauncherEntryPoint.quitCommand
     }
 }
 
 public enum Launcher {
-    /// Runs `entry` in the embedded interpreter and exits with its status.
+    /// Runs `entry` in this process and exits with its status.
     public static func run(_ entry: LauncherEntryPoint) -> Never {
         if entry.isQuit(CommandLine.arguments) {
             exit(AppQuit.run(CommandLine.arguments))
@@ -86,6 +84,7 @@ public enum Launcher {
         let appBundle = containingAppBundle(of: executable)
         exportMCPLauncherPath(appBundle: appBundle, executable: executable)
         exportModelManifest(in: appBundle)
+        exportSchemaDirectory(in: appBundle)
         exportGRPCSocket()
         GarageSockets.exportLlamaSocket()
 
@@ -105,7 +104,7 @@ public enum Launcher {
         if entry.mirrorsOutputToLog {
             LauncherOutputCapturer.shared.start()
         }
-        let status = runPython(entry, appBundle: appBundle)
+        let status = runMain(entry)
         if entry.mirrorsOutputToLog {
             LauncherOutputCapturer.shared.flush()
         }
@@ -114,7 +113,7 @@ public enum Launcher {
 
     /// This binary's real path, links resolved and `..` removed (the `Contents/MacOS`
     /// forwarder execs the helper by a relative path). `Bundle.main` is the helper
-    /// bundle, not the app whose Frameworks and Resources the launcher needs.
+    /// bundle, not the app whose Resources the launcher needs.
     static func executablePath() -> URL {
         var size: UInt32 = 0
         _ = _NSGetExecutablePath(nil, &size)
@@ -152,18 +151,17 @@ public enum Launcher {
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }?.path
     }
 
-    /// Tells Python where the bundled `garage-mcp` is, so `mcp-install` / `mcp-status`
-    /// name the stdio entry point an MCP client can run (sys.executable names an
-    /// interpreter the bundle does not ship).
+    /// Tells the service where the bundled `garage-mcp` is, so `mcp-install` / `mcp-status`
+    /// name the stdio entry point an MCP client can run.
     private static func exportMCPLauncherPath(appBundle: URL?, executable: URL) {
         if let path = mcpLauncherPath(appBundle: appBundle, executable: executable) {
             setenv("GARAGE_MCP_EXECUTABLE", path, 1)
         }
     }
 
-    /// Tells Python where the app's gRPC server listens (`GARAGE_GRPC_SOCKET`), which on-demand model
-    /// loads (`EnsureLlamaModel`) go through, unless the caller chose a socket or port already. The app
-    /// listens on this socket in the App Group container, not on a TCP port.
+    /// Tells the service where the app's gRPC server listens (`GARAGE_GRPC_SOCKET`), which on-demand
+    /// model loads (`EnsureLlamaModel`) go through, unless the caller chose a socket or port already.
+    /// The app listens on this socket in the App Group container, not on a TCP port.
     private static func exportGRPCSocket() {
         let environment = ProcessInfo.processInfo.environment
         guard environment[GarageXPCConfigurationKey.grpcSocket] == nil,
@@ -172,9 +170,9 @@ public enum Launcher {
         setenv(GarageXPCConfigurationKey.grpcSocket, path, 1)
     }
 
-    /// Points Python at the models.json the app uses (widths, distance metrics): the one it last
-    /// fetched from the website, else the bundle's. Unless the caller chose another; outside the
-    /// bundle garage_rag finds the repo's copy.
+    /// Points the service at the models.json the app uses (widths, distance metrics): the one it
+    /// last fetched from the website, else the bundle's. Unless the caller chose another; outside
+    /// the bundle the service finds the repo's copy.
     private static func exportModelManifest(in appBundle: URL?) {
         guard ProcessInfo.processInfo.environment["GARAGE_MODEL_MANIFEST"] == nil, let appBundle else { return }
         let candidates = [
@@ -186,119 +184,29 @@ public enum Launcher {
         }
     }
 
-    /// Starts the isolated interpreter (PyConfig API) with `home`, stdlib, `lib-dynload`
-    /// and `site-packages` from `site-python` in `PythonXPCService.framework`, which the
-    /// launcher links, exactly like the XPC services do.
-    private static func startPython() -> Bool {
-        let runtime = GaragePythonRuntime.shared
-        switch runtime.initializeIfNeeded() {
-        case .success(let env):
-            if isDebugging {
-                fputs("[GARAGE_CLI] Python home: \(env.home.path)\n", stderr)
-            }
-            return true
-        case .failure(let error):
-            fputs("Error starting embedded Python: \(error.localizedDescription)\n", stderr)
-            return false
+    /// Points `init-db` at the schema the app bundles (`Contents/Resources/schema`,
+    /// `//macapp/externals:schema_output`), as the app does for its own service (`GARAGE_SQL_DIR`).
+    private static func exportSchemaDirectory(in appBundle: URL?) {
+        guard ProcessInfo.processInfo.environment["GARAGE_SQL_DIR"] == nil, let appBundle else { return }
+        let schema = appBundle.appendingPathComponent("Contents/Resources/schema", isDirectory: true)
+        var isDirectory: ObjCBool = false
+        if FileManager.default.fileExists(atPath: schema.path, isDirectory: &isDirectory), isDirectory.boolValue {
+            setenv("GARAGE_SQL_DIR", schema.path, 1)
         }
     }
 
-    private static var isDebugging: Bool {
-        ProcessInfo.processInfo.environment["GARAGE_DEBUG"] != nil || CommandLine.arguments.contains("--debug")
-    }
-
-    private static func runPython(_ entry: LauncherEntryPoint, appBundle: URL?) -> Int32 {
-        guard startPython() else {
-            return 1
+    /// Calls the entry point's C `main` with this process's arguments.
+    private static func runMain(_ entry: LauncherEntryPoint) -> Int32 {
+        let arguments = CommandLine.arguments
+        var pointers: [UnsafePointer<CChar>?] = arguments.map { UnsafePointer(strdup($0)) }
+        defer {
+            for pointer in pointers {
+                free(UnsafeMutablePointer(mutating: pointer))
+            }
         }
-        do {
-            return try GaragePythonRuntime.shared.withGIL { () throws -> Int32 in
-                let sys = try Python.attemptImport("sys")
-                sys.argv = PythonObject(CommandLine.arguments)
-                attachStandardStreams(sys)
-
-                do {
-                    _ = try Python.attemptImport("site")
-                } catch {
-                    fputs("Warning: Could not import site module: \(error)\n", stderr)
-                }
-
-                if isDebugging {
-                    let env = ProcessInfo.processInfo.environment
-                    fputs("[GARAGE_CLI] Dynamic Python: \(env["PYTHON_LIBRARY"] ?? "default")\n", stderr)
-                    fputs("[GARAGE_CLI] libpq: \(GaragePythonRuntime.shared.libpqPath ?? "not loaded")\n", stderr)
-                    fputs("[GARAGE_CLI] Python sys.path: \(sys.path)\n", stderr)
-                }
-
-                let module: PythonObject
-                do {
-                    module = try Python.attemptImport(entry.module)
-                } catch {
-                    if let traceback = try? Python.attemptImport("traceback") {
-                        _ = traceback.print_exc()
-                    }
-                    fputs("Error importing \(entry.module): \(error)\n", stderr)
-                    fputs("[GARAGE_CLI] Python sys.path at failure: \(sys.path)\n", stderr)
-                    return 1
-                }
-                // The throwing call surfaces Python exceptions as errors instead of PythonKit's `try!` trap. They are
-                // handled here, with the GIL held: a PythonError that left this scope would be released without it,
-                // which is a fatal Python error.
-                do {
-                    let result = try module[dynamicMember: entry.function].throwing.dynamicallyCall(withArguments: [])
-                    return Int32(Int(result) ?? 0)
-                } catch PythonError.exception(let exception, _)
-                    where Bool(Python.isinstance(exception, Python.SystemExit)) == true {
-                    return exitStatus(of: exception)
-                } catch {
-                    fputs("Error running \(entry.module).\(entry.function): \(GaragePythonRuntime.describe(error))\n", stderr)
-                    return 1
-                }
-            }
-        } catch {
-            // Traceback formatting and any other Python access must happen with the GIL held.
-            _ = try? GaragePythonRuntime.shared.withGIL {
-                fputs("Error running \(entry.module).\(entry.function): \(GaragePythonRuntime.describe(error))\n", stderr)
-            }
-            return 1
-        }
-    }
-
-    /// The status `SystemExit` asks for, as `python -m` would exit with it: argparse's `--help` and `exit(n)`.
-    /// None is 0, an integer is itself, anything else is printed to stderr and exits 1.
-    private static func exitStatus(of systemExit: PythonObject) -> Int32 {
-        let code = systemExit.code
-        if code == Python.None {
-            return 0
-        }
-        if let status = Int(code) {
-            return Int32(truncatingIfNeeded: status)
-        }
-        fputs("\(code)\n", stderr)
-        return 1
-    }
-
-    /// Hands Python usable stdin/stdout/stderr when the embedded interpreter has none.
-    private static func attachStandardStreams(_ sys: PythonObject) {
-        do {
-            let io = try Python.attemptImport("io")
-            if sys.stdin == Python.None || Bool(Python.hasattr(sys.stdin, "read")) != true {
-                let stdinObj = io.open(0, mode: "r", encoding: "utf-8", errors: "replace", closefd: false)
-                sys.stdin = stdinObj
-                sys.__stdin__ = stdinObj
-            }
-            if sys.stdout == Python.None || Bool(Python.hasattr(sys.stdout, "write")) != true {
-                let stdoutObj = io.open(1, mode: "w", buffering: 1, encoding: "utf-8", errors: "replace", closefd: false)
-                sys.stdout = stdoutObj
-                sys.__stdout__ = stdoutObj
-            }
-            if sys.stderr == Python.None || Bool(Python.hasattr(sys.stderr, "write")) != true {
-                let stderrObj = io.open(2, mode: "w", buffering: 1, encoding: "utf-8", errors: "replace", closefd: false)
-                sys.stderr = stderrObj
-                sys.__stderr__ = stderrObj
-            }
-        } catch {
-            fputs("Warning: Could not configure standard streams for Python: \(error)\n", stderr)
+        pointers.append(nil)
+        return pointers.withUnsafeBufferPointer { buffer in
+            entry.main(Int32(arguments.count), buffer.baseAddress)
         }
     }
 }

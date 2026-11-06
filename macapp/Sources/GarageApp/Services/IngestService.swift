@@ -54,7 +54,7 @@ enum IngestExecutionMode: String, CaseIterable, Identifiable, Sendable {
     var modeDescription: String {
         switch self {
         case .xpcService:
-            return "Runs Python ingestion in a dedicated multi-threaded background process (GarageIngestXPCService) with crash isolation."
+            return "Runs the ingest loop in a dedicated background process (GarageIngestXPCService) with crash isolation."
         }
     }
 }

@@ -2,7 +2,7 @@ import XCTest
 import SwiftUI
 import AppKit
 @testable import GarageApp
-import PythonXPCService
+import GarageXPCKit
 
 final class FirstRunTests: XCTestCase {
 

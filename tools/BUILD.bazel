@@ -25,14 +25,10 @@ bazel_env(
         # Mapping from tool binary name ($PATH entry) to Bazel label
         "buildifier": "@buildifier_prebuilt//:buildifier",
         "format": "//tools/format:format",
-        "uv": "@uv//:uv",
     } | MULTITOOL_TOOLS,
 )
 
 # Regenerate //data/notices:THIRD_PARTY_NOTICES.txt with `python3 tools/third_party_notices.py`.
-# Hand-maintained: gazelle would otherwise emit a py_binary for the script's __main__.
-# gazelle:exclude third_party_notices.py
-# keep
 py_library(
     name = "third_party_notices",
     srcs = ["third_party_notices.py"],

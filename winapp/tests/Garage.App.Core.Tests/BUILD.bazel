@@ -1,0 +1,16 @@
+load("//winapp/bazel:defs.bzl", "garage_xunit_test")
+
+# Mirrors Garage.App.Core.Tests.csproj.
+garage_xunit_test(
+    name = "Garage.App.Core.Tests",
+    nowarn = [
+        "CA1707",
+        "CA1515",
+        "CA1861",
+        "CA2007",
+    ],
+    deps = [
+        "//winapp/src/Garage.App.Core",
+        "//winapp/src/Garage.Grpc",
+    ],
+)

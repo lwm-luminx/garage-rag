@@ -1,19 +1,25 @@
 name: Windows build
 
-# Postgres (with pgvector, ICU and zlib) and CPython built from source on Windows,
-# from the same pinned sources the macOS app bundles.
+# Postgres (with pgvector, ICU and zlib) built from source on Windows, from the same
+# pinned sources the macOS app bundles, and the Rust services and the app on it.
 #
-# The macOS build goes through Bazel (//ext/postgres, //ext/python and friends), and
-# those rules are Darwin-only: the darwin configure template, Python.framework,
-# dsymutil, install_name_tool. Windows uses each project's own MSVC build instead:
+# The macOS build goes through Bazel (//ext/postgres and friends), and those rules
+# are Darwin-only: the darwin configure template, dsymutil, install_name_tool.
+# Windows uses each project's own MSVC build instead:
 #
 # - `postgres`: ICU (allinone.sln) and zlib (CMake), then Postgres with meson and
 #   pgvector with Makefile.win. The smoke test initdbs an ICU cluster and applies
-#   data/sql twice, as test_postgres.py does.
-# - `python`: CPython with PCbuild\build.bat. PCbuild fetches its own pinned
-#   externals (OpenSSL, zlib, sqlite, xz, bzip2, libffi) rather than //ext's.
-# - `garage`: garage_rag installed on the built interpreter, running
-#   test_postgres.py against the built server (psycopg loads the built libpq.dll).
+#   data/sql twice, as the service's tests do.
+# - `rust`: the Rust libraries the services run (garage_service_ffi, garage_ingest_ffi,
+#   garage_mcp_ffi, docs/plans/python-removal.md), built with Cargo for MSVC, with
+#   libgit2 and SQLite from vcpkg linked statically; uploaded as `rust-windows-x64`.
+# - `winapp`: the native Windows app (winapp/), built with the .NET SDK rather than
+#   Bazel. Its service tests start Garage.Services.exe on those libraries, as the app
+#   does.
+# - `package`: the MSIX, the MSI and Garage-Setup.exe (winapp/packaging), staged
+#   from the builds above, uploaded unsigned as `garage-windows-x64`. The Visual
+#   C++ runtime comes from Microsoft's Redistributable, downloaded by the scripts.
+#   Signing and the Store's identity are release steps (winapp/packaging/README.md).
 #
 # tools/windows/fetch_ext.py reads the url and sha256 out of ext/*/*.MODULE.bazel,
 # so a version bump there moves this build too. The Postgres sandbox patches and
@@ -21,17 +27,17 @@ name: Windows build
 # Sandbox, and Windows has its own shared memory implementation.
 on:
   push:
-    branches: [main]
+    branches: [main, next]
   pull_request:
     paths:
       - "ext/postgres/**"
       - "ext/pgvector/**"
       - "ext/libicu/**"
       - "ext/libzlib/**"
-      - "ext/python/**"
       - "data/sql/**"
-      - "garage_python/**"
       - "tools/windows/**"
+      - "winapp/**"
+      - "rust/**"
       - ".github/workflows/windows.yaml"
   workflow_dispatch:
 
@@ -58,27 +64,40 @@ jobs:
           "SRC=$env:RUNNER_TEMP\src" >> $env:GITHUB_ENV
           "DEPS=$env:RUNNER_TEMP\deps" >> $env:GITHUB_ENV
           "PGROOT=$env:RUNNER_TEMP\pgsql" >> $env:GITHUB_ENV
+      # The finished Postgres install (ICU, zlib, pgvector) depends only on the pinned sources, the
+      # fetch script and this workflow, so a hit skips the whole build; the smoke test still runs,
+      # since it applies data/sql. Pushes to main save, as the other caches do.
+      - name: Restore the Postgres build
+        id: pgsql-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\pgsql
+          key: pgsql-windows-x64-${{ hashFiles('ext/postgres/**', 'ext/pgvector/**', 'ext/libicu/**', 'ext/libzlib/**', 'tools/windows/**', '.github/workflows/windows.yaml') }}
       - name: Build tools
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python -m pip install --upgrade meson ninja pkgconf
           choco install winflexbison3 --no-progress -y
       - uses: ilammy/msvc-dev-cmd@v1
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         with:
           arch: x64
       - name: Fetch sources
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           python tools/windows/fetch_ext.py --dest $env:SRC postgres libicu libzlib pgvector
 
       - name: Restore ICU
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         id: icu-cache
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}\icu
           key: icu-windows-x64-${{ hashFiles('ext/libicu/libicu.MODULE.bazel') }}
       - name: Build ICU
-        if: steps.icu-cache.outputs.cache-hit != 'true'
+        if: steps.pgsql-cache.outputs.cache-hit != 'true' && steps.icu-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           # ICU's projects name one toolset; build with whichever this Visual Studio has.
@@ -93,6 +112,7 @@ jobs:
           Copy-Item "$env:SRC\libicu\lib64\icu*.lib" "$icu\lib"
           Copy-Item -Recurse "$env:SRC\libicu\include\unicode" "$icu\include"
       - name: Build zlib
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
           cmake -S "$env:SRC\libzlib" -B "$env:SRC\zlib-build" -G Ninja `
@@ -102,6 +122,7 @@ jobs:
           cmake --install "$env:SRC\zlib-build"
           Get-ChildItem -Recurse "$env:DEPS" | Select-Object -ExpandProperty FullName
       - name: pkg-config files for ICU and zlib
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         # Neither ICU's MSBuild nor meson's MSVC zlib lookup gives meson something to
         # find, so describe both, and nothing else: PKG_CONFIG_LIBDIR replaces the
         # default search path, which keeps Strawberry Perl's MinGW .pc files out. The
@@ -144,6 +165,7 @@ jobs:
           "PKG_CONFIG_LIBDIR=$pc" >> $env:GITHUB_ENV
 
       - name: Build Postgres
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         # The same feature set as the macOS configure: ICU and zlib, no OpenSSL.
         # Everything else is off rather than auto, so nothing the runner happens to
         # have installed (Strawberry Perl, OpenSSL, Python) sneaks in.
@@ -158,6 +180,7 @@ jobs:
           # Ship the ICU and zlib DLLs next to the binaries that load them.
           Copy-Item "$env:RUNNER_TEMP\icu\bin\*.dll", "$env:DEPS\bin\*.dll" "$env:PGROOT\bin"
       - name: Build pgvector
+        if: steps.pgsql-cache.outputs.cache-hit != 'true'
         working-directory: ${{ runner.temp }}\src\pgvector
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
@@ -194,96 +217,150 @@ jobs:
             & "$bin\pg_ctl.exe" -D $data -m fast -w stop
             Get-Content "$env:RUNNER_TEMP\postgres.log"
           }
-      - uses: actions/upload-artifact@v4
+      - name: Save the Postgres build
+        if: github.event_name != 'pull_request' && steps.pgsql-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\pgsql
+          key: ${{ steps.pgsql-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v7
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
           if-no-files-found: error
 
-  python:
+  rust:
     runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      # rustup reads rust/rust-toolchain.toml and installs that toolchain on first use.
+      # Cargo's registry and rust/target, and vcpkg's built packages: pushes to main save, pull
+      # requests restore and save nothing (ci.yaml's `rust` job does the same).
+      - uses: Swatinem/rust-cache@v2
         with:
-          python-version: "3.14"
-      - name: Paths
+          workspaces: rust
+          save-if: ${{ github.event_name != 'pull_request' }}
+      - name: vcpkg binary cache location
         run: |
-          "SRC=$env:RUNNER_TEMP\src" >> $env:GITHUB_ENV
-          "PYROOT=$env:RUNNER_TEMP\python" >> $env:GITHUB_ENV
-      - name: Fetch sources
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          python tools/windows/fetch_ext.py --dest $env:SRC python
-      - name: Build CPython
-        # Tkinter is not built; the macOS framework leaves it out too.
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          & "$env:SRC\python\PCbuild\build.bat" -e -p x64 -c Release --no-tkinter
-      - name: Smoke test
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $py = "$env:SRC\python\PCbuild\amd64\python.exe"
-          & $py -c "import sys, ssl, zlib, sqlite3, ctypes, lzma, bz2, hashlib; print(sys.version); print(ssl.OPENSSL_VERSION)"
-          & $py -m test -j0 --quiet test_zlib test_ssl test_ctypes test_sqlite3
-      - name: Lay out an install
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $py = "$env:SRC\python\PCbuild\amd64\python.exe"
-          & $py "$env:SRC\python\PC\layout" --copy "$env:PYROOT" --include-stable --include-venv --include-dev
-          & "$env:PYROOT\python.exe" -c "import sys, ssl; print(sys.executable, sys.version)"
-      - uses: actions/upload-artifact@v4
+          "VCPKG_DEFAULT_BINARY_CACHE=$env:RUNNER_TEMP\vcpkg-archives" >> $env:GITHUB_ENV
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\vcpkg-archives" | Out-Null
+      - name: Restore vcpkg packages
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
         with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
+          path: ${{ runner.temp }}\vcpkg-archives
+          key: vcpkg-windows-x64-static-md-${{ hashFiles('.github/workflows/windows.yaml') }}
+      - name: libgit2 and SQLite (vcpkg, static, dynamic CRT as rustc links it)
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # pcre2 without its default `jit` feature, whose sljit download asks api.github.com, which
+          # refuses the runner's unauthenticated requests; libgit2 compiles its patterns, never JITs them.
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install pcre2[core]:x64-windows-static-md libgit2[core,pcre2]:x64-windows-static-md sqlite3:x64-windows-static-md
+      - name: Build the service libraries
+        working-directory: rust
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # garage-git's build.rs: lib\git2.lib with zlib, pcre2-8 and http_parser; garage-ingest's sqlite3
+          # binding: lib\sqlite3.lib. VCPKG_INSTALLATION_ROOT is the runner's own variable, which the
+          # workflow's `env` context does not see, so the paths are made here.
+          $vcpkg = "$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static-md"
+          Get-ChildItem "$vcpkg\lib"
+          $env:GARAGE_LIBGIT2_DIR = $vcpkg
+          $env:RUSTFLAGS = "-L native=$vcpkg\lib"
+          # Without Tesseract until the app ships its own build (windows.md section 5.5): pictures read as no text.
+          # --no-default-features also drops garage-ingest-ffi's `exports` (its C symbols), so it is named again.
+          cargo build --release --no-default-features --features garage-ingest-ffi/exports -p garage-service-ffi -p garage-ingest-ffi -p garage-mcp-ffi
+          Get-ChildItem target\release\*.dll
+      - name: Save vcpkg packages
+        if: github.event_name != 'pull_request' && steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\vcpkg-archives
+          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rust-windows-x64
+          path: |
+            rust/target/release/garage_service_ffi.dll
+            rust/target/release/garage_ingest_ffi.dll
+            rust/target/release/garage_mcp_ffi.dll
           if-no-files-found: error
 
-  garage:
-    # garage_rag on the built interpreter, against the built Postgres.
-    needs: [postgres, python]
+  winapp:
+    needs: [postgres, rust]
     runs-on: windows-latest
     defaults:
       run:
         shell: pwsh
     steps:
       - uses: actions/checkout@v6
-      - uses: astral-sh/setup-uv@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      # PostgresSupervisor's tests run the app's own cluster from this build.
+      - uses: actions/download-artifact@v8
         with:
           name: postgres-windows-x64
           path: ${{ runner.temp }}\pgsql
-      - uses: actions/download-artifact@v4
+      # The service tests start Garage.Services.exe on these.
+      - uses: actions/download-artifact@v8
         with:
-          name: python-windows-x64
-          path: ${{ runner.temp }}\python
-      - name: Start Postgres
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          $bin = "$env:RUNNER_TEMP\pgsql\bin"
-          # psycopg finds libpq.dll on PATH.
-          $bin >> $env:GITHUB_PATH
-          & "$bin\initdb.exe" -D "$env:RUNNER_TEMP\pgdata" -U postgres -A trust -E UTF8 --locale=C `
-            --locale-provider=icu --icu-locale=en-US
-          & "$bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -l "$env:RUNNER_TEMP\postgres.log" -o "-p 5433" -w start
-      - name: Install garage_rag
-        working-directory: garage_python
-        run: |
-          $PSNativeCommandUseErrorActionPreference = $true
-          uv venv --python "$env:RUNNER_TEMP\python\python.exe" .venv
-          uv pip install --python .venv -e . pytest-asyncio
-          .venv\Scripts\garage.exe --help
-      - name: test_postgres.py
-        working-directory: garage_python
+          name: rust-windows-x64
+          path: ${{ runner.temp }}\native
+      - name: Build and test
+        working-directory: winapp
         env:
-          GARAGE_TEST_DATABASE_URL: postgresql://postgres@localhost:5433/postgres
+          GARAGE_TEST_POSTGRES_HOME: ${{ runner.temp }}\pgsql
+          GARAGE_TEST_NATIVE_DIR: ${{ runner.temp }}\native
+          GARAGE_TEST_REQUIRE_NATIVE: "1"
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          .venv\Scripts\python.exe -m pytest -q tests/test_postgres.py
-      - name: Stop Postgres
-        if: always()
+          dotnet test --solution Garage.slnx -c Release
+      # The FlaUI tests drive the built app against a fake backend (windows-ui.md §5). They need an
+      # interactive desktop, which hosted runners do not promise, so a failure here is reported
+      # without failing the job until they have proven steady (or move to a self-hosted runner).
+      - name: UI tests
+        working-directory: winapp
+        continue-on-error: true
+        env:
+          GARAGE_UI_TESTS: "1"
         run: |
-          & "$env:RUNNER_TEMP\pgsql\bin\pg_ctl.exe" -D "$env:RUNNER_TEMP\pgdata" -m fast -w stop
-          Get-Content "$env:RUNNER_TEMP\postgres.log"
+          $PSNativeCommandUseErrorActionPreference = $true
+          dotnet test --project tests/Garage.App.UITests/Garage.App.UITests.csproj -c Release --no-build
+
+  package:
+    needs: [postgres, rust]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: winapp/global.json
+      - uses: actions/download-artifact@v8
+        with:
+          name: rust-windows-x64
+          path: ${{ runner.temp }}\native
+      - uses: actions/download-artifact@v8
+        with:
+          name: postgres-windows-x64
+          path: ${{ runner.temp }}\pgsql
+      - name: Stage
+        run: winapp/packaging/stage.ps1 -NativeDir "$env:RUNNER_TEMP\native" -PostgresHome "$env:RUNNER_TEMP\pgsql"
+      - name: MSIX
+        run: winapp/packaging/msix.ps1
+      - name: MSI
+        run: winapp/packaging/msi.ps1
+      - uses: actions/upload-artifact@v7
+        with:
+          name: garage-windows-x64
+          path: |
+            winapp/packaging/out/*.msix
+            winapp/packaging/out/*.msi
+            winapp/packaging/out/Garage-Setup-*.exe
+          if-no-files-found: error

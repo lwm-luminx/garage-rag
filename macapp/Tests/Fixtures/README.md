@@ -43,9 +43,9 @@ What the tests can count on:
   five documents that is 20 facts, 11 of them events and 3 from the mail; the one carrying a
   token is the Markdown note's "Townspeople call the middle arch the zorvexine arch, ...".
 
-`garage_python/tests/test_fixture_corpus.py` ingests the folder through the real pipeline (with a
-recording gateway in place of the database) and checks every row of the table above, so a change
-to an extractor that would break a UI test fails on Linux CI first.
+`rust/garage-cli/tests/cli.rs` ingests the folder through the real pipeline into a throwaway
+database and checks what the table above says, so a change to a reader that would break a UI
+test fails on Linux CI first.
 
 ## Rebuilding
 
@@ -53,7 +53,7 @@ to an extractor that would break a UI test fails on Linux CI first.
 timestamps, so a rerun gives the same bytes on the same machine:
 
 ```bash
-garage_python/.venv/bin/python macapp/Tests/Fixtures/make_corpus.py
+python3 macapp/Tests/Fixtures/make_corpus.py          # needs python-docx
 ```
 
 To add a file, add it to `FILES` in the script, then to the table here and to `EXPECTED` in

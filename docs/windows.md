@@ -28,7 +28,7 @@ windows_page: true
 
 ## Where the Windows version stands
 
-PostgreSQL with pgvector, Python and the Garage pipeline already build from source on Windows, and every push to `main` runs the database tests against that Windows build. That's the core the alpha ships: the same indexer, hybrid search and MCP server as the macOS app.
+PostgreSQL with pgvector and the Garage pipeline already build from source on Windows, and every push to `main` runs the database and service tests against that Windows build. That's the core the alpha ships: the same indexer, hybrid search and MCP server as the macOS app.
 
 The alpha is for people who are comfortable with rough edges:
 

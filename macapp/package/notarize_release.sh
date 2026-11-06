@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Notarizes and staples the Developer ID release, in the order Gatekeeper needs:
 #
-#   aspect build //macapp/package:GarageApp
-#   aspect run //macapp/package:notarize_all
+#   bazel build //macapp/package:GarageApp
+#   bazel run //macapp/package:notarize_all
 #
 #   1. notarize the signed app (bazel-bin/macapp/package/GarageApp.zip);
 #   2. staple the ticket to Garage.app and zip the stapled copy;
@@ -10,12 +10,12 @@
 #   4. notarize the installer, then staple it.
 #
 # It leaves, in dist/ at the root of the checkout:
-#   - Garage-<version>.zip, the stapled app, for Sparkle (publish_appcast) and the GitHub release;
+#   - Garage-<version>.zip, the stapled app, for the GitHub release (and garage-enterprise's Sparkle feed);
 #   - GarageInstaller_arm64.pkg, the stapled installer, whose app is stapled too.
 #
 # The installer is built here and not by a Bazel action because the app has to be notarized
 # first, and notarizing needs the notary service; an installer built at build time would carry
-# an app with no ticket. See macapp/README.md ("Cutting a release") and RELEASING.md.
+# an app with no ticket. See docs/RELEASING.md.
 set -euo pipefail
 
 die() {
@@ -34,8 +34,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]] || die "run this with 'aspect run //macapp/package:notarize_all'"
-[[ -f "$archive" ]] || die "missing runfile '$archive'; run 'aspect build //macapp/package:GarageApp' first"
+[[ -n "${BUILD_WORKSPACE_DIRECTORY:-}" ]] || die "run this with 'bazel run //macapp/package:notarize_all'"
+[[ -f "$archive" ]] || die "missing runfile '$archive'; run 'bazel build //macapp/package:GarageApp' first"
 [[ -n "$keychain_profile" && -n "$installer_identity" && -n "$identifier" ]] ||
     die "--keychain-profile, --installer-identity and --identifier are required"
 # Resolve the runfile before leaving the runfiles directory.

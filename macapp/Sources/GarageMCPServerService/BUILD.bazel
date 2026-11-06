@@ -1,57 +1,52 @@
 load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
-load("//bazel:framework_linking.bzl", "framework_linked_library")
 
-# Implementation library for GarageMCPServerService
+# The Rust MCP server's C ABI as a Clang module, as //macapp/Sources/GarageEmbedWorker:GarageEmbedFFI
+# does for the embed worker. The static library comes along through deps.
+objc_library(
+    name = "GarageMCPFFI",
+    hdrs = ["GarageMCPFFI/GarageMCPFFI.h"],
+    includes = ["GarageMCPFFI"],
+    module_name = "GarageMCPFFI",
+    visibility = ["//visibility:private"],
+    deps = ["//rust/garage-mcp-ffi"],
+)
+
+# Implementation library for GarageMCPServerService: the Rust MCP server (//rust/garage-mcp-ffi,
+# linked statically) and its host, which carries the local model's requests through the embed
+# worker's host (llama_xpc over NSXPC, Ollama and LM Studio over URLSession).
 swift_library(
     name = "GarageMCPServerService_lib",
     srcs = glob(["**/*.swift"]),
     module_name = "GarageMCPServerService",
     visibility = ["//visibility:private"],
     deps = [
+        ":GarageMCPFFI",
+        "//macapp/Sources/GarageEmbedWorker",
+        "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/LlamaModelLoader",
-        "//macapp/Sources/PythonXPCService",
     ],
 )
 
-# The actual XPC service binary
+# The service binary, built on GarageXPCKit.
 macos_xpc_service(
     name = "GarageMCPServerService",
-    additional_linker_inputs = [
-        "//ext/python:python_framework",
-        "//ext/pythonkit:PythonKit",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_signed",
-    ],
     bundle_id = "me.rickmark.garage-rag.mcp-server-xpc",
     bundle_name = "GarageMCPServerService",
     codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
     entitlements = select({
         "//bazel:is_store": ":GarageMCPServerService.entitlements",
         "//bazel:is_developer_id": "//macapp/externals:GarageAppGroup.entitlements",
+        "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",
         "//conditions:default": None,
     }),
     infoplists = ["Info.plist"],
-    linkopts = [
-        "-F$(location //ext/python:python_framework)/..",
-        "-framework",
-        "Python",
-        "-F$(location //macapp/Sources/PythonXPCService:PythonXPCService_signed)/..",
-        "-framework",
-        "PythonXPCService",
-    ],
     minimum_os_version = "14.0",
     version = "//macapp/Sources/GarageApp:GarageAppVersion",
     visibility = ["//visibility:public"],
     deps = [
-        ":GarageMCPServerService_linked",
+        ":GarageMCPServerService_lib",
     ],
-)
-
-# The service's library without the static copy of PythonXPCService.framework's code, which it links
-# (see //bazel:framework_linking.bzl).
-framework_linked_library(
-    name = "GarageMCPServerService_linked",
-    framework_deps = ["//macapp/Sources/PythonXPCService"],
-    deps = [":GarageMCPServerService_lib"],
 )

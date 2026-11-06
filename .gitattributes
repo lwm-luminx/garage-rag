@@ -1,9 +1,15 @@
 # List generated files
 # - prevents GitHub from showing deltas during code review
 # - informs the rules_lint formatter not to apply formatting rules
-garage_python/src/garage_rag/proto/*_pb2.py linguist-generated=true
-garage_python/src/garage_rag/proto/*_pb2_grpc.py linguist-generated=true
-garage_python/src/garage_rag/proto/*_pb2.pyi linguist-generated=true
 
-# Upstream test corpora, copied verbatim (garage_python/tests/corpora/README.md)
-garage_python/tests/corpora/** linguist-vendored=true
+
+# Reader fixtures: binary, so diffs (and the lint task's changed-line detection) skip their bytes
+rust/garage-readers/testdata/** binary
+
+# Starlark keeps LF everywhere: buildifier formats to LF, so a Windows checkout with
+# core.autocrlf=true would otherwise see every BUILD and .bzl file as needing a reformat.
+*.bzl text eol=lf
+*.bazel text eol=lf
+BUILD text eol=lf
+WORKSPACE text eol=lf
+*.axl text eol=lf

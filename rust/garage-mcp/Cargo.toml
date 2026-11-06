@@ -1,0 +1,23 @@
+[package]
+name = "garage-mcp"
+description = "Garage's MCP server without Python: the protocol, the corpus tools over GarageService's facade, rag_ask, rag_generate and rag_agent on the local model, and the streamable HTTP transport."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+garage-embed.workspace = true
+garage-facade.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tonic.workspace = true
+
+[lints]
+workspace = true

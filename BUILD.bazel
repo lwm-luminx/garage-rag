@@ -1,28 +1,26 @@
 """Targets in the repository root"""
 
-# tools/swiftcheck is a venv-only dev script (tree-sitter comes from the `dev` extras, which
-# the @pypi hub does not expose), not a Bazel target.
-# gazelle:exclude tools/swiftcheck
+# The Python scripts in the tree are development tools run outside Bazel, with the system
+# Python or a throwaway venv: tools/swiftcheck (tree-sitter), tools/windows (windows.yaml),
+# tools/llama (known-answers.yaml), tools/screenshots (the site's images), tools/third_party_notices.py
+# and winapp/bazel's csproj check and repin. gazelle's Python plugin is off (//tools/gazelle), so
+# their BUILD files, where one exists, are written by hand.
 
-# tools/windows is run by .github/workflows/windows.yaml with the runner's Python, outside Bazel.
-# gazelle:exclude tools/windows
+# winapp is the .NET solution for the Windows app. Its BUILD files mirror the csproj files by hand
+# (//winapp/bazel:csproj_sync_test holds them together), so gazelle leaves the folder alone.
+# gazelle:exclude winapp
 
-# tools/llama regenerates //ext/nomic_embed:known_answers.json with the system Python, cmake and a
-# compiler (.github/workflows/known-answers.yaml), outside Bazel.
-# gazelle:exclude tools/llama
-
-# garage_python/hatch_build.py is the PyPI build's hook, run by hatchling outside Bazel.
-# gazelle:exclude garage_python/hatch_build.py
-
-# tools/screenshots turns the store screenshot test's website captures into docs/ images and draws
-# the site's social card, run by hand with the garage_python venv's Pillow, outside Bazel.
-# gazelle:exclude tools/screenshots
+# rust/ is a Cargo workspace; its BUILD files mirror each Cargo.toml by hand.
+# gazelle:exclude rust
 
 exports_files(
     [
+        "LICENSE",
+        "MODULE.bazel",
         "README.md",
+        "ruff.toml",
     ],
-    visibility = ["//:__subpackages__"],
+    visibility = ["//visibility:public"],
 )
 
 # The gazelle binary + `gazelle` runner target live in //tools/gazelle (the
@@ -57,26 +55,6 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# 2. Developer ID
-alias(
-    name = "developer_id",
-    actual = "//bazel:developer_id",
-    visibility = ["//visibility:public"],
-)
-
-# 3. Distribute via App Store
-alias(
-    name = "appstore",
-    actual = "//bazel:appstore",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "store",
-    actual = "//bazel:store",
-    visibility = ["//visibility:public"],
-)
-
 alias(
     name = "is_adhoc",
     actual = "//bazel:is_adhoc",
@@ -96,31 +74,8 @@ alias(
 )
 
 alias(
-    name = "garage_rag",
-    actual = "//garage_python/src/garage_rag",
-)
-
-alias(
     name = "macapp",
     actual = "//macapp",
-)
-
-alias(
-    name = "installer",
-    actual = "//macapp:installer",
-    tags = ["manual"],
-)
-
-alias(
-    name = "package",
-    actual = "//macapp:package",
-    tags = ["manual"],
-)
-
-alias(
-    name = "install",
-    actual = "//macapp:install",
-    tags = ["manual"],
 )
 
 alias(

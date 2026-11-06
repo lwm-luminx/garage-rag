@@ -1,6 +1,6 @@
 import SwiftUI
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 // The Sources page's model, independent of the view: what each source row shows, what the page
 // asks the person to fix at the top, and what the activity module says while the pipeline runs.

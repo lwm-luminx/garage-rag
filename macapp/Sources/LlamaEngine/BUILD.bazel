@@ -1,7 +1,7 @@
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
-# llama.cpp C API as a Clang module. Mirrors //macapp/Sources/PythonXPCService:GaragePythonEmbed:
+# llama.cpp C API as a Clang module, as //macapp/Sources/GarageEmbedWorker:GarageEmbedFFI does for Rust:
 # an objc_library whose umbrella header includes llama.h from the cmake install prefix. The
 # static archives (libllama, libggml*) and the frameworks Metal/Accelerate need come along
 # through deps, so a single dependency on :LlamaEngine links a working engine.

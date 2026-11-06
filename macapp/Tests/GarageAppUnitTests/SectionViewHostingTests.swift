@@ -69,6 +69,16 @@ final class SectionViewHostingTests: XCTestCase {
     }
 
     @MainActor
+    func testGraphViewHostsWithoutADatabase() {
+        let appState = AppState()
+        let graphView = GraphView()
+            .environmentObject(appState)
+
+        let controller = NSHostingController(rootView: graphView)
+        XCTAssertNotNil(controller.view)
+    }
+
+    @MainActor
     func testSearchViewControlsAndState() {
         let appState = AppState()
         let searchView = SearchView()

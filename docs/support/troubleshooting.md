@@ -190,6 +190,7 @@ The helper services also write log files, in `~/Library/Logs/Garage/` for the di
 - **Index Manager** (search, embedding, facts): `garage-xpc.log`
 - **Built-in model engine**: `llama-xpc.log`
 - **Model downloads**: `model-download-xpc.log`
+- **Image embeddings** (Core ML image models): `image-embed-xpc.log`
 
 A helper that crashed leaves `<service>-crash.log` beside them.
 

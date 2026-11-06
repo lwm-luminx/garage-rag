@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- UI automation of the built app (docs/plans/windows-ui.md §5): FlaUI drives Garage.exe against a
+       fake backend this project serves (GarageService over gRPC, and an MCP endpoint with a fixed
+       answer), as the Mac's GarageAppUITests run against fixtures. They take over the desktop, so they
+       run only with GARAGE_UI_TESTS=1 and an interactive session, and refuse to share it with a running
+       Garage. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);CA1707;CA1515;CA1861;CA2007;CS1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="xunit.v3" />
+    <PackageReference Include="FlaUI.UIA3" />
+    <PackageReference Include="Grpc.AspNetCore.Server" />
+    <PackageReference Include="Grpc.Tools" PrivateAssets="all" />
+    <PackageReference Include="Google.Protobuf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The server side of the app's contract, for the fake backend. -->
+    <Protobuf Include="..\..\..\proto\garage.proto" GrpcServices="Server" Link="Protos\garage.proto" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+</Project>

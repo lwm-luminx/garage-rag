@@ -1,5 +1,5 @@
 import Foundation
-import PythonXPCService
+import GarageXPCKit
 
 /// Objective-C protocol for receiving progress updates and log entries from GarageIngestXPCService across XPC.
 @objc(GarageIngestProgressReceiverProtocol)
@@ -39,13 +39,6 @@ public protocol GarageIngestXPCServiceProtocol: GarageCommonXPCServiceProtocol, 
 
     /// Set database URL and optional LM Studio API token via XPC.
     func setDatabaseURL(_ databaseUrl: String, lmStudioApiToken: String?, with reply: @escaping (Bool, String?) -> Void)
-}
-
-/// Objective-C protocol for Embed XPC Service communication. It receives the LlamaXPCService
-/// endpoint because embedding with a llama_xpc model loads it on demand.
-@objc(GarageEmbedXPCServiceProtocol)
-public protocol GarageEmbedXPCServiceProtocol: GarageCommonXPCServiceProtocol, GarageLlamaEndpointReceiverProtocol {
-    func embedTexts(_ texts: [String], model: String?, with reply: @escaping (Bool, String?) -> Void)
 }
 
 public enum IngestXPCConstants {

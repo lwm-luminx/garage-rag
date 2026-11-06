@@ -1,0 +1,17 @@
+load("//winapp/bazel:defs.bzl", "garage_csharp_library")
+
+# Mirrors Garage.App.Core.csproj.
+garage_csharp_library(
+    name = "Garage.App.Core",
+    # LibraryImport (the Job Object) generates unsafe marshalling code.
+    allow_unsafe_blocks = True,
+    internals_visible_to = [
+        "Garage.App.Core.Tests",
+        "Garage.Services.Tests",
+    ],
+    visibility = ["//winapp:__subpackages__"],
+    deps = [
+        "//winapp/src/Garage.Grpc",
+        "@winapp_nuget//communitytoolkit.mvvm",
+    ],
+)

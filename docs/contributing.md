@@ -6,7 +6,7 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
 
 <div class="hero">
   <h1>Contribute to Garage</h1>
-  <p>Garage is free and open source under the MIT license. The macOS app, the Python pipeline, the Windows build and this website all live in one repository on GitHub, and contributions of every size are welcome.</p>
+  <p>Garage is free and open source under the MIT license. The macOS app, the Rust pipeline, the Windows app and this website all live in one repository on GitHub, and contributions of every size are welcome.</p>
   <div class="hero-actions">
     <a href="https://github.com/rickmark/garage-rag" class="btn btn-primary btn-large" target="_blank" rel="noopener">rickmark/garage-rag on GitHub ↗</a>
     <a href="https://github.com/rickmark/garage-rag/issues" class="btn btn-secondary btn-large" target="_blank" rel="noopener">Issues ↗</a>
@@ -45,34 +45,33 @@ description: How to contribute to Garage, the open-source local RAG app and MCP 
 
 | Folder | What's in it |
 | --- | --- |
-| [`garage_python/`](https://github.com/rickmark/garage-rag/tree/main/garage_python) | The `garage_rag` Python package: ingestion, extractors, attribution, embeddings, hybrid search, the MCP server and the `garage` CLI. Runs on macOS, Linux and Windows. |
+| [`rust/`](https://github.com/rickmark/garage-rag/tree/main/rust) | The pipeline, a Cargo workspace: GarageService (the backend over PostgreSQL), ingestion and the readers, attribution, the embed worker, hybrid search, the MCP server and the `garage` CLI. Runs on macOS, Linux and Windows. |
 | [`macapp/`](https://github.com/rickmark/garage-rag/tree/main/macapp) | The Swift/SwiftUI macOS app, its XPC services and the `garage` / `garage-mcp` launchers. |
 | [`data/sql/`](https://github.com/rickmark/garage-rag/tree/main/data/sql) | The database schema, the source of truth. Migrations are idempotent and re-applied, not tracked. |
-| [`proto/`](https://github.com/rickmark/garage-rag/tree/main/proto) | The gRPC contract between the macOS app and the Python service. |
-| [`ext/`](https://github.com/rickmark/garage-rag/tree/main/ext) | From-source builds of PostgreSQL, pgvector, Python, llama.cpp, Tesseract and the rest. |
+| [`proto/`](https://github.com/rickmark/garage-rag/tree/main/proto) | The gRPC contract between the apps and GarageService. |
+| [`winapp/`](https://github.com/rickmark/garage-rag/tree/main/winapp) | The Windows app (.NET 10, WinUI 3) and its installers. |
+| [`ext/`](https://github.com/rickmark/garage-rag/tree/main/ext) | From-source builds of PostgreSQL, pgvector, llama.cpp, Tesseract and the rest. |
 | [`docs/`](https://github.com/rickmark/garage-rag/tree/main/docs) | This website. |
 | [`docs/plans/`](https://github.com/rickmark/garage-rag/tree/main/docs/plans) | Engineering plans and design notes, published as the [plans page]({{ '/plans/' | relative_url }}). |
 
 The [architecture guide]({{ '/architecture.html' | relative_url }}) walks through the pipeline, and the repository's [`CLAUDE.md`](https://github.com/rickmark/garage-rag/blob/main/CLAUDE.md) is the detailed map for anyone, human or coding agent, working in the code.
 
-## Set up for Python work
+## Set up for Rust work
 
-Most changes touch only the Python package, and that needs no Bazel, Xcode or macOS:
+Most changes touch only the Rust workspace, and that needs no Bazel, Xcode or macOS: a Rust toolchain from [rustup](https://rustup.rs/) (it reads `rust/rust-toolchain.toml`), `protoc`, and the libgit2, SQLite and, off macOS, Tesseract development packages (`brew install libgit2 protobuf` on macOS; `apt install protobuf-compiler libgit2-dev libsqlite3-dev libtesseract-dev tesseract-ocr-eng pkg-config` on Debian and Ubuntu).
 
 ```bash
 git clone https://github.com/rickmark/garage-rag.git
-cd garage-rag/garage_python
-uv sync                                         # macOS
-# uv venv --python 3.14 .venv && uv pip install -e '.[dev]'   # Linux and Windows
-.venv/bin/pytest                                # the unit tests mock the database
+cd garage-rag/rust
+cargo test --workspace --features garage-plugin/grpc     # most tests need no database
 ```
 
-The tests that need real SQL (`tests/test_postgres.py`) run when `GARAGE_TEST_DATABASE_URL` names a PostgreSQL server with pgvector and a superuser role, such as Homebrew's `postgresql@18` or the `pgvector/pgvector:pg18` Docker image. Each run creates and drops its own throwaway database. Don't point it at the macOS app's own database, which holds your real corpus.
+The tests that need real SQL (`garage-service/tests`, `garage-cli/tests`) run when `GARAGE_TEST_DATABASE_URL` names a PostgreSQL server with pgvector and a superuser role, such as Homebrew's `postgresql@18` or the `pgvector/pgvector:pg18` Docker image, and pass without running otherwise. Each run creates and drops its own throwaway database. Don't point it at the macOS app's own database, which holds your real corpus.
 
 Before you push, run the formatter and linters:
 
 ```bash
-.venv/bin/ruff format && .venv/bin/ruff check
+cargo fmt --check && cargo clippy --workspace --all-targets --features garage-plugin/grpc -- -D warnings
 ```
 
 ## Build everything
@@ -81,25 +80,25 @@ The whole repository, the macOS app included, builds with Bazel through the [Asp
 
 ```bash
 aspect build //...          # everything
-aspect build //:macapp      # the macOS app, with its own PostgreSQL, Python and llama.cpp
+aspect build //:macapp      # the macOS app, with its own PostgreSQL and llama.cpp and the Rust libraries linked in
 aspect test //...           # every test
-aspect gazelle              # regenerate BUILD files after adding Python sources
+aspect gazelle              # regenerate BUILD files after editing proto/
 ```
 
-The macOS app needs macOS with Xcode. Windows builds PostgreSQL and Python with each project's own MSVC build, in [`.github/workflows/windows.yaml`](https://github.com/rickmark/garage-rag/blob/main/.github/workflows/windows.yaml), which is the place to start for Windows work.
+The macOS app needs macOS with Xcode. Windows builds PostgreSQL with its own MSVC build and the Rust libraries with Cargo, in [`.github/workflows/windows.yaml`](https://github.com/rickmark/garage-rag/blob/main/.github/workflows/windows.yaml), which is the place to start for Windows work.
 
 ## Ground rules
 
-- **Privacy is load-bearing.** Only `net/egress.py` opens outbound connections. No cloud AI SDKs. Communications such as Messages and Mail never go to a server that is not on this computer. The tests in `test_egress_block.py` check each rule on its own, and a change that weakens one won't be merged. See [privacy internals]({{ '/privacy.html' | relative_url }}).
-- **Keep licenses permissive.** For example, PDF extraction uses `pypdf` and `pdfplumber` because PyMuPDF is AGPL. After changing dependencies, regenerate the third-party notices (`python3 tools/third_party_notices.py`).
-- **Tests come with the change.** Deprecation warnings fail the suite, so fix them rather than silencing them.
+- **Privacy is load-bearing.** No crate of the pipeline opens an outbound connection itself: every model-server request goes through its host after `garage-embed`'s `egress` rules approve the destination. No cloud AI SDKs. Communications such as Messages and Mail never go to a server that is not on this computer. The egress tests check each rule on its own, and a change that weakens one won't be merged. See [privacy internals]({{ '/privacy.html' | relative_url }}).
+- **Keep licenses permissive.** No AGPL or GPL dependency; the readers are MIT and Apache crates. After changing dependencies, regenerate the third-party notices (`python3 tools/third_party_notices.py`).
+- **Tests come with the change.** Clippy runs at `-D warnings`, so fix a warning rather than allowing it.
 - **Settings are documented.** A new or renamed config setting needs its description, and the JSON Schema regenerated (`garage config schema --publish`).
 
 ## Send a pull request
 
 1. Fork the repository and make a branch.
 2. Make your change, with tests, and run them.
-3. Open a pull request against `main` that says what changed and why. CI runs the Python suite on Linux (with PostgreSQL), format and lint checks, a Swift syntax check and, for build changes, the full macOS and Windows builds.
+3. Open a pull request against `main` that says what changed and why. CI runs the Rust suite on Linux (with PostgreSQL), format and lint checks, a Swift syntax check and, for build changes, the full macOS and Windows builds.
 4. Be ready for a round of review. Small, focused pull requests get merged fastest.
 
 By contributing, you agree that your contribution is licensed under the project's [MIT license](https://github.com/rickmark/garage-rag/blob/main/LICENSE).

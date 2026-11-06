@@ -19,7 +19,7 @@ extension ModelsView {
         let stats = appState.corpusStats
         let count = unifiedModels.count
         let models = "\(count) model\(count == 1 ? "" : "s")"
-        let missingFiles = unifiedModels.filter { $0.provider == .llamaXPC && !isModelFileDownloaded(item: $0) && getActiveDownloadTask(item: $0) == nil }
+        let missingFiles = unifiedModels.filter { $0.provider.downloadsFiles && !isModelFileDownloaded(item: $0) && getActiveDownloadTask(item: $0) == nil }
         let (required, missing) = embeddingsRequiredAndMissing
         let fraction = required > 0 ? Double(max(0, required - missing)) / Double(required) : 0
         let kind = ModelsPresentation.embeddingHeadlineKind(

@@ -2,7 +2,7 @@ import Foundation
 import Darwin
 import OSLog
 import ModelDownloadClient
-import PythonXPCService
+import GarageXPCKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag.model-download-xpc", category: "ModelDownloadXPCService")
 
@@ -12,8 +12,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
     init() {
         super.init(
             serviceName: "ModelDownloadXPCService",
-            logFileName: "model-download-xpc.log",
-            usesPython: false
+            logFileName: "model-download-xpc.log"
         )
     }
 
@@ -24,7 +23,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
     override func additionalSelfTests() -> [GarageXPCSelfTest] {
         let engine = self.engine
         return [
-            GarageXPCSelfTest(name: "Models Directory", description: "Models directory exists and is writable.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Models Directory", description: "Models directory exists and is writable.") {
                 let path = engine.getModelsDirectoryPath()
                 var isDirectory: ObjCBool = false
                 guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), isDirectory.boolValue else {
@@ -40,7 +39,7 @@ final class ModelDownloadXPCServiceDelegate: GarageXPCServiceBase, ModelDownload
                 let models = engine.listDownloadedModels(directoryPath: nil)
                 return "Models directory: \(path)\nDownloaded models: \(models.count)"
             },
-            GarageXPCSelfTest(name: "Download Tasks", description: "Reports the state of the model downloader task queue.", requiresPython: false) {
+            GarageXPCSelfTest(name: "Download Tasks", description: "Reports the state of the model downloader task queue.") {
                 let downloads = engine.listDownloads()
                 let active = downloads.filter { $0.status == .downloading }.count
                 let paused = downloads.filter { $0.status == .paused }.count

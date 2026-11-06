@@ -1,0 +1,11 @@
+load("@rules_rs//rs:rust_binary.bzl", "rust_binary")
+
+# UniFFI's binding generator at the workspace's uniffi version, without `cargo metadata`, for the
+# genrules that turn a Rust library into its Swift bindings (//rust/garage-embed-uniffi:swift_bindings).
+rust_binary(
+    name = "uniffi-bindgen",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["@crates//:uniffi"],
+)

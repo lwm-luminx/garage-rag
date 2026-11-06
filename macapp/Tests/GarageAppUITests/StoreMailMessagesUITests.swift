@@ -9,7 +9,7 @@ import XCTest
 /// The test target's host app is the unsandboxed build, so these launch the store bundle named by
 /// `GARAGE_UITEST_STORE_APP` (with `xcodebuild test`, set `TEST_RUNNER_GARAGE_UITEST_STORE_APP`):
 ///
-///     aspect build //macapp:GarageStore.app
+///     aspect build //macapp:GarageStore.app      # in garage-enterprise, which holds the store platform
 ///     TEST_RUNNER_GARAGE_UITEST_STORE_APP=$PWD/bazel-bin/macapp/GarageStore.app \
 ///       xcodebuild test -project macapp/Garage.xcodeproj -scheme GarageAppUITests \
 ///       -only-testing:GarageAppUITests/StoreMailMessagesUITests
@@ -22,7 +22,7 @@ class StoreUITestCase: GarageUITestCase {
 
     private static func storeAppURL() throws -> URL {
         let path = ProcessInfo.processInfo.environment[storeAppVariable] ?? ""
-        try XCTSkipIf(path.isEmpty, "Set \(storeAppVariable) to a GarageStore.app built with --config=appstore.")
+        try XCTSkipIf(path.isEmpty, "Set \(storeAppVariable) to a GarageStore.app built with garage-enterprise's --config=appstore.")
         let url = URL(fileURLWithPath: path, isDirectory: true)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path), "\(storeAppVariable) names \(path), which does not exist")
         return url

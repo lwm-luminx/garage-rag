@@ -1,0 +1,61 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <!-- Per machine: Program Files\Garage, which needs an administrator once, and is what Intune,
+       Group Policy and Configuration Manager deploy. Garage's data stays per user, in
+       %LOCALAPPDATA%\Garage, which neither an upgrade nor an uninstall touches. The UpgradeCode never
+       changes: it is how a newer MSI finds and replaces an older one. -->
+  <Package
+    Name="Garage"
+    Manufacturer="Garage"
+    Version="$(var.ProductVersion)"
+    UpgradeCode="D407DF64-1C8C-4479-8A71-E93E29FD5175"
+    Scope="perMachine"
+    Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Garage is already installed." />
+
+    <!-- Postgres and ICU need Microsoft's Visual C++ runtime, at least as new as the toolset that built
+         them (msi.ps1 reads it from their PE headers). Garage-Setup.exe installs it before this MSI and
+         says so with GARAGE_VCRUNTIME_INSTALLED (the new msvcp140 may wait for a restart); deployed
+         alone, this MSI requires it already installed. VCRuntimeMinVersion sits just below the
+         requirement, so the search holds whether Windows Installer treats MinVersion as inclusive or not. -->
+    <Property Id="VCRUNTIME_FOUND">
+      <DirectorySearch Id="VCRuntimeFolder" Path="[System64Folder]" Depth="0">
+        <FileSearch Name="msvcp140.dll" MinVersion="$(var.VCRuntimeMinVersion)" />
+      </DirectorySearch>
+    </Property>
+    <Launch Condition="Installed OR VCRUNTIME_FOUND OR GARAGE_VCRUNTIME_INSTALLED"
+            Message="Garage needs the Microsoft Visual C++ Redistributable $(var.VCRuntimeRequired) or newer. Install it from https://aka.ms/vc14/vc_redist.$(var.InstallerArch).exe and run this installer again, or run Garage-Setup.exe, which installs both." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Icon Id="Garage.ico" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="Garage.ico" />
+    <Property Id="ARPURLINFOABOUT" Value="https://garagerag.app" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/rickmark/garage-rag/issues" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="Garage">
+        <Component Id="GarageExe">
+          <File Id="GarageExe" Source="$(var.StageDir)\Garage.exe" KeyPath="yes">
+            <Shortcut Id="GarageStartMenu" Directory="ProgramMenuFolder" Name="Garage"
+                      Description="Private, local search and memory over your own files"
+                      WorkingDirectory="INSTALLFOLDER" Icon="Garage.ico" Advertise="yes" />
+          </File>
+        </Component>
+
+        <!-- Tells the app it came from this MSI (Distribution in Platform.cs), so Settings says how it
+             updates. -->
+        <Component Id="InstalledByMsi">
+          <File Id="InstalledByMsi" Source="installed-by-msi" KeyPath="yes" />
+        </Component>
+
+        <!-- Everything else stage.ps1 laid out: the app, services\, python\, site-packages\, postgres\. -->
+        <Files Include="$(var.StageDir)\**">
+          <Exclude Files="$(var.StageDir)\Garage.exe" />
+        </Files>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder" />
+  </Package>
+</Wix>

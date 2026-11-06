@@ -1,0 +1,15 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# ImageEmbedBridge: reaches GarageImageEmbedXPCService over NSXPC through the listener endpoint
+# the app hands a helper (GarageImageEmbedEndpointStore). The Rust embed worker and GarageService
+# embed with image models through it.
+swift_library(
+    name = "ImageEmbedBridge",
+    srcs = glob(["*.swift"]),
+    module_name = "ImageEmbedBridge",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//macapp/Sources/GarageXPCKit",
+        "//macapp/Sources/ImageEmbedClient",
+    ],
+)

@@ -4,7 +4,7 @@ import XCTest
 final class AppSectionTests: XCTestCase {
 
     func testAppSectionAllCasesCount() {
-        XCTAssertEqual(AppSection.allCases.count, 9)
+        XCTAssertEqual(AppSection.allCases.count, 10)
     }
 
     func testAppSectionIdentifiers() {
@@ -13,6 +13,7 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.sources.id, "Sources")
         XCTAssertEqual(AppSection.documents.id, "Documents")
         XCTAssertEqual(AppSection.facts.id, "Facts")
+        XCTAssertEqual(AppSection.graph.id, "Graph")
         XCTAssertEqual(AppSection.models.id, "Models")
         XCTAssertEqual(AppSection.mcp.id, "MCP Server")
         XCTAssertEqual(AppSection.search.id, "Search")
@@ -25,6 +26,7 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.sources.symbol, "tray.and.arrow.down")
         XCTAssertEqual(AppSection.documents.symbol, "doc.text.magnifyingglass")
         XCTAssertEqual(AppSection.facts.symbol, "lightbulb")
+        XCTAssertEqual(AppSection.graph.symbol, "point.3.connected.trianglepath.dotted")
         XCTAssertEqual(AppSection.models.symbol, "cpu")
         XCTAssertEqual(AppSection.mcp.symbol, "server.rack")
         XCTAssertEqual(AppSection.search.symbol, "magnifyingglass")
@@ -33,7 +35,7 @@ final class AppSectionTests: XCTestCase {
 
     func testSidebarGroups() {
         XCTAssertEqual(SidebarGroup.configuration.sections, [.sources, .models, .mcp])
-        XCTAssertEqual(SidebarGroup.data.sections, [.documents, .facts, .search])
+        XCTAssertEqual(SidebarGroup.data.sections, [.documents, .facts, .graph, .search])
         XCTAssertEqual(SidebarGroup.advanced.sections, [.database, .logs])
         XCTAssertNil(AppSection.status.group)
     }

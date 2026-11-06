@@ -142,7 +142,7 @@ final class GarageViewTests: XCTestCase {
 
     func testLogSourceCases() {
         let cases = LogsView.LogSource.allCases
-        XCTAssertEqual(cases.count, 9)
-        XCTAssertEqual(cases.map(\.rawValue), ["Unified Log", "Postgres", "App", "Ingest", "Embed", "MCP Server", "Index Manager", "Built-in Engine", "Downloader"])
+        XCTAssertEqual(cases.count, 10)
+        XCTAssertEqual(cases.map(\.rawValue), ["Unified Log", "Postgres", "App", "Ingest", "Embed", "MCP Server", "Index Manager", "Built-in Engine", "Downloader", "Image Embeddings"])
     }
 }

@@ -41,7 +41,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tools" / "windows"))
-from fetch_ext import download, extract, pins
+from fetch_ext import download, extract, pins  # noqa: E402
 
 OUTPUT = REPO / "ext" / "nomic_embed" / "known_answers.json"
 MODEL_REPO = "nomic-ai/nomic-embed-text-v1.5-GGUF"
@@ -224,9 +224,7 @@ def generate(work: Path, metal: bool) -> dict[str, object]:
 
 def render(known: dict[str, object]) -> str:
     """JSON with each vector on one line, so the file stays short and diffs stay readable."""
-    known = json.loads(
-        json.dumps(known)
-    )  # a copy: the tokens below must not reach the caller's
+    known = json.loads(json.dumps(known))  # a copy: the tokens below must not reach the caller's
     vectors: dict[str, str] = {}
     for entry in known["inputs"]:
         for key in ("first8", "embedding"):
@@ -256,21 +254,15 @@ def compare(produced: dict[str, object], reference_path: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--work",
         type=Path,
         default=Path(tempfile.gettempdir()) / "garage-known-answers",
     )
     parser.add_argument("--out", type=Path, default=OUTPUT)
-    parser.add_argument(
-        "--metal", action="store_true", help="run llama.cpp on Metal instead of the CPU"
-    )
-    parser.add_argument(
-        "--compare", type=Path, help="compare against this known-answers file"
-    )
+    parser.add_argument("--metal", action="store_true", help="run llama.cpp on Metal instead of the CPU")
+    parser.add_argument("--compare", type=Path, help="compare against this known-answers file")
     args = parser.parse_args()
     produced = generate(args.work, args.metal)
     args.out.parent.mkdir(parents=True, exist_ok=True)

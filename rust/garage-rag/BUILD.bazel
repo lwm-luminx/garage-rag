@@ -1,0 +1,25 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# Garage's UniFFI crates in one library (src/lib.rs), packaged for PyPI and RubyGems as garage_rag
+# by .github/workflows/release.yaml with Cargo and maturin; Bazel checks that it still builds. Its
+# build.rs only lays data/ into the Python package for maturin, so Bazel does not run it.
+rust_library(
+    name = "garage_rag",
+    srcs = glob(["src/**/*.rs"]),
+    # The test reads the crate's version (CARGO_PKG_VERSION) from Cargo.toml.
+    compile_data = ["Cargo.toml"],
+    crate_name = "garage_rag",
+    edition = "2024",
+    # Not the workspace's version: the packages take the app's (Cargo.toml, held to GarageService's).
+    version = "1.6.0",
+    deps = [
+        "//rust/garage-cli-uniffi:garage_cli_uniffi_lib",
+        "//rust/garage-embed-uniffi:garage_embed_uniffi_lib",
+    ],
+)
+
+rust_test(
+    name = "garage-rag-test",
+    crate = ":garage_rag",
+)

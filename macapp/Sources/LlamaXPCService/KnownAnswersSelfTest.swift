@@ -1,6 +1,6 @@
 import Foundation
 import LlamaEngine
-import PythonXPCService
+import GarageXPCKit
 
 /// "Embedding Known Answers": loads the bundled nomic-embed-text Q2_K, embeds known inputs through
 /// llama.cpp, compares them with llama.cpp's reference vectors, then unloads it. Only LlamaCppEngine
@@ -13,8 +13,7 @@ import PythonXPCService
 func embeddingKnownAnswersSelfTest(engine: LlamaCppEngine) -> GarageXPCSelfTest {
     GarageXPCSelfTest(
         name: "Embedding Known Answers",
-        description: "Loads the bundled nomic-embed-text Q2_K, embeds known inputs through llama.cpp, compares them with reference vectors, then unloads it.",
-        requiresPython: false
+        description: "Loads the bundled nomic-embed-text Q2_K, embeds known inputs through llama.cpp, compares them with reference vectors, then unloads it."
     ) {
         guard let answers = Bundle.main.url(forResource: LlamaKnownAnswers.resourceName, withExtension: "json") else {
             // Until ext/nomic_embed/known_answers.json is committed the service ships without it.

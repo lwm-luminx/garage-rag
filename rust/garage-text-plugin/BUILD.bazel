@@ -1,0 +1,13 @@
+load("@rules_rs//rs:rust_binary.bzl", "rust_binary")
+
+# The text reader as a plugin in its own process, serving the contract over gRPC on a Unix socket.
+rust_binary(
+    name = "garage-text-plugin",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rust/garage-plugin:garage-plugin-grpc",
+        "//rust/garage-text:garage-text-grpc",
+    ],
+)

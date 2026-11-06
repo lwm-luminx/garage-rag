@@ -1,0 +1,12 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# What every XPC service, client module and launcher shares: the XPC protocols and their status
+# types, the App Group, sockets and endpoint stores, the service base class, self tests, logging,
+# crash handling, the managed-service host and the peer requirement. No service links anything
+# else of Garage's but the Rust library it hosts, so there is no shared framework in the bundle.
+swift_library(
+    name = "GarageXPCKit",
+    srcs = glob(["*.swift"]),
+    module_name = "GarageXPCKit",
+    visibility = ["//visibility:public"],
+)

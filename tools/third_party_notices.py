@@ -1,28 +1,27 @@
 #!/usr/bin/env python3
 """Generate (or check) THIRD_PARTY_NOTICES.txt for everything the Garage app redistributes.
 
-The macOS app bundles a Python runtime plus every runtime package in `garage_python/uv.lock`,
-a from-source Postgres + pgvector + Apache AGE (with ICU and zlib), OpenSSL, llama.cpp, Tesseract +
-Leptonica, PythonKit, Sparkle, the Swift gRPC/NIO/protobuf runtime pulled in by rules_swift,
-and third-party code vendored into garage_python (see NOTICE). Their licenses (MIT, BSD, Apache,
-Unicode, PSF, LGPL, ...) require the license text to accompany binary redistribution, so this
-collects the actual license files from each upstream release into one text file that ships in
+The app links every crate `rust/Cargo.lock` resolves for the libraries it ships (the CLI, the
+backend, the ingest and embed workers, the MCP server), plus a from-source Postgres + pgvector +
+Apache AGE (with ICU and zlib), llama.cpp, Tesseract + Leptonica, libgit2, Sparkle and the Swift
+gRPC/NIO/protobuf runtime pulled in by rules_swift. Their licenses (MIT, BSD, Apache, Unicode,
+LGPL, ...) require the license text to accompany binary redistribution, so this collects the actual
+license files from each upstream release into one text file that ships in
 `Garage.app/Contents/Resources`.
 
-    # regenerate after changing uv.lock, ext/, or vendored code (needs network)
+    # regenerate after changing rust/Cargo.lock or ext/ (needs network)
     python3 tools/third_party_notices.py
 
     # offline: fail if the committed file no longer covers the lockfile + NATIVE_COMPONENTS
     python3 tools/third_party_notices.py --check
 
-Stdlib only, so it runs without the project venv.
+Stdlib only, so it runs with any Python 3.11 or newer.
 """
 
 from __future__ import annotations
 
 import argparse
 import io
-import json
 import re
 import sys
 import tarfile
@@ -30,22 +29,33 @@ import time
 import tomllib
 import urllib.error
 import urllib.request
-import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-LOCKFILE = REPO / "garage_python" / "uv.lock"
+LOCKFILE = REPO / "rust" / "Cargo.lock"
 OUTPUT = REPO / "data" / "notices" / "THIRD_PARTY_NOTICES.txt"
-ROOT_PACKAGE = "garage-rag"
+# The crates the app, the Windows app and the launchers link; every crate they reach in Cargo.lock
+# is shipped. Cargo.lock does not tell a build or dev dependency from a normal one, so a few
+# build-time crates are listed too, which is harmless.
+SHIPPED_CRATES = (
+    "garage-cli",
+    "garage-service-ffi",
+    "garage-ingest-ffi",
+    "garage-embed-ffi",
+    "garage-mcp-ffi",
+)
+CRATES_IO = "registry+https://github.com/rust-lang/crates.io-index"
 RAW = "https://raw.githubusercontent.com"
+# The standard text of a license a crate names but does not ship, by SPDX identifier.
+SPDX_TEXT = f"{RAW}/spdx/license-list-data/v3.27.0/text/{{id}}.txt"
 # Suffix for a source file whose license is only its header comment: keep just that comment.
 HEADER = "#license-header"
 
 
 @dataclass(frozen=True)
 class Component:
-    """A non-Python component compiled into or bundled with the app."""
+    """A non-Rust component compiled into or bundled with the app."""
 
     name: str
     version: str
@@ -55,20 +65,10 @@ class Component:
     license_urls: tuple[str, ...]
 
 
-# Everything shipped that uv.lock does not cover: ext/*.MODULE.bazel, the swift_proto deps of
-# rules_swift (MODULE.bazel), and third-party code vendored into garage_python (see NOTICE).
+# Everything shipped that Cargo.lock does not cover: ext/*.MODULE.bazel, the swift_proto deps of
+# rules_swift (MODULE.bazel), and third-party code reimplemented in the tree (see NOTICE).
 # Components that are built but not shipped in the app are omitted.
 NATIVE_COMPONENTS: tuple[Component, ...] = (
-    Component(
-        "CPython",
-        "3.14.7",
-        "PSF-2.0 (and bundled third-party licenses)",
-        "https://www.python.org/",
-        (
-            f"{RAW}/python/cpython/v3.14.7/LICENSE",
-            f"{RAW}/python/cpython/v3.14.7/Doc/license.rst",
-        ),
-    ),
     Component(
         "PostgreSQL",
         "18.6",
@@ -130,19 +130,21 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         (f"{RAW}/tesseract-ocr/tesseract/5.5.3/LICENSE",),
     ),
     Component(
-        "tessdata_fast (eng.traineddata)",
-        "4.1.0",
-        "Apache-2.0",
-        "https://github.com/tesseract-ocr/tessdata_fast",
-        (f"{RAW}/tesseract-ocr/tessdata_fast/4.1.0/LICENSE",),
-    ),
-    Component(
         "nomic-embed-text v1.5 (Q2_K GGUF, LlamaXPCService known-answer self-test)",
         "1.5",
         "Apache-2.0",
         "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5",
         # Neither Hugging Face repository carries a LICENSE file; both declare apache-2.0.
         ("https://www.apache.org/licenses/LICENSE-2.0.txt",),
+    ),
+    Component(
+        # COPYING carries the GPL-2.0 linking exception and the licenses of the code libgit2
+        # bundles (xdiff, the SHA-1 collision detection, the builtin SHA-256, http-parser, ...).
+        "libgit2",
+        "1.9.7",
+        "GPL-2.0-only WITH GCC-exception-2.0",
+        "https://libgit2.org/",
+        (f"{RAW}/libgit2/libgit2/v1.9.7/COPYING",),
     ),
     Component(
         "Leptonica",
@@ -152,24 +154,6 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         (f"{RAW}/DanBloomberg/leptonica/1.87.0/leptonica-license.txt",),
     ),
     Component(
-        # lxml's macOS wheel links libiconv statically into etree and objectify; lxml's own notice
-        # names it, but LGPL-2.1 needs its full text to travel with the binary.
-        "GNU libiconv (statically linked into lxml's binary wheel)",
-        "as bundled in lxml 6.1.2",
-        "LGPL-2.1-or-later",
-        "https://www.gnu.org/software/libiconv/ (source: https://ftp.gnu.org/pub/gnu/libiconv/)",
-        (f"{RAW}/spdx/license-list-data/v3.27.0/text/LGPL-2.1-only.txt",),
-    ),
-    Component(
-        # LGPL-3.0 section 4(b) requires the GPL-3.0 text to accompany a work that uses an LGPL-3.0
-        # library (psycopg and psycopg-pool); their wheels ship only the LGPL text.
-        "GNU General Public License, version 3 (for the LGPL-3.0 components)",
-        "3.0",
-        "GPL-3.0",
-        "https://www.gnu.org/licenses/gpl-3.0.html",
-        (f"{RAW}/spdx/license-list-data/v3.27.0/text/GPL-3.0-only.txt",),
-    ),
-    Component(
         "Sparkle",
         "2.10.0",
         "MIT (and bundled third-party licenses)",
@@ -177,25 +161,24 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
         (f"{RAW}/sparkle-project/Sparkle/2.10.0/LICENSE",),
     ),
     Component(
-        "LangExtract (vendored subset, modified)",
-        "1.7.0",
-        "Apache-2.0",
-        "https://github.com/google/langextract",
-        (f"{RAW}/google/langextract/v1.7.0/LICENSE",),
+        # Windows: the Burn engine and its standard installer UI, which Garage-Setup.exe embeds
+        # (winapp/packaging/setup); the MSI itself carries no WiX code. MS-RL 3(A) asks for the
+        # license and the source of those files, which is the tag below, unmodified.
+        "WiX Toolset (Burn bootstrapper in Garage-Setup.exe)",
+        "5.0.2",
+        "MS-RL",
+        "https://wixtoolset.org/ (source: https://github.com/wixtoolset/wix/tree/v5.0.2)",
+        (
+            f"{RAW}/wixtoolset/wix/v5.0.2/LICENSE.TXT",
+            f"{RAW}/spdx/license-list-data/v3.27.0/text/MS-RL.txt",
+        ),
     ),
     Component(
-        "langchain-text-splitters (reimplemented in garage_rag.ingest.splitters)",
+        "langchain-text-splitters (reimplemented in rust/garage-ingest/src/splitters.rs)",
         "1.1.2",
         "MIT",
         "https://github.com/langchain-ai/langchain",
         (f"{RAW}/langchain-ai/langchain/langchain-text-splitters%3D%3D1.1.2/LICENSE",),
-    ),
-    Component(
-        "PythonKit",
-        "0.5.1",
-        "Apache-2.0",
-        "https://github.com/pvieito/PythonKit",
-        (f"{RAW}/pvieito/PythonKit/v0.5.1/LICENSE.txt",),
     ),
     Component(
         "SwiftProtobuf",
@@ -294,65 +277,63 @@ NATIVE_COMPONENTS: tuple[Component, ...] = (
     ),
 )
 
-# Packages whose wheel and sdist ship no license file: take it from the upstream repository instead.
-# `{version}` is filled from uv.lock so a version bump follows the matching upstream tag.
+# Crates whose package ships no license file, and whose `license` field is not one SPDX identifier
+# the standard texts cover: the upstream repository's license files instead.
 LICENSE_OVERRIDES: dict[str, tuple[str, ...]] = {}
 
-# Names inside a wheel's .dist-info (or sdist root) that hold license/notice text.
-_LICENSE_NAME = re.compile(
-    r"(?i)^(licen[cs]e|copying|notice|authors|copyright)([._-].*)?$"
-)
-_MARKER_ENV = {
-    "sys_platform": "darwin",
-    "platform_machine": "arm64",
-    "platform_python_implementation": "CPython",
-    "implementation_name": "cpython",
-}
+# Names at a crate's root that hold license/notice text.
+_LICENSE_NAME = re.compile(r"(?i)^(licen[cs]e|copying|notice|authors|copyright)([._-].*)?$")
 _RULE = "=" * 100
 
 
 # ---------------------------------------------------------------------------- lockfile
 
 
-def _marker_applies(marker: str | None) -> bool:
-    """Evaluate the small subset of PEP 508 markers uv writes for this (macOS-only) lockfile."""
-    if not marker:
-        return True
-    expr = marker
-    for var, value in _MARKER_ENV.items():
-        expr = expr.replace(var, repr(value))
-    if re.search(r"[a-z_]+_version|<|>|\bin\b", expr):
-        raise ValueError(
-            f"unsupported marker in uv.lock (extend _marker_applies): {marker}"
-        )
-    # Literal-only expression: every variable was substituted above.
-    return bool(eval(expr, {"__builtins__": {}}, {}))
+@dataclass(frozen=True)
+class Crate:
+    name: str
+    version: str
+    source: str | None
 
 
-def runtime_packages(lockfile: Path = LOCKFILE) -> list[dict]:
-    """Every package in the lock reachable from garage-rag's non-optional dependencies."""
+def shipped_crates(lockfile: Path = LOCKFILE) -> list[Crate]:
+    """Every crates.io package in the lock reachable from the shipped crates, by name and version."""
     lock = tomllib.loads(lockfile.read_text())
-    by_name = {p["name"]: p for p in lock["package"]}
-    seen: set[str] = set()
-    queue: list[tuple[str, tuple[str, ...]]] = [(ROOT_PACKAGE, ())]
+    packages = lock["package"]
+    by_name: dict[str, list[dict]] = {}
+    for pkg in packages:
+        by_name.setdefault(pkg["name"], []).append(pkg)
+
+    def resolve(dep: str) -> dict:
+        # "name", "name version" or "name version (source)".
+        parts = dep.split(" ")
+        candidates = by_name[parts[0]]
+        if len(parts) > 1:
+            candidates = [p for p in candidates if p["version"] == parts[1]]
+        if len(candidates) != 1:
+            raise ValueError(f"ambiguous dependency in Cargo.lock: {dep}")
+        return candidates[0]
+
+    seen: set[tuple[str, str]] = set()
+    queue = [resolve(name) for name in SHIPPED_CRATES]
     while queue:
-        name, extras = queue.pop()
-        pkg = by_name[name]
-        first_visit = name not in seen
-        seen.add(name)
-        deps = list(pkg.get("dependencies", [])) if first_visit else []
-        for extra in extras:
-            deps += pkg.get("optional-dependencies", {}).get(extra, [])
-        for dep in deps:
-            if _marker_applies(dep.get("marker")):
-                queue.append((dep["name"], tuple(dep.get("extra", ()))))
-    seen.discard(ROOT_PACKAGE)
-    return sorted((by_name[n] for n in seen), key=lambda p: p["name"])
+        pkg = queue.pop()
+        key = (pkg["name"], pkg["version"])
+        if key in seen:
+            continue
+        seen.add(key)
+        queue.extend(resolve(dep) for dep in pkg.get("dependencies", []))
+    crates = [
+        Crate(pkg["name"], pkg["version"], pkg.get("source"))
+        for pkg in packages
+        if (pkg["name"], pkg["version"]) in seen and pkg.get("source")  # workspace members have none
+    ]
+    return sorted(crates, key=lambda c: (c.name, c.version))
 
 
 def expected_entries(lockfile: Path = LOCKFILE) -> list[str]:
     """`name version` lines the notices index must contain, in order."""
-    return [f"{p['name']} {p['version']}" for p in runtime_packages(lockfile)] + [
+    return [f"{c.name} {c.version}" for c in shipped_crates(lockfile)] + [
         f"{c.name} {c.version}" for c in NATIVE_COMPONENTS
     ]
 
@@ -373,65 +354,36 @@ def _get(url: str, attempts: int = 4) -> bytes:
     raise AssertionError("unreachable")
 
 
-def _pick_wheel(pkg: dict) -> str | None:
-    wheels = [w["url"] for w in pkg.get("wheels", [])]
-    for pref in ("none-any", "macosx", ""):
-        for url in wheels:
-            if pref in url:
-                return url
-    return None
-
-
-def _python_license_texts(pkg: dict) -> list[tuple[str, str]]:
-    """License files from the package's wheel .dist-info, falling back to the sdist root."""
+def _crate_package(crate: Crate) -> tuple[str, list[tuple[str, str]]]:
+    """(license expression, license files at the crate's root) from its crates.io package."""
+    if crate.source != CRATES_IO:
+        raise SystemExit(
+            f"{crate.name} {crate.version} does not come from crates.io ({crate.source}); add a LICENSE_OVERRIDES entry"
+        )
+    url = f"https://static.crates.io/crates/{crate.name}/{crate.name}-{crate.version}.crate"
+    expression = "see license text"
     texts: list[tuple[str, str]] = []
-    if url := _pick_wheel(pkg):
-        with zipfile.ZipFile(io.BytesIO(_get(url))) as zf:
-            for info in sorted(zf.namelist()):
-                parts = info.split("/")
-                in_dist_info = len(parts) >= 2 and parts[0].endswith(".dist-info")
-                if in_dist_info and not info.endswith("/"):
-                    under_licenses = len(parts) > 2 and parts[1] == "licenses"
-                    if under_licenses or _LICENSE_NAME.match(parts[-1]):
-                        texts.append(
-                            (
-                                "/".join(parts[1:]),
-                                zf.read(info).decode("utf-8", "replace"),
-                            )
-                        )
-    if not texts and "sdist" in pkg:
-        with tarfile.open(fileobj=io.BytesIO(_get(pkg["sdist"]["url"]))) as tf:
-            for member in sorted(tf.getmembers(), key=lambda m: m.name):
-                parts = member.name.split("/")
-                if (
-                    member.isfile()
-                    and len(parts) == 2
-                    and _LICENSE_NAME.match(parts[1])
-                ):
-                    fh = tf.extractfile(member)
-                    if fh:
-                        texts.append((parts[1], fh.read().decode("utf-8", "replace")))
-    return texts
+    with tarfile.open(fileobj=io.BytesIO(_get(url)), mode="r:gz") as tf:
+        for member in sorted(tf.getmembers(), key=lambda m: m.name):
+            parts = member.name.split("/")
+            if not member.isfile() or len(parts) != 2:
+                continue
+            if parts[1] == "Cargo.toml":
+                fh = tf.extractfile(member)
+                if fh:
+                    manifest = tomllib.loads(fh.read().decode("utf-8", "replace"))
+                    expression = manifest.get("package", {}).get("license") or expression
+            elif _LICENSE_NAME.match(parts[1]):
+                fh = tf.extractfile(member)
+                if fh:
+                    texts.append((parts[1], fh.read().decode("utf-8", "replace")))
+    return expression, texts
 
 
-def _license_expression(pkg: dict) -> str:
-    try:
-        info = json.loads(
-            _get(f"https://pypi.org/pypi/{pkg['name']}/{pkg['version']}/json")
-        )["info"]
-    except Exception:  # noqa: BLE001 - metadata is a nicety; the texts are what matter
-        return "see license text"
-    if expr := info.get("license_expression"):
-        return expr
-    classifiers = [
-        c.split("::")[-1].strip()
-        for c in info.get("classifiers", [])
-        if c.startswith("License ::")
-    ]
-    if classifiers:
-        return " / ".join(classifiers)
-    lic = (info.get("license") or "").strip()
-    return lic if lic and "\n" not in lic and len(lic) < 60 else "see license text"
+def _spdx_ids(expression: str) -> list[str]:
+    """The SPDX identifiers an expression names (`MIT OR Apache-2.0`, `MIT/Apache-2.0`, ...)."""
+    ids = re.split(r"\s+(?:OR|AND|WITH)\s+|/", expression)
+    return [i.strip("() ") for i in ids if i.strip("() ")]
 
 
 def _fetch_license(url: str) -> tuple[str, str]:
@@ -463,7 +415,7 @@ def _section(title: str, meta: list[str], texts: list[tuple[str, str]]) -> str:
 
 
 def generate() -> str:
-    packages = runtime_packages()
+    crates = shipped_crates()
     index = expected_entries()
     header = [
         "THIRD-PARTY SOFTWARE NOTICES AND INFORMATION",
@@ -472,10 +424,10 @@ def generate() -> str:
         "authors under the terms reproduced in this file. Garage itself is licensed under the MIT",
         "License (see LICENSE).",
         "",
-        "Source code for the GPL- and LGPL-licensed components is available from the upstream",
-        "projects linked below. The Python packages are shipped as their own source; the source of",
-        "GNU libiconv is at https://ftp.gnu.org/pub/gnu/libiconv/, and the author will provide the",
-        "version bundled in this build on request through https://github.com/rickmark/garage-rag.",
+        "The Rust crates are linked into Garage's binaries; each is listed with the license its",
+        "package names and the license files it ships. A crate that ships none is covered by the",
+        "standard text of its license, reproduced once at the end of this file. Source code for the",
+        "GPL- and LGPL-licensed components is available from the upstream projects linked below.",
         "",
         "This file is generated by tools/third_party_notices.py; do not edit it by hand.",
         "",
@@ -485,48 +437,42 @@ def generate() -> str:
         "",
     ]
     sections: list[str] = []
-    missing: list[str] = []
-    for pkg in packages:
-        print(f"python  {pkg['name']} {pkg['version']}", file=sys.stderr)
-        if override := LICENSE_OVERRIDES.get(pkg["name"]):
-            urls = [url.format(version=pkg["version"]) for url in override]
-            texts = [
-                (url.rsplit("/", 1)[-1], _get(url).decode("utf-8", "replace"))
-                for url in urls
-            ]
+    standard: dict[str, None] = {}
+    for crate in crates:
+        print(f"crate   {crate.name} {crate.version}", file=sys.stderr)
+        if override := LICENSE_OVERRIDES.get(crate.name):
+            expression = "see license text"
+            texts = [_fetch_license(url.format(version=crate.version)) for url in override]
         else:
-            texts = _python_license_texts(pkg)
+            expression, texts = _crate_package(crate)
+        meta = [f"License: {expression}", f"Homepage: https://crates.io/crates/{crate.name}"]
         if not texts:
-            missing.append(f"{pkg['name']} {pkg['version']}")
-            continue
-        sections.append(
-            _section(
-                f"{pkg['name']} {pkg['version']}",
-                [
-                    f"License: {_license_expression(pkg)}",
-                    f"Homepage: https://pypi.org/project/{pkg['name']}/",
-                ],
-                texts,
-            )
-        )
-    if missing:
-        raise SystemExit(
-            f"no license file shipped for {', '.join(missing)}; add them to LICENSE_OVERRIDES"
-        )
+            ids = _spdx_ids(expression)
+            if expression == "see license text" or not ids:
+                raise SystemExit(
+                    f"{crate.name} {crate.version} ships no license file and names no license; "
+                    "add it to LICENSE_OVERRIDES"
+                )
+            for spdx in ids:
+                standard[spdx] = None
+            meta.append("License text: the standard text of " + " / ".join(ids) + " at the end of this file")
+        sections.append(_section(f"{crate.name} {crate.version}", meta, texts))
     for comp in NATIVE_COMPONENTS:
         print(f"native  {comp.name} {comp.version}", file=sys.stderr)
         texts = [_fetch_license(url) for url in comp.license_urls]
         for (_, text), url in zip(texts, comp.license_urls, strict=True):
             if len(text) < 200:  # e.g. a git symlink served as its target path
-                raise SystemExit(
-                    f"{comp.name}: {url} does not look like a license text: {text!r}"
-                )
+                raise SystemExit(f"{comp.name}: {url} does not look like a license text: {text!r}")
         sections.append(
-            _section(
-                f"{comp.name} {comp.version}",
-                [f"License: {comp.license}", f"Homepage: {comp.homepage}"],
-                texts,
-            )
+            _section(f"{comp.name} {comp.version}", [f"License: {comp.license}", f"Homepage: {comp.homepage}"], texts)
+        )
+    for spdx in sorted(standard):
+        print(f"license {spdx}", file=sys.stderr)
+        name, text = _fetch_license(SPDX_TEXT.format(id=spdx))
+        if len(text) < 200:
+            raise SystemExit(f"{spdx}: no standard text at {SPDX_TEXT.format(id=spdx)}")
+        sections.append(
+            _section(f"Standard license text: {spdx}", ["Source: https://spdx.org/licenses/"], [(name, text)])
         )
     return "\n".join(header) + "\n" + "\n".join(sections)
 
@@ -534,9 +480,7 @@ def generate() -> str:
 def indexed_entries(notices: str) -> list[str]:
     """The component index at the top of a generated notices file."""
     _, _, rest = notices.partition("Components:\n\n")
-    return [
-        line.strip() for line in rest.split("\n\n", 1)[0].splitlines() if line.strip()
-    ]
+    return [line.strip() for line in rest.split("\n\n", 1)[0].splitlines() if line.strip()]
 
 
 def check(notices_path: Path = OUTPUT, lockfile: Path = LOCKFILE) -> list[str]:
@@ -551,14 +495,8 @@ def check(notices_path: Path = OUTPUT, lockfile: Path = LOCKFILE) -> list[str]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument(
-        "--check",
-        action="store_true",
-        help="verify the committed file offline instead of writing",
-    )
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--check", action="store_true", help="verify the committed file offline instead of writing")
     parser.add_argument("--notices", type=Path, default=OUTPUT)
     parser.add_argument("--lockfile", type=Path, default=LOCKFILE)
     args = parser.parse_args()
@@ -568,10 +506,7 @@ def main() -> int:
         for p in problems:
             print(p, file=sys.stderr)
         if problems:
-            print(
-                "run `python3 tools/third_party_notices.py` and commit the result",
-                file=sys.stderr,
-            )
+            print("run `python3 tools/third_party_notices.py` and commit the result", file=sys.stderr)
         return 1 if problems else 0
 
     args.notices.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 import Combine
 import IngestClient
-import PythonXPCService
+import GarageXPCKit
 
 // The Sources page: what needs fixing at the top, what the pipeline is doing now, then one row per
 // source with its state and the one action that applies to it, and a form to add another. The

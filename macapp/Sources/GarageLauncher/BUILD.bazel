@@ -1,14 +1,28 @@
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
-# Shared by the bundled `garage` and `garage-mcp` launchers: interpreter start-up,
-# starting the app when its database is down, and the Keychain-backed database URL.
+# The Rust `garage` CLI's C mains (rust/garage-cli) as a Clang module, as
+# //macapp/Sources/GarageXPCService:GarageServiceFFI does for the backend. The static library comes
+# along through deps.
+objc_library(
+    name = "GarageCLIFFI",
+    hdrs = ["GarageCLIFFI/GarageCLIFFI.h"],
+    includes = ["GarageCLIFFI"],
+    module_name = "GarageCLIFFI",
+    visibility = ["//visibility:private"],
+    deps = ["//rust/garage-cli"],
+)
+
+# Shared by the bundled `garage` and `garage-mcp` launchers: the environment the Rust CLI runs
+# with, starting the app when its database is down, and the Keychain-backed database URL. It
+# links no Python: the commands are `garage_cli_main` and `garage_mcp_main` from //rust/garage-cli.
 swift_library(
     name = "GarageLauncher",
     srcs = glob(["*.swift"]),
     module_name = "GarageLauncher",
     visibility = ["//macapp:__subpackages__"],
     deps = [
-        "//ext/pythonkit:PythonKit_swift",
-        "//macapp/Sources/PythonXPCService:PythonXPCService_swift",
+        ":GarageCLIFFI",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )

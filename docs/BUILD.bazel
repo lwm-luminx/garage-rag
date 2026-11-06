@@ -33,14 +33,3 @@ filegroup(
     srcs = [".data/garage.schema.json"],
     visibility = ["//visibility:public"],
 )
-
-# The Sparkle feed (served as https://garagerag.app/appcast.xml) and the domain it is served
-# from, for the test that checks its entries.
-filegroup(
-    name = "appcast",
-    srcs = [
-        "CNAME",
-        "appcast.xml",
-    ],
-    visibility = ["//garage_python/tests:__pkg__"],
-)
