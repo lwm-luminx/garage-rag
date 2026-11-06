@@ -1,0 +1,17 @@
+[package]
+name = "garage-access-none"
+description = "The access extension a plain garage-rag build links: it registers nothing, so every caller sees everything. A build that has a policy links its own crate under the same name (Bazel's //rust/garage-access:extension)."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+name = "garage_access_extension"
+
+[dependencies]
+garage-access.workspace = true
+
+[lints]
+workspace = true

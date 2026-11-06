@@ -1,0 +1,15 @@
+[package]
+name = "garage-access"
+description = "The access hooks (docs/plans/access-hooks.md): who is reading, and the seam an extension's access policy plugs into. Garage ships no policy."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+bytes.workspace = true
+tokio-postgres.workspace = true
+
+[lints]
+workspace = true
