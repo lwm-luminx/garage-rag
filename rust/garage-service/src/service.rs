@@ -8,6 +8,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use deadpool_postgres::Pool;
+use garage_access::{AccessPolicy, Caller, SqlFilter};
 use garage_embed::Host;
 use garage_facade::proto;
 use garage_facade::proto::garage_service_server::GarageService as GarageServiceTrait;
@@ -21,6 +22,7 @@ use tokio_stream::Stream;
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
+use crate::access::{AccessGate, document_condition, installed_policy};
 use crate::catalog::{self, ModelRequest};
 use crate::clusters::{self, ChatDistiller, ClusterParams, ClusterProgress, ClusterRun, ClusterSummary, Distill};
 use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
@@ -36,7 +38,7 @@ use crate::prompts::EffectivePrompt;
 use crate::registry::{StoragePlan, truncate_vector};
 use crate::search::{QueryEmbedder, SearchFilters, search, snippet};
 use crate::sources::{self, DEFAULT_MAX_DELETE_FRACTION};
-use crate::{backfill, corpus, db, graph, prompts};
+use crate::{backfill, corpus, db, graph, prompts, registrations};
 
 /// What `GetVersion` and `garage --version` report: the app's release version. The `garage_rag`
 /// packages on PyPI and RubyGems take it too (rust/garage-rag's `version`, held to this by a test),
@@ -66,12 +68,18 @@ pub struct GarageService {
     /// Whether every caller is one the server can vouch for (the token, or the Unix socket), so
     /// the config-changing methods may be answered (`callers_vouched_for`).
     callers_vouched_for: bool,
+    /// The build's access policy (`docs/plans/access-hooks.md`), asked on every corpus read.
+    access: AccessGate,
+    /// Who the service's own reads (not `Corpus*`) are for: the app over gRPC, `garage` in process,
+    /// or a caller the server cannot vouch for.
+    local_caller: Caller,
 }
 
 impl GarageService {
     /// # Errors
     ///
-    /// A database URL that does not parse.
+    /// A database URL that does not parse, or a build whose extension registered two access
+    /// policies.
     pub fn new(
         config: Config,
         embedder: Arc<dyn QueryEmbedder>,
@@ -87,7 +95,30 @@ impl GarageService {
             extractor: None,
             sql_dir,
             callers_vouched_for,
+            access: AccessGate::new(installed_policy()?),
+            local_caller: if callers_vouched_for { Caller::app() } else { Caller::unverified() },
         })
+    }
+
+    /// The same service with another access policy than the build's (tests, and a host that
+    /// chooses its own).
+    #[must_use]
+    pub fn with_access_policy(mut self, policy: Arc<dyn AccessPolicy>) -> Self {
+        self.access = AccessGate::new(policy);
+        self
+    }
+
+    /// The same service, reading for `caller` where a request names none (`garage` runs the
+    /// service in its own process as [`Caller::cli`]).
+    #[must_use]
+    pub fn with_local_caller(mut self, caller: Caller) -> Self {
+        self.local_caller = caller;
+        self
+    }
+
+    /// The access policy's condition for `caller`, or `None` when it sees everything.
+    async fn access_filter(&self, client: &Client, caller: &Caller) -> Result<Option<SqlFilter>> {
+        self.access.filter(client, caller).await
     }
 
     /// The same service with a host for its chat model.
@@ -250,6 +281,7 @@ impl GarageServiceTrait for GarageService {
             sources: r.sources,
             author: opt(&r.author),
             direction: opt(&r.direction),
+            access: self.access_filter(&client, &self.local_caller).await?,
         };
         let mode = if r.mode.is_empty() { "hybrid" } else { r.mode.as_str() };
         let limit = if r.limit == 0 { 10 } else { i64::from(r.limit) };
@@ -320,6 +352,10 @@ impl GarageServiceTrait for GarageService {
             params.push(Box::new(format!("%{}%", r.query)));
             filters.push(format!("(d.title ILIKE ${0} OR d.uri ILIKE ${0})", params.len()));
         }
+        let access = self.access_filter(&client, &self.local_caller).await?;
+        if access.is_some() {
+            filters.push(document_condition("d.id", access.as_ref(), &mut params)?);
+        }
         let where_clause = if filters.is_empty() { String::new() } else { format!("WHERE {}", filters.join(" AND ")) };
         let total: i64 = client
             .query_one(
@@ -379,12 +415,18 @@ impl GarageServiceTrait for GarageService {
     ) -> std::result::Result<Response<proto::GetDocumentResponse>, Status> {
         let id = request.into_inner().document_id;
         let client = self.client().await?;
+        // A document the caller may not see reads exactly as a missing one.
+        let access = self.access_filter(&client, &self.local_caller).await?;
+        let mut params: Vec<crate::access::Param> = vec![Box::new(id)];
+        let visible = document_condition("d.id", access.as_ref(), &mut params)?;
         let row = client
             .query_opt(
-                "SELECT d.id, d.uri, d.title, s.slug, d.corpus_class::text, d.trust_tier::text, d.mime, d.lang, d.byte_size, \
-                 d.extractor, d.extractor_version, d.chunker, d.meta, d.state::text, d.error, d.ingested_at \
-                 FROM documents d LEFT JOIN sources s ON s.id = d.source_id WHERE d.id = $1",
-                &[&id],
+                &format!(
+                    "SELECT d.id, d.uri, d.title, s.slug, d.corpus_class::text, d.trust_tier::text, d.mime, d.lang, d.byte_size, \
+                     d.extractor, d.extractor_version, d.chunker, d.meta, d.state::text, d.error, d.ingested_at \
+                     FROM documents d LEFT JOIN sources s ON s.id = d.source_id WHERE d.id = $1 AND {visible}"
+                ),
+                &refs(&params),
             )
             .await
             .map_err(ServiceError::from)?
@@ -620,12 +662,14 @@ impl GarageServiceTrait for GarageService {
     ) -> std::result::Result<Response<proto::CorpusReadResponse>, Status> {
         let r = request.into_inner();
         let mut client = self.client().await?;
+        let caller = self.access.mcp_caller(&client, r.caller.as_ref()).await?;
         let filters = SearchFilters {
             corpus_classes: r.corpus_classes,
             trust_tiers: r.trust_tiers,
             sources: r.sources,
             author: r.author,
             direction: r.direction,
+            access: self.access_filter(&client, &caller).await?,
         };
         let mode = if r.mode.is_empty() { "hybrid".to_owned() } else { r.mode };
         let limit = if r.limit == 0 { 10 } else { i64::from(r.limit) };
@@ -649,17 +693,23 @@ impl GarageServiceTrait for GarageService {
     ) -> std::result::Result<Response<proto::CorpusReadResponse>, Status> {
         let r = request.into_inner();
         let client = self.client().await?;
+        let access = self.access_filter(&client, &self.access.mcp_caller(&client, r.caller.as_ref()).await?).await?;
         let max_chars = if r.max_chars == 0 { 20_000 } else { usize::try_from(r.max_chars).unwrap_or(20_000) };
-        let result = corpus::rag_get_document(&client, r.document_id, opt(&r.location).as_deref(), max_chars).await?;
+        let result =
+            corpus::rag_get_document(&client, r.document_id, opt(&r.location).as_deref(), max_chars, access.as_ref())
+                .await?;
         ok(proto::CorpusReadResponse { result_json: pyjson::dumps(&result, CORPUS_JSON) })
     }
 
     async fn corpus_sources(
         &self,
-        _request: Request<proto::CorpusSourcesRequest>,
+        request: Request<proto::CorpusSourcesRequest>,
     ) -> std::result::Result<Response<proto::CorpusReadResponse>, Status> {
         let client = self.client().await?;
-        let result = corpus::rag_list_sources(&client).await?;
+        let access = self
+            .access_filter(&client, &self.access.mcp_caller(&client, request.get_ref().caller.as_ref()).await?)
+            .await?;
+        let result = corpus::rag_list_sources(&client, access.as_ref()).await?;
         ok(proto::CorpusReadResponse { result_json: pyjson::dumps(&result, CORPUS_JSON) })
     }
 
@@ -667,18 +717,23 @@ impl GarageServiceTrait for GarageService {
         &self,
         request: Request<proto::CorpusAuthorsRequest>,
     ) -> std::result::Result<Response<proto::CorpusReadResponse>, Status> {
-        let limit = request.into_inner().limit;
+        let r = request.into_inner();
         let client = self.client().await?;
-        let result = corpus::rag_list_authors(&client, if limit == 0 { 30 } else { i64::from(limit) }).await?;
+        let access = self.access_filter(&client, &self.access.mcp_caller(&client, r.caller.as_ref()).await?).await?;
+        let limit = if r.limit == 0 { 30 } else { i64::from(r.limit) };
+        let result = corpus::rag_list_authors(&client, limit, access.as_ref()).await?;
         ok(proto::CorpusReadResponse { result_json: pyjson::dumps(&result, CORPUS_JSON) })
     }
 
     async fn corpus_stats(
         &self,
-        _request: Request<proto::CorpusStatsRequest>,
+        request: Request<proto::CorpusStatsRequest>,
     ) -> std::result::Result<Response<proto::CorpusReadResponse>, Status> {
         let client = self.client().await?;
-        let result = corpus::rag_stats(&client).await?;
+        let access = self
+            .access_filter(&client, &self.access.mcp_caller(&client, request.get_ref().caller.as_ref()).await?)
+            .await?;
+        let result = corpus::rag_stats(&client, access.as_ref()).await?;
         ok(proto::CorpusReadResponse { result_json: pyjson::dumps(&result, CORPUS_JSON) })
     }
 
@@ -1491,9 +1546,25 @@ impl GarageServiceTrait for GarageService {
             dry_run: r.dry_run,
         };
         let config = self.config();
+        let (name, transport) = (install_request.name.clone(), if install_request.stdio { "stdio" } else { "http" });
         let report = tokio::task::spawn_blocking(move || mcp_install::install_mcp_server(&config, &install_request))
             .await
             .map_err(|e| ServiceError::failed(format!("installing: {e}")))??;
+        // Each written entry's token proves its registration (docs/plans/access-hooks.md).
+        let written: Vec<_> = report.outcomes.iter().filter(|o| o.written && o.token.is_some()).collect();
+        if !written.is_empty() {
+            let client = self.client().await?;
+            for outcome in written {
+                let registration = registrations::NewRegistration {
+                    token: outcome.token.as_deref().unwrap_or_default(),
+                    name: &name,
+                    client: &outcome.key,
+                    transport,
+                    config_path: &path_text(&outcome.path),
+                };
+                registrations::record(&client, &registration).await?;
+            }
+        }
         ok(proto::McpInstallResponse {
             message: report.lines().join("\n"),
             url: report.url.unwrap_or_default(),
@@ -1533,12 +1604,19 @@ impl GarageServiceTrait for GarageService {
                 .await
                 .map_err(|e| ServiceError::failed(format!("uninstalling: {e}")))??
         };
-        let message = if removed {
+        // The registration goes with its entry, so a copy of the token stops working at once.
+        if let Some(token) = removed.as_ref().and_then(mcp_install::entry_token) {
+            let client = self.client().await?;
+            if let Some(id) = registrations::remove(&client, &token).await? {
+                self.access.registration_removed(&id).await;
+            }
+        }
+        let message = if removed.is_some() {
             format!("removed {name} from {}", config.display())
         } else {
             format!("{name} was not configured in {}", config.display())
         };
-        ok(proto::McpUninstallResponse { path: path_text(&config), removed, message })
+        ok(proto::McpUninstallResponse { path: path_text(&config), removed: removed.is_some(), message })
     }
 
     async fn mcp_status(

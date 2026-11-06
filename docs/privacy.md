@@ -279,6 +279,14 @@ provider. That includes excerpts from Messages and Mail if you have indexed
 them: the MCP tools serve communications like any other content, and the egress
 guard above governs what Garage itself sends, not what a client does next.
 
+Each client entry Garage writes carries a registration token (`GARAGE_MCP_TOKEN`
+in a stdio entry, a bearer header in an HTTP one), and only its SHA-256 is kept in
+the database. A build with an access policy uses it to tell assistants apart. The
+token proves which registration a reader holds, not which program is running:
+software that runs as you can read an assistant's config file and present that
+assistant's token, and so read what that assistant may read, but never what the
+app may, and uninstalling the entry revokes the token at once.
+
 What happens to an excerpt after an agent receives it is governed by that
 agent's terms and privacy policy, not Garage's. If an indexed source should not
 reach a cloud model, do not connect a cloud-hosted agent, or leave that source

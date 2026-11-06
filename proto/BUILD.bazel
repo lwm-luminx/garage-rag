@@ -2,13 +2,17 @@ load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_swift//proto:proto.bzl", "swift_proto_library")
 
 # The Windows app's C# is generated from the file itself (//winapp/bazel:proto.bzl), with the
-# protoc Grpc.Tools ships, as its .NET SDK build does.
+# protoc Grpc.Tools ships, as its .NET SDK build does. GarageService's tests read it too, to place
+# every method on the access hooks' table (rust/garage-service/src/access.rs).
 exports_files(
     [
         "garage.proto",
         "garage_plugin.proto",
     ],
-    visibility = ["//winapp:__subpackages__"],
+    visibility = [
+        "//rust:__subpackages__",
+        "//winapp:__subpackages__",
+    ],
 )
 
 proto_library(

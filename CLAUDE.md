@@ -595,6 +595,13 @@ above maps them to crates); the Rust code keeps their names in its docs.
   `schema_dir` names SQL to run) are answered only by a server bound to the Unix socket; a server on a
   TCP port gives `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
 
+- **Access hooks** (`rust/garage-access`, [docs/plans/access-hooks.md](docs/plans/access-hooks.md)) — every
+  corpus read names its `Caller` (the app, `garage`, or an MCP client from `CorpusCaller`) and asks the
+  build's `AccessPolicy` for a `SqlFilter` over `d`/`s`, which goes inside the read's own `WHERE`. Garage
+  ships no policy: a plain build links `rust/garage-access-none` as `garage_access_extension`, and a build
+  with one sets the label flag `//rust/garage-access:extension` (garage-enterprise does). A new
+  GarageService method must be placed in `READ_PATHS` (`garage-service/src/access.rs`), or its test fails.
+
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction
 per document. An unchanged stat skips a file before it is read (`CheckDocumentStat` over the facade);

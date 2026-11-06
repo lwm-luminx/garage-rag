@@ -397,3 +397,18 @@ While the stat or the raw hash still matches, the next run skips the file
 instead of reading it again. A row whose revision differs from the current
 extractor's is ignored, so bumping an extractor's `VERSION` retries every file it
 gave up on. Indexing the file deletes its row. DDL in `012_ingest_outcomes.sql`.
+
+### `mcp_registrations`
+
+One row per MCP client entry that `McpInstall` wrote (the MCP page, the setup
+assistant, `garage mcp install`): its random `id`, never reused, the entry's
+`name`, the `client` it was written for (`claude-desktop`, `cursor`, `custom`,
+...), its `transport` and `config_path`, and `token_sha256`, the SHA-256 of the
+registration token written into the entry (`GARAGE_MCP_TOKEN` in a stdio entry's
+`env`, `Authorization: Bearer` in an HTTP entry's `headers`). The token itself is
+not stored. `last_seen_at` is stamped, at most once a minute, when a build with an
+access policy finds a reader's registration by its token. A forced re-install keeps
+the entry's token and so its row; uninstalling deletes the row. An access policy
+keys its rules on `id` as a value, never a foreign key, since registrations move to
+a catalog database under v2. See [access hooks](plans/access-hooks.md). DDL in
+`019_mcp_registrations.sql`.
