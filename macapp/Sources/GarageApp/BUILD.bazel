@@ -57,7 +57,7 @@ swift_library(
 
 macapp_version(
     name = "GarageAppVersion",
-    short_version_string = "1.6",
+    short_version_string = "1.7",
     visibility = ["//visibility:public"],
 )
 
