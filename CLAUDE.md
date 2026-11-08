@@ -263,6 +263,10 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `garage-embed`'s host and egress rules) and the streamable HTTP transport (GET answers 405).
   `garage-mcp-ffi` is its C ABI (`include/garage_mcp.h`). GarageMCPServerService runs
   it on GarageXPCKit (`GarageMCPRustServer`), and the stdio `garage-mcp` launcher runs it in-process (`rust/garage-cli`, below).
+  Its `http::Endpoint` is the streamable transport without a socket (one exchange in, one reply out, sessions
+  kept); `garage_mcp_endpoint_*` exports it and GarageMCPServerService answers it over XPC (`exchange`, with the
+  listener off), for a client that carries MCP's HTTP requests itself: the App Store build's Garage Door tunnel,
+  which lives in garage-enterprise.
 - **The backend** (`rust/garage-service`, [docs/plans/python-removal.md](docs/plans/python-removal.md)) ports
   `garage_rag/service` (GarageService over tokio-postgres + deadpool) one stage at a time: so far the database
   layer (`db.rs`, the app's socket URL), `garage.json` (`config.rs`, `SECTIONS` as data), the migrations, the model

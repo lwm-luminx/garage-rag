@@ -143,6 +143,22 @@ public final class GarageMCPServerClient: @unchecked Sendable {
         }
     }
 
+    /// One HTTP exchange of MCP's streamable transport, answered by the service without its listener
+    /// (`GarageMCPServerServiceProtocol.exchange`): JSON in, JSON out.
+    public func exchange(_ request: Data) async throws -> Data {
+        try await performRemoteCall { proxy, relay in
+            proxy.exchange(request) { data, message in
+                if let data {
+                    relay.resume(returning: data)
+                } else {
+                    relay.resume(throwing: NSError(domain: "GarageMCPServerClient", code: -2, userInfo: [
+                        NSLocalizedDescriptionKey: message ?? "The MCP service answered no exchange",
+                    ]))
+                }
+            }
+        }
+    }
+
     public func clearLogs() async throws -> Bool {
         try await performRemoteCall { proxy, relay in
             proxy.clearLogs { success in
