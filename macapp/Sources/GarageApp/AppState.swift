@@ -7,6 +7,8 @@ import EmbedClient
 import GarageUpdater
 import IngestClient
 import GarageXPCKit
+import GarageAppExtensions
+import GarageAppExtensionKit
 
 private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "me.rickmark.garage-rag", category: "AppState")
 
@@ -347,6 +349,10 @@ final class AppState: ObservableObject {
         guard grpc.status == .running, let options = try? grpc.helperConfiguration() else { return }
         helperConfigurationTask = Task { [xpcServices] in
             await xpcServices.configureHelpers(options)
+            // The build's extensions (none in this repository's builds) start their own work now.
+            for service in GarageAppExtensions.installed.services {
+                service.backendDidStart()
+            }
         }
     }
 
