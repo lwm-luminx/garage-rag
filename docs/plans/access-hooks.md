@@ -3,11 +3,53 @@ layout: default
 title: Access hooks
 description: The seams an extension needs to decide which search results each caller sees, whether the caller is the app, an MCP assistant or a remote client. Garage itself ships no policy, and with no extension installed nothing changes.
 date: 2026-11-02
-status: Proposed (design only, no code yet)
-status_kind: proposed
+status: Active (ported to Rust on 2026-11-06; the policy seam, registration tokens and the hooks on search, document reads and the MCP listings are in review)
+status_kind: active
 ---
 
 # Access hooks
+
+> **Status (2026-11-06): ported to Rust.** This plan was written for the Python backend, which left
+> the app on 2026-11-04 ([the backend in Rust](python-removal.md)). The design holds; its mechanics
+> change as follows, and the text below stays as written.
+>
+> - **The extension is linked, not loaded.** `rust/garage-access` holds `Caller`, `Registration`,
+>   the `AccessPolicy` trait, `SqlFilter`, `NullPolicy` and the `Registry`. GarageService calls
+>   `garage_access_extension::register(&mut Registry)` once per process. A plain build links
+>   `rust/garage-access-none` under that name, which registers nothing; a build with a policy sets
+>   the Bazel label flag `//rust/garage-access:extension` to its own library. There are no entry
+>   points, nothing is `dlopen`ed, and no setting can name an extension, so decision 1 below is
+>   settled by the language: the choice is made at link time. There is no `GARAGE_EXTENSIONS=0`
+>   either, since a switch that turns the policy off would be a way around it.
+> - **One method decides reads.** A policy hides whole documents (the rules plan's decision), so
+>   `AccessPolicy::document_filter(client, caller)` returns a `SqlFilter` over `d` (`documents`) and
+>   `s` (`sources`) only, numbering its own parameters `$1`..`$n` from a closed set of value types.
+>   Every read path puts it inside its own `WHERE` (inside both engines' candidate queries for the
+>   search, with pgvector's `hnsw.iterative_scan = relaxed_order`), so `visible_document_ids` is no
+>   longer a method: a document read checks the same condition, and a hidden document reads exactly
+>   as a missing one. Lifecycle events join the trait with their step (H3), as defaulted methods.
+> - **Callers.** `garage-mcp` already passes `CorpusCaller` (transport, the unverified token, and
+>   request headers) on every `Corpus*` call; GarageService turns it into `Caller::mcp`, keeping
+>   only the headers `caller_headers()` names. The service's own reads are `Caller::app()` when it
+>   can vouch for the caller (the per-launch token or the Unix socket), `Caller::cli()` in `garage`'s
+>   own process, and `Caller::unverified()` otherwise.
+> - **Fail closed.** A policy error fails the read with `UNKNOWN` and "the access policy could not
+>   decide; nothing was read", and the policy's own message goes only to the log.
+> - **The path table is code.** `READ_PATHS` in `rust/garage-service/src/access.rs` places every
+>   method of `proto/garage.proto` as asking, not yet, or not a read, and its test fails on a method
+>   that is not placed. `rust/garage-service/tests/access.rs` hides one document with a test policy
+>   and checks every read that asks.
+>
+> - **Tokens** are as planned (`019_mcp_registrations.sql`, `rust/garage-service/src/registrations.rs`).
+>   A forced re-install keeps the entry's token, so the registration keeps its id and its rules.
+>   With no policy installed, GarageService does not look a token up at all.
+>
+> Done in the first step: the crate and the seam, registration tokens (minted by `McpInstall`,
+> proved on each `Corpus*` read, revoked by `McpUninstall` with `on_registration_removed`),
+> `Search`, `ListDocuments`, `GetDocument` and the five `Corpus*` reads (`rag_search`,
+> `rag_get_document`, `rag_list_sources`, `rag_list_authors`, `rag_stats`, and so `rag_ask` and
+> `rag_agent`, which retrieve through them). Still to come: facts, the graph, `ListSources` and
+> `GetStats`, the other lifecycle events, Reset token and the app's seams.
 
 Every reader of the corpus sees all of it today. The app's Search page, each assistant registered
 on the MCP page, and a remote client reaching `garage-mcp` all get the same results for the same

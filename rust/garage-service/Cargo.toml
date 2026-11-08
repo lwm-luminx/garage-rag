@@ -14,11 +14,14 @@ path = "src/main.rs"
 [dependencies]
 chrono.workspace = true
 deadpool-postgres.workspace = true
+garage-access.workspace = true
+garage-access-extension.workspace = true
 garage-embed.workspace = true
 garage-facade.workspace = true
 garage-ingest.workspace = true
 garage-mcp.workspace = true
 garage-text.workspace = true
+getrandom.workspace = true
 http-body-util.workspace = true
 hyper = { workspace = true, features = ["client"] }
 hyper-util = { workspace = true, features = ["client-legacy", "http1"] }

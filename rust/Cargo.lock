@@ -942,6 +942,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-access"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "tokio-postgres",
+]
+
+[[package]]
+name = "garage-access-none"
+version = "0.1.0"
+dependencies = [
+ "garage-access",
+]
+
+[[package]]
 name = "garage-cli"
 version = "0.1.0"
 dependencies = [
@@ -1111,11 +1126,14 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "deadpool-postgres",
+ "garage-access",
+ "garage-access-none",
  "garage-embed",
  "garage-facade",
  "garage-ingest",
  "garage-mcp",
  "garage-text",
+ "getrandom",
  "http-body-util",
  "hyper",
  "hyper-util",

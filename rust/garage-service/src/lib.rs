@@ -8,6 +8,7 @@
 //!
 //! [docs/plans/python-removal.md]: https://garagerag.app/plans/python-removal/
 
+pub mod access;
 pub mod auth;
 pub mod backfill;
 pub mod catalog;
@@ -27,6 +28,7 @@ pub mod mcp_install;
 pub mod migrate;
 pub mod models;
 pub mod prompts;
+pub mod registrations;
 pub mod registry;
 pub mod revision;
 pub mod schema;
@@ -36,4 +38,6 @@ pub mod service;
 pub mod sources;
 
 pub use error::{Result, ServiceError};
+/// The access hooks' types, for the service's hosts and an extension's tests.
+pub use garage_access;
 pub use service::{GarageService, MAX_REQUEST_BYTES, VERSION};

@@ -5,11 +5,15 @@
 
 use std::sync::Arc;
 
+use garage_access::SqlFilter;
 use serde_json::{Map, Value, json};
 
+use crate::access::{Param, document_condition, refs};
 use crate::db::Client;
+use crate::db::assert_safe_table;
 use crate::error::{Result, ServiceError};
 use crate::models::{count_vectors, list_models};
+use crate::registry::potential_fact_table_name;
 use crate::search::{QueryEmbedder, SearchFilters, corpus_overview, search};
 
 /// Home is collapsed to `~` in returned paths: absolute paths leak the account name into
@@ -91,6 +95,7 @@ pub async fn rag_get_document(
     document_id: Option<i64>,
     location: Option<&str>,
     max_chars: usize,
+    access: Option<&SqlFilter>,
 ) -> Result<Value> {
     let location = location.filter(|l| !l.is_empty());
     if document_id.is_none() && location.is_none() {
@@ -98,15 +103,22 @@ pub async fn rag_get_document(
     }
     let home = home();
     let columns = "id, uri, title, corpus_class::text, trust_tier::text, extractor, byte_size, content";
-    let row = match (document_id, location) {
-        (Some(id), _) => client.query_opt(&format!("SELECT {columns} FROM documents WHERE id = $1"), &[&id]).await?,
-        (None, Some(location)) => {
-            client
-                .query_opt(&format!("SELECT {columns} FROM documents WHERE uri = $1"), &[&untidy(location, &home)])
-                .await?
+    // A document the caller may not see reads exactly as a missing one.
+    let mut params: Vec<Param> = Vec::new();
+    let key = match (document_id, location) {
+        (Some(id), _) => {
+            params.push(Box::new(id));
+            "id"
         }
-        (None, None) => None,
+        (_, location) => {
+            params.push(Box::new(untidy(location.unwrap_or_default(), &home)));
+            "uri"
+        }
     };
+    let visible = document_condition("documents.id", access, &mut params)?;
+    let row = client
+        .query_opt(&format!("SELECT {columns} FROM documents WHERE {key} = $1 AND {visible}"), &refs(&params))
+        .await?;
     let Some(row) = row else {
         let shown = document_id.map_or_else(|| location.unwrap_or_default().to_owned(), |id| id.to_string());
         return Err(ServiceError::invalid(format!("no such document: {shown}")));
@@ -147,18 +159,25 @@ pub async fn rag_get_document(
 /// # Errors
 ///
 /// The server.
-pub async fn rag_list_sources(client: &Client) -> Result<Value> {
+pub async fn rag_list_sources(client: &Client, access: Option<&SqlFilter>) -> Result<Value> {
     let home = home();
+    let mut params: Vec<Param> = Vec::new();
+    let visible = document_condition("d.id", access, &mut params)?;
+    // With a policy, a source shows only when the caller may see one of its documents.
+    let having = if access.is_some() { "HAVING count(DISTINCT d.id) > 0" } else { "" };
     let rows = client
         .query(
-            "SELECT s.slug, s.kind, s.default_class::text, s.default_trust::text, s.root, \
-                    count(DISTINCT d.id) AS documents, count(c.id) AS chunks
-             FROM sources s
-             LEFT JOIN documents d ON d.source_id = s.id AND d.state = 'ok'
-             LEFT JOIN chunks c ON c.document_id = d.id
-             GROUP BY s.id, s.slug, s.kind, s.default_class, s.default_trust, s.root
-             ORDER BY count(DISTINCT d.id) DESC",
-            &[],
+            &format!(
+                "SELECT s.slug, s.kind, s.default_class::text, s.default_trust::text, s.root, \
+                        count(DISTINCT d.id) AS documents, count(c.id) AS chunks
+                 FROM sources s
+                 LEFT JOIN documents d ON d.source_id = s.id AND d.state = 'ok' AND {visible}
+                 LEFT JOIN chunks c ON c.document_id = d.id
+                 GROUP BY s.id, s.slug, s.kind, s.default_class, s.default_trust, s.root
+                 {having}
+                 ORDER BY count(DISTINCT d.id) DESC"
+            ),
+            &refs(&params),
         )
         .await?;
     let sources: Vec<Value> = rows
@@ -183,18 +202,26 @@ pub async fn rag_list_sources(client: &Client) -> Result<Value> {
 /// # Errors
 ///
 /// The server.
-pub async fn rag_list_authors(client: &Client, limit: i64) -> Result<Value> {
+pub async fn rag_list_authors(client: &Client, limit: i64, access: Option<&SqlFilter>) -> Result<Value> {
+    let mut params: Vec<Param> = vec![Box::new(limit)];
+    let visible = document_condition("da.document_id", access, &mut params)?;
+    // With a policy, an author shows only when the caller may see one of their documents, so the
+    // addresses of a hidden mail's sender stay hidden too.
+    let having = if access.is_some() { "HAVING count(DISTINCT da.document_id) > 0" } else { "" };
     let rows = client
         .query(
-            "SELECT a.display_name, a.is_self, count(DISTINCT da.document_id) AS documents, \
-                    array_agg(DISTINCT ai.kind || ':' || ai.value) FILTER (WHERE ai.id IS NOT NULL) AS identities
-             FROM authors a
-             LEFT JOIN document_authors da ON da.author_id = a.id
-             LEFT JOIN author_identities ai ON ai.author_id = a.id
-             GROUP BY a.id, a.display_name, a.is_self
-             ORDER BY count(DISTINCT da.document_id) DESC, a.display_name
-             LIMIT $1",
-            &[&limit],
+            &format!(
+                "SELECT a.display_name, a.is_self, count(DISTINCT da.document_id) AS documents, \
+                        array_agg(DISTINCT ai.kind || ':' || ai.value) FILTER (WHERE ai.id IS NOT NULL) AS identities
+                 FROM authors a
+                 LEFT JOIN document_authors da ON da.author_id = a.id AND {visible}
+                 LEFT JOIN author_identities ai ON ai.author_id = a.id
+                 GROUP BY a.id, a.display_name, a.is_self
+                 {having}
+                 ORDER BY count(DISTINCT da.document_id) DESC, a.display_name
+                 LIMIT $1"
+            ),
+            &refs(&params),
         )
         .await?;
     let authors: Vec<Value> = rows
@@ -211,21 +238,58 @@ pub async fn rag_list_authors(client: &Client, limit: i64) -> Result<Value> {
     Ok(json!({"count": authors.len(), "authors": authors}))
 }
 
+/// `sql`'s count, with `{visible}` replaced by the condition on `column` for what `access` lets
+/// through.
+async fn count(client: &Client, sql: &str, column: &str, access: Option<&SqlFilter>) -> Result<i64> {
+    let mut params: Vec<Param> = Vec::new();
+    let visible = document_condition(column, access, &mut params)?;
+    Ok(client.query_one(&sql.replace("{visible}", &visible), &refs(&params)).await?.get(0))
+}
+
+/// The vectors under the model whose table is `table_name` that belong to documents the caller may
+/// see: its chunks' and its potential facts'.
+async fn count_visible_vectors(client: &Client, table_name: &str, access: Option<&SqlFilter>) -> Result<i64> {
+    let table = assert_safe_table(table_name)?;
+    let facts = potential_fact_table_name(table)?;
+    let mut params: Vec<Param> = Vec::new();
+    let visible = document_condition("c.document_id", access, &mut params)?;
+    let exists: bool = client.query_one(&format!("SELECT to_regclass('{facts}') IS NOT NULL"), &[]).await?.get(0);
+    let fact_count = if exists {
+        format!(" + (SELECT count(*) FROM {facts} e JOIN chunks c ON c.fact_id = e.fact_id WHERE {visible})")
+    } else {
+        String::new()
+    };
+    let sql = format!(
+        "SELECT (SELECT count(*) FROM {table} e JOIN chunks c ON c.id = e.chunk_id WHERE {visible}){fact_count}"
+    );
+    Ok(client.query_one(&sql, &refs(&params)).await?.get(0))
+}
+
 /// `rag_stats`: size, composition and embedding coverage.
 ///
 /// # Errors
 ///
 /// The server.
-pub async fn rag_stats(client: &Client) -> Result<Value> {
-    let documents: i64 = client.query_one("SELECT count(*) FROM documents WHERE state = 'ok'", &[]).await?.get(0);
-    let chunks: i64 = client.query_one("SELECT count(*) FROM chunks", &[]).await?.get(0);
-    let authors: i64 = client.query_one("SELECT count(*) FROM authors", &[]).await?.get(0);
-    let pending: i64 =
-        client.query_one("SELECT count(*) FROM documents WHERE state = 'placeholder'", &[]).await?.get(0);
-    let overview = corpus_overview(client).await?;
+pub async fn rag_stats(client: &Client, access: Option<&SqlFilter>) -> Result<Value> {
+    let documents =
+        count(client, "SELECT count(*) FROM documents WHERE state = 'ok' AND {visible}", "id", access).await?;
+    let chunks = count(client, "SELECT count(*) FROM chunks WHERE {visible}", "document_id", access).await?;
+    // With a policy, the authors of documents the caller may see; without one, every author.
+    let authors = if access.is_some() {
+        count(client, "SELECT count(DISTINCT author_id) FROM document_authors WHERE {visible}", "document_id", access)
+            .await?
+    } else {
+        count(client, "SELECT count(*) FROM authors", "id", None).await?
+    };
+    let pending =
+        count(client, "SELECT count(*) FROM documents WHERE state = 'placeholder' AND {visible}", "id", access).await?;
+    let overview = corpus_overview(client, access).await?;
     let mut models: Vec<Value> = Vec::new();
     for m in list_models(client).await? {
-        let have = count_vectors(client, &m.table_name).await?;
+        let have = match access {
+            None => count_vectors(client, &m.table_name).await?,
+            Some(_) => count_visible_vectors(client, &m.table_name, access).await?,
+        };
         models.push(json!({
             "slug": m.slug,
             "dims": m.dims,

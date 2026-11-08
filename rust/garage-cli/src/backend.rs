@@ -113,7 +113,8 @@ impl Backend {
         let service = GarageService::new(config.clone(), embedder, sql_dir(None), true)
             .map_err(|e| Failure::usage(format!("[red]config error[/red]: {e}")))?
             .with_extractor(Arc::new(LangExtractor::new(host.clone())))
-            .with_host(host);
+            .with_host(host)
+            .with_local_caller(garage_service::garage_access::Caller::cli());
         let folder = std::env::temp_dir().join(format!("garage-cli-{}", std::process::id()));
         let socket = folder.join("grpc");
         let endpoint = Endpoint::Unix(socket.clone());
