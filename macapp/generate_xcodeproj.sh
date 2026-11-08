@@ -15,7 +15,8 @@
 # Another repository's project (garage-enterprise's) runs this script too, naming its own project
 # and UI test targets: GARAGE_XCODEPROJ (the .xcodeproj, relative to the workspace),
 # GARAGE_XCODEPROJ_UITESTS (a regular expression for the UI test targets' names) and
-# GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS (the runners' entitlements, absolute).
+# GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS (the runners' entitlements, absolute or relative to the
+# workspace).
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -29,7 +30,11 @@ shift
 
 pbxproj="$BUILD_WORKSPACE_DIRECTORY/${GARAGE_XCODEPROJ:-macapp/Garage.xcodeproj}/project.pbxproj"
 uitests="${GARAGE_XCODEPROJ_UITESTS:-GarageApp(Model)?UITests}"
-runner_entitlements="${GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS:-$BUILD_WORKSPACE_DIRECTORY/macapp/Tests/GarageAppUITests/Runner.entitlements}"
+runner_entitlements="${GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS:-macapp/Tests/GarageAppUITests/Runner.entitlements}"
+case "$runner_entitlements" in
+  /*) ;;
+  *) runner_entitlements="$BUILD_WORKSPACE_DIRECTORY/$runner_entitlements" ;;
+esac
 # The installer leaves the project read-only.
 chmod u+w "$pbxproj"
 
