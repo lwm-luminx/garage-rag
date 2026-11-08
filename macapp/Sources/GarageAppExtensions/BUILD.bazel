@@ -1,0 +1,13 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# The default behind //macapp/Sources/GarageApp:extensions: no extensions. Every build of this
+# repository links this one. A repository that builds signed distributions on //bazel:platforms.bzl
+# may name its own swift_library with the same module name, `GarageAppExtensions`, exporting
+# `GarageAppExtensions.installed`, through signed_macos_platform's `app_extensions`.
+swift_library(
+    name = "none",
+    srcs = ["GarageAppExtensions.swift"],
+    module_name = "GarageAppExtensions",
+    visibility = ["//visibility:public"],
+    deps = ["//macapp/Sources/GarageAppExtensionKit"],
+)

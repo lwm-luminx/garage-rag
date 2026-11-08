@@ -804,7 +804,10 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   checked in (RELEASING.md, "GitHub release"). This repository keeps the seam they plug
   into, `bazel/platforms.bzl`: `signed_macos_platform` sets rules_apple's `signing_certificate_name`,
   `//bazel:distribution` (`developer_id` | `store`, behind `//bazel:is_developer_id` / `is_store`) and
-  the three provisioning-profile label flags; `codesign` targets name no identity and take the flag's.
+  the three provisioning-profile label flags, and optionally Garage.app's entitlements per distribution and a
+  `GarageAppExtensions` Swift module (`//macapp/Sources/GarageApp:extensions`, contract in
+  `macapp/Sources/GarageAppExtensionKit`; builds here link the empty one), which is how the store build adds
+  its closed features; `codesign` targets name no identity and take the flag's.
   Builds here sign with the best identity the keychain has (`//bazel:local_auto`, the default;
   `bazel/signing_identity.bzl`): an Apple Development certificate (Team ID, no profile, no hardened
   runtime; `//bazel:is_local_development`, and the App Group too when it is the group's team,

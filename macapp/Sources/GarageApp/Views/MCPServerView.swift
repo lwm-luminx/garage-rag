@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import GarageAppExtensionKit
+import GarageAppExtensions
 import GarageXPCKit
 
 /// One citation in a `rag_ask` result.
@@ -71,6 +73,7 @@ struct MCPServerView: View {
                 serverSection
                 assistantsSection
                 tryItSection
+                extensionPanels
                 serverOutputSection
             }
             .padding(20)
@@ -88,6 +91,18 @@ struct MCPServerView: View {
             if status == .running {
                 checkServer()
             }
+        }
+    }
+
+    // MARK: - Extensions
+
+    /// The panels the build's extensions add (none in this repository's builds).
+    @ViewBuilder
+    private var extensionPanels: some View {
+        let context = GarageAppExtensionContext(mcpHTTPEndpoint: isRunning ? appState.mcp.endpoint : nil)
+        let panels = GarageAppExtensions.installed.mcpServerPanels
+        ForEach(panels.indices, id: \.self) { index in
+            panels[index].makeView(context: context)
         }
     }
 

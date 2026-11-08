@@ -30,7 +30,20 @@ exports_files(
         "PrivacyInfo.xcprivacy",
         "link_launchers.sh",
     ],
-    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
+    # //bazel: the entitlements are the defaults of its store_app_entitlements and
+    # developer_id_app_entitlements flags.
+    visibility = [
+        "//bazel:__pkg__",
+        "//macapp/Tests/GarageAppModelUITests:__pkg__",
+    ],
+)
+
+# The extensions the app links in: none (//macapp/Sources/GarageAppExtensions:none) unless a
+# signed platform names others (signed_macos_platform's `app_extensions`, //bazel:platforms.bzl).
+label_flag(
+    name = "extensions",
+    build_setting_default = "//macapp/Sources/GarageAppExtensions:none",
+    visibility = ["//visibility:public"],
 )
 
 swift_library(
@@ -39,7 +52,9 @@ swift_library(
     module_name = "GarageApp",
     visibility = ["//visibility:public"],
     deps = [
+        ":extensions",
         "//macapp/Sources/EmbedClient",
+        "//macapp/Sources/GarageAppExtensionKit",
         "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCServiceCore",
         "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCServiceCore",
         "//macapp/Sources/GarageUpdater",
