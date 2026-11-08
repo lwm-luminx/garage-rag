@@ -32,7 +32,8 @@ extern "C" {
 typedef int32_t (*GarageMcpHostCall)(void *context, const char *request, char **reply);
 
 // The process the server runs in. Its functions may be called from any thread, several at once,
-// and `context` must stay valid until garage_mcp_http_stop returns (or garage_mcp_handle does).
+// and `context` must stay valid until garage_mcp_http_stop returns (or garage_mcp_handle does, or
+// garage_mcp_endpoint_free).
 typedef struct GarageMcpHost {
     void *context;
     // An HTTP request to the local model's server, already approved by the egress rules:
@@ -70,6 +71,23 @@ void garage_mcp_http_stop(GarageMcpHttpServer *server);
 // {"grpc": {...}, "message": {...}, "transport": "stdio" | "http", "registration_token": ...}
 // -> {"reply": the reply, or null for a notification}.
 int32_t garage_mcp_handle(const char *request, const GarageMcpHost *host, char **result);
+
+typedef struct GarageMcpEndpoint GarageMcpEndpoint;
+
+// The streamable HTTP transport without a listener, for a host that carries MCP's HTTP exchanges
+// over its own channel: {"grpc": {...}} -> {}, with *endpoint set; or {"error"}.
+int32_t garage_mcp_endpoint_new(const char *request, const GarageMcpHost *host, GarageMcpEndpoint **endpoint,
+                                char **result);
+
+// Answers one HTTP exchange, blocking while a tool runs; calls may come from several threads:
+// {"method": "POST" | "DELETE" | ..., "headers": {name: value}, "body": string}
+// -> {"status": int, "headers": {name: value} (lower-case names), "body": string}.
+// Sessions start at `initialize` and live in the endpoint. The listener's Host and Origin
+// (DNS-rebinding) checks do not apply.
+int32_t garage_mcp_endpoint_exchange(const GarageMcpEndpoint *endpoint, const char *request, char **result);
+
+// Frees the endpoint and its sessions; no exchange may be running on it.
+void garage_mcp_endpoint_free(GarageMcpEndpoint *endpoint);
 
 // Frees a result string from this library.
 void garage_mcp_string_free(char *text);

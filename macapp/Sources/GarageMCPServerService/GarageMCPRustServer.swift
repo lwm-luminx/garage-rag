@@ -138,6 +138,55 @@ final class GarageMCPRustServer: @unchecked Sendable {
     }
 }
 
+/// The streamable HTTP transport without a listener (`garage_mcp_endpoint_*`): one exchange in, one
+/// reply out, with the sessions kept here. Exchanges may run on several threads at once; the
+/// endpoint is freed when the last reference goes, so an exchange in flight keeps it alive.
+final class GarageMCPRustEndpoint: @unchecked Sendable {
+    private let host: GarageMCPServerHost
+    private let endpoint: OpaquePointer
+    let target: GarageMCPRustServer.GRPCTarget
+    let token: String?
+
+    init(grpc: GarageMCPRustServer.GRPCTarget, token: String?, host: GarageMCPServerHost = GarageMCPServerHost()) throws {
+        let request: [String: Any] = ["grpc": grpc.json(token: token)]
+        let text = String(decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+        var cHost = host.cHost
+        var endpoint: OpaquePointer?
+        var result: UnsafeMutablePointer<CChar>?
+        let status = text.withCString { garage_mcp_endpoint_new($0, &cHost, &endpoint, &result) }
+        let reply = result.map { String(cString: $0) } ?? ""
+        garage_mcp_string_free(result)
+        guard status == GARAGE_MCP_OK, let endpoint else {
+            let object = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any] ?? [:]
+            throw GarageMCPRustServer.Failure(message: object["error"] as? String ?? "the MCP endpoint was not made (\(status))")
+        }
+        self.host = host
+        self.endpoint = endpoint
+        self.target = grpc
+        self.token = token
+    }
+
+    deinit {
+        garage_mcp_endpoint_free(endpoint)
+    }
+
+    /// Answers one exchange (UTF-8 JSON in and out), blocking while a tool runs.
+    func exchange(_ request: Data) throws -> Data {
+        var result: UnsafeMutablePointer<CChar>?
+        let text = String(decoding: request, as: UTF8.self)
+        let status = withExtendedLifetime(host) {
+            text.withCString { garage_mcp_endpoint_exchange(endpoint, $0, &result) }
+        }
+        let reply = result.map { String(cString: $0) } ?? ""
+        garage_mcp_string_free(result)
+        guard status == GARAGE_MCP_OK else {
+            let object = (try? JSONSerialization.jsonObject(with: Data(reply.utf8))) as? [String: Any] ?? [:]
+            throw GarageMCPRustServer.Failure(message: object["error"] as? String ?? "the MCP endpoint failed (\(status))")
+        }
+        return Data(reply.utf8)
+    }
+}
+
 /// The process the MCP server runs in, as the server sees it (`GarageMcpHost`): it carries the local
 /// model's requests, which the server's egress rules approved, through the embed worker's host, and
 /// loads llama_xpc models on demand. Its calls may come from any thread, several at once.

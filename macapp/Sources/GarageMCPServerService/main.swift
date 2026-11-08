@@ -92,6 +92,13 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
         (self?.grpc, self?.configurationValue(GarageXPCConfigurationKey.grpcToken))
     }
 
+    /// The listener-free transport `exchange` answers through, made on first use and again when
+    /// GarageService's address or token changes.
+    private let endpointLock = NSLock()
+    private var endpoint: GarageMCPRustEndpoint?
+    /// Exchanges block while a tool runs, so each runs off the XPC queue, several at once.
+    private let exchangeQueue = DispatchQueue(label: "me.rickmark.garage-rag.mcp-server-xpc.exchange", attributes: .concurrent)
+
     init() {
         super.init(serviceName: "GarageMCPServerService", logFileName: "mcp-server-xpc.log")
     }
@@ -221,6 +228,36 @@ final class GarageMCPServerServiceDelegate: GarageXPCServiceBase, GarageMCPServe
 
     func isServerRunning(with reply: @escaping (Bool) -> Void) {
         reply(mcpServer.isRunning)
+    }
+
+    func exchange(_ request: Data, with reply: @escaping (Data?, String?) -> Void) {
+        exchangeQueue.async { [weak self] in
+            guard let self else {
+                reply(nil, "The MCP service is shutting down")
+                return
+            }
+            do {
+                reply(try self.currentEndpoint().exchange(request), nil)
+            } catch {
+                logger.error("MCP exchange failed: \(error.localizedDescription, privacy: .public)")
+                reply(nil, error.localizedDescription)
+            }
+        }
+    }
+
+    private func currentEndpoint() throws -> GarageMCPRustEndpoint {
+        guard let target = grpc else {
+            throw GarageXPCServiceError.notRunning("The app has not told the MCP service where GarageService listens yet")
+        }
+        let token = configurationValue(GarageXPCConfigurationKey.grpcToken)
+        endpointLock.lock()
+        defer { endpointLock.unlock() }
+        if let endpoint, endpoint.target == target, endpoint.token == token {
+            return endpoint
+        }
+        let made = try GarageMCPRustEndpoint(grpc: target, token: token)
+        endpoint = made
+        return made
     }
 }
 
