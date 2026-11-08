@@ -11,6 +11,11 @@
 # DONT_RUN_SWIFT_STDLIB_TOOL: Xcode's CopySwiftLibs step scans every file under
 # Contents/Frameworks for Swift runtime dependencies. Bazel has already built the
 # bundle, and the Swift runtime ships with macOS 14, so the step has nothing to copy.
+#
+# Another repository's project (garage-enterprise's) runs this script too, naming its own project
+# and UI test targets: GARAGE_XCODEPROJ (the .xcodeproj, relative to the workspace),
+# GARAGE_XCODEPROJ_UITESTS (a regular expression for the UI test targets' names) and
+# GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS (the runners' entitlements, absolute).
 set -euo pipefail
 
 if [ "$#" -lt 1 ]; then
@@ -22,7 +27,9 @@ installer="$1"
 shift
 "$installer" "$@"
 
-pbxproj="$BUILD_WORKSPACE_DIRECTORY/macapp/Garage.xcodeproj/project.pbxproj"
+pbxproj="$BUILD_WORKSPACE_DIRECTORY/${GARAGE_XCODEPROJ:-macapp/Garage.xcodeproj}/project.pbxproj"
+uitests="${GARAGE_XCODEPROJ_UITESTS:-GarageApp(Model)?UITests}"
+runner_entitlements="${GARAGE_XCODEPROJ_RUNNER_ENTITLEMENTS:-$BUILD_WORKSPACE_DIRECTORY/macapp/Tests/GarageAppUITests/Runner.entitlements}"
 # The installer leaves the project read-only.
 chmod u+w "$pbxproj"
 
@@ -51,18 +58,18 @@ done
 # unsandboxed builds, and the App Group container for the sandboxed store build. The group needs
 # the team that owns it (an ad hoc signature leaves the runner out of it, and setup fails with Cocoa
 # error 513). Only these targets' build settings change.
-/usr/bin/python3 - "$pbxproj" "$BUILD_WORKSPACE_DIRECTORY/macapp/Tests/GarageAppUITests/Runner.entitlements" <<'PY'
+/usr/bin/python3 - "$pbxproj" "$runner_entitlements" "$uitests" <<'PY'
 import re
 import sys
 
-path, entitlements = sys.argv[1], sys.argv[2]
+path, entitlements, uitests = sys.argv[1], sys.argv[2], sys.argv[3]
 settings = {
     "CODE_SIGN_ENTITLEMENTS": f'"{entitlements}"',
     "CODE_SIGN_IDENTITY": '"Apple Development"',
     "DEVELOPMENT_TEAM": "DWVXMLB45Y",
 }
 text = open(path).read()
-target = re.compile(r'BAZEL_LABEL = "[^"]*:GarageApp(Model)?UITests";|PRODUCT_NAME = GarageApp(Model)?UITests;')
+target = re.compile(rf'BAZEL_LABEL = "[^"]*:(?:{uitests})";|PRODUCT_NAME = (?:{uitests});')
 changed = 0
 
 
@@ -87,5 +94,5 @@ if changed == 0:
           file=sys.stderr)
 else:
     open(path, "w").write(text)
-    print(f"GarageAppUITests, GarageAppModelUITests: App Group entitlements and team signing in {changed} configuration(s)")
+    print(f"UI test runners ({uitests}): App Group entitlements and team signing in {changed} configuration(s)")
 PY
