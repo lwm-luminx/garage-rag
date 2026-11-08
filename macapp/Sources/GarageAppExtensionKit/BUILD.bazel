@@ -1,0 +1,11 @@
+load("@rules_swift//swift:swift.bzl", "swift_library")
+
+# The contract between the app and the extensions another repository links into a signed build
+# (`GarageAppExtensions`, behind //macapp/Sources/GarageApp:extensions): what an extension may add
+# to the app's pages and what the app tells it. Nothing here does anything on its own.
+swift_library(
+    name = "GarageAppExtensionKit",
+    srcs = glob(["*.swift"]),
+    module_name = "GarageAppExtensionKit",
+    visibility = ["//visibility:public"],
+)

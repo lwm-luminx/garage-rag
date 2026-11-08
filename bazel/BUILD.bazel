@@ -61,6 +61,19 @@ filegroup(
     srcs = [],
 )
 
+# Garage.app's entitlements under each signed distribution: this repository's files unless the
+# platform names its own (signed_macos_platform's `app_entitlements`), for a capability only that
+# repository's App ID and profiles carry.
+label_flag(
+    name = "store_app_entitlements",
+    build_setting_default = "//macapp/Sources/GarageApp:Garage.entitlements",
+)
+
+label_flag(
+    name = "developer_id_app_entitlements",
+    build_setting_default = "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
+)
+
 # Keyed on build settings rather than on a constraint_value, because a build setting survives
 # rules_apple's platform transition (it rewrites --platforms to @apple_support//platforms:macos_*
 # underneath every apple_* rule) while a constraint_value does not.
