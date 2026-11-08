@@ -21,21 +21,25 @@ exports_files(
     visibility = ["//macapp/Tests/GarageAppUnitTests:__pkg__"],
 )
 
+# The signed distributions' entitlements: the defaults of //bazel's store_app_entitlements and
+# developer_id_app_entitlements flags, and what a signed platform's own file (its `app_entitlements`)
+# is checked against.
+exports_files(
+    [
+        "Garage.entitlements",
+        "GarageDeveloperID.entitlements",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 exports_files(
     [
         "ExportCompliance.plist",
-        "Garage.entitlements",
-        "GarageDeveloperID.entitlements",
         "Info.plist",
         "PrivacyInfo.xcprivacy",
         "link_launchers.sh",
     ],
-    # //bazel: the entitlements are the defaults of its store_app_entitlements and
-    # developer_id_app_entitlements flags.
-    visibility = [
-        "//bazel:__pkg__",
-        "//macapp/Tests/GarageAppModelUITests:__pkg__",
-    ],
+    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
 )
 
 # The extensions the app links in: none (//macapp/Sources/GarageAppExtensions:none) unless a
