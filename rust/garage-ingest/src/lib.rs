@@ -20,6 +20,7 @@ pub mod dropbox;
 pub mod facade;
 pub mod feed;
 pub mod fnmatch;
+pub mod gmail;
 pub mod google_drive;
 pub mod history;
 pub mod materialize;
@@ -47,9 +48,9 @@ pub use scanner::{ScanOptions, ScanResult, scan_source};
 pub use walk::{Candidate, WalkOptions, WalkStats, Walked, default_exclude_prefixes, root_problem, walk, walk_while};
 
 /// Whether a source of `kind` is read through a cloud service's API rather than from disk
-/// ([`dropbox`], [`onedrive`], [`outlook`], [`google_drive`]): its root names a folder in the service, and
-/// nothing is walked.
+/// ([`dropbox`], [`onedrive`], [`outlook`], [`google_drive`], [`gmail`]): its root names a folder or label
+/// in the service, and nothing is walked.
 #[must_use]
 pub fn is_cloud_kind(kind: &str) -> bool {
-    [dropbox::KIND, onedrive::KIND, outlook::KIND, google_drive::KIND].contains(&kind)
+    [dropbox::KIND, onedrive::KIND, outlook::KIND, google_drive::KIND, gmail::KIND].contains(&kind)
 }

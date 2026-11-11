@@ -418,7 +418,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive"
+            "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive | gmail"
           },
           "class": {
             "type": "string",
