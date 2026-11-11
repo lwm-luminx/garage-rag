@@ -399,7 +399,7 @@ fn item_type(kind: &str) -> &'static str {
     match kind {
         "filesystem" | "git" | "dropbox" | "onedrive" => "files",
         "sqlite" => "records",
-        "maildir" => "messages",
+        "maildir" | "outlook" => "messages",
         "feed" => "entries",
         _ => "items",
     }
@@ -415,8 +415,8 @@ pub fn scan_source(
     ticker: &mut Ticker<'_>,
 ) -> ScanResult {
     if crate::is_cloud_kind(kind) {
-        // A cloud source (Dropbox, OneDrive) is listed, and counted, when it is ingested.
-        let mut result = ScanResult::new(source_slug, kind, root, "files");
+        // A cloud source (Dropbox, OneDrive, Outlook) is listed, and counted, when it is ingested.
+        let mut result = ScanResult::new(source_slug, kind, root, item_type(kind));
         result.details.insert("remote".to_owned(), json!(kind));
         return result;
     }

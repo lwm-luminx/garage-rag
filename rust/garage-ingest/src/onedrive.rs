@@ -45,9 +45,9 @@ const RATE_LIMIT_TRIES: u32 = 4;
 /// The longest wait honoured between them.
 const LONGEST_WAIT: Duration = Duration::from_secs(60);
 /// How long one listing call may take.
-const LIST_TIMEOUT: Duration = Duration::from_secs(60);
+pub(crate) const LIST_TIMEOUT: Duration = Duration::from_secs(60);
 /// How long one download may take.
-const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
+pub(crate) const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Approves a request's destination: Graph's drive routes (`/v1.0/me/drive/`, `/v1.0/drives/`) and
 /// the content hosts a download redirects to, over HTTPS on the default port. Anything else is
@@ -234,17 +234,35 @@ impl std::fmt::Display for ApiError {
     }
 }
 
-/// Graph's calls, with the token, the refresh after a 401 and the waits Graph asks for.
+/// Graph's calls, with the token, the refresh after a 401 and the waits Graph asks for. A OneDrive
+/// source's by default; [`crate::outlook`] makes one for its own routes with [`Client::for_service`].
 pub struct Client<'h> {
     host: &'h mut dyn RemoteHost,
     slug: String,
     token: Option<String>,
+    service: &'static str,
+    label: &'static str,
+    check: fn(&str) -> Result<(), String>,
+    headers: Vec<(String, String)>,
 }
 
 impl<'h> Client<'h> {
-    /// A client for the source `slug`, asking `host` for its token when first needed.
+    /// A client for the OneDrive source `slug`, asking `host` for its token when first needed.
     pub fn new(host: &'h mut dyn RemoteHost, slug: &str) -> Self {
-        Self { host, slug: slug.to_owned(), token: None }
+        Self::for_service(host, slug, KIND, "OneDrive", check_destination, Vec::new())
+    }
+
+    /// A Graph client for another source kind: its token is asked for as `service`, every URL must pass
+    /// `check`, its errors name `label`, and `headers` go on every signed request.
+    pub(crate) fn for_service(
+        host: &'h mut dyn RemoteHost,
+        slug: &str,
+        service: &'static str,
+        label: &'static str,
+        check: fn(&str) -> Result<(), String>,
+        headers: Vec<(String, String)>,
+    ) -> Self {
+        Self { host, slug: slug.to_owned(), token: None, service, label, check, headers }
     }
 
     /// The host, between calls.
@@ -254,8 +272,8 @@ impl<'h> Client<'h> {
 
     /// A `GET` of `url`, with the bearer token when `signed` (Graph) and without it (a content host's
     /// pre-authenticated URL). Returns a 2xx or 3xx reply; anything else is the error.
-    fn get(&mut self, url: &str, signed: bool, timeout: Duration) -> Result<HttpResponse, ApiError> {
-        check_destination(url).map_err(ApiError::Other)?;
+    pub(crate) fn get(&mut self, url: &str, signed: bool, timeout: Duration) -> Result<HttpResponse, ApiError> {
+        (self.check)(url).map_err(ApiError::Other)?;
         let mut refreshed = false;
         let mut tries = 0;
         loop {
@@ -264,14 +282,16 @@ impl<'h> Client<'h> {
                 let token = if let Some(token) = &self.token {
                     token.clone()
                 } else {
-                    let token = self.host.access_token(KIND, &self.slug, refreshed).map_err(ApiError::Other)?;
+                    let token = self.host.access_token(self.service, &self.slug, refreshed).map_err(ApiError::Other)?;
                     self.token = Some(token.clone());
                     token
                 };
                 headers.push(("Authorization".to_owned(), format!("Bearer {token}")));
+                headers.extend(self.headers.iter().cloned());
             }
             let request = HttpRequest { method: "GET", url: url.to_owned(), headers, body: Vec::new(), timeout };
-            let response = self.host.send(&request).map_err(|error| ApiError::Other(format!("OneDrive: {error}")))?;
+            let label = self.label;
+            let response = self.host.send(&request).map_err(|error| ApiError::Other(format!("{label}: {error}")))?;
             match response.status {
                 200..=399 => return Ok(response),
                 401 if signed && !refreshed => {
@@ -287,18 +307,19 @@ impl<'h> Client<'h> {
                         .min(LONGEST_WAIT);
                     self.host.wait(wait);
                 }
-                _ => return Err(api_error(&response)),
+                _ => return Err(api_error(&response, self.label)),
             }
         }
     }
 
-    fn json(&mut self, url: &str) -> Result<Value, ApiError> {
+    pub(crate) fn json(&mut self, url: &str) -> Result<Value, ApiError> {
         let reply = self.get(url, true, LIST_TIMEOUT)?;
+        let label = self.label;
         if reply.status != 200 {
-            return Err(ApiError::Other(format!("OneDrive answered a listing with {}", reply.status)));
+            return Err(ApiError::Other(format!("{label} answered a listing with {}", reply.status)));
         }
         serde_json::from_slice(&reply.body)
-            .map_err(|error| ApiError::Other(format!("OneDrive sent a listing that is not JSON: {error}")))
+            .map_err(|error| ApiError::Other(format!("{label} sent a listing that is not JSON: {error}")))
     }
 
     /// Lists every file below `root` (an API root, `""` for the whole drive), folder by folder;
@@ -380,11 +401,11 @@ impl<'h> Client<'h> {
     }
 }
 
-fn header<'r>(response: &'r HttpResponse, name: &str) -> Option<&'r str> {
+pub(crate) fn header<'r>(response: &'r HttpResponse, name: &str) -> Option<&'r str> {
     response.headers.iter().find(|(key, _)| key.eq_ignore_ascii_case(name)).map(|(_, value)| value.as_str())
 }
 
-fn api_error(response: &HttpResponse) -> ApiError {
+fn api_error(response: &HttpResponse, label: &str) -> ApiError {
     let body: Value = serde_json::from_slice(&response.body).unwrap_or(Value::Null);
     let code = body.pointer("/error/code").and_then(Value::as_str).unwrap_or_default();
     let message = body
@@ -392,17 +413,17 @@ fn api_error(response: &HttpResponse) -> ApiError {
         .and_then(Value::as_str)
         .map_or_else(|| String::from_utf8_lossy(&response.body).chars().take(200).collect(), str::to_owned);
     if response.status == 404 || code == "itemNotFound" {
-        return ApiError::NotFound(format!("not in the OneDrive ({message})"));
+        return ApiError::NotFound(format!("{label} has no such item ({message})"));
     }
     let what = match response.status {
-        401 => "OneDrive refused the access token",
-        403 => "OneDrive refused the request",
-        429 => "OneDrive is rate limiting this app",
-        400 => "OneDrive rejected the request",
-        _ => "OneDrive answered",
+        401 => "refused the access token",
+        403 => "refused the request",
+        429 => "is rate limiting this app",
+        400 => "rejected the request",
+        _ => "answered",
     };
     let detail = if code.is_empty() { message } else { format!("{code}: {message}") };
-    ApiError::Other(format!("{what} ({}): {detail}", response.status))
+    ApiError::Other(format!("{label} {what} ({}): {detail}", response.status))
 }
 
 /// Whether the walker's rules descend into the folder at `path` (below `root`); a folder they skip

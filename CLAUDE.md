@@ -248,7 +248,10 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   which only the App Store build's extensions fill, signed in through Garage Door, which holds no token) and a
   OneDrive source read through Microsoft Graph (`onedrive.rs`, kind `onedrive`: the folder's tree listed child by
   child, a download fetched from the pre-authenticated URL Graph redirects to, without the token, and checked against
-  its QuickXorHash; the same host calls, the token asked for with `"service": "onedrive"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  its QuickXorHash; the same host calls, the token asked for with `"service": "onedrive"`) and an Outlook mailbox
+  through Graph (`outlook.rs`, kind `outlook`: a mail folder and the folders below it, or the whole mailbox for `/`,
+  each new or changed message downloaded as MIME with Graph's immutable id as its URI and read by the mail reader as a
+  `communication`; `"service": "outlook"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`). `garage_ingest_run_source` runs a whole source,
