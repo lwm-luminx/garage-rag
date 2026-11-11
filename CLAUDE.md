@@ -245,7 +245,10 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   stat, downloaded into memory, checked against Dropbox's content hash and read with `Readers::read_bytes`; the
   host carries each request after `dropbox::check_destination` approved it and supplies the access token,
   `garage_ingest.h`'s `http` and `access_token`; the Swift host takes the token from `GarageCloudCredentials`,
-  which only the App Store build's extensions fill, signed in through Garage Door, which holds no token), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  which only the App Store build's extensions fill, signed in through Garage Door, which holds no token) and a
+  OneDrive source read through Microsoft Graph (`onedrive.rs`, kind `onedrive`: the folder's tree listed child by
+  child, a download fetched from the pre-authenticated URL Graph redirects to, without the token, and checked against
+  its QuickXorHash; the same host calls, the token asked for with `"service": "onedrive"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`). `garage_ingest_run_source` runs a whole source,

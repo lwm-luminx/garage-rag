@@ -95,7 +95,8 @@ pub trait SourceHost: FileHost {
         (0, 0)
     }
 
-    /// The host's Dropbox side, for a Dropbox source ([`crate::dropbox`]); none by default.
+    /// The host's cloud side, for a Dropbox or OneDrive source ([`crate::dropbox`], [`crate::onedrive`]);
+    /// none by default.
     fn remote(&mut self) -> Option<&mut dyn crate::dropbox::RemoteHost> {
         None
     }

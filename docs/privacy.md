@@ -212,6 +212,20 @@ only relaying Dropbox's answer sealed to that node, and keeps and refreshes the 
 holds no token and never sees a file. A build with no token provider (this repository's own
 builds, the CLI and the Windows app, so far) reports a Dropbox source as unavailable.
 
+## OneDrive sources
+
+A OneDrive source (kind `onedrive`, personal OneDrive or OneDrive for Business) reads the drive
+through Microsoft Graph the same way: Garage lists the folder child by child, skipping the folders
+the walker would skip without listing them, and downloads only a file that is new or changed. The
+signed requests go to `https://graph.microsoft.com/v1.0/me/drive/` (and `/v1.0/drives/` for Graph's
+next-page links) and nowhere else (`garage-ingest`'s `onedrive::check_destination`, checked again by
+the host). Graph answers a download with a redirect to a pre-authenticated URL on Microsoft's content
+hosts (`*.sharepoint.com`, `*.1drv.com`, `*.livefilestore.com`, `*.microsoftpersonalcontent.com`);
+the host never follows it, and Garage fetches that URL itself, after the same check, without the
+access token. A download is checked against OneDrive's QuickXorHash and kept in memory only. The
+token comes from the process that runs ingest, as for Dropbox: in the App Store build the node links
+its Microsoft account through Garage Door, which only relays Microsoft's answer sealed to that node.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,

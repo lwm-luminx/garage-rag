@@ -151,12 +151,12 @@ final class GarageIngestRunner {
         }
     }
 
-    /// A Dropbox source's requests (`http`), over URLSession.
+    /// A cloud source's requests (`http`: Dropbox, OneDrive), over URLSession.
     private static let httpEntry: GarageIngestHostCall = { _, request, reply in
-        answer(request, reply) { try GarageDropboxHTTP.send($0) }
+        answer(request, reply) { try GarageCloudHTTP.send($0) }
     }
 
-    /// A Dropbox source's token (`access_token`), from the provider the build registered.
+    /// A cloud source's token (`access_token`), from the provider the build registered.
     private static let accessTokenEntry: GarageIngestHostCall = { _, request, reply in
         answer(request, reply) { object in
             let token = try GarageCloudCredentials.accessToken(

@@ -11,6 +11,7 @@ use garage_ingest::attribution::{AuthorTally, GitHistory, NoGit, RepoAttribution
 use garage_ingest::contact_names::ContactNames;
 use garage_ingest::dropbox::{self, RemoteHost};
 use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
+use garage_ingest::onedrive;
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
@@ -760,16 +761,19 @@ fn run_source_with<H: SourceHost>(
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let dropbox = session.kind == dropbox::KIND;
-    let context = if dropbox { Context { git: &NoGit, ..context } } else { context };
-    let root = if dropbox { source.root.clone() } else { garage_ingest::walk::expand_home(&source.root) };
+    let cloud = garage_ingest::is_cloud_kind(&session.kind);
+    let context = if cloud { Context { git: &NoGit, ..context } } else { context };
+    let root = if cloud { source.root.clone() } else { garage_ingest::walk::expand_home(&source.root) };
     let mut host = make_host(root, &scan);
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
-    let outcome = if dropbox {
+    let outcome = if cloud {
         match host.remote() {
+            Some(remote) if session.kind == onedrive::KIND => {
+                onedrive::ingest_onedrive_source(remote, &mut storage, slug, &context, &options)
+            }
             Some(remote) => dropbox::ingest_dropbox_source(remote, &mut storage, slug, &context, &options),
-            None => Err(SourceError::Unavailable("this run cannot read a Dropbox source".to_owned())),
+            None => Err(SourceError::Unavailable(format!("this run cannot read a {} source", session.kind))),
         }
     } else {
         source::ingest_source(&mut host, &mut storage, &context, &scan, &options)
@@ -959,11 +963,13 @@ impl SourceHost for ReadingHost {
 }
 
 impl RemoteHost for ReadingHost {
-    fn access_token(&mut self, slug: &str, refresh: bool) -> Result<String, String> {
+    fn access_token(&mut self, service: &str, slug: &str, refresh: bool) -> Result<String, String> {
         if self.host.access_token.is_none() {
-            return Err("this app cannot read Dropbox sources: it has no Dropbox account to read them with".to_owned());
+            return Err(format!(
+                "this app cannot read {service} sources: it has no {service} account to read them with"
+            ));
         }
-        let request = json!({ "service": dropbox::KIND, "source": slug, "refresh": refresh });
+        let request = json!({ "service": service, "source": slug, "refresh": refresh });
         let reply = self.call(self.host.access_token, "access_token", &request)?;
         let reply: Value = serde_json::from_str(&reply)
             .map_err(|error| format!("the host's access_token replied with bad JSON: {error}"))?;
@@ -976,8 +982,8 @@ impl RemoteHost for ReadingHost {
     }
 
     fn send(&mut self, request: &dropbox::HttpRequest) -> Result<dropbox::HttpResponse, String> {
-        // The library's own check, again, at the last step before the request leaves it.
-        dropbox::check_destination(&request.url)?;
+        // The library's own checks, again, at the last step before the request leaves it.
+        dropbox::check_destination(&request.url).or_else(|_| onedrive::check_destination(&request.url))?;
         let headers: Vec<Value> = request.headers.iter().map(|(name, value)| json!([name, value])).collect();
         let body = json!({
             "method": request.method,
@@ -1011,7 +1017,7 @@ impl RemoteHost for ReadingHost {
     fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome {
         match &mut self.readers {
             Some(readers) => readers.read_bytes(path, bytes),
-            None => ReadOutcome::Failed("a Dropbox source is read by the Rust readers (\"readers\")".to_owned()),
+            None => ReadOutcome::Failed("a cloud source is read by the Rust readers (\"readers\")".to_owned()),
         }
     }
 
