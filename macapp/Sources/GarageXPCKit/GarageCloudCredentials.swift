@@ -48,7 +48,7 @@ public enum GarageCloudCredentialsError: Error, LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .notConnected(let service):
-            let name = ["dropbox": "Dropbox", "onedrive": "OneDrive", "outlook": "Outlook"][service] ?? service
+            let name = ["dropbox": "Dropbox", "onedrive": "OneDrive", "outlook": "Outlook", "google_drive": "Google"][service] ?? service
             return "No \(name) account is connected to Garage; connect one to read this source"
         }
     }
