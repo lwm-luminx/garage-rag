@@ -22,6 +22,7 @@ members = [
     "garage-readers",
     "garage-service",
     "garage-service-ffi",
+    "garage-spotlight",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -50,6 +51,7 @@ default-members = [
     "garage-readers",
     "garage-service",
     "garage-service-ffi",
+    "garage-spotlight",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -79,6 +81,7 @@ garage-mcp = { path = "garage-mcp" }
 garage-ocr = { path = "garage-ocr", default-features = false }
 garage-readers = { path = "garage-readers", default-features = false }
 garage-service = { path = "garage-service" }
+garage-spotlight = { path = "garage-spotlight" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"

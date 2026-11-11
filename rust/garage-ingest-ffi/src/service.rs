@@ -10,7 +10,7 @@ use super::{GarageIngestHost, Outcome, ReadingHost, budget_from, budget_json, se
 
 /// The `garage.json` settings a run reads from GarageService (`GetSetting`) with `"settings": "service"`,
 /// and where each goes in the request: `(name, object, field)`.
-const SERVICE_SETTINGS: [(&str, &str, &str); 16] = [
+const SERVICE_SETTINGS: [(&str, &str, &str); 17] = [
     ("chunking.size", "settings", "chunk_size"),
     ("chunking.overlap", "settings", "chunk_overlap"),
     ("chunking.code_size", "settings", "code_chunk_size"),
@@ -27,6 +27,7 @@ const SERVICE_SETTINGS: [(&str, &str, &str); 16] = [
     ("extraction.ocr_min_chars", "readers", "ocr_min_chars"),
     ("extraction.index_images", "readers", "index_images"),
     ("extraction.pdf_min_chars_per_page", "readers", "pdf_min_chars_per_page"),
+    ("extraction.spotlight", "readers", "spotlight"),
 ];
 
 /// What a source's progress events say besides the counters: `IngestProgress`'s `source`, `total_items` and

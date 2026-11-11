@@ -1,6 +1,6 @@
 [package]
 name = "garage-readers"
-description = "Garage's file readers in Rust: text, Markdown and code (garage-text), mail, PDF and Office (the FOSS markdown-extract crates), pictures (garage-ocr), and the names iMessage contacts shared."
+description = "Garage's file readers in Rust: text, Markdown and code (garage-text), mail, PDF and Office (the FOSS markdown-extract crates), pictures (garage-ocr), other documents through the Mac's Spotlight importers (garage-spotlight), and the names iMessage contacts shared."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -15,6 +15,7 @@ tesseract = ["garage-ocr/tesseract"]
 
 [dependencies]
 garage-ingest.workspace = true
+garage-spotlight.workspace = true
 garage-ocr = { workspace = true, default-features = false, features = ["vision"] }
 garage-text.workspace = true
 mail-markdown.workspace = true

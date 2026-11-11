@@ -1111,6 +1111,7 @@ version = "0.1.0"
 dependencies = [
  "garage-ingest",
  "garage-ocr",
+ "garage-spotlight",
  "garage-text",
  "mail-markdown",
  "office-markdown",
@@ -1157,6 +1158,13 @@ dependencies = [
  "garage-service",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "garage-spotlight"
+version = "0.1.0"
+dependencies = [
+ "plist",
 ]
 
 [[package]]

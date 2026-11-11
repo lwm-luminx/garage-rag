@@ -160,9 +160,10 @@ typedef struct GarageIngestHost {
 // same request without "files" and "cancel_after", plus "budget" (as for garage_ingest_ensure_local).
 // The library makes placeholders local within the budget (on its own thread; this thread's reads of
 // dataless files are refused) and hashes each file's bytes itself. With "readers": {"max_file_bytes",
-// "ocr_min_chars", "index_images", "pdf_min_chars_per_page"} (each optional, garage.json's extraction.*)
-// it also reads each file's text and a Messages source's shared names with its own readers
-// (rust/garage-readers), and tells GarageService which reader gave up on a file. The reply holds the run id,
+// "ocr_min_chars", "index_images", "pdf_min_chars_per_page", "spotlight"} (each optional, garage.json's
+// extraction.*) it also reads each file's text and a Messages source's shared names with its own readers
+// (rust/garage-readers), and tells GarageService which reader gave up on a file; with "spotlight" on (the
+// default) the walk also takes the document types only the Mac's Spotlight importers read. The reply holds the run id,
 // counters, walk stats, whether the walk completed and the budget at the end, or "unavailable" /
 // "error" as for garage_ingest_ingest_source. The host's functions are called on this thread only.
 int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *host, char **result);

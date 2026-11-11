@@ -255,7 +255,8 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   "service"`, over `GetSetting`) and the app's `IngestProgress` events field for field. With `"readers": {...}`
   (`extraction.*`, also read over `GetSetting`) either run reads every file itself with `rust/garage-readers`: `extract/dispatch.py`'s routes over garage-text,
   the FOSS `mail-markdown`, `pdf-markdown` and `office-markdown` crates and garage-ocr (Vision on the Mac,
-  Tesseract elsewhere, `extract/image.py`'s policy), plus `extract/nicknames.py`'s shared names (rusqlite and
+  Tesseract elsewhere, `extract/image.py`'s policy), the Mac's Spotlight importers for other documents
+  (`rust/garage-spotlight`, `extraction.spotlight`), plus `extract/nicknames.py`'s shared names (rusqlite and
   `plist`). Mail, PDF, Office and pictures are new readers with their own revisions, so each such file is read
   again once; `CheckDocumentStat` and the no-text and failed `PersistDocument`s carry the reader's revision
   (`extractor_revision`), which GarageService remembers. `extraction.plugins` does not apply to the Rust readers yet. GarageIngestXPCService runs it (`GarageIngestRunner`, linked
@@ -523,7 +524,11 @@ above maps them to crates); the Rust code keeps their names in its docs.
   `communication`) through the FOSS `pdf-markdown`, `office-markdown` and `mail-markdown` crates
   (`lwm-luminx/markdown-extract`); pictures through `garage-ocr`, Vision on the Mac and Tesseract
   elsewhere (`extract/image.py`'s policy; no Tesseract on Windows yet, so pictures read as no text
-  there). Messages `chat.db` (`sqlite` sources) is not walked file
+  there). On the Mac, a document type no built-in reader takes (`.rtf`, `.doc`, `.odt`, ...) goes to
+  the system's own Spotlight importer for it (`rust/garage-spotlight`: the `MDImporter` CFPlugIn loaded
+  in-process from `/System/Library/Spotlight` only, never a third party's, and never for pictures,
+  media, contacts, calendars, messages, text or code), behind `extraction.spotlight` (on); the walk takes
+  those extensions only when the Rust readers read with it on. Messages `chat.db` (`sqlite` sources) is not walked file
   by file: `conversations.rs` (over the `messages-markdown` crate) stores each thread as one document with one chunk per message,
   each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for
   search's `direction` filter; messages in no `chat_message_join` row join their sender's one-to-one chat.
@@ -823,6 +828,12 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `//bazel:is_local_app_group`), else the self-signed local identity, else ad hoc.
   `--config=adhoc` (CI) and `--config=local_signed` force one; `GARAGE_SIGNING_IDENTITY` in the environment
   (or `build --repo_env=` in `user.bazelrc`; `aspect` rejects it on the command line) names one.
+- `SpotlightIndexer` (`Services/SpotlightIndex.swift`) puts each document's title and path and each
+  distilled fact's statement into the app's Core Spotlight index (never communications, never document
+  text), rebuilt after each pipeline run and when a source is removed, emptied by Reset Database and
+  by the Database page's Spotlight switch (`garage.spotlight.enabled`). Opening an item shows its
+  document on the Documents page (`ContentView`'s `onContinueUserActivity`). The rules are plain values
+  (`SpotlightEntries`) with unit tests.
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It

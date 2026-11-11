@@ -10,6 +10,9 @@
 //!   `extract/image.py` kept: an icon is no text, and a picture with too little text is indexed as a
 //!   picture when `index_images` is on.
 //!
+//! - on the Mac, any other document type one of the system's Spotlight importers takes (`.rtf`, `.doc`,
+//!   `.odt`, ...), through [`garage_spotlight`], when `extraction.spotlight` is on.
+//!
 //! [`revision`] names a file's reader and version (`"pdf-markdown:1"`), which GarageService remembers
 //! with a no-text or failed outcome, so changing a reader retries what it gave up on. [`shared_names`]
 //! reads the names iMessage contacts shared, beside a Messages database (`extract/nicknames.py`).
@@ -63,6 +66,8 @@ pub enum Reader {
     Xlsx,
     /// [`garage_ocr`].
     Image,
+    /// A system Spotlight importer, through [`garage_spotlight`].
+    Spotlight,
 }
 
 /// The settings the readers take from `garage.json` (`extraction.*`).
@@ -76,17 +81,26 @@ pub struct Settings {
     pub index_images: bool,
     /// `extraction.pdf_min_chars_per_page`: below this a PDF is flagged `likely_scanned`.
     pub pdf_min_chars_per_page: usize,
+    /// `extraction.spotlight`: on the Mac, read document types no built-in reader takes with the
+    /// system's Spotlight importers.
+    pub spotlight: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { max_file_bytes: 64 * 1024 * 1024, ocr_min_chars: 16, index_images: true, pdf_min_chars_per_page: 32 }
+        Self {
+            max_file_bytes: 64 * 1024 * 1024,
+            ocr_min_chars: 16,
+            index_images: true,
+            pdf_min_chars_per_page: 32,
+            spotlight: true,
+        }
     }
 }
 
 impl Settings {
     /// The settings in `object` (`max_file_bytes`, `ocr_min_chars`, `index_images`,
-    /// `pdf_min_chars_per_page`); a key that is missing keeps its default.
+    /// `pdf_min_chars_per_page`, `spotlight`); a key that is missing keeps its default.
     #[must_use]
     pub fn from_json(object: Option<&Map<String, Value>>) -> Self {
         let mut settings = Self::default();
@@ -103,6 +117,9 @@ impl Settings {
         }
         if let Some(value) = object.get("index_images").and_then(Value::as_bool) {
             settings.index_images = value;
+        }
+        if let Some(value) = object.get("spotlight").and_then(Value::as_bool) {
+            settings.spotlight = value;
         }
         settings
     }
@@ -155,6 +172,10 @@ pub fn reader_for(path: &Path) -> Result<Reader, String> {
     if suffix.is_empty() && garage_text::NAMED_CODE_FILES.contains(&name.to_lowercase().as_str()) {
         return Ok(Reader::Text(garage_text::Kind::Code));
     }
+    // After every built-in reader: Spotlight only takes what Garage cannot read itself.
+    if !suffix.is_empty() && garage_spotlight::extensions().iter().any(|extension| extension == suffix) {
+        return Ok(Reader::Spotlight);
+    }
     if LEGACY_OFFICE.contains(&suffix) {
         return Err(format!("legacy binary format {suffix} needs LibreOffice conversion: {name}"));
     }
@@ -163,6 +184,17 @@ pub fn reader_for(path: &Path) -> Result<Reader, String> {
     }
     let shown = if suffix.is_empty() { name.to_lowercase() } else { suffix.to_owned() };
     Err(format!("no extractor for '{shown}'"))
+}
+
+/// The extensions only a system Spotlight importer reads, which the walk takes too when
+/// `extraction.spotlight` is on: what the importers take, less what a built-in reader does. Empty
+/// off the Mac.
+pub fn spotlight_extensions() -> Vec<String> {
+    garage_spotlight::extensions()
+        .iter()
+        .filter(|extension| matches!(reader_for(Path::new(&format!("file{extension}"))), Ok(Reader::Spotlight)))
+        .cloned()
+        .collect()
 }
 
 /// The image reader's version: [`IMAGE_VERSION`] and the platform engine's revision, read once.
@@ -184,6 +216,7 @@ pub fn revision(path: &str) -> String {
         Reader::Pdf => ("pdf-markdown", pdf_markdown::VERSION.to_string()),
         Reader::Docx | Reader::Pptx | Reader::Xlsx => ("office-markdown", office_markdown::VERSION.to_string()),
         Reader::Image => ("image", image_version().to_owned()),
+        Reader::Spotlight => ("spotlight", garage_spotlight::revision().to_owned()),
     };
     format!("{name}:{version}")
 }
@@ -276,6 +309,17 @@ impl Readers {
             Reader::Pptx => office_document(path, bytes, office_markdown::Format::Pptx),
             Reader::Xlsx => office_document(path, bytes, office_markdown::Format::Spreadsheet),
             Reader::Image => return self.image(path, bytes),
+            Reader::Spotlight if !self.settings.spotlight => {
+                return ReadOutcome::Failed(format!(
+                    "Spotlight importers are off (extraction.spotlight): {}",
+                    path.display()
+                ));
+            }
+            // An importer reads the file itself: bytes that are not on disk (a Dropbox download) cannot go to one.
+            Reader::Spotlight if !path.is_file() => {
+                return ReadOutcome::Failed(format!("Spotlight importers read files on disk only: {}", path.display()));
+            }
+            Reader::Spotlight => return spotlight_document(path),
         };
         match outcome {
             Ok(document) if garage_text::text::py_strip(&document.text).is_empty() => {
@@ -363,6 +407,48 @@ fn picture(path: &Path, index_images: bool, reason: &str, width: u32, height: u3
         lang: None,
         meta,
         author_hints: Vec::new(),
+    })
+}
+
+/// A file read by the system's Spotlight importer for its type.
+fn spotlight_document(path: &Path) -> ReadOutcome {
+    let imported = match garage_spotlight::import(path) {
+        garage_spotlight::Outcome::Imported(imported) => imported,
+        garage_spotlight::Outcome::NoText(reason) => return ReadOutcome::NoText(reason),
+        garage_spotlight::Outcome::NoImporter(reason) | garage_spotlight::Outcome::Failed(reason) => {
+            return ReadOutcome::Failed(reason);
+        }
+    };
+    let text = garage_text::text::normalize(&imported.text);
+    if garage_text::text::py_strip(&text).is_empty() {
+        return ReadOutcome::NoText(format!(
+            "Spotlight importer {} found no text: {}",
+            imported.importer,
+            path.display()
+        ));
+    }
+    let mut meta = Map::new();
+    meta.insert("spotlight_importer".to_owned(), json!(imported.importer));
+    if !imported.importer_version.is_empty() {
+        meta.insert("spotlight_importer_version".to_owned(), json!(imported.importer_version));
+    }
+    meta.insert("content_type".to_owned(), json!(imported.content_type));
+    let title = imported.title.as_deref().map(str::trim).filter(|title| !title.is_empty()).map(str::to_owned);
+    if let Some(title) = &title {
+        meta.insert("spotlight_title".to_owned(), json!(truncated(title, 500)));
+    }
+    if !imported.authors.is_empty() {
+        meta.insert("spotlight_authors".to_owned(), json!(imported.authors.iter().take(20).collect::<Vec<_>>()));
+    }
+    ReadOutcome::Document(Extracted {
+        text,
+        kind: ContentKind::Prose,
+        extractor: "spotlight".to_owned(),
+        extractor_version: garage_spotlight::revision().to_owned(),
+        title: Some(title.unwrap_or_else(|| stem(path))),
+        lang: None,
+        meta,
+        author_hints: clean_author_hints(&imported.authors),
     })
 }
 
