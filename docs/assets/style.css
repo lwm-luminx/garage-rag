@@ -1750,3 +1750,138 @@ details .faq-content {
 .footer-lwm-copy {
   white-space: nowrap;
 }
+
+/* Garage Pro (/pro/, the home page's teaser) and Garage Door (/door/) */
+.pro-teaser {
+  padding: 1.75rem;
+  margin: 1.5rem 0 1.5rem;
+  background-color: var(--surface-raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  color: var(--ink);
+}
+
+.prose .pro-teaser h2 {
+  margin: 0.75rem 0 0.5rem;
+  padding: 0;
+  border: none;
+}
+
+.prose .pro-teaser p {
+  color: var(--ink-muted);
+}
+
+.pro-hero .hero-logo {
+  width: 96px;
+  height: 96px;
+}
+
+.pro-hero .edition-lockup {
+  margin-bottom: 0.5rem;
+}
+
+.pro-status {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: 0.15em;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+  color: var(--ink-muted);
+  white-space: nowrap;
+}
+
+.pricing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.25rem;
+  margin: 1.5rem 0 1rem;
+}
+
+.pricing-plan h3 {
+  margin-top: 0;
+}
+
+.prose .pricing-plan .pricing-price {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--ink);
+  margin: 0.25rem 0 0;
+  flex-grow: 0;
+}
+
+.pricing-price small {
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--ink-muted);
+}
+
+.prose .pricing-plan .pricing-alt {
+  margin: 0 0 0.5rem;
+  flex-grow: 0;
+}
+
+.prose .pricing-plan ul {
+  flex-grow: 1;
+  margin: 0.5rem 0 1.25rem;
+  padding-left: 1.2rem;
+  font-size: 0.92rem;
+}
+
+.pricing-plan .btn,
+.pricing-plan .edition-badge {
+  align-self: flex-start;
+}
+
+.pricing-plan-featured {
+  border-width: 2px;
+  border-color: var(--violet-500);
+}
+
+.prose .door-steps {
+  list-style: none;
+  counter-reset: door-step;
+  padding-left: 0;
+  margin: 1.5rem 0 2rem;
+}
+
+.prose .door-steps li {
+  counter-increment: door-step;
+  position: relative;
+  padding: 0 0 1.25rem 3.25rem;
+  margin: 0;
+}
+
+.door-steps li::before {
+  content: counter(door-step);
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background-color: var(--violet-100);
+  color: var(--violet-900);
+  border: 1px solid var(--violet-300);
+}
+
+.prose .door-steps h3 {
+  margin: 0.2rem 0 0.35rem;
+}
+
+.prose .door-steps p {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.prose .privacy-levels li {
+  margin-bottom: 0.6rem;
+}
