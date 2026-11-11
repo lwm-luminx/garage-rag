@@ -268,10 +268,9 @@ impl Readers {
                 path.display()
             ));
         }
-        let reader = match reader_for(path) {
-            Ok(reader) => reader,
-            Err(error) => return ReadOutcome::Failed(error),
-        };
+        if let Err(error) = reader_for(path) {
+            return ReadOutcome::Failed(error);
+        }
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) => {
@@ -282,19 +281,43 @@ impl Readers {
                 return ReadOutcome::Failed(format!("{}: {error}", path.display()));
             }
         };
+        self.read_bytes(path, &bytes)
+    }
+
+    /// Reads a file's `bytes` that are not on disk (a Dropbox download); `path` only names it.
+    pub fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome {
+        let size = bytes.len() as u64;
+        if size == 0 {
+            return ReadOutcome::NoText(format!("empty file: {}", path.display()));
+        }
+        if size > self.settings.max_file_bytes {
+            return ReadOutcome::Failed(format!(
+                "file exceeds max_file_bytes ({size} > {}): {}",
+                self.settings.max_file_bytes,
+                path.display()
+            ));
+        }
+        let reader = match reader_for(path) {
+            Ok(reader) => reader,
+            Err(error) => return ReadOutcome::Failed(error),
+        };
         let outcome = match reader {
-            Reader::Text(kind) => Ok(text_document(kind, path, &bytes)),
-            Reader::Mail => mail_document(path, &bytes),
-            Reader::Pdf => pdf_document(path, &bytes, &self.settings),
-            Reader::Docx => office_document(path, &bytes, office_markdown::Format::Docx),
-            Reader::Pptx => office_document(path, &bytes, office_markdown::Format::Pptx),
-            Reader::Xlsx => office_document(path, &bytes, office_markdown::Format::Spreadsheet),
-            Reader::Image => return self.image(path, &bytes),
+            Reader::Text(kind) => Ok(text_document(kind, path, bytes)),
+            Reader::Mail => mail_document(path, bytes),
+            Reader::Pdf => pdf_document(path, bytes, &self.settings),
+            Reader::Docx => office_document(path, bytes, office_markdown::Format::Docx),
+            Reader::Pptx => office_document(path, bytes, office_markdown::Format::Pptx),
+            Reader::Xlsx => office_document(path, bytes, office_markdown::Format::Spreadsheet),
+            Reader::Image => return self.image(path, bytes),
             Reader::Spotlight if !self.settings.spotlight => {
                 return ReadOutcome::Failed(format!(
                     "Spotlight importers are off (extraction.spotlight): {}",
                     path.display()
                 ));
+            }
+            // An importer reads the file itself: bytes that are not on disk (a Dropbox download) cannot go to one.
+            Reader::Spotlight if !path.is_file() => {
+                return ReadOutcome::Failed(format!("Spotlight importers read files on disk only: {}", path.display()));
             }
             Reader::Spotlight => return spotlight_document(path),
         };

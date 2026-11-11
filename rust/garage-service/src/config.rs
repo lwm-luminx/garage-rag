@@ -703,6 +703,10 @@ impl SourceSpec {
 
     /// `root` with a leading `~` expanded.
     pub fn expanded_root(&self) -> PathBuf {
+        if self.kind == garage_ingest::dropbox::KIND {
+            // A folder in the Dropbox, not on this Mac.
+            return PathBuf::from(garage_ingest::dropbox::display_root(&self.root));
+        }
         expand_home(Path::new(&self.root))
     }
 }

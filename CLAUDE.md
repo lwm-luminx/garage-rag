@@ -240,7 +240,12 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `ingest/conversations.py` over the FOSS `messages-markdown` crate (crates.io, from
   `lwm-luminx/markdown-extract`, which bundles its own SQLite)) and the scanners that count a source first
   (`ingest/scanner.py`, in `scanner.rs`: feeds read as expat would, in `feed.rs`, and databases through the
-  system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`) and a Dropbox source read
+  through Dropbox's HTTP API (`dropbox.rs`, kind `dropbox`, root a folder in the Dropbox: listed, compared by
+  stat, downloaded into memory, checked against Dropbox's content hash and read with `Readers::read_bytes`; the
+  host carries each request after `dropbox::check_destination` approved it and supplies the access token,
+  `garage_ingest.h`'s `http` and `access_token`; the Swift host takes the token from `GarageCloudCredentials`,
+  which only the App Store build's extensions fill, signed in through Garage Door, which holds no token), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`). `garage_ingest_run_source` runs a whole source,

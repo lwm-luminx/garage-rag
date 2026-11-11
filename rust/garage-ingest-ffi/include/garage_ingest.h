@@ -142,6 +142,18 @@ typedef struct GarageIngestHost {
     // {"directory"}; the reply {"names": [[handle, name], ...]} (garage_rag.ingest.host_read's
     // shared_names_for_host). May be null; a null member or a failed call means no shared names.
     GarageIngestHostCall shared_names;
+    // For a Dropbox source (kind "dropbox"): one HTTPS request to Dropbox's API, already approved by
+    // the library (https://api.dropboxapi.com/2/... or https://content.dropboxapi.com/2/... only).
+    // The request is {"method", "url", "headers": [[name, value], ...], "body_base64", "timeout_seconds"};
+    // the reply {"status", "headers": [[name, value], ...], "body_base64"}, whatever the status. Send it
+    // to that URL alone: no proxy, no redirect followed, and never log its headers (they carry the
+    // token). A nonzero return means no reply came. May be null when no source is a Dropbox source.
+    GarageIngestHostCall http;
+    // For a Dropbox source: a short-lived access token. The request is {"service": "dropbox",
+    // "source": slug, "refresh": bool} ("refresh" after Dropbox refused the last token); the reply
+    // {"access_token"}. A nonzero return's reply is the reason, shown as the source's error (no
+    // account connected, say). May be null, when a Dropbox source cannot be read.
+    GarageIngestHostCall access_token;
 } GarageIngestHost;
 
 // Runs one source as garage_ingest_ingest_source does, reading each file through `host`: the

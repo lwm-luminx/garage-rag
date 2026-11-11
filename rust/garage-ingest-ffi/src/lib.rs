@@ -7,8 +7,9 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
+use garage_ingest::attribution::{AuthorTally, GitHistory, NoGit, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::contact_names::ContactNames;
+use garage_ingest::dropbox::{self, RemoteHost};
 use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
@@ -22,6 +23,7 @@ use garage_ingest::{
 };
 use serde_json::{Map, Value, json};
 
+mod base64;
 mod service;
 
 /// The call succeeded; the result is its JSON.
@@ -758,10 +760,21 @@ fn run_source_with<H: SourceHost>(
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut host = make_host(garage_ingest::walk::expand_home(&source.root), &scan);
+    let dropbox = session.kind == dropbox::KIND;
+    let context = if dropbox { Context { git: &NoGit, ..context } } else { context };
+    let root = if dropbox { source.root.clone() } else { garage_ingest::walk::expand_home(&source.root) };
+    let mut host = make_host(root, &scan);
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
-    match source::ingest_source(&mut host, &mut storage, &context, &scan, &options) {
+    let outcome = if dropbox {
+        match host.remote() {
+            Some(remote) => dropbox::ingest_dropbox_source(remote, &mut storage, slug, &context, &options),
+            None => Err(SourceError::Unavailable("this run cannot read a Dropbox source".to_owned())),
+        }
+    } else {
+        source::ingest_source(&mut host, &mut storage, &context, &scan, &options)
+    };
+    match outcome {
         Ok(run) => {
             let stats: Map<String, Value> =
                 run.walk_stats.fields().iter().map(|&(name, count)| (name.to_owned(), json!(count))).collect();
@@ -794,6 +807,8 @@ pub struct GarageIngestHost {
     pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
     pub shared_names: HostCall,
+    pub http: HostCall,
+    pub access_token: HostCall,
 }
 
 /// The walk's rules: the request's `"policy"` over the defaults, and, when the Rust readers read the files
@@ -925,6 +940,10 @@ impl SourceHost for ReadingHost {
         (self.budget.files_done, self.budget.bytes_done)
     }
 
+    fn remote(&mut self) -> Option<&mut dyn RemoteHost> {
+        Some(self)
+    }
+
     fn shared_names(&mut self, directory: &Path) -> Vec<(String, String)> {
         if self.readers.is_some() {
             return garage_readers::shared_names(directory);
@@ -936,6 +955,72 @@ impl SourceHost for ReadingHost {
         // Names are a nicety: a host that cannot read them leaves the handles as they are.
         let reply = self.call(self.host.shared_names, "shared_names", &request).unwrap_or_default();
         name_pairs(serde_json::from_str::<Value>(&reply).ok().as_ref().and_then(|reply| reply.get("names")))
+    }
+}
+
+impl RemoteHost for ReadingHost {
+    fn access_token(&mut self, slug: &str, refresh: bool) -> Result<String, String> {
+        if self.host.access_token.is_none() {
+            return Err("this app cannot read Dropbox sources: it has no Dropbox account to read them with".to_owned());
+        }
+        let request = json!({ "service": dropbox::KIND, "source": slug, "refresh": refresh });
+        let reply = self.call(self.host.access_token, "access_token", &request)?;
+        let reply: Value = serde_json::from_str(&reply)
+            .map_err(|error| format!("the host's access_token replied with bad JSON: {error}"))?;
+        reply
+            .get("access_token")
+            .and_then(Value::as_str)
+            .filter(|token| !token.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| "the host's access_token replied with no token".to_owned())
+    }
+
+    fn send(&mut self, request: &dropbox::HttpRequest) -> Result<dropbox::HttpResponse, String> {
+        // The library's own check, again, at the last step before the request leaves it.
+        dropbox::check_destination(&request.url)?;
+        let headers: Vec<Value> = request.headers.iter().map(|(name, value)| json!([name, value])).collect();
+        let body = json!({
+            "method": request.method,
+            "url": request.url,
+            "headers": headers,
+            "body_base64": base64::encode(&request.body),
+            "timeout_seconds": request.timeout.as_secs(),
+        });
+        let reply = self.call(self.host.http, "http", &body)?;
+        let reply: Value =
+            serde_json::from_str(&reply).map_err(|error| format!("the host's http replied with bad JSON: {error}"))?;
+        let status = reply
+            .get("status")
+            .and_then(Value::as_u64)
+            .and_then(|status| u16::try_from(status).ok())
+            .ok_or("the host's http replied with no status")?;
+        let headers = reply
+            .get("headers")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|pair| {
+                let pair = pair.as_array()?;
+                Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+            })
+            .collect();
+        let body = base64::decode(reply.get("body_base64").and_then(Value::as_str).unwrap_or_default())?;
+        Ok(dropbox::HttpResponse { status, headers, body })
+    }
+
+    fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome {
+        match &mut self.readers {
+            Some(readers) => readers.read_bytes(path, bytes),
+            None => ReadOutcome::Failed("a Dropbox source is read by the Rust readers (\"readers\")".to_owned()),
+        }
+    }
+
+    fn cancelled(&mut self) -> bool {
+        SourceHost::cancelled(self)
+    }
+
+    fn progress(&mut self, phase: &str, current_item: Option<&str>, counters: &Counters) {
+        SourceHost::progress(self, phase, current_item, counters);
     }
 }
 

@@ -95,6 +95,11 @@ pub trait SourceHost: FileHost {
         (0, 0)
     }
 
+    /// The host's Dropbox side, for a Dropbox source ([`crate::dropbox`]); none by default.
+    fn remote(&mut self) -> Option<&mut dyn crate::dropbox::RemoteHost> {
+        None
+    }
+
     /// The names iMessage contacts shared, as `(handle, name)`, from the `NickNameCache` beside a Messages
     /// database in `directory` (`extract/nicknames.py`'s `read_shared_names`); none by default.
     fn shared_names(&mut self, _directory: &std::path::Path) -> Vec<(String, String)> {
