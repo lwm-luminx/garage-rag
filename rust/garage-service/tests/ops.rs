@@ -135,6 +135,20 @@ fn sources_are_added_synced_imported_and_removed() {
             let missing = client.add_source(add("gone", &dir.join("nope"), "", "")).await.unwrap_err();
             assert_eq!(missing.code(), Code::InvalidArgument);
             assert!(missing.message().ends_with("nope does not exist"));
+            // A Dropbox source names a folder in the Dropbox, which need not exist on this Mac.
+            let dropbox = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "dbx".into(),
+                    root: "Work/".into(),
+                    kind: "dropbox".into(),
+                    corpus_class: String::new(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((dropbox.created, dropbox.root.as_str()), (true, "/Work"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "dbx".into() }).await.unwrap();
             let bad = client.add_source(add("x", &root, "", "secret")).await.unwrap_err();
             assert_eq!(bad.code(), Code::InvalidArgument);
             assert!(bad.message().contains("'secret' is not a valid TrustTier"));

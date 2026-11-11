@@ -1,5 +1,6 @@
 import Foundation
 import GarageIngestFFI
+import GarageXPCKit
 
 /// Garage's ingest loop, written in Rust and linked into this process through its C ABI
 /// (`rust/garage-ingest-ffi`, `garage_ingest.h`'s `garage_ingest_run`).
@@ -81,7 +82,9 @@ final class GarageIngestRunner {
             release: Self.releaseEntry,
             progress: Self.progressEntry,
             cancelled: Self.cancelledEntry,
-            shared_names: nil
+            shared_names: nil,
+            http: Self.httpEntry,
+            access_token: Self.accessTokenEntry
         )
         var result: UnsafeMutablePointer<CChar>?
         let status = withExtendedLifetime(self) {
@@ -122,6 +125,47 @@ final class GarageIngestRunner {
     private static let progressEntry: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void = { context, event in
         guard let context, let event else { return }
         Unmanaged<GarageIngestRunner>.fromOpaque(context).takeUnretainedValue().progress(String(cString: event))
+    }
+
+    /// Answers a host call: the request's JSON object in, `handle`'s JSON object out, or the error's
+    /// message with a nonzero status.
+    private static func answer(
+        _ request: UnsafePointer<CChar>?,
+        _ reply: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+        _ handle: ([String: Any]) throws -> [String: Any]
+    ) -> Int32 {
+        guard let reply else { return 1 }
+        do {
+            guard
+                let request,
+                let object = try JSONSerialization.jsonObject(with: Data(String(cString: request).utf8)) as? [String: Any]
+            else {
+                throw GarageIngestRunnerError("the request is not a JSON object")
+            }
+            let answer = try JSONSerialization.data(withJSONObject: handle(object))
+            reply.pointee = strdup(String(decoding: answer, as: UTF8.self))
+            return 0
+        } catch {
+            reply.pointee = strdup(error.localizedDescription)
+            return 1
+        }
+    }
+
+    /// A Dropbox source's requests (`http`), over URLSession.
+    private static let httpEntry: GarageIngestHostCall = { _, request, reply in
+        answer(request, reply) { try GarageDropboxHTTP.send($0) }
+    }
+
+    /// A Dropbox source's token (`access_token`), from the provider the build registered.
+    private static let accessTokenEntry: GarageIngestHostCall = { _, request, reply in
+        answer(request, reply) { object in
+            let token = try GarageCloudCredentials.accessToken(
+                service: object["service"] as? String ?? "",
+                source: object["source"] as? String ?? "",
+                refresh: object["refresh"] as? Bool ?? false
+            )
+            return ["access_token": token]
+        }
     }
 
     private static let cancelledEntry: @convention(c) (UnsafeMutableRawPointer?) -> Bool = { context in
