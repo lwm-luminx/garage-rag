@@ -125,9 +125,17 @@ fn empty_large_and_unsupported_files() {
     assert!(
         matches!(readers.read(&write(&folder, "big.md", b"# more than eight")), ReadOutcome::Failed(reason) if reason.contains("max_file_bytes"))
     );
-    assert!(
-        matches!(readers.read(&write(&folder, "old.doc", b"x")), ReadOutcome::Failed(reason) if reason.contains("LibreOffice"))
-    );
+    // With Spotlight's importers off (or off the Mac), a legacy format needs LibreOffice.
+    let mut legacy = Readers::new(Settings { spotlight: false, ..Settings::default() });
+    if spotlight_extensions().is_empty() {
+        assert!(
+            matches!(legacy.read(&write(&folder, "old.doc", b"x")), ReadOutcome::Failed(reason) if reason.contains("LibreOffice"))
+        );
+    } else {
+        assert!(
+            matches!(legacy.read(&write(&folder, "old.doc", b"x")), ReadOutcome::Failed(reason) if reason.contains("extraction.spotlight"))
+        );
+    }
     assert!(
         matches!(readers.read(&write(&folder, "blank.md", b"  \n")), ReadOutcome::NoText(reason) if reason.contains("produced no text"))
     );

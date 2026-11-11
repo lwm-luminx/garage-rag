@@ -137,7 +137,8 @@ struct Owned(CFTypeRef);
 
 impl Owned {
     fn new(object: CFTypeRef) -> Option<Self> {
-        (!object.is_null()).then_some(Self(object))
+        // `then`, not `then_some`: `Self(null)` built eagerly would be dropped, and CFRelease(NULL) traps.
+        (!object.is_null()).then(|| Self(object))
     }
 }
 
@@ -232,6 +233,7 @@ fn extensions_of(uti: &str) -> Vec<String> {
 fn document_importers() -> Vec<Importer> {
     crate::importers_in(Path::new(SYSTEM_IMPORTERS))
         .into_iter()
+        .filter(|importer| !crate::excluded_importer(&importer.path))
         .filter_map(|mut importer| {
             importer.content_types.retain(|uti| !excluded(uti));
             (!importer.content_types.is_empty()).then_some(importer)

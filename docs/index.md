@@ -173,13 +173,25 @@ Garage never uploads your files or its index. What leaves your computer depends 
 
 Garage walks the sources you register, extracts text, decides who wrote each document and how much to trust it, and splits it into chunks. Each chunk is embedded under every model you register, one table per model, so adding a model is a {% include term.html term="backfill" %} rather than a re-ingest. Search fuses the vector and keyword rankings and serves the result to your assistant over MCP. Everything lives in a PostgreSQL 18 + pgvector cluster the app bundles and runs for you.
 
+<section class="pro-teaser" aria-labelledby="pro-teaser-title">
+  <div>
+    <span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Pro</span></span>{% unless site.door_live %} <span class="edition-badge">Coming soon</span>{% endunless %}
+    <h2 id="pro-teaser-title">Your Garage, from anywhere</h2>
+    <p>Garage Pro adds Garage Door: Claude and ChatGPT on the web, and Garage on your phone, search your Garage while your files and index stay on your own computers. Nothing on your computer listens, and the door keeps none of what passes through.</p>
+    <div class="hero-actions download-actions">
+      <a href="{{ '/pro/' | relative_url }}" class="btn btn-primary">See Garage Pro</a>
+      <a href="{{ '/door/' | relative_url }}" class="btn btn-secondary">How Garage Door works</a>
+    </div>
+  </div>
+</section>
+
 <section class="edition-enterprise enterprise-teaser" aria-labelledby="enterprise-teaser-title">
   <div>
     <span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Enterprise</span></span> <span class="edition-badge">Coming soon</span>
     <h2 id="enterprise-teaser-title">Garage, for the whole organization</h2>
     <p>Your company's data remains in the company, and AI agents can search only what you permit, with policy you can audit.</p>
     <div class="hero-actions download-actions">
-      <a href="{{ '/enterprise/' | relative_url }}" class="btn btn-primary">Learn about Enterprise</a>
+      <a href="{% if site.enterprise_url != "" %}{{ site.enterprise_url }}{% else %}{{ '/enterprise/' | relative_url }}{% endif %}" class="btn btn-primary">Learn about Enterprise</a>
       <a href="{{ '/support/contact.html' | relative_url }}" class="btn btn-secondary">Tell us what your team needs</a>
     </div>
   </div>

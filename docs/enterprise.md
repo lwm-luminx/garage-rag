@@ -15,7 +15,7 @@ image: /assets/enterprise/icon.png
   <p>Garage | Enterprise is Garage for teams. Your company's data remains in the company, and AI agents can search only what you permit.</p>
   <div class="hero-actions">
     <a href="{{ '/support/contact.html' | relative_url }}" class="btn btn-primary btn-large">Tell us what your team needs</a>
-    <a href="{{ '/' | relative_url }}" class="btn btn-secondary btn-large">Explore Garage today</a>
+    {% if site.enterprise_url != "" %}<a href="{{ site.enterprise_url }}" class="btn btn-secondary btn-large">Visit Garage Enterprise</a>{% else %}<a href="{{ '/' | relative_url }}" class="btn btn-secondary btn-large">Explore Garage today</a>{% endif %}
   </div>
   <p class="download-meta"><span class="edition-badge">Coming soon</span></p>
 </div>
