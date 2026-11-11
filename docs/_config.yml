@@ -42,9 +42,10 @@ door_live: false
 pro_price_month: "$5"
 pro_price_year: "$48"
 
-# Garage Enterprise's own site. While it is empty, the Enterprise links go to /enterprise/ on this site; set it
-# once enterprise.garagerag.app serves, and they go there instead.
-enterprise_url: ""
+# Garage Enterprise's own site (garage-enterprise `site/`, GitHub Pages). Every Enterprise link goes there, and
+# /enterprise/ redirects to it (docs/enterprise.md). Empty would send the links back to /enterprise/, which then
+# needs its teaser content again.
+enterprise_url: "https://enterprise.garagerag.app/"
 
 # Build settings
 markdown: kramdown
