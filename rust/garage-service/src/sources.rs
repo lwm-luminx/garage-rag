@@ -65,7 +65,7 @@ pub async fn add_source(
     check_choice(corpus_class, &CORPUS_CLASSES, "CorpusClass")?;
     let cloud = garage_ingest::is_cloud_kind(kind);
     let expanded = if cloud {
-        // A folder in the Dropbox, OneDrive or mailbox: whether it exists is the service's to say, at the first ingest.
+        // A folder in the cloud service (Dropbox, OneDrive, a mailbox, Google Drive): whether it exists is the service's to say, at the first ingest.
         std::path::PathBuf::from(garage_ingest::dropbox::display_root(root))
     } else {
         expand_home(Path::new(root))

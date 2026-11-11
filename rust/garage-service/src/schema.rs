@@ -96,7 +96,7 @@ fn sources_schema() -> Value {
             "properties": {
                 "slug": {"type": "string", "description": "Short unique name, e.g. 'dropbox'."},
                 "root": {"type": "string", "description": "Directory or file to index. '~' is expanded."},
-                "kind": {"type": "string", "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook"},
+                "kind": {"type": "string", "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive"},
                 "class": {"type": "string", "description": "Default grouping: document | code | communication"},
                 "trust": {"type": "string", "description": "Default trust: authored | reference | received"},
                 "include_code": {"type": "boolean", "description": "Index source files as well as documents."},

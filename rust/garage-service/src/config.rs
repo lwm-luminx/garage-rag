@@ -704,7 +704,7 @@ impl SourceSpec {
     /// `root` with a leading `~` expanded.
     pub fn expanded_root(&self) -> PathBuf {
         if garage_ingest::is_cloud_kind(&self.kind) {
-            // A folder in the Dropbox, OneDrive or mailbox, not on this machine.
+            // A folder in the cloud service, not on this machine.
             return PathBuf::from(garage_ingest::dropbox::display_root(&self.root));
         }
         expand_home(Path::new(&self.root))

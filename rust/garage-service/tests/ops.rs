@@ -177,6 +177,20 @@ fn sources_are_added_synced_imported_and_removed() {
                 .into_inner();
             assert_eq!((outlook.created, outlook.root.as_str()), (true, "/Inbox/Projects"));
             client.remove_source(proto::RemoveSourceRequest { slug: "mail".into() }).await.unwrap();
+            // And a Google Drive source, a folder of My Drive.
+            let drive = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gd".into(),
+                    root: "Work".into(),
+                    kind: "google_drive".into(),
+                    corpus_class: String::new(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((drive.created, drive.root.as_str()), (true, "/Work"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "gd".into() }).await.unwrap();
             let bad = client.add_source(add("x", &root, "", "secret")).await.unwrap_err();
             assert_eq!(bad.code(), Code::InvalidArgument);
             assert!(bad.message().contains("'secret' is not a valid TrustTier"));

@@ -238,6 +238,18 @@ Garage never sends, moves or deletes mail. Each message is read by the mail read
 `communication`, so, like an `.eml` on disk, it never goes to a model server that is not on this
 computer.
 
+## Google Drive sources
+
+A Google Drive source (kind `google_drive`) reads a folder of My Drive through the Drive API the same
+way: Garage lists it folder by folder, skipping the folders the walker would skip without listing them,
+and downloads only a file that is new or changed, into memory. Google's own documents have no file to
+download, so Garage asks Drive to export them: a Doc as `.docx`, a Sheet as `.xlsx` and a Slides deck
+as `.pptx`, which the Office reader reads; Forms, Drawings and shortcuts are passed over. The signed
+requests go to `https://www.googleapis.com/drive/v3/files` and nowhere else (`garage-ingest`'s
+`google_drive::check_destination`, checked again by the host), and every one is a `GET`. In the App
+Store build the node links its Google account through Garage Door, which redeems Google's code (Google
+requires the web client's secret for that), seals the tokens to the node and keeps none.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,

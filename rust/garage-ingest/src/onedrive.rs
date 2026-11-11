@@ -428,7 +428,7 @@ fn api_error(response: &HttpResponse, label: &str) -> ApiError {
 
 /// Whether the walker's rules descend into the folder at `path` (below `root`); a folder they skip
 /// is counted once, and none of it is listed.
-fn descend(path: &str, root: &str, policy: &crate::policy::WalkPolicy, stats: &mut WalkStats) -> bool {
+pub(crate) fn descend(path: &str, root: &str, policy: &crate::policy::WalkPolicy, stats: &mut WalkStats) -> bool {
     let relative = path.get(root.len()..).unwrap_or(path);
     let name = relative.rsplit('/').next().unwrap_or_default();
     if policy.exclude_dirs.contains(name) || is_hidden(name) || name.eq_ignore_ascii_case(".git") {
