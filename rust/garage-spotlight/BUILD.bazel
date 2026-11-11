@@ -7,7 +7,6 @@ load("@rules_rs//rs:rust_test.bzl", "rust_test")
 rust_library(
     name = "garage-spotlight",
     srcs = glob(["src/**/*.rs"]),
-    compile_data = glob(["testdata/**"]),
     crate_name = "garage_spotlight",
     edition = "2024",
     visibility = ["//visibility:public"],
