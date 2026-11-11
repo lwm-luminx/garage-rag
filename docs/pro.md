@@ -29,7 +29,7 @@ permalink: /pro/
   <div class="card">
     <span class="card-icon">📱</span>
     <h3>Garage on your iPhone and iPad <span class="pro-status">In development</span></h3>
-    <p>Garage Remote searches, reads and asks your Garage from your phone. Answers come from the model on your computer; the phone holds no copy of your library. It ships with end-to-end encryption, so the door carries only ciphertext.</p>
+    <p>Garage Remote searches, reads and asks your Garage from your phone. Answers come from the model on your computer; the phone holds no copy of your library. End-to-end encryption, where the door carries only ciphertext, comes before it is released; it isn't there yet.</p>
   </div>
 
   <div class="card">

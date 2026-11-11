@@ -60,7 +60,7 @@ permalink: /door/
 
 <div class="callout callout-info">
   <div class="callout-title">How private is it, honestly?</div>
-  <p>For Claude and ChatGPT on the web, the connection is encrypted between the assistant and the door, and between the door and your computer, so the door's servers handle each request in memory on the way through. They keep none of it, but it is not end-to-end encryption. Garage Remote, the iPhone and iPad app, is built to be end to end: the door relays only ciphertext it cannot read. Either way, an assistant gets only the excerpts it searches for, never your whole library.</p>
+  <p>For Claude and ChatGPT on the web, the connection is encrypted between the assistant and the door, and between the door and your computer, so the door's servers handle each request in memory on the way through. They keep none of it, but it is not end-to-end encryption. Garage Remote, the iPhone and iPad app, is still in development and is not end to end yet. It gets end-to-end encryption before it is released, so the door will relay only ciphertext it cannot read. Either way, an assistant gets only the excerpts it searches for, never your whole library.</p>
 </div>
 
 ## Your privacy level
