@@ -226,6 +226,18 @@ access token. A download is checked against OneDrive's QuickXorHash and kept in 
 token comes from the process that runs ingest, as for Dropbox: in the App Store build the node links
 its Microsoft account through Garage Door, which only relays Microsoft's answer sealed to that node.
 
+## Outlook sources
+
+An Outlook source (kind `outlook`, an Outlook.com or Microsoft 365 mailbox) reads mail through
+Microsoft Graph with the same Microsoft account. Garage lists the folder the source names and every
+folder below it (the whole mailbox but Deleted Items, Junk Email, Drafts and the Outbox for `/`), and
+downloads only a message that is new or changed, as its MIME, into memory. The signed requests go to
+`https://graph.microsoft.com/v1.0/me/mailFolders` and `/v1.0/me/messages/` and nowhere else
+(`garage-ingest`'s `outlook::check_destination`, checked again by the host); every one is a `GET`, so
+Garage never sends, moves or deletes mail. Each message is read by the mail reader and filed as a
+`communication`, so, like an `.eml` on disk, it never goes to a model server that is not on this
+computer.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,

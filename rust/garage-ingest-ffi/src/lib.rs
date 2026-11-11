@@ -12,6 +12,7 @@ use garage_ingest::contact_names::ContactNames;
 use garage_ingest::dropbox::{self, RemoteHost};
 use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
 use garage_ingest::onedrive;
+use garage_ingest::outlook;
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
@@ -772,6 +773,9 @@ fn run_source_with<H: SourceHost>(
             Some(remote) if session.kind == onedrive::KIND => {
                 onedrive::ingest_onedrive_source(remote, &mut storage, slug, &context, &options)
             }
+            Some(remote) if session.kind == outlook::KIND => {
+                outlook::ingest_outlook_source(remote, &mut storage, slug, &context, &options)
+            }
             Some(remote) => dropbox::ingest_dropbox_source(remote, &mut storage, slug, &context, &options),
             None => Err(SourceError::Unavailable(format!("this run cannot read a {} source", session.kind))),
         }
@@ -983,7 +987,9 @@ impl RemoteHost for ReadingHost {
 
     fn send(&mut self, request: &dropbox::HttpRequest) -> Result<dropbox::HttpResponse, String> {
         // The library's own checks, again, at the last step before the request leaves it.
-        dropbox::check_destination(&request.url).or_else(|_| onedrive::check_destination(&request.url))?;
+        dropbox::check_destination(&request.url)
+            .or_else(|_| onedrive::check_destination(&request.url))
+            .or_else(|_| outlook::check_destination(&request.url))?;
         let headers: Vec<Value> = request.headers.iter().map(|(name, value)| json!([name, value])).collect();
         let body = json!({
             "method": request.method,

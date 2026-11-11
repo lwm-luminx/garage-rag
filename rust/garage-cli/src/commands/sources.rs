@@ -279,7 +279,7 @@ fn run_ingest(request: &Value, state: &mut IngestProgress) -> Result<Value, Fail
         progress: Some(ingest_progress),
         cancelled: None,
         shared_names: None,
-        // No HTTPS client and no cloud account here: a Dropbox or OneDrive source fails as unavailable.
+        // No HTTPS client and no cloud account here: a Dropbox, OneDrive or Outlook source fails as unavailable.
         http: None,
         access_token: None,
     };
