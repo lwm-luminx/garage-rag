@@ -196,6 +196,21 @@ deferred; nothing is silently truncated. A stub that is not downloaded gets no
 document (the run counts it as a placeholder), and a file indexed before the sync
 client evicted it is skipped without a download while its stat still matches.
 
+## Dropbox sources
+
+A Dropbox source (kind `dropbox`) reads the account through Dropbox's HTTP API instead of the
+synced folder: Garage lists the folder, and downloads only a file that is new or whose size or
+modification time changed. Content only comes in. The requests go to
+`https://api.dropboxapi.com/2/` and `https://content.dropboxapi.com/2/` and nowhere else
+(`garage-ingest`'s `dropbox::check_destination`, checked again by the host), and carry the source's
+paths and listing cursors, never a document's text. A download is checked against Dropbox's content
+hash and kept in memory only; nothing is written to disk but the index.
+
+Garage holds no Dropbox account itself. The process that runs ingest hands over a short-lived
+access token when asked: the App Store build gets it from Garage Door, which keeps the account's
+refresh token sealed and never sees a file. A build with no token provider (this repository's own
+builds, the CLI and the Windows app, so far) reports a Dropbox source as unavailable.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,

@@ -121,6 +121,10 @@ internal static unsafe partial class GarageNative
         public delegate* unmanaged[Cdecl]<void*, byte*, void> Progress;
         public delegate* unmanaged[Cdecl]<void*, byte> Cancelled;
         public delegate* unmanaged[Cdecl]<void*, byte*, byte**, int> SharedNames;
+        /// <summary>A Dropbox source's HTTPS requests; null here, so a Dropbox source fails as unavailable.</summary>
+        public delegate* unmanaged[Cdecl]<void*, byte*, byte**, int> Http;
+        /// <summary>A Dropbox source's access token; null here, for the same reason.</summary>
+        public delegate* unmanaged[Cdecl]<void*, byte*, byte**, int> AccessToken;
     }
 
     [LibraryImport(IngestLibrary, EntryPoint = "garage_ingest_run")]

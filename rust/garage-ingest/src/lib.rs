@@ -16,6 +16,7 @@ pub mod attribution;
 pub mod chunking;
 pub mod contact_names;
 pub mod conversations;
+pub mod dropbox;
 pub mod facade;
 pub mod feed;
 pub mod fnmatch;
