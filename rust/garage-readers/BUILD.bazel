@@ -2,7 +2,8 @@ load("@rules_rs//rs:rust_library.bzl", "rust_library")
 load("@rules_rs//rs:rust_test.bzl", "rust_test")
 
 # The ingest loop's file readers (extract/dispatch.py's routes): garage-text, the mail, PDF and Office
-# Markdown crates and garage-ocr, plus the Messages shared names (extract/nicknames.py).
+# Markdown crates, garage-ocr and the Mac's Spotlight importers (garage-spotlight), plus the Messages
+# shared names (extract/nicknames.py).
 rust_library(
     name = "garage-readers",
     srcs = glob(["src/**/*.rs"]),
@@ -13,6 +14,7 @@ rust_library(
     deps = [
         "//rust/garage-ingest",
         "//rust/garage-ocr",
+        "//rust/garage-spotlight",
         "//rust/garage-text",
         "@crates//:mail-markdown",
         "@crates//:office-markdown",

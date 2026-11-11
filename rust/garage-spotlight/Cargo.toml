@@ -1,0 +1,15 @@
+[package]
+name = "garage-spotlight"
+description = "Text from files Garage has no reader for, through macOS's own Spotlight importers, loaded in-process from /System/Library/Spotlight. Elsewhere it imports nothing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+# Reads each importer's Info.plist (and the system's version) without CoreFoundation, on every platform.
+plist.workspace = true
+
+[lints]
+workspace = true

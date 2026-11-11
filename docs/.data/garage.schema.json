@@ -173,6 +173,11 @@
           "description": "Index pictures as documents: an image with no text becomes a document with one image chunk, and a screenshot or scan gets one beside its text chunks. Image embedding models (SigLIP 2 in the catalog) embed the picture itself; full-text search sees the file's name. Icons and other tiny images are still skipped. Off, an image without text is not indexed.",
           "default": true
         },
+        "spotlight": {
+          "type": "boolean",
+          "description": "On the Mac, read document types no built-in reader takes (such as .rtf, .doc and .odt) with the system's own Spotlight importers, loaded in-process from /System/Library/Spotlight. Only Apple's importers are used, never a third party's, and never for pictures, media, contacts, calendars, messages, plain text or code. Has no effect on other platforms.",
+          "default": true
+        },
         "plugins": {
           "type": "array",
           "items": {

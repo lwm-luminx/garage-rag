@@ -65,7 +65,12 @@ fn routes_follow_dispatch() {
     assert_eq!(route("a.pptx"), Ok(Reader::Pptx));
     assert_eq!(route("a.xlsm"), Ok(Reader::Xlsx));
     assert_eq!(route("a.HEIC"), Ok(Reader::Image));
-    assert_eq!(route("a.doc"), Err("legacy binary format .doc needs LibreOffice conversion: a.doc".to_owned()));
+    // A legacy format goes to the Mac's Spotlight importer when one takes it.
+    if spotlight_extensions().iter().any(|extension| extension == ".doc") {
+        assert_eq!(route("a.doc"), Ok(Reader::Spotlight));
+    } else {
+        assert_eq!(route("a.doc"), Err("legacy binary format .doc needs LibreOffice conversion: a.doc".to_owned()));
+    }
     assert_eq!(route("a.msg"), Err("binary container .msg has no extractor: a.msg".to_owned()));
     assert_eq!(route("a.bin"), Err("no extractor for '.bin'".to_owned()));
     assert_eq!(route("LICENSE"), Err("no extractor for 'license'".to_owned()));
@@ -80,7 +85,23 @@ fn revisions_name_reader_and_version() {
     assert_eq!(revision("/x/a.pdf"), format!("pdf-markdown:{}", pdf_markdown::VERSION));
     assert_eq!(revision("/x/a.xlsx"), format!("office-markdown:{}", office_markdown::VERSION));
     assert!(revision("/x/a.png").starts_with("image:4+"));
-    assert_eq!(revision("/x/a.doc"), "");
+    if spotlight_extensions().iter().any(|extension| extension == ".doc") {
+        assert_eq!(revision("/x/a.doc"), format!("spotlight:{}", garage_spotlight::revision()));
+    } else {
+        assert_eq!(revision("/x/a.doc"), "");
+    }
+}
+
+#[test]
+fn spotlight_takes_only_what_no_built_in_reader_does() {
+    for extension in spotlight_extensions() {
+        assert_eq!(reader_for(Path::new(&format!("file{extension}"))), Ok(Reader::Spotlight), "{extension}");
+        for built_in in [".md", ".txt", ".rs", ".pdf", ".docx", ".pptx", ".xlsx", ".eml", ".png", ".html"] {
+            assert_ne!(extension, built_in);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    assert!(spotlight_extensions().is_empty());
 }
 
 #[test]
@@ -89,6 +110,9 @@ fn settings_from_json_keep_defaults() {
     let settings = Settings::from_json(object.as_object());
     assert_eq!(settings, Settings { ocr_min_chars: 4, index_images: false, ..Settings::default() });
     assert_eq!(Settings::from_json(None), Settings::default());
+    assert!(Settings::default().spotlight);
+    let off = json!({ "spotlight": false });
+    assert!(!Settings::from_json(off.as_object()).spotlight);
 }
 
 #[test]

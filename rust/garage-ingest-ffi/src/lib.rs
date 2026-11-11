@@ -79,11 +79,7 @@ fn root(request: &Map<String, Value>) -> Result<PathBuf, String> {
 
 fn walk(request: &Map<String, Value>) -> Outcome {
     let root = root(request)?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let include_code = request.get("include_code").and_then(Value::as_bool).unwrap_or(false);
     let expanded = garage_ingest::walk::expand_home(&root);
     let exclude_prefixes = match request.get("exclude_prefixes") {
@@ -550,11 +546,7 @@ fn ingest_one(request: &Map<String, Value>) -> Outcome {
     let source = source_info(request.get("source"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let supplied;
     let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
         library_history()
@@ -683,11 +675,7 @@ fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
 
 /// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does.
 fn scan(request: &Map<String, Value>) -> Outcome {
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let options = ScanOptions {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         policy: &policy,
@@ -732,11 +720,7 @@ fn run_source_with<H: SourceHost>(
     let settings = ingest_settings(request.get("settings"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let supplied;
     let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
         library_history()
@@ -810,6 +794,22 @@ pub struct GarageIngestHost {
     pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
     pub shared_names: HostCall,
+}
+
+/// The walk's rules: the request's `"policy"` over the defaults, and, when the Rust readers read the files
+/// with `spotlight` on (the default), the extensions only the Mac's Spotlight importers read.
+fn walk_policy(request: &Map<String, Value>) -> Result<WalkPolicy, String> {
+    let mut policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    if let Some(Value::Object(readers)) = request.get("readers")
+        && garage_readers::Settings::from_json(Some(readers)).spotlight
+    {
+        policy.indexable_extensions.extend(garage_readers::spotlight_extensions());
+    }
+    Ok(policy)
 }
 
 /// The Rust readers a request asks for with `"readers": {...}` (their `extraction.*` settings, with
@@ -1207,8 +1207,9 @@ pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, res
 /// the request is the same without `"files"` and `"cancel_after"`, plus the materialize `"budget"` (as for
 /// [`garage_ingest_ensure_local`]). Placeholders are made local within the budget and the bytes are hashed
 /// here; the host's `read` reads the text, unless the request has `"readers": {"max_file_bytes"?,
-/// "ocr_min_chars"?, "index_images"?, "pdf_min_chars_per_page"?}`, when [`garage_readers`] read it (and a
-/// Messages source's shared names) and GarageService hears each reader's revision. Progress and cancellation go through the host. The reply holds
+/// "ocr_min_chars"?, "index_images"?, "pdf_min_chars_per_page"?, "spotlight"?}`, when [`garage_readers`] read it
+/// (and a Messages source's shared names) and GarageService hears each reader's revision; with `spotlight` on
+/// (the default) the walk also takes the document types only the Mac's Spotlight importers read. Progress and cancellation go through the host. The reply holds
 /// `"budget"` (as it stands at the end) in place of `"progress"`.
 ///
 /// # Safety
