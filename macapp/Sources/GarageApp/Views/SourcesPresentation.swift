@@ -275,6 +275,12 @@ struct SourceRowPresentation: Equatable {
             return "chevron.left.forwardslash.chevron.right"
         case "feed":
             return "dot.radiowaves.up.forward"
+        case "dropbox":
+            return "shippingbox"
+        case "onedrive", "google_drive":
+            return "cloud"
+        case "outlook", "gmail":
+            return "envelope"
         default:
             break
         }
@@ -628,6 +634,67 @@ enum SourcesSummary {
 
 /// The name the form suggests for a source, from where it points and what it is, so people only
 /// type one when they want something other than the folder's own name.
+/// The kinds the Sources page's form offers. A cloud kind (read through its service's API, its root a
+/// folder or label there) is offered only when this build can sign in to the service, that is when a
+/// `GarageCloudCredentials` provider is installed in this process (the App Store build's, through Garage
+/// Door); the open-source build keeps the kinds but has no account to read them with.
+enum SourceKinds {
+    static let local = ["filesystem", "git", "sqlite", "maildir", "feed"]
+    static let cloud = ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
+
+    static func offered(cloudAvailable: Bool) -> [String] {
+        cloudAvailable ? local + cloud : local
+    }
+
+    static func isCloud(_ kind: String) -> Bool {
+        cloud.contains(kind.lowercased())
+    }
+
+    /// The picker's label for a kind.
+    static func title(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "dropbox": "Dropbox"
+        case "onedrive": "OneDrive"
+        case "outlook": "Outlook mail"
+        case "google_drive": "Google Drive"
+        case "gmail": "Gmail"
+        default: kind
+        }
+    }
+
+    /// What a source of the kind reads, for the form's one-line hint.
+    static func describe(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "git": "a git repository"
+        case "sqlite": "a SQLite database (Messages)"
+        case "maildir": "mailboxes"
+        case "feed": "a feed"
+        case "dropbox": "a folder in your Dropbox"
+        case "onedrive": "a folder in your OneDrive"
+        case "outlook": "an Outlook mail folder and those below it"
+        case "google_drive": "a folder in your Google Drive"
+        case "gmail": "a Gmail label"
+        default: "files in a folder"
+        }
+    }
+
+    /// The root field's placeholder: where a source of the kind starts.
+    static func rootPlaceholder(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "dropbox", "onedrive", "google_drive": "/ or /Work/Notes"
+        case "outlook": "/ or Inbox/Projects"
+        case "gmail": "/ or INBOX"
+        case "feed": "https://example.com/feed.xml"
+        default: "~/Notes"
+        }
+    }
+
+    /// The class a new source of the kind should take: mail is a communication.
+    static func defaultClass(_ kind: String) -> String? {
+        ["outlook", "gmail"].contains(kind.lowercased()) ? "communication" : nil
+    }
+}
+
 enum SourceSlugSuggestion {
     /// The preset's slug for a preset's location; otherwise the last path component (a file's name
     /// without its extension for a database; a feed's host), folded to `[a-z0-9-]` the way the setup
@@ -650,7 +717,7 @@ enum SourceSlugSuggestion {
         default:
             let path = trimmed.hasSuffix("/") && trimmed.count > 1 ? String(trimmed.dropLast()) : trimmed
             var name = (path as NSString).lastPathComponent
-            if name == "~" || name.isEmpty || name == "/" { name = "home" }
+            if name == "~" || name.isEmpty || name == "/" { name = SourceKinds.isCloud(kind) ? kind : "home" }
             if name == "com~apple~CloudDocs" { name = "icloud-drive" }
             base = FirstRunSourceTemplate.slug(forFolderNamed: name)
         }

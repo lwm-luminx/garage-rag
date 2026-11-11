@@ -443,4 +443,34 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourcesSummary.line(sources: 1, documents: 1), "1 document in 1 source")
         XCTAssertEqual(SourcesSummary.line(sources: 3, documents: 1_234), "1,234 documents in 3 sources")
     }
+
+    // MARK: - Cloud kinds
+
+    func testCloudKindsAreOfferedOnlyWithAnAccountProvider() {
+        XCTAssertEqual(SourceKinds.offered(cloudAvailable: false), ["filesystem", "git", "sqlite", "maildir", "feed"])
+        XCTAssertEqual(
+            SourceKinds.offered(cloudAvailable: true).suffix(5),
+            ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
+        )
+        XCTAssertTrue(SourceKinds.isCloud("Google_Drive"))
+        XCTAssertFalse(SourceKinds.isCloud("maildir"))
+        XCTAssertEqual(SourceKinds.title("google_drive"), "Google Drive")
+        XCTAssertEqual(SourceKinds.title("git"), "git")
+    }
+
+    func testMailKindsAreCommunicationsAndNameTheirRoot() {
+        XCTAssertEqual(SourceKinds.defaultClass("outlook"), "communication")
+        XCTAssertEqual(SourceKinds.defaultClass("gmail"), "communication")
+        XCTAssertNil(SourceKinds.defaultClass("onedrive"))
+        XCTAssertEqual(SourceKinds.rootPlaceholder("gmail"), "/ or INBOX")
+        XCTAssertEqual(SourceKinds.describe("outlook"), "an Outlook mail folder and those below it")
+    }
+
+    func testACloudSourceAtItsTopIsNamedForItsKind() {
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "onedrive", taken: []), "onedrive")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "google_drive", taken: []), "google-drive")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "Inbox/Projects", kind: "outlook", taken: []), "projects")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "filesystem", taken: []), "home")
+        XCTAssertEqual(SourcesPresentation.symbol(for: source(kind: "gmail", root: "/INBOX")), "envelope")
+    }
 }

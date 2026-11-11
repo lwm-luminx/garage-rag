@@ -35,7 +35,7 @@ struct SourcesView: View {
     /// a new folder or kind fills in a new one; a name the person typed is kept.
     @State private var suggestedSlug = ""
 
-    private let kinds = ["filesystem", "git", "sqlite", "maildir", "feed"]
+    private var kinds: [String] { SourceKinds.offered(cloudAvailable: GarageCloudCredentials.isAvailable) }
     private let classes = ["document", "code", "communication"]
     private let trusts = ["authored", "reference", "received"]
 
@@ -58,7 +58,10 @@ struct SourcesView: View {
             refreshSourcesAndTestDisk()
         }
         .onChange(of: root) { _, _ in suggestSlugIfUnedited() }
-        .onChange(of: kind) { _, _ in suggestSlugIfUnedited() }
+        .onChange(of: kind) { _, newKind in
+            if let mail = SourceKinds.defaultClass(newKind) { corpusClass = mail }
+            suggestSlugIfUnedited()
+        }
         .onDisappear {
             ingestAutoDismissTask?.cancel()
             ingestAutoDismissTask = nil
@@ -894,10 +897,11 @@ struct SourcesView: View {
                     Text("Folder")
                         .gridColumnAlignment(.trailing)
                     HStack(spacing: 8) {
-                        TextField("~/Notes", text: $root)
+                        TextField(SourceKinds.rootPlaceholder(kind), text: $root)
                             .textFieldStyle(.roundedBorder)
                             .accessibilityIdentifier("sources.form.root")
                         Button("Choose…") { chooseRoot() }
+                            .disabled(SourceKinds.isCloud(kind))
                     }
                 }
                 GridRow {
@@ -919,7 +923,7 @@ struct SourcesView: View {
                     Text("Contents")
                     HStack(spacing: 12) {
                         Picker("Kind", selection: $kind) {
-                            ForEach(kinds, id: \.self) { Text($0).tag($0) }
+                            ForEach(kinds, id: \.self) { Text(SourceKinds.title($0)).tag($0) }
                         }
                         .labelsHidden()
                         .fixedSize()
@@ -965,14 +969,7 @@ struct SourcesView: View {
 
     /// One line on what the three pickers mean, in the order they appear.
     private var contentsHint: String {
-        let what: String
-        switch kind {
-        case "git": what = "a git repository"
-        case "sqlite": what = "a SQLite database (Messages)"
-        case "maildir": what = "mailboxes"
-        case "feed": what = "a feed"
-        default: what = "files in a folder"
-        }
+        let what = SourceKinds.describe(kind)
         let who: String
         switch trust {
         case "authored": who = "you wrote"
