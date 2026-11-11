@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import CoreSpotlight
 import GarageXPCKit
 
 /// The pages, in sidebar order: Status on its own at the top, then each `SidebarGroup`'s pages.
@@ -155,6 +156,12 @@ struct ContentView: View {
             guard let section = notification.object as? AppSection else { return }
             selection = section
         }
+        .onContinueUserActivity(CSSearchableItemActionType) { activity in
+            // A Garage document or fact picked in Spotlight: show its document on the Documents page.
+            guard let identifier = activity.userInfo?[CSSearchableItemActivityIdentifier] as? String,
+                  let documentID = SpotlightEntries.documentID(forIdentifier: identifier) else { return }
+            Task { await openDocumentFromSpotlight(documentID) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .garageShowFirstRun)) { _ in
             // The sender starts the assistant on `appState`; this window only
             // gets its sheets out of the way.
@@ -226,6 +233,14 @@ struct ContentView: View {
             case .logs: LogsView()
             }
         }
+    }
+
+    /// The Documents page filters by URI, which the Spotlight item does not carry: ask GarageService.
+    private func openDocumentFromSpotlight(_ documentID: Int64) async {
+        guard let response = try? await appState.grpc.getDocument(documentID: documentID),
+              response.hasDocument else { return }
+        documentFocus = DocumentFocus(id: documentID, uri: response.document.uri)
+        selection = .documents
     }
 
     /// Swapping one sheet for another has to go through `nil`, otherwise

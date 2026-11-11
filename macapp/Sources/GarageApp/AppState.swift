@@ -63,6 +63,8 @@ final class AppState: ObservableObject {
     let updater = UpdaterService.shared
     /// First-run setup assistant state (pages, picks, and the commands they run).
     let firstRun = FirstRunCoordinator()
+    /// Garage's documents and facts in the Mac's Spotlight (Core Spotlight), rebuilt after each run.
+    let spotlight = SpotlightIndexer()
     @Published var ingestService: IngestService
     let xpcServices: XPCServiceManager
     @Published var osLogStreamService: OSLogStreamService
@@ -619,6 +621,8 @@ final class AppState: ObservableObject {
             return
         }
         lastCommandOutput = "Database deleted. Relaunching Garage to create a new one…"
+        // What Spotlight knew of the old database goes with it.
+        await spotlight.removeAll()
         relaunchAfterDatabaseReset()
     }
 
@@ -1593,7 +1597,15 @@ final class AppState: ObservableObject {
             try? await Task.sleep(nanoseconds: 250_000_000)
             looks += 1
         }
-        return await runOperation { try await $0.removeSource(slug: slug).message }
+        let removed = await runOperation { try await $0.removeSource(slug: slug).message }
+        if removed {
+            // The source's documents and facts leave Spotlight with it.
+            Task { [weak self] in
+                guard let self else { return }
+                await self.spotlight.rebuild(using: self.grpc)
+            }
+        }
+        return removed
     }
 
     /// A quarter second each: a minute for a cancelled scan or ingest to reach its next progress step.
@@ -1646,6 +1658,7 @@ final class AppState: ObservableObject {
             factsSucceeded = await runEnrichFacts(staleOnly: true)
         }
         await fetchCorpusStats()
+        await spotlight.rebuild(using: grpc)
         lastCommandSucceeded = ingestSucceeded && backfillSucceeded && factsSucceeded
     }
 

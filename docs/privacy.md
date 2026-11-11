@@ -304,3 +304,16 @@ The database is unencrypted at rest, as Postgres normally is. If you index
 private communications, the database file is as sensitive as the messages
 themselves — consider FileVault (on by default on recent macOS) and treat
 `pg_dump` output accordingly.
+
+The Mac app also puts each document's title and path, and each distilled fact's
+statement, into the Mac's own Spotlight index (Core Spotlight, in the app's
+container on this Mac), so a Spotlight search finds them. No document text goes
+there, and communications (mail, Messages) are never added. The Database page's
+Spotlight switch turns it off and takes every Garage item out of Spotlight;
+"Reset Database" empties it too.
+
+On the Mac, a document type Garage has no reader for (`.rtf`, `.doc`, `.odt`,
+...) is read by the system's own Spotlight importer for it, loaded into the
+ingest's process from `/System/Library/Spotlight` (`extraction.spotlight`). The
+importer reads the file on this machine and sends nothing anywhere; only Apple's
+importers are loaded, never a third party's.

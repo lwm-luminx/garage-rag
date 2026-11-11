@@ -40,6 +40,7 @@ struct DatabaseView: View {
                 serverSection
                 schemaSection
                 contentsSection
+                SpotlightSection(indexer: appState.spotlight)
                 backupsSection
                 postgresOutputSection
             }
@@ -667,5 +668,62 @@ enum DatabaseBackupPanel {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: Date())
+    }
+}
+
+/// "Show in Spotlight": Garage's documents and facts in the Mac's Spotlight, the switch that keeps
+/// them there, and a rebuild now. Its own view, so it follows the indexer's progress.
+@MainActor
+private struct SpotlightSection: View {
+    @EnvironmentObject var appState: AppState
+    @ObservedObject var indexer: SpotlightIndexer
+    @AppStorage(SpotlightIndexer.enabledKey) private var enabled = true
+
+    var body: some View {
+        GroupBox("Spotlight") {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    Toggle("Show documents and facts in Spotlight", isOn: $enabled)
+                        .accessibilityIdentifier("database.spotlight.enabled")
+                    Spacer()
+                    if indexer.isRebuilding {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Button("Rebuild Now") {
+                        Task { await indexer.rebuild(using: appState.grpc) }
+                    }
+                    .controlSize(.small)
+                    .disabled(!enabled || indexer.isRebuilding || appState.postgres.status != .running)
+                    .accessibilityIdentifier("database.spotlight.rebuild")
+                }
+                Text(Self.status(enabled: enabled, count: indexer.lastCount, error: indexer.lastError))
+                    .font(.caption)
+                    .foregroundStyle(indexer.lastError == nil ? AnyShapeStyle(HierarchicalShapeStyle.secondary) : AnyShapeStyle(Color.orange))
+            }
+            .padding(10)
+        }
+        .onChange(of: enabled) { _, isOn in
+            Task {
+                if isOn {
+                    await indexer.rebuild(using: appState.grpc)
+                } else {
+                    await indexer.removeAll()
+                }
+            }
+        }
+    }
+
+    static func status(enabled: Bool, count: Int?, error: String?) -> String {
+        if let error {
+            return "Spotlight could not be updated: \(error)"
+        }
+        guard enabled else {
+            return "Off. Garage's items are not in Spotlight."
+        }
+        let base = "Titles, paths and facts only, kept on this Mac; mail and messages are left out."
+        guard let count else {
+            return "\(base) Updated after each run."
+        }
+        return "\(base) \(count.formatted()) items, updated after each run."
     }
 }

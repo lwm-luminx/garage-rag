@@ -823,6 +823,12 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `//bazel:is_local_app_group`), else the self-signed local identity, else ad hoc.
   `--config=adhoc` (CI) and `--config=local_signed` force one; `GARAGE_SIGNING_IDENTITY` in the environment
   (or `build --repo_env=` in `user.bazelrc`; `aspect` rejects it on the command line) names one.
+- `SpotlightIndexer` (`Services/SpotlightIndex.swift`) puts each document's title and path and each
+  distilled fact's statement into the app's Core Spotlight index (never communications, never document
+  text), rebuilt after each pipeline run and when a source is removed, emptied by Reset Database and
+  by the Database page's Spotlight switch (`garage.spotlight.enabled`). Opening an item shows its
+  document on the Documents page (`ContentView`'s `onContinueUserActivity`). The rules are plain values
+  (`SpotlightEntries`) with unit tests.
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It
