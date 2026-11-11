@@ -20,6 +20,15 @@ public protocol GarageMCPServerPanel {
     func makeView(context: GarageAppExtensionContext) -> AnyView
 }
 
+/// A panel an extension adds to the Status page, above Health: for what a build wants seen first.
+@MainActor
+public protocol GarageStatusPanel {
+    /// Stable and unique among the panels a build links in.
+    var id: String { get }
+
+    func makeView(context: GarageAppExtensionContext) -> AnyView
+}
+
 /// Work an extension keeps going for the app's whole life, outside any page.
 @MainActor
 public protocol GarageAppExtensionService {
@@ -34,10 +43,16 @@ public protocol GarageAppExtensionService {
 /// Everything the extensions a build links in add to the app.
 @MainActor
 public struct GarageAppExtensionSet {
+    public var statusPanels: [any GarageStatusPanel]
     public var mcpServerPanels: [any GarageMCPServerPanel]
     public var services: [any GarageAppExtensionService]
 
-    public init(mcpServerPanels: [any GarageMCPServerPanel] = [], services: [any GarageAppExtensionService] = []) {
+    public init(
+        statusPanels: [any GarageStatusPanel] = [],
+        mcpServerPanels: [any GarageMCPServerPanel] = [],
+        services: [any GarageAppExtensionService] = []
+    ) {
+        self.statusPanels = statusPanels
         self.mcpServerPanels = mcpServerPanels
         self.services = services
     }

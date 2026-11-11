@@ -471,6 +471,6 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "google_drive", taken: []), "google-drive")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "Inbox/Projects", kind: "outlook", taken: []), "projects")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "filesystem", taken: []), "home")
-        XCTAssertEqual(SourcesPresentation.symbol(for: source(kind: "gmail", root: "/INBOX")), "envelope")
+        XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "gmail", root: "/INBOX")), "envelope")
     }
 }
