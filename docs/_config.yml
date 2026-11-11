@@ -62,6 +62,8 @@ plugins:
 # (models.json, which the build copies in from data/models, and garage.schema.json).
 include:
   - .data
+  # Microsoft Entra's publisher domain verification for the Garage RAG app (Garage Door sign-in).
+  - .well-known
 
 exclude:
   - Gemfile
