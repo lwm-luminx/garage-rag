@@ -1,9 +1,10 @@
 import Foundation
 
-/// Dropbox's API over HTTPS, for a Dropbox source (`garage_ingest.h`'s `http`): exactly the URL the
-/// ingest library approved (Dropbox's two API origins only), with no proxy, cookies or cache, and a
-/// redirect returned rather than followed. Nothing here logs a request: its headers carry the token.
-enum GarageDropboxHTTP {
+/// A cloud source's API over HTTPS (`garage_ingest.h`'s `http`): exactly the URL the ingest library
+/// approved (Dropbox's two API origins, Microsoft Graph and the content hosts Graph redirects a OneDrive
+/// download to), with no proxy, cookies or cache, and a redirect returned rather than followed. Nothing
+/// here logs a request: its headers carry the token.
+enum GarageCloudHTTP {
     private static let session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.connectionProxyDictionary = [
@@ -20,7 +21,16 @@ enum GarageDropboxHTTP {
     }()
 
     /// The hosts the library sends to; anything else is refused here too.
-    static let allowedHosts: Set<String> = ["api.dropboxapi.com", "content.dropboxapi.com"]
+    static let allowedHosts: Set<String> = ["api.dropboxapi.com", "content.dropboxapi.com", "graph.microsoft.com"]
+
+    /// The domains of the pre-authenticated URLs Graph redirects a OneDrive download to (the library
+    /// sends no token there): the domain itself or any host below it.
+    static let allowedDomains = ["sharepoint.com", "1drv.com", "livefilestore.com", "microsoftpersonalcontent.com"]
+
+    /// Whether `host` (lower case) is one the library may send to.
+    static func isAllowed(host: String) -> Bool {
+        allowedHosts.contains(host) || allowedDomains.contains { host == $0 || host.hasSuffix("." + $0) }
+    }
 
     struct Failure: Error, LocalizedError {
         let message: String
@@ -35,10 +45,11 @@ enum GarageDropboxHTTP {
             let url = URL(string: text),
             url.scheme == "https",
             let host = url.host?.lowercased(),
-            allowedHosts.contains(host),
-            url.port == nil
+            isAllowed(host: host),
+            url.port == nil,
+            url.user == nil
         else {
-            throw Failure(message: "the ingest library asked for a URL that is not Dropbox's API")
+            throw Failure(message: "the ingest library asked for a URL that is not a cloud source's API")
         }
         var request = URLRequest(url: url)
         request.httpMethod = object["method"] as? String ?? "POST"
@@ -66,7 +77,7 @@ enum GarageDropboxHTTP {
         semaphore.wait()
         let (response, data) = try (box.result ?? .failure(URLError(.unknown))).get()
         // Only what the library reads; the rest stays here.
-        let wanted = ["retry-after", "dropbox-api-result", "content-type"]
+        let wanted = ["retry-after", "dropbox-api-result", "content-type", "location"]
         let headers: [[String]] = response.allHeaderFields.compactMap { key, value in
             guard let name = key as? String, wanted.contains(name.lowercased()) else { return nil }
             return [name, "\(value)"]

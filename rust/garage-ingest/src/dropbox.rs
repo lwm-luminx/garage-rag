@@ -81,15 +81,15 @@ impl HttpResponse {
     }
 }
 
-/// What a Dropbox source needs from the process that runs it.
+/// What a cloud source (Dropbox, [`crate::onedrive`]) needs from the process that runs it.
 pub trait RemoteHost {
-    /// A Dropbox access token for the source `slug`. `refresh` is true after Dropbox refused the
-    /// last one, so a host that caches tokens fetches a new one.
+    /// An access token for the source `slug` of kind `service` (`dropbox`, `onedrive`). `refresh`
+    /// is true after the service refused the last one, so a host that caches tokens fetches a new one.
     ///
     /// # Errors
     ///
     /// Why there is none: no account connected, Door unreachable, the grant revoked.
-    fn access_token(&mut self, slug: &str, refresh: bool) -> Result<String, String>;
+    fn access_token(&mut self, service: &str, slug: &str, refresh: bool) -> Result<String, String>;
 
     /// Sends `request` and returns the reply.
     ///
@@ -98,10 +98,10 @@ pub trait RemoteHost {
     /// A readable reason when no HTTP reply came.
     fn send(&mut self, request: &HttpRequest) -> Result<HttpResponse, String>;
 
-    /// Reads a downloaded file's bytes; `path` names it (Dropbox's display path) for the reader.
+    /// Reads a downloaded file's bytes; `path` names it (the service's display path) for the reader.
     fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome;
 
-    /// Waits before trying again a request Dropbox asked to slow down.
+    /// Waits before trying again a request the service asked to slow down.
     fn wait(&mut self, duration: Duration) {
         std::thread::sleep(duration);
     }
@@ -320,7 +320,7 @@ impl<'h> Client<'h> {
             let token = if let Some(token) = &self.token {
                 token.clone()
             } else {
-                let token = self.host.access_token(&self.slug, refreshed).map_err(ApiError::Other)?;
+                let token = self.host.access_token(KIND, &self.slug, refreshed).map_err(ApiError::Other)?;
                 self.token = Some(token.clone());
                 token
             };
@@ -447,16 +447,18 @@ fn api_error(response: &HttpResponse) -> ApiError {
     ApiError::Other(format!("{what} ({}): {summary}", response.status))
 }
 
-/// Whether the walker's rules keep `entry`, counted as the walker counts. `root` is the API root.
-fn keep(
-    entry: &Entry,
+/// Whether the walker's rules keep the file at `path` (as the service displays it) of `size` bytes,
+/// counted as the walker counts. `root` is the API root. Shared by every cloud source.
+pub(crate) fn keep(
+    path: &str,
+    size: u64,
     root: &str,
     policy: &crate::policy::WalkPolicy,
     options: &SourceOptions,
     stats: &mut WalkStats,
 ) -> bool {
     stats.files_seen += 1;
-    let relative = entry.path_display.get(root.len()..).unwrap_or(&entry.path_display);
+    let relative = path.get(root.len()..).unwrap_or(path);
     let mut parts: Vec<&str> = relative.split('/').filter(|part| !part.is_empty()).collect();
     let name = parts.pop().unwrap_or_default();
     for directory in &parts {
@@ -488,10 +490,10 @@ fn keep(
         stats.skipped_code += 1;
         return false;
     }
-    if entry.size == 0 {
+    if size == 0 {
         return false;
     }
-    if entry.size > policy.max_file_bytes {
+    if size > policy.max_file_bytes {
         stats.skipped_too_large += 1;
         return false;
     }
@@ -559,7 +561,7 @@ pub fn ingest_dropbox_source(
     let mut entries = Vec::new();
     let mut stats = WalkStats::default();
     let listed = client.list(&root, |entry| {
-        if keep(&entry, &root, context.policy, options, &mut stats) {
+        if keep(&entry.path_display, entry.size, &root, context.policy, options, &mut stats) {
             entries.push(entry);
         }
         ControlFlow::Continue(())
@@ -749,8 +751,8 @@ mod tests {
     }
 
     impl RemoteHost for FakeDropbox {
-        fn access_token(&mut self, slug: &str, _refresh: bool) -> Result<String, String> {
-            assert_eq!(slug, "dbx");
+        fn access_token(&mut self, service: &str, slug: &str, _refresh: bool) -> Result<String, String> {
+            assert_eq!((service, slug), (KIND, "dbx"));
             if self.no_token {
                 return Err("no Dropbox account is connected".to_owned());
             }

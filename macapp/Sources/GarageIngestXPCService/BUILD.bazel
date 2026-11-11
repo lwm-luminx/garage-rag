@@ -21,7 +21,7 @@ objc_library(
 swift_library(
     name = "GarageIngestXPCServiceCore",
     srcs = [
-        "GarageDropboxHTTP.swift",
+        "GarageCloudHTTP.swift",
         "GarageIngestRunner.swift",
         "GarageIngestXPCServiceDelegate.swift",
     ],
