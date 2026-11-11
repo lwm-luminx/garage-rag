@@ -23,7 +23,7 @@ permalink: /pro/
   <div class="card">
     <span class="card-icon">🚪</span>
     <h3>Claude and ChatGPT, on the web</h3>
-    <p>Paste your door's address into Claude or ChatGPT and approve it once. They search your Garage through Garage Door, with no port forwarding and nothing for a scanner to find. You can revoke any assistant from your account.</p>
+    <p>Add your account's one MCP address to Claude or ChatGPT and approve it once. They search every computer you run Garage on through Garage Door, with no port forwarding and nothing for a scanner to find. You can revoke any assistant from your account.</p>
   </div>
 
   <div class="card">

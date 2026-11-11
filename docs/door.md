@@ -27,12 +27,12 @@ permalink: /door/
     <p>Garage opens one outbound, encrypted connection to the door and keeps it open. Your router needs no changes, and there is nothing on your computer for a scanner to find.</p>
   </li>
   <li>
-    <h3>Add an assistant</h3>
-    <p>Paste your door's address into Claude or ChatGPT. They sign in through your Garage Door account with OAuth, and you approve each one. Each appears in your account, where you can revoke it.</p>
+    <h3>Add an assistant, once</h3>
+    <p>Your account has its own MCP address. Add it to Claude as a custom connector, or to ChatGPT as a connector, and approve it when Garage Door asks you to sign in. Each assistant appears in your account, where you can revoke it.</p>
   </li>
   <li>
-    <h3>Your computer answers</h3>
-    <p>The door carries each request to your computer, and Garage answers it under its own rules: the tools an assistant may use are set in Garage, read-only search by default. The answer goes back the same way.</p>
+    <h3>Every one of your computers answers</h3>
+    <p>Garage Door sends each request to every computer on your account that's connected, and the answers come back side by side, each under its computer's name. An assistant can also ask one computer by name, or list which are online. Each computer answers under its own rules: the tools an assistant may use are set in Garage, read-only search by default.</p>
   </li>
 </ol>
 
@@ -54,7 +54,7 @@ permalink: /door/
   <div class="card">
     <span class="card-icon">🧭</span>
     <h3>Your computer decides</h3>
-    <p>What an assistant may do is decided in Garage on your computer, never by the door. Your assistant's own sign-in to the door never reaches your computer, and only an allowlisted set of request headers crosses.</p>
+    <p>What an assistant may do is decided in Garage on each of your computers, never by the door. Your assistant's own sign-in to the door never reaches your computer, and only an allowlisted set of request headers crosses.</p>
   </div>
 </div>
 
@@ -92,6 +92,11 @@ You can make your account more private from anywhere, and it takes effect at onc
 <details>
 <summary>Can I turn it off?</summary>
 <p>Yes. Turn Garage Door off in Garage, or set your privacy level to entirely private from your account, and your computer's connection closes. Revoke an assistant from your account and it loses access at once.</p>
+</details>
+
+<details>
+<summary>I have more than one computer. Do I add each one?</summary>
+<p>No. Your assistants add your account's one address, and reach every computer you've turned Garage Door on for. A computer that's switched off or offline simply doesn't answer until it's back. Search results come back per computer for now, not merged into one list.</p>
 </details>
 
 <details>
