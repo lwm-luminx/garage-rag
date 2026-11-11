@@ -250,6 +250,17 @@ requests go to `https://www.googleapis.com/drive/v3/files` and nowhere else (`ga
 Store build the node links its Google account through Garage Door, which redeems Google's code (Google
 requires the web client's secret for that), seals the tokens to the node and keeps none.
 
+## Gmail sources
+
+A Gmail source (kind `gmail`) reads the messages under one label, or the whole mailbox but spam, trash,
+drafts and chats, through the Gmail API with the same Google account. A Gmail message never changes
+once it arrives, so Garage fetches each one once, as its MIME (`format=raw`), into memory, and skips it
+by its id on later runs. The signed requests go to
+`https://gmail.googleapis.com/gmail/v1/users/me/messages` and `/labels` and nowhere else
+(`garage-ingest`'s `gmail::check_destination`, checked again by the host); every one is a `GET`, so
+Garage never sends, labels or deletes mail. Each message is read by the mail reader and filed as a
+`communication`, so it never goes to a model server that is not on this computer.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,

@@ -21,7 +21,7 @@ enum GarageCloudHTTP {
     }()
 
     /// The hosts the library sends to; anything else is refused here too.
-    static let allowedHosts: Set<String> = ["api.dropboxapi.com", "content.dropboxapi.com", "graph.microsoft.com", "www.googleapis.com"]
+    static let allowedHosts: Set<String> = ["api.dropboxapi.com", "content.dropboxapi.com", "graph.microsoft.com", "www.googleapis.com", "gmail.googleapis.com"]
 
     /// The domains of the pre-authenticated URLs Graph redirects a OneDrive download to (the library
     /// sends no token there): the domain itself or any host below it.

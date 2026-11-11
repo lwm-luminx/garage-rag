@@ -253,7 +253,9 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   each new or changed message downloaded as MIME with Graph's immutable id as its URI and read by the mail reader as a
   `communication`; `"service": "outlook"`) and a Google Drive folder through the Drive API (`google_drive.rs`, kind
   `google_drive`: listed folder by folder, a file's URI its Drive id, Docs, Sheets and Slides exported as `.docx`,
-  `.xlsx` and `.pptx` for the Office reader; `"service": "google_drive"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  `.xlsx` and `.pptx` for the Office reader; `"service": "google_drive"`) and Gmail (`gmail.rs`, kind `gmail`: a
+  label or the whole mailbox, each message fetched once as `format=raw` MIME, since Gmail messages never change, and
+  read by the mail reader as a `communication`; `"service": "gmail"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`). `garage_ingest_run_source` runs a whole source,

@@ -191,6 +191,20 @@ fn sources_are_added_synced_imported_and_removed() {
                 .into_inner();
             assert_eq!((drive.created, drive.root.as_str()), (true, "/Work"));
             client.remove_source(proto::RemoveSourceRequest { slug: "gd".into() }).await.unwrap();
+            // And a Gmail source, a label.
+            let gmail = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gm".into(),
+                    root: "INBOX".into(),
+                    kind: "gmail".into(),
+                    corpus_class: "communication".into(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((gmail.created, gmail.root.as_str()), (true, "/INBOX"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "gm".into() }).await.unwrap();
             let bad = client.add_source(add("x", &root, "", "secret")).await.unwrap_err();
             assert_eq!(bad.code(), Code::InvalidArgument);
             assert!(bad.message().contains("'secret' is not a valid TrustTier"));

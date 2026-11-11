@@ -11,6 +11,7 @@ use garage_ingest::attribution::{AuthorTally, GitHistory, NoGit, RepoAttribution
 use garage_ingest::contact_names::ContactNames;
 use garage_ingest::dropbox::{self, RemoteHost};
 use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
+use garage_ingest::gmail;
 use garage_ingest::google_drive;
 use garage_ingest::onedrive;
 use garage_ingest::outlook;
@@ -780,6 +781,9 @@ fn run_source_with<H: SourceHost>(
             Some(remote) if session.kind == google_drive::KIND => {
                 google_drive::ingest_google_drive_source(remote, &mut storage, slug, &context, &options)
             }
+            Some(remote) if session.kind == gmail::KIND => {
+                gmail::ingest_gmail_source(remote, &mut storage, slug, &context, &options)
+            }
             Some(remote) => dropbox::ingest_dropbox_source(remote, &mut storage, slug, &context, &options),
             None => Err(SourceError::Unavailable(format!("this run cannot read a {} source", session.kind))),
         }
@@ -994,7 +998,8 @@ impl RemoteHost for ReadingHost {
         dropbox::check_destination(&request.url)
             .or_else(|_| onedrive::check_destination(&request.url))
             .or_else(|_| outlook::check_destination(&request.url))
-            .or_else(|_| google_drive::check_destination(&request.url))?;
+            .or_else(|_| google_drive::check_destination(&request.url))
+            .or_else(|_| gmail::check_destination(&request.url))?;
         let headers: Vec<Value> = request.headers.iter().map(|(name, value)| json!([name, value])).collect();
         let body = json!({
             "method": request.method,
