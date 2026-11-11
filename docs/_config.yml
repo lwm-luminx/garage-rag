@@ -33,6 +33,19 @@ app_store_url: "https://apps.apple.com/app/id6811306880"
 # Windows as "coming soon". Set it here once a Windows build is published and every entry point lights up.
 windows_alpha_url: ""
 
+# Garage Pro and Garage Door (/pro/, /door/). door_url is the account site, which Garage Door's gateway serves.
+# While door_live is false, both pages say Garage Door is in testing and the Pro plan shows "Coming soon" instead
+# of a subscribe button. Set it once the App Store version with Garage Door is on sale. The prices are the Door
+# plan's (garage-enterprise door/lib/garage_door/plans.rb); change them together.
+door_url: "https://door.garagerag.app"
+door_live: false
+pro_price_month: "$5"
+pro_price_year: "$48"
+
+# Garage Enterprise's own site (garage-enterprise site/). The Enterprise links go there; empty, they would go to
+# /enterprise/ on this site, which redirects to it.
+enterprise_url: "https://enterprise.garagerag.app"
+
 # Build settings
 markdown: kramdown
 kramdown:
