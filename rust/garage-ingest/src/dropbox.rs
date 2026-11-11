@@ -5,8 +5,9 @@
 //!
 //! Nothing here opens a connection or holds a credential. The [`RemoteHost`] carries each request
 //! after [`check_destination`] has approved it (only Dropbox's two API origins, over HTTPS), and
-//! hands over a short-lived access token when asked: the Mac app's store build gets it from Garage
-//! Door, which keeps the refresh token, and another host may keep its own. A request carries the
+//! hands over a short-lived access token when asked: the store build's node signs in through Garage
+//! Door (which only relays Dropbox's answer, sealed to the node) and refreshes the token itself, and
+//! another host may keep its own. A request carries the
 //! source's paths and cursors, never a document's text: content only comes in.
 //!
 //! A file's URI is `dropbox:` and its path as Dropbox displays it, so a renamed file is a new
@@ -751,7 +752,7 @@ mod tests {
         fn access_token(&mut self, slug: &str, _refresh: bool) -> Result<String, String> {
             assert_eq!(slug, "dbx");
             if self.no_token {
-                return Err("no Dropbox account is connected to Garage Door".to_owned());
+                return Err("no Dropbox account is connected".to_owned());
             }
             self.tokens_issued += 1;
             Ok(format!("token-{}", self.tokens_issued))
@@ -984,7 +985,7 @@ mod tests {
 
         let mut dropbox = FakeDropbox { no_token: true, ..FakeDropbox::with(&[("/plan.md", PROSE)]) };
         let outcome = run(&mut dropbox, &mut Database::default(), "/");
-        assert_eq!(outcome, Err(SourceError::Unavailable("no Dropbox account is connected to Garage Door".into())));
+        assert_eq!(outcome, Err(SourceError::Unavailable("no Dropbox account is connected".into())));
         assert!(dropbox.requests.is_empty());
     }
 

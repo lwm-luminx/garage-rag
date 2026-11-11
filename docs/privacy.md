@@ -207,8 +207,9 @@ paths and listing cursors, never a document's text. A download is checked agains
 hash and kept in memory only; nothing is written to disk but the index.
 
 Garage holds no Dropbox account itself. The process that runs ingest hands over a short-lived
-access token when asked: the App Store build gets it from Garage Door, which keeps the account's
-refresh token sealed and never sees a file. A build with no token provider (this repository's own
+access token when asked: in the App Store build the node signs in to Dropbox itself, with Garage Door
+only relaying Dropbox's answer sealed to that node, and keeps and refreshes the token on the node. Door
+holds no token and never sees a file. A build with no token provider (this repository's own
 builds, the CLI and the Windows app, so far) reports a Dropbox source as unavailable.
 
 ## Garage's own endpoints

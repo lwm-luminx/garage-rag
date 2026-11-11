@@ -4,8 +4,8 @@ import Foundation
 ///
 /// Garage holds no cloud account of its own: a build that can read a cloud source registers a
 /// provider here, in the process that runs ingest. The App Store build's extensions register one
-/// that asks Garage Door, which keeps the Dropbox refresh token and hands out short-lived access
-/// tokens; with none registered a Dropbox source fails as unavailable, with `notConnected`'s
+/// that keeps the Dropbox connection on this node (signed in through Garage Door, which holds no
+/// token) and refreshes it; with none registered a Dropbox source fails as unavailable, with `notConnected`'s
 /// message. A provider is called on the ingest thread and may block; it never logs a token.
 public enum GarageCloudCredentials {
     /// `service` is the source kind (`dropbox`), `source` its slug, and `refresh` true after the
