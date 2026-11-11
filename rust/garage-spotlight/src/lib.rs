@@ -14,6 +14,7 @@
 //! - only for document types ([`EXCLUDED_TYPES`] leaves out pictures, media, archives, applications,
 //!   contacts, calendars, messages, plain text and code, which Garage reads itself or not at all, and
 //!   HTML and web archives, whose importer needs the main thread's WebKit);
+//! - never the importers of personal records ([`EXCLUDED_IMPORTERS`]: Mail, contacts, calendars, photos);
 //! - each importer once, the first time a file needs it, and never unloaded.
 //!
 //! Garage's own readers decide which files come here ([`extensions`] lists what the system can
@@ -64,6 +65,16 @@ pub const EXCLUDED_TYPES: &[&str] = &[
     "public.html",
     "com.apple.webarchive",
 ];
+
+/// Importers never loaded, by bundle name, whatever types they declare: they read personal records
+/// (mail parts, contacts and groups, calendars, photo libraries), which never go through a generic reader.
+pub const EXCLUDED_IMPORTERS: &[&str] = &["Mail", "vCard", "iCal", "iPhoto", "iPhoto8"];
+
+/// Whether the importer bundle at `bundle` is one of [`EXCLUDED_IMPORTERS`].
+#[must_use]
+pub fn excluded_importer(bundle: &Path) -> bool {
+    bundle.file_stem().is_some_and(|name| EXCLUDED_IMPORTERS.iter().any(|excluded| name.eq_ignore_ascii_case(excluded)))
+}
 
 /// One of the system's importers, as its `Info.plist` describes it.
 #[derive(Clone, Debug, PartialEq, Eq)]

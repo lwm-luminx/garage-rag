@@ -102,3 +102,31 @@ fn off_the_mac_nothing_is_imported() {
     assert!(matches!(import(Path::new("/tmp/letter.rtf")), Outcome::NoImporter(_)));
     assert_eq!(revision(), "1+unavailable");
 }
+
+#[test]
+fn importers_of_personal_records_are_never_loaded() {
+    assert!(excluded_importer(Path::new("/System/Library/Spotlight/Mail.mdimporter")));
+    assert!(excluded_importer(Path::new("/System/Library/Spotlight/vcard.mdimporter")));
+    assert!(!excluded_importer(Path::new("/System/Library/Spotlight/RichText.mdimporter")));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn the_system_imports_rich_text() {
+    // Some importers list types with no extension (audiobooks): reading the list must not trip on them.
+    let extensions = extensions();
+    assert!(extensions.iter().any(|extension| extension == ".rtf"), "{extensions:?}");
+    assert!(!extensions.iter().any(|extension| extension == ".emlxpart" || extension == ".vcf"), "{extensions:?}");
+    let folder = std::env::temp_dir().join(format!("garage-spotlight-{}", std::process::id()));
+    std::fs::create_dir_all(&folder).unwrap();
+    let rtf = folder.join("letter.rtf");
+    std::fs::write(&rtf, b"{\\rtf1\\ansi Hello from Spotlight.}").unwrap();
+    match import(&rtf) {
+        Outcome::Imported(imported) => assert_eq!(imported.text.trim(), "Hello from Spotlight."),
+        other => panic!("{other:?}"),
+    }
+    let junk = folder.join("old.doc");
+    std::fs::write(&junk, b"x").unwrap();
+    assert!(matches!(import(&junk), Outcome::NoText(_) | Outcome::Failed(_)));
+    std::fs::remove_dir_all(&folder).unwrap();
+}
