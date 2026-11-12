@@ -165,6 +165,18 @@ public final class IngestEngine: @unchecked Sendable {
     // MARK: - Access Testing Inside the XPC Sandbox
 
     /// Executes full filesystem and TCC access tests inside the XPC sandbox process.
+    /// The path the access test checks for a source root. A root that is a link (`~/Dropbox`, which
+    /// Dropbox's move to File Provider leaves pointing at `~/Library/CloudStorage/Dropbox`) is
+    /// checked at the folder it leads to: the grant the user made covers that folder, and in the
+    /// sandbox the link itself, in the home folder, is outside every grant. The granted folder's
+    /// own URL is used when the source has one, else the link is followed where it can be read.
+    public static func accessCheckPath(for path: String, grantedSourceURLs: [String: URL]) -> String {
+        if let granted = grantedSourceURLs[path] {
+            return granted.standardizedFileURL.path
+        }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+    }
+
     public func testVolumeAccess(request: VolumeAccessTestRequest) -> IngestVolumeAccessTestResult {
         // Apply root bookmark if passed in request
         if let rootData = request.rootBookmarkData {
@@ -181,6 +193,7 @@ public final class IngestEngine: @unchecked Sendable {
         lock.lock()
         let targetURL = activeRootURL ?? URL(fileURLWithPath: "/")
         let isSecurityScoped = isAccessingRootScope
+        let grantedSourceURLs = activeSourceURLs
         lock.unlock()
 
         let fileManager = FileManager.default
@@ -219,7 +232,10 @@ public final class IngestEngine: @unchecked Sendable {
         for source in request.sourcePaths {
             let rawPath = source.root
             let slug = source.slug
-            let resolvedPath = GarageAppGroup.expandingTilde(in: rawPath)
+            let resolvedPath = Self.accessCheckPath(
+                for: GarageAppGroup.expandingTilde(in: rawPath),
+                grantedSourceURLs: grantedSourceURLs
+            )
             var isDir: ObjCBool = false
             let exists = fileManager.fileExists(atPath: resolvedPath, isDirectory: &isDir)
             let isReadable = fileManager.isReadableFile(atPath: resolvedPath)
