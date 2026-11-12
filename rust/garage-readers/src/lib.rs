@@ -520,6 +520,9 @@ fn mail_document(path: &Path, bytes: &[u8]) -> Result<Extracted, String> {
 }
 
 fn pdf_document(path: &Path, bytes: &[u8], settings: &Settings) -> Result<Extracted, String> {
+    if let Some(problem) = validate::pdf_problem(bytes) {
+        return Err(format!("not read, {problem}: {}", path.display()));
+    }
     let options = pdf_markdown::Options { min_chars_per_page: settings.pdf_min_chars_per_page, ..Default::default() };
     let pdf = pdf_markdown::convert_with(bytes, &options).map_err(|error| format!("{error}: {}", path.display()))?;
     let mut meta = Map::new();
@@ -595,6 +598,8 @@ fn office_document(path: &Path, bytes: &[u8], format: office_markdown::Format) -
         author_hints: clean_author_hints(&document.authors),
     })
 }
+
+pub mod validate;
 
 #[cfg(test)]
 mod tests;

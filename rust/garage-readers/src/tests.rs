@@ -238,7 +238,7 @@ fn author_hints_drop_tool_names_and_duplicates() {
 
 /// A one-page PDF whose page sits `depth` /Pages nodes down, as a real file's page tree did when it
 /// overflowed the Mac app's 512 KB ingest thread.
-fn deep_page_tree_pdf(depth: usize) -> Vec<u8> {
+pub(crate) fn deep_page_tree_pdf(depth: usize) -> Vec<u8> {
     let mut objects: Vec<String> = vec!["<< /Type /Catalog /Pages 2 0 R >>".to_owned()];
     // Objects 2 ..= depth + 1 are the /Pages chain; depth + 2 the page, depth + 3 its content, depth + 4 the font.
     for level in 0..depth {
@@ -275,17 +275,30 @@ fn deep_page_tree_pdf(depth: usize) -> Vec<u8> {
 }
 
 #[test]
-fn a_deep_page_tree_reads_on_a_small_stack() {
-    let folder = folder("deep-pdf");
-    let path = write(&folder, "deep.pdf", &deep_page_tree_pdf(3_000));
-    // A GCD worker's stack, which the Mac app's ingest runs on.
-    let outcome = std::thread::Builder::new()
+fn a_deep_page_tree_parses_on_a_small_stack() {
+    // A GCD worker's 512 KB, which the Mac app's ingest runs on, overflowed before parsers had a
+    // stack of their own (a real 160-page file nests 161 deep).
+    let bytes = deep_page_tree_pdf(3_000);
+    let text = std::thread::Builder::new()
         .stack_size(512 * 1024)
-        .spawn(move || Readers::new(Settings::default()).read(&path))
+        .spawn(move || on_parser_stack(|| pdf_markdown::convert_with(&bytes, &pdf_markdown::Options::default())))
         .unwrap()
         .join()
-        .unwrap();
-    let read = document(outcome);
-    assert!(read.text.contains("Knots worth knowing"), "{}", read.text);
+        .unwrap()
+        .unwrap()
+        .markdown;
+    assert!(text.contains("Knots worth knowing"), "{text}");
+}
+
+#[test]
+fn a_page_tree_past_the_limit_is_refused_with_its_reason() {
+    let folder = folder("deep-pdf");
+    let mut readers = Readers::new(Settings::default());
+    let shallow = document(readers.read(&write(&folder, "shallow.pdf", &deep_page_tree_pdf(40))));
+    assert!(shallow.text.contains("Knots worth knowing"), "{}", shallow.text);
+    match readers.read(&write(&folder, "deep.pdf", &deep_page_tree_pdf(5_000))) {
+        ReadOutcome::Failed(reason) => assert!(reason.contains("page tree nests more than 4096 levels"), "{reason}"),
+        other => panic!("not refused: {other:?}"),
+    }
     std::fs::remove_dir_all(&folder).unwrap();
 }
