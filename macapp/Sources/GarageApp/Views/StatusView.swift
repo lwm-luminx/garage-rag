@@ -32,6 +32,7 @@ struct StatusView: View {
             .padding(20)
         }
         .navigationTitle("Status")
+        .toolbar { accountToolbar }
         .onAppear {
             Task {
                 await appState.fetchRegisteredSources()
@@ -61,6 +62,22 @@ struct StatusView: View {
         let panels = GarageAppExtensions.installed.statusPanels
         ForEach(panels.indices, id: \.self) { index in
             panels[index].makeView(context: context)
+        }
+    }
+
+    /// What the build's extensions put in the top-right corner: the App Store build's signed-in account (none in
+    /// this repository's builds).
+    @ToolbarContentBuilder
+    private var accountToolbar: some ToolbarContent {
+        let accessories = GarageAppExtensions.installed.statusAccessories
+        if !accessories.isEmpty {
+            ToolbarItemGroup(placement: .primaryAction) {
+                let endpoint = appState.mcp.status == .running ? appState.mcp.endpoint : nil
+                let context = GarageAppExtensionContext(mcpHTTPEndpoint: endpoint)
+                ForEach(accessories.indices, id: \.self) { index in
+                    accessories[index].makeView(context: context)
+                }
+            }
         }
     }
 
