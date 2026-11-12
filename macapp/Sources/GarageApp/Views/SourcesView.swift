@@ -503,7 +503,9 @@ struct SourcesView: View {
             access: access,
             activity: activity(for: source),
             lastRun: lastRun(for: source),
-            isCancellingAll: appState.isCancellingAll
+            isCancellingAll: appState.isCancellingAll,
+            localClient: CloudClientFolders.state(for: source.kind),
+            cloudLink: SourceKinds.isCloud(source.kind) ? GarageCloudCredentials.status(service: source.kind) : nil
         )
         let isRemoving = appState.sourcesBeingRemoved.contains(source.slug)
 
@@ -904,6 +906,12 @@ struct SourcesView: View {
                             .disabled(SourceKinds.isCloud(kind))
                     }
                 }
+                if let state = CloudClientFolders.state(for: kind) {
+                    GridRow {
+                        Text("Local app")
+                        localClientRow(state)
+                    }
+                }
                 GridRow {
                     Text("Name")
                     HStack(spacing: 8) {
@@ -963,6 +971,37 @@ struct SourcesView: View {
                     clearForm()
                 }
                 .disabled(slug.isEmpty && root.isEmpty)
+            }
+        }
+    }
+
+    /// Whether the cloud kind's own app keeps its folder on this node: the folder the source is
+    /// linked to, or a button that installs the app.
+    @ViewBuilder
+    private func localClientRow(_ state: CloudClientFolders.State) -> some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .linked(let client, let folder):
+                Image(systemName: "link")
+                    .foregroundStyle(.green)
+                Text("Linked to the \(client.app) folder on this node, \(folder)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help("\(client.app)'s API lists the files and spots changes. A file whose copy in this folder is on disk is read from it; online-only files are downloaded.")
+                    .accessibilityIdentifier("sources.form.localClient.linked")
+            case .notInstalled(let client):
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(.secondary)
+                Text("The \(client.app) app isn't on this node, so every file is downloaded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Install \(client.app)…") {
+                    NSWorkspace.shared.open(client.installURL)
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("sources.form.localClient.install")
             }
         }
     }

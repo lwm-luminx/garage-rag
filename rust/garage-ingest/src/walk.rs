@@ -195,7 +195,7 @@ pub fn expand_home(path: &Path) -> PathBuf {
 }
 
 #[cfg(unix)]
-fn account_home() -> Option<PathBuf> {
+pub(crate) fn account_home() -> Option<PathBuf> {
     use std::ffi::{CStr, OsStr};
     use std::os::unix::ffi::OsStrExt;
 
@@ -215,7 +215,7 @@ fn account_home() -> Option<PathBuf> {
 }
 
 #[cfg(not(unix))]
-fn account_home() -> Option<PathBuf> {
+pub(crate) fn account_home() -> Option<PathBuf> {
     None
 }
 

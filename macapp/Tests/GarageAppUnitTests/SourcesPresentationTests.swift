@@ -1,4 +1,5 @@
 import XCTest
+import GarageXPCKit
 @testable import GarageApp
 
 final class SourcesPresentationTests: XCTestCase {
@@ -44,6 +45,27 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertNil(row.counts)
         XCTAssertFalse(row.showsCancel)
         XCTAssertEqual(row.badges, [])
+    }
+
+    func testALinkedCloudSourceSaysSoAndAnUnlinkedOneSaysWhy() {
+        let dropbox = CloudClientFolders.Client(app: "Dropbox", installURL: URL(string: "https://www.dropbox.com/install")!)
+        let linked = SourceRowPresentation.make(
+            source: source(), access: nil, activity: .idle, lastRun: nil,
+            localClient: .linked(dropbox, folder: "~/Library/CloudStorage/Dropbox")
+        )
+        XCTAssertEqual(linked.badges.map(\.text), ["LINKED TO DROPBOX APP"])
+        let unlinked = SourceRowPresentation.make(source: source(), access: nil, activity: .idle, lastRun: nil, localClient: .notInstalled(dropbox))
+        XCTAssertEqual(unlinked.badges.map(\.text), ["DROPBOX APP NOT INSTALLED"])
+    }
+
+    func testACloudSourceShowsWhetherItsAccountIsLinked() {
+        let badges = { (status: GarageCloudLinkStatus) in
+            SourceRowPresentation.make(source: self.source(), access: nil, activity: .idle, lastRun: nil, cloudLink: status).badges.map(\.text)
+        }
+        XCTAssertEqual(badges(.connected(account: "rick@example.com")), ["ACCOUNT LINKED"])
+        XCTAssertEqual(badges(.needsReconnect(reason: "revoked")), ["RECONNECT ACCOUNT"])
+        XCTAssertEqual(badges(.notConnected), ["ACCOUNT NOT LINKED"])
+        XCTAssertEqual(SourceRowPresentation.make(source: source(), access: nil, activity: .idle, lastRun: nil).badges, [])
     }
 
     func testAScannedButUnindexedSourceSaysHowMuchThereIs() {
@@ -416,6 +438,8 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Developer/garage-rag", kind: "git", taken: []), "garage-rag")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Library/Mobile Documents/com~apple~CloudDocs", kind: "filesystem", taken: []), "icloud-drive")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~", kind: "filesystem", taken: []), "home")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Library/CloudStorage/OneDrive-Personal", kind: "filesystem", taken: []), "onedrive")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Library/CloudStorage/GoogleDrive-rick@example.com/My Drive", kind: "filesystem", taken: []), "google-drive")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "   ", kind: "filesystem", taken: []), "")
     }
 
