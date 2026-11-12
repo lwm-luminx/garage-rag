@@ -97,7 +97,9 @@ struct SourceRowPresentation: Equatable {
         access: SourcePathAccessResult?,
         activity: SourceActivity,
         lastRun: SourceLastRun?,
-        isCancellingAll: Bool = false
+        isCancellingAll: Bool = false,
+        localClient: CloudClientFolders.State? = nil,
+        cloudLink: GarageCloudLinkStatus? = nil
     ) -> SourceRowPresentation {
         let symbol = Self.symbol(for: source)
         let tint = Self.tint(forCorpusClass: source.corpusClass)
@@ -114,6 +116,26 @@ struct SourceRowPresentation: Equatable {
         // source only the database knows is the ordinary case for one added here, so it gets no badge.
         if source.origin == .config {
             badges.append(Badge(text: "NOT SYNCED", tone: .warning))
+        }
+        // A cloud source reads with the account linked on this node.
+        switch cloudLink {
+        case .connected:
+            badges.append(Badge(text: "ACCOUNT LINKED", tone: .good))
+        case .needsReconnect:
+            badges.append(Badge(text: "RECONNECT ACCOUNT", tone: .warning))
+        case .notConnected:
+            badges.append(Badge(text: "ACCOUNT NOT LINKED", tone: .warning))
+        case nil:
+            break
+        }
+        // A cloud source linked to its app's folder on this node reads files from there.
+        switch localClient {
+        case .linked(let client, _):
+            badges.append(Badge(text: "LINKED TO \(client.app.uppercased()) APP", tone: .active))
+        case .notInstalled(let client):
+            badges.append(Badge(text: "\(client.app.uppercased()) APP NOT INSTALLED", tone: .neutral))
+        case nil:
+            break
         }
         if let access, !access.isAccessible {
             if access.requiresTCCPermission || access.tccCategory != nil {
@@ -719,6 +741,9 @@ enum SourceSlugSuggestion {
             var name = (path as NSString).lastPathComponent
             if name == "~" || name.isEmpty || name == "/" { name = SourceKinds.isCloud(kind) ? kind : "home" }
             if name == "com~apple~CloudDocs" { name = "icloud-drive" }
+            // The cloud clients' folders (`CloudClientFolders`) are named for their accounts.
+            if name.hasPrefix("OneDrive") { name = "onedrive" }
+            if name.hasPrefix("GoogleDrive-") || (name == "My Drive" && path.contains("/GoogleDrive-")) { name = "google-drive" }
             base = FirstRunSourceTemplate.slug(forFolderNamed: name)
         }
         return FirstRunSourceTemplate.uniqueSlug(base: base, taken: taken)

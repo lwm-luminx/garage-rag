@@ -12,8 +12,29 @@ public enum GarageCloudCredentials {
     /// service refused the last token. Returns an access token, or throws why there is none.
     public typealias Provider = @Sendable (_ service: String, _ source: String, _ refresh: Bool) throws -> String
 
+    /// Where `service`'s account stands on this node, without asking for a token (no network): nil
+    /// when the provider does not know the service.
+    public typealias StatusProvider = @Sendable (_ service: String) -> GarageCloudLinkStatus?
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var provider: Provider?
+    nonisolated(unsafe) private static var statusProvider: StatusProvider?
+
+    /// Installs `status`, which the Sources page asks whether each cloud source's account is linked;
+    /// nil removes it.
+    public static func registerStatus(_ status: StatusProvider?) {
+        lock.lock()
+        defer { lock.unlock() }
+        statusProvider = status
+    }
+
+    /// Where `service`'s account stands, or nil when no build-provided status says.
+    public static func status(service: String) -> GarageCloudLinkStatus? {
+        lock.lock()
+        let status = statusProvider
+        lock.unlock()
+        return status?(service)
+    }
 
     /// Installs `provider`, replacing any before it; nil removes it.
     public static func register(_ provider: Provider?) {
@@ -39,6 +60,15 @@ public enum GarageCloudCredentials {
         }
         return try provider(service, source, refresh)
     }
+}
+
+/// Whether a cloud service's account is linked to Garage on this node.
+public enum GarageCloudLinkStatus: Equatable, Sendable {
+    /// Linked, with the account's name when the service gave one.
+    case connected(account: String?)
+    /// Linked once, and the service stopped accepting the credential.
+    case needsReconnect(reason: String)
+    case notConnected
 }
 
 /// Why no token came.

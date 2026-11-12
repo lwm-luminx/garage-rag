@@ -706,6 +706,18 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     )
 }
 
+/// The desktop client folder a cloud source is linked to: a Dropbox source reads the Dropbox app's
+/// folder when it is on this node, unless the request names one (`"local_folder"`: a path, or
+/// `false` for none).
+fn local_folder(request: &Map<String, Value>, kind: &str) -> Option<PathBuf> {
+    match request.get("local_folder") {
+        Some(Value::String(path)) => Some(PathBuf::from(path)),
+        Some(Value::Bool(false)) => None,
+        _ if kind == dropbox::KIND => dropbox::local_folder(),
+        _ => None,
+    }
+}
+
 /// `BeginIngestSession`, the scan, then [`source::ingest_source`] with the host `make_host` builds for
 /// the source's root; `finish` adds what the host has to say to the reply.
 fn run_source_with<H: SourceHost>(
@@ -721,6 +733,7 @@ fn run_source_with<H: SourceHost>(
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
         messages: false,
+        local_folder: None,
     };
     let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
@@ -754,7 +767,8 @@ fn run_source_with<H: SourceHost>(
         // GarageService remembers a no-text or failed file with the reader that gave up on it.
         storage = storage.with_extractor_revision(garage_readers::revision);
     }
-    let options = SourceOptions { messages: session.kind == "sqlite", ..options };
+    let local_folder = local_folder(request, &session.kind);
+    let options = SourceOptions { messages: session.kind == "sqlite", local_folder, ..options };
     let context = Context {
         source: &source,
         identity: &identity,
@@ -797,6 +811,9 @@ fn run_source_with<H: SourceHost>(
             reply.insert("counters".to_owned(), counters_json(&run.counters));
             reply.insert("walk_stats".to_owned(), Value::Object(stats));
             reply.insert("completed".to_owned(), json!(run.completed));
+            if run.read_locally > 0 {
+                reply.insert("read_locally".to_owned(), json!(run.read_locally));
+            }
         }
         Err(SourceError::Unavailable(problem)) => {
             reply.insert("unavailable".to_owned(), Value::String(problem));

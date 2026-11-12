@@ -10,6 +10,11 @@
 //! another host may keep its own. A request carries the
 //! source's paths and cursors, never a document's text: content only comes in.
 //!
+//! When the Dropbox app keeps its folder on this node ([`local_folder`]), the source is linked to
+//! it: the API still lists the files and decides what changed, but a file whose copy in the folder
+//! is on disk (not online only) and has the listing's content hash is read from there; an online-only
+//! file, or one whose copy differs, is downloaded.
+//!
 //! A file's URI is `dropbox:` and its path as Dropbox displays it, so a renamed file is a new
 //! document and the old one goes at reconcile, as for a folder. Pictures get no image chunk, since
 //! the image models read files by path and these are not on disk.
@@ -501,17 +506,65 @@ pub(crate) fn keep(
     true
 }
 
-/// A file's bytes, downloaded once and read by the host's readers.
+/// The Dropbox app's folder on this node: `~/Dropbox` (a real folder, or the link the move to File
+/// Provider leaves), then each account's `path` in `~/.dropbox/info.json` (personal first), then
+/// File Provider's `~/Library/CloudStorage/Dropbox`. None when the app is not installed, or the
+/// folder cannot be seen (a sandboxed process without a grant).
+#[must_use]
+pub fn local_folder() -> Option<PathBuf> {
+    let home = crate::walk::account_home().or_else(|| std::env::var_os("HOME").map(PathBuf::from))?;
+    let info = std::fs::read(home.join(".dropbox/info.json")).ok();
+    locate_local_folder(&home, info.as_deref(), Path::is_dir)
+}
+
+/// [`local_folder`] against `home`, the bytes of `info.json`, and `is_dir`.
+pub fn locate_local_folder(home: &Path, info_json: Option<&[u8]>, is_dir: impl Fn(&Path) -> bool) -> Option<PathBuf> {
+    let mut candidates = vec![home.join("Dropbox")];
+    if let Some(Value::Object(accounts)) = info_json.and_then(|bytes| serde_json::from_slice(bytes).ok()) {
+        let mut names: Vec<&String> = accounts.keys().collect();
+        names.sort_by_key(|name| (name.as_str() != "personal", name.as_str() != "business", (*name).clone()));
+        for name in names {
+            if let Some(path) = accounts[name].get("path").and_then(Value::as_str).filter(|path| path.starts_with('/'))
+            {
+                candidates.push(PathBuf::from(path));
+            }
+        }
+    }
+    candidates.push(home.join("Library/CloudStorage/Dropbox"));
+    candidates.into_iter().find(|candidate| is_dir(candidate))
+}
+
+/// The copy of `entry` in the linked folder, when it is on disk and has the listing's content hash.
+fn local_copy(folder: &Path, entry: &Entry) -> Option<Vec<u8>> {
+    let path = folder.join(entry.path_display.trim_start_matches('/'));
+    let metadata = std::fs::metadata(&path).ok()?;
+    // An online-only file would be downloaded by the File Provider on read: the API does it instead.
+    if !metadata.is_file() || metadata.len() != entry.size || crate::placeholder::is_placeholder(&path, &metadata) {
+        return None;
+    }
+    let bytes = std::fs::read(&path).ok()?;
+    (entry.content_hash.is_empty() || content_hash(&bytes) == entry.content_hash).then_some(bytes)
+}
+
+/// A file's bytes, read once from the linked folder or downloaded, and read by the host's readers.
 struct RemoteFiles<'c, 'h> {
     client: &'c mut Client<'h>,
     entry: Entry,
+    local_folder: Option<&'c Path>,
     bytes: Option<Result<Vec<u8>, String>>,
+    /// Whether the bytes came from the linked folder.
+    read_locally: bool,
 }
 
 impl RemoteFiles<'_, '_> {
     fn bytes(&mut self) -> &Result<Vec<u8>, String> {
         if self.bytes.is_none() {
-            self.bytes = Some(self.client.download(&self.entry).map_err(|error| error.to_string()));
+            let local = self.local_folder.and_then(|folder| local_copy(folder, &self.entry));
+            self.read_locally = local.is_some();
+            self.bytes = Some(match local {
+                Some(bytes) => Ok(bytes),
+                None => self.client.download(&self.entry).map_err(|error| error.to_string()),
+            });
         }
         self.bytes.as_ref().unwrap_or_else(|| unreachable!())
     }
@@ -582,6 +635,9 @@ pub fn ingest_dropbox_source(
     details.insert("remote".to_owned(), json!(KIND));
     details.insert("root".to_owned(), json!(display_root(&root)));
     details.insert("bytes".to_owned(), json!(entries.iter().map(|entry| entry.size).sum::<u64>()));
+    if let Some(folder) = &options.local_folder {
+        details.insert("local_folder".to_owned(), json!(folder.to_string_lossy()));
+    }
     let scan = ScanSummary {
         item_count: entries.len() as u64,
         item_type: "files".to_owned(),
@@ -597,6 +653,7 @@ pub fn ingest_dropbox_source(
     let context = Context { settings: &settings, ..*context };
 
     let mut stopped = false;
+    let mut read_locally = 0_u64;
     for entry in entries {
         let candidate = FileCandidate {
             path: PathBuf::from(&entry.path_display),
@@ -613,8 +670,18 @@ pub fn ingest_dropbox_source(
         }
         run.counters.seen += 1;
         let outcome = storage.check_stat(&candidate.uri).and_then(|existing| {
-            let mut files = RemoteFiles { client: &mut client, entry, bytes: None };
-            ingest_one(&mut files, storage, &existing, &candidate, &context, &mut run.counters)
+            let mut files = RemoteFiles {
+                client: &mut client,
+                entry,
+                local_folder: options.local_folder.as_deref(),
+                bytes: None,
+                read_locally: false,
+            };
+            let outcome = ingest_one(&mut files, storage, &existing, &candidate, &context, &mut run.counters);
+            if files.read_locally {
+                read_locally += 1;
+            }
+            outcome
         });
         if let Err(error) = outcome {
             run.counters.note_error(format!("{name}: {error}"));
@@ -627,6 +694,7 @@ pub fn ingest_dropbox_source(
         }
     }
     run.completed = !stopped;
+    run.read_locally = read_locally;
     storage.finalize(run.completed, &run.counters, 0, 0).map_err(SourceError::Storage)?;
     Ok(run)
 }
@@ -894,6 +962,15 @@ mod tests {
                          the people who will review it, and what is still open before we ship it.";
 
     fn run(dropbox: &mut FakeDropbox, database: &mut Database, root: &str) -> Result<SourceRun, SourceError> {
+        run_with(dropbox, database, root, &SourceOptions::default())
+    }
+
+    fn run_with(
+        dropbox: &mut FakeDropbox,
+        database: &mut Database,
+        root: &str,
+        options: &SourceOptions,
+    ) -> Result<SourceRun, SourceError> {
         let source = SourceInfo {
             root: PathBuf::from(root),
             default_class: "document".into(),
@@ -911,7 +988,57 @@ mod tests {
             policy: &policy,
             force: false,
         };
-        ingest_dropbox_source(dropbox, database, "dbx", &context, &SourceOptions::default())
+        ingest_dropbox_source(dropbox, database, "dbx", &context, options)
+    }
+
+    #[test]
+    fn a_linked_folder_is_read_where_its_copy_matches() {
+        let other = PROSE.replace("week", "month");
+        let mut dropbox = FakeDropbox::with(&[
+            ("/Work/plan.md", PROSE),
+            ("/Work/changed.md", PROSE),
+            ("/Work/online-only.md", PROSE),
+        ]);
+        let folder = std::env::temp_dir().join(format!("garage-dropbox-linked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&folder);
+        std::fs::create_dir_all(folder.join("Work")).unwrap();
+        std::fs::write(folder.join("Work/plan.md"), PROSE).unwrap();
+        // Same size, other bytes: the content hash tells them apart.
+        std::fs::write(folder.join("Work/changed.md"), &other[..PROSE.len()]).unwrap();
+        let options = SourceOptions { local_folder: Some(folder.clone()), ..SourceOptions::default() };
+        let mut database = Database::default();
+        let outcome = run_with(&mut dropbox, &mut database, "/Work/", &options).unwrap();
+        assert!(outcome.completed);
+        assert_eq!(outcome.read_locally, 1);
+        assert_eq!(database.documents.len(), 3);
+        let downloads: Vec<&String> =
+            dropbox.requests.iter().filter(|request| request.as_str() == "files/download").collect();
+        assert_eq!(downloads.len(), 2, "{:?}", dropbox.requests);
+        assert_eq!(database.scan.unwrap().details["local_folder"], json!(folder.to_string_lossy()));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn the_dropbox_folder_is_found_as_the_app_documents_it() {
+        let home = Path::new("/Users/rick");
+        let info =
+            br#"{"business": {"path": "/Users/rick/Dropbox (Work)"}, "personal": {"path": "/Volumes/Data/Dropbox"}}"#;
+        let only = |found: &'static [&'static str]| {
+            move |path: &Path| found.iter().any(|candidate| Path::new(candidate) == path)
+        };
+        assert_eq!(
+            locate_local_folder(home, None, only(&["/Users/rick/Dropbox", "/Users/rick/Library/CloudStorage/Dropbox"])),
+            Some(PathBuf::from("/Users/rick/Dropbox"))
+        );
+        assert_eq!(
+            locate_local_folder(home, Some(info), only(&["/Users/rick/Dropbox (Work)", "/Volumes/Data/Dropbox"])),
+            Some(PathBuf::from("/Volumes/Data/Dropbox"))
+        );
+        assert_eq!(
+            locate_local_folder(home, Some(b"not json"), only(&["/Users/rick/Library/CloudStorage/Dropbox"])),
+            Some(PathBuf::from("/Users/rick/Library/CloudStorage/Dropbox"))
+        );
+        assert_eq!(locate_local_folder(home, Some(info), only(&[])), None);
     }
 
     #[test]
