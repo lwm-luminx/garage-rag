@@ -19,6 +19,7 @@ rust_library(
         "@crates//:mail-markdown",
         "@crates//:office-markdown",
         "@crates//:pdf-markdown",
+        "@crates//:pdf_oxide",
         "@crates//:plist",
         "@crates//:rusqlite",
         "@crates//:serde_json",

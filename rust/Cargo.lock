@@ -1116,6 +1116,7 @@ dependencies = [
  "mail-markdown",
  "office-markdown",
  "pdf-markdown",
+ "pdf_oxide",
  "plist",
  "rusqlite",
  "serde_json",

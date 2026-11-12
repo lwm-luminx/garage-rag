@@ -96,6 +96,8 @@ messages-markdown = "0.1.0"
 mail-markdown = "0.2.0"
 office-markdown = "0.2.0"
 pdf-markdown = "0.2.0"
+# The PDF parser under pdf-markdown, for the structural checks before it reads a file (garage-readers).
+pdf_oxide = { version = "0.3.78", default-features = false, features = ["legacy-crypto"] }
 # Keyed archives in Messages' NickNameCache, read through the SQLite messages-markdown bundles.
 plist = "1.8"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
