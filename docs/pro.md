@@ -23,13 +23,13 @@ permalink: /pro/
   <div class="card">
     <span class="card-icon">🚪</span>
     <h3>Claude and ChatGPT, on the web</h3>
-    <p>Paste your door's address into Claude or ChatGPT and approve it once. They search your Garage through Garage Door, with no port forwarding and nothing for a scanner to find. You can revoke any assistant from your account.</p>
+    <p>Add your account's one MCP address to Claude or ChatGPT and approve it once. They search every computer you run Garage on through Garage Door, with no port forwarding and nothing for a scanner to find. You can revoke any assistant from your account.</p>
   </div>
 
   <div class="card">
     <span class="card-icon">📱</span>
     <h3>Garage on your iPhone and iPad <span class="pro-status">In development</span></h3>
-    <p>Garage Remote searches, reads and asks your Garage from your phone. Answers come from the model on your computer; the phone holds no copy of your library. It ships with end-to-end encryption, so the door carries only ciphertext.</p>
+    <p>Garage Remote searches, reads and asks your Garage from your phone. Answers come from the model on your computer; the phone holds no copy of your library. End-to-end encryption, where the door carries only ciphertext, comes before it is released; it isn't there yet.</p>
   </div>
 
   <div class="card">

@@ -124,6 +124,47 @@ pub struct Extracted {
     pub author_hints: Vec<String>,
 }
 
+impl Extracted {
+    /// The document without NUL characters. Postgres's text and jsonb refuse U+0000, so one left in
+    /// a PDF's producer, an email header or any reader's metadata failed the file's whole insert.
+    #[must_use]
+    pub fn without_nul(mut self) -> Self {
+        strip_nul(&mut self.text);
+        if let Some(title) = self.title.as_mut() {
+            strip_nul(title);
+        }
+        if let Some(lang) = self.lang.as_mut() {
+            strip_nul(lang);
+        }
+        strip_nul_keys(&mut self.meta);
+        self.author_hints.iter_mut().for_each(strip_nul);
+        self.author_hints.retain(|hint| !hint.trim().is_empty());
+        self
+    }
+}
+
+fn strip_nul(text: &mut String) {
+    if text.contains('\0') {
+        text.retain(|c| c != '\0');
+    }
+}
+
+fn strip_nul_keys(map: &mut Map<String, Value>) {
+    if map.keys().any(|key| key.contains('\0')) {
+        *map = std::mem::take(map).into_iter().map(|(key, value)| (key.replace('\0', ""), value)).collect();
+    }
+    map.values_mut().for_each(strip_nul_json);
+}
+
+fn strip_nul_json(value: &mut Value) {
+    match value {
+        Value::String(text) => strip_nul(text),
+        Value::Array(items) => items.iter_mut().for_each(strip_nul_json),
+        Value::Object(map) => strip_nul_keys(map),
+        _ => {}
+    }
+}
+
 /// How reading a file went.
 #[derive(Clone, Debug, PartialEq)]
 pub enum ReadOutcome {
@@ -494,7 +535,7 @@ pub fn ingest_one(
 
     // Step 3: extract.
     let result = match host.read(candidate) {
-        ReadOutcome::Document(result) => result,
+        ReadOutcome::Document(result) => result.without_nul(),
         ReadOutcome::NoText(_) => {
             counters.rejected += 1;
             return storage.record_no_text(&candidate.uri, candidate.size, candidate.mtime, &raw_hash_or_empty);
@@ -650,4 +691,34 @@ pub fn ingest_one(
     counters.chunks_written += written as u64;
     counters.indexed += 1;
     Ok(())
+}
+
+#[cfg(test)]
+mod nul_tests {
+    use super::*;
+
+    #[test]
+    fn without_nul_clears_every_field_postgres_stores() {
+        let mut meta = Map::new();
+        meta.insert("pdf_producer".to_owned(), json!("Acrobat\0 Distiller"));
+        meta.insert("odd\0key".to_owned(), json!(["a\0b", {"c\0": "d\0"}, 3]));
+        let document = Extracted {
+            text: "body\0".to_owned(),
+            kind: ContentKind::Markdown,
+            extractor: "pdf-markdown".to_owned(),
+            extractor_version: "1".to_owned(),
+            title: Some("Ti\0tle".to_owned()),
+            lang: Some("en\0".to_owned()),
+            meta,
+            author_hints: vec!["Nell\0 Oduya".to_owned(), "\0".to_owned()],
+        }
+        .without_nul();
+        assert_eq!(document.text, "body");
+        assert_eq!(document.title.as_deref(), Some("Title"));
+        assert_eq!(document.lang.as_deref(), Some("en"));
+        assert_eq!(document.meta["pdf_producer"], json!("Acrobat Distiller"));
+        assert_eq!(document.meta["oddkey"], json!(["ab", {"c": "d"}, 3]));
+        assert_eq!(document.author_hints, ["Nell Oduya"]);
+        assert!(!serde_json::to_string(&document.meta).unwrap().contains("\\u0000"));
+    }
 }

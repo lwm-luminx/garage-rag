@@ -309,6 +309,8 @@ final class PostgresService: ObservableObject {
     private let runner = ProcessRunner()
     private let maxLogLines = 2000
     private var cachedPassword: String?
+    /// Set when the server being launched reports that another postmaster holds the cluster.
+    private var leftoverServerSeen = false
 
     /// Where the server puts its socket, fixed for the life of the app (it follows `--data-directory`).
     /// Nil when the socket's path would be too long, and the server listens on loopback TCP instead.
@@ -529,25 +531,60 @@ final class PostgresService: ObservableObject {
             postgresArguments.append(contentsOf: ["--config-file=\(configFile.path)"])
         }
 
-        do {
-            try runner.run(
-                executable: Paths.postgresTool("postgres"),
-                arguments: postgresArguments,
-                environment: runtimeEnvironment(),
-                source: "postgres"
-            ) { [weak self] line in
-                let parsed = PostgresLogParser.parse(line: line)
-                self?.appendLog(parsed)
+        // A server left by a run that crashed can outlive it, and when it is not this run's to
+        // signal (it was a child of the crashed instance), stopAnyRunningInstance() only clears its lock
+        // file. The new server then refuses the cluster ("pre-existing shared memory block is still in
+        // use") while the leftover keeps answering pg_isready, until it notices its lock file is gone
+        // (Postgres rechecks it every minute) and shuts down, taking the database with it. So only
+        // our own server counts as ready, and while a leftover holds the cluster we wait for it to go
+        // and launch again.
+        let leftoverDeadline = Date().addingTimeInterval(Self.leftoverServerGrace)
+        while true {
+            leftoverServerSeen = false
+            do {
+                try runner.run(
+                    executable: Paths.postgresTool("postgres"),
+                    arguments: postgresArguments,
+                    environment: runtimeEnvironment(),
+                    source: "postgres"
+                ) { [weak self] line in
+                    let parsed = PostgresLogParser.parse(line: line)
+                    if Self.isLeftoverServerLine(parsed.text) {
+                        self?.leftoverServerSeen = true
+                    }
+                    self?.appendLog(parsed)
+                }
+            } catch {
+                status = .failed("failed to launch postgres: \(error.localizedDescription)")
+                throw error
             }
-        } catch {
-            status = .failed("failed to launch postgres: \(error.localizedDescription)")
-            throw error
-        }
 
-        let ready = await waitUntilReady(timeout: 30)
-        guard ready else {
-            status = .failed("postgres did not become ready within 30s")
-            throw PostgresError.startupTimeout
+            switch await waitUntilReady(timeout: 30) {
+            case .ready:
+                break
+            case .exited:
+                // The exit's stderr reaches the main actor after the exit itself; let it land.
+                await Self.sleepIgnoringCancellation(seconds: 0.2)
+                if leftoverServerSeen && Date() < leftoverDeadline {
+                    appendLog(LogLine(
+                        stream: .stderr,
+                        text: "A database server left by an earlier run still holds the cluster; waiting for it to exit",
+                        source: "garage"
+                    ))
+                    await Self.stopAnyRunningInstance()
+                    await Self.sleepIgnoringCancellation(seconds: Self.leftoverServerRetryInterval)
+                    continue
+                }
+                let reason = leftoverServerSeen
+                    ? "a database server left by an earlier run did not exit within \(Int(Self.leftoverServerGrace))s"
+                    : "postgres exited during startup"
+                status = .failed(reason)
+                throw PostgresError.other(reason)
+            case .timedOut:
+                status = .failed("postgres did not become ready within 30s")
+                throw PostgresError.startupTimeout
+            }
+            break
         }
 
         do {
@@ -1132,18 +1169,41 @@ final class PostgresService: ObservableObject {
         }
     }
 
-    private func waitUntilReady(timeout: TimeInterval) async -> Bool {
+    enum Readiness: Equatable {
+        case ready
+        /// Our server exited before it accepted connections.
+        case exited
+        case timedOut
+    }
+
+    /// Waits for the server this service launched. A pg_isready answer counts only while that server
+    /// is still running: otherwise it came from another postmaster on the same socket.
+    private func waitUntilReady(timeout: TimeInterval) async -> Readiness {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
+            guard runner.isRunning else { return .exited }
             let (code, messages) = await PostgresCommandRunner.run(
                 tool: "pg_isready",
                 arguments: GaragePostgresEndpoint.clientArguments(socketDirectory: socketDirectory)
             )
-            if code == 0 { return true }
+            if code == 0 {
+                return runner.isRunning ? .ready : .exited
+            }
             appendLog(LogLine(stream: .stdout, text: String(messages), source: "pg_isready"))
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
-        return false
+        return .timedOut
+    }
+
+    /// How long start() waits for a server left by an earlier run to give up the cluster: past
+    /// Postgres's one-minute lock file recheck, after which a leftover whose lock file is gone exits.
+    nonisolated static let leftoverServerGrace: TimeInterval = 90
+    nonisolated static let leftoverServerRetryInterval: TimeInterval = 2
+
+    /// Whether a line from our server says another postmaster still holds the data directory.
+    nonisolated static func isLeftoverServerLine(_ text: String) -> Bool {
+        text.contains("pre-existing shared memory block is still in use")
+            || (text.contains("lock file") && text.contains("already exists"))
     }
 
     private func ensureDatabaseExists(runner: PostgresCommandRunner) async throws {

@@ -57,6 +57,17 @@ final class DeterministicLlamaEngineTests: XCTestCase {
 
     // MARK: - Embeddings
 
+    func testEmbeddingsRouteAcceptsAWholeURL() throws {
+        XCTAssertTrue(engine.ensureModel(path: modelFile.path, alias: "embedder", configJson: nil).success)
+        for endpoint in ["http://localhost:8080/v1/embeddings", "http://127.0.0.1/v1/embeddings/", "llama-xpc://local/embeddings?x=1"] {
+            let (status, reply) = try route("POST", endpoint, ["input": ["Garage"], "model": "embedder"])
+            XCTAssertEqual(status, 200, endpoint)
+            XCTAssertEqual((reply["data"] as? [Any])?.count, 1, endpoint)
+        }
+        let (missing, _) = try route("POST", "http://localhost:8080/v1/nothing", ["input": ["Garage"]])
+        XCTAssertEqual(missing, 404)
+    }
+
     func testEmbeddingsAreUnitVectorsOfTheEngineWidth() throws {
         let (status, reply) = try route("POST", "/v1/embeddings", ["input": ["The Quillon Bridge opened in 1893.", ""], "model": "anything"])
         XCTAssertEqual(status, 200)

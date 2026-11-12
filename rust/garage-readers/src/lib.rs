@@ -336,15 +336,10 @@ impl Readers {
             Ok(reader) => reader,
             Err(error) => return ReadOutcome::Failed(error),
         };
+        let settings = &self.settings;
         let outcome = match reader {
-            Reader::Text(kind) => Ok(text_document(kind, path, bytes)),
-            Reader::Mail => mail_document(path, bytes),
-            Reader::Pdf => pdf_document(path, bytes, &self.settings),
-            Reader::Docx => office_document(path, bytes, office_markdown::Format::Docx),
-            Reader::Pptx => office_document(path, bytes, office_markdown::Format::Pptx),
-            Reader::Xlsx => office_document(path, bytes, office_markdown::Format::Spreadsheet),
             Reader::Image => return self.image(path, bytes),
-            Reader::Spotlight if !self.settings.spotlight => {
+            Reader::Spotlight if !settings.spotlight => {
                 return ReadOutcome::Failed(format!(
                     "Spotlight importers are off (extraction.spotlight): {}",
                     path.display()
@@ -355,6 +350,16 @@ impl Readers {
                 return ReadOutcome::Failed(format!("Spotlight importers read files on disk only: {}", path.display()));
             }
             Reader::Spotlight => return spotlight_document(path),
+            // The parsers recurse over the document's own structure, so they run on a stack big enough for it.
+            reader => on_parser_stack(|| match reader {
+                Reader::Text(kind) => Ok(text_document(kind, path, bytes)),
+                Reader::Mail => mail_document(path, bytes),
+                Reader::Pdf => pdf_document(path, bytes, settings),
+                Reader::Docx => office_document(path, bytes, office_markdown::Format::Docx),
+                Reader::Pptx => office_document(path, bytes, office_markdown::Format::Pptx),
+                Reader::Xlsx => office_document(path, bytes, office_markdown::Format::Spreadsheet),
+                Reader::Image | Reader::Spotlight => unreachable!("read above"),
+            }),
         };
         match outcome {
             Ok(document) if garage_text::text::py_strip(&document.text).is_empty() => {
@@ -575,6 +580,30 @@ pub fn clean_author_hints<S: AsRef<str>>(values: &[S]) -> Vec<String> {
     out
 }
 
+/// The stack a document parser runs on. The PDF reader walks a page tree, and the mail and Office
+/// readers their documents, by recursion as deep as the file nests; a GCD worker thread, which runs
+/// the Mac app's ingest, has 512 KB, and a real PDF's page tree overflowed it and took the whole app
+/// down. The stack is reserved, not committed, so a large one costs only address space.
+const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Runs `parse` on a thread of its own with [`PARSER_STACK_BYTES`] of stack, so a deeply nested
+/// document is read wherever the caller's thread came from. When no such thread can be made it runs
+/// on the caller's.
+fn on_parser_stack<T: Send>(parse: impl FnOnce() -> T + Send) -> T {
+    let slot = std::sync::Mutex::new(Some(parse));
+    let take = || slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().expect("parsed once");
+    std::thread::scope(|scope| {
+        let spawned = std::thread::Builder::new()
+            .name("garage-readers-parse".to_owned())
+            .stack_size(PARSER_STACK_BYTES)
+            .spawn_scoped(scope, || take()());
+        match spawned {
+            Ok(handle) => handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            Err(_) => take()(),
+        }
+    })
+}
+
 fn truncated(value: &str, limit: usize) -> String {
     value.chars().take(limit).collect()
 }
@@ -632,6 +661,9 @@ fn mail_document(path: &Path, bytes: &[u8]) -> Result<Extracted, String> {
 }
 
 fn pdf_document(path: &Path, bytes: &[u8], settings: &Settings) -> Result<Extracted, String> {
+    if let Some(problem) = validate::pdf_problem(bytes) {
+        return Err(format!("not read, {problem}: {}", path.display()));
+    }
     let options = pdf_markdown::Options { min_chars_per_page: settings.pdf_min_chars_per_page, ..Default::default() };
     let pdf = pdf_markdown::convert_with(bytes, &options).map_err(|error| format!("{error}: {}", path.display()))?;
     let mut meta = Map::new();
@@ -707,6 +739,8 @@ fn office_document(path: &Path, bytes: &[u8], format: office_markdown::Format) -
         author_hints: clean_author_hints(&document.authors),
     })
 }
+
+pub mod validate;
 
 #[cfg(test)]
 mod tests;
