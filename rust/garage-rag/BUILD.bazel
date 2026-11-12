@@ -12,7 +12,7 @@ rust_library(
     crate_name = "garage_rag",
     edition = "2024",
     # Not the workspace's version: the packages take the app's (Cargo.toml, held to GarageService's).
-    version = "1.7.0",
+    version = "2.0.0",
     deps = [
         "//rust/garage-cli-uniffi:garage_cli_uniffi_lib",
         "//rust/garage-embed-uniffi:garage_embed_uniffi_lib",
