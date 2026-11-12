@@ -1,0 +1,35 @@
+load("@rules_apple//apple:macos.bzl", "macos_xpc_service")
+load("@rules_swift//swift:swift.bzl", "swift_library")
+load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
+
+# Garage's file readers in a process of their own, with no file access: the app's in-process ingest
+# hands each file's bytes here (GarageParseClient), so a reader that crashes or hangs costs that
+# file and not the app (docs/plans/parser-isolation.md).
+swift_library(
+    name = "GarageParseXPCService_lib",
+    srcs = ["main.swift"],
+    module_name = "GarageParseXPCService",
+    visibility = ["//visibility:private"],
+    deps = [
+        "//macapp/Sources/GarageIngestXPCService:GarageIngestFFI",
+        "//macapp/Sources/GarageXPCKit",
+    ],
+)
+
+macos_xpc_service(
+    name = "GarageParseXPCService",
+    bundle_id = "me.rickmark.garage-rag.parse-xpc",
+    bundle_name = "GarageParseXPCService",
+    codesignopts = HARDENED_RUNTIME_CODESIGNOPTS,
+    entitlements = select({
+        "//bazel:is_store": ":GarageParseXPCService.entitlements",
+        "//bazel:is_developer_id": ":GarageParseXPCService.entitlements",
+        "//bazel:is_local_app_group": ":GarageParseXPCService.entitlements",
+        "//conditions:default": None,
+    }),
+    infoplists = ["Info.plist"],
+    minimum_os_version = "14.0",
+    version = "//macapp/Sources/GarageApp:GarageAppVersion",
+    visibility = ["//visibility:public"],
+    deps = [":GarageParseXPCService_lib"],
+)

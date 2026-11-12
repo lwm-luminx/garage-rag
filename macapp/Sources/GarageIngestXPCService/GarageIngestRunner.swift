@@ -28,10 +28,19 @@ final class GarageIngestRunner {
     /// Each `IngestProgress` event, as JSON.
     private let progress: (String) -> Void
     private let isCancelled: () -> Bool
+    /// The reader process each file's bytes go to, when this process can reach one (the app, which
+    /// hosts ingest in its own process and embeds GarageParseXPCService). Without it the readers run
+    /// here, as in the ingest service's own process, where a crash costs only that process.
+    private let parser: GarageParseClient?
 
-    init(progress: @escaping (String) -> Void, isCancelled: @escaping () -> Bool) {
+    init(
+        progress: @escaping (String) -> Void,
+        isCancelled: @escaping () -> Bool,
+        parser: GarageParseClient? = GarageParseClient.isAvailable ? GarageParseClient() : nil
+    ) {
         self.progress = progress
         self.isCancelled = isCancelled
+        self.parser = parser
     }
 
     /// Runs `source` (a slug, or `*` for every enabled source). `contactNames` are `[handle, name]`
@@ -84,7 +93,8 @@ final class GarageIngestRunner {
             cancelled: Self.cancelledEntry,
             shared_names: nil,
             http: Self.httpEntry,
-            access_token: Self.accessTokenEntry
+            access_token: Self.accessTokenEntry,
+            parse: parser == nil ? nil : Self.parseEntry
         )
         var result: UnsafeMutablePointer<CChar>?
         let status = withExtendedLifetime(self) {
@@ -165,6 +175,28 @@ final class GarageIngestRunner {
                 refresh: object["refresh"] as? Bool ?? false
             )
             return ["access_token": token]
+        }
+    }
+
+    /// One file's bytes to the reader process (`parse`): its answer, or the file's failure.
+    private static let parseEntry: @convention(c) (
+        UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<UInt8>?, Int, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+    ) -> Int32 = { context, request, bytes, count, reply in
+        guard let context, let request, let reply else { return 1 }
+        let runner = Unmanaged<GarageIngestRunner>.fromOpaque(context).takeUnretainedValue()
+        guard let parser = runner.parser else {
+            reply.pointee = strdup("no reader process")
+            return 1
+        }
+        let text = String(cString: request)
+        let data = bytes.map { Data(bytes: $0, count: count) } ?? Data()
+        switch parser.parse(request: text, bytes: data) {
+        case .reply(let answer):
+            reply.pointee = strdup(answer)
+            return 0
+        case .failed(let reason):
+            reply.pointee = strdup(reason)
+            return 1
         }
     }
 

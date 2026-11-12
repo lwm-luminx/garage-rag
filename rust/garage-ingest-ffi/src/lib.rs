@@ -830,6 +830,10 @@ fn run_source_with<H: SourceHost>(
 /// to the reason (or leaves it null). `*reply` is freed with the host's `release`.
 pub type HostCall = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *mut *mut c_char) -> i32>;
 
+/// The host's `parse`: a request, a file's bytes and their length, and the reply.
+pub type ParseCall =
+    Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const u8, usize, *mut *mut c_char) -> i32>;
+
 /// The process a run reads files in. See `garage_ingest.h` for each member.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -842,6 +846,7 @@ pub struct GarageIngestHost {
     pub shared_names: HostCall,
     pub http: HostCall,
     pub access_token: HostCall,
+    pub parse: ParseCall,
 }
 
 /// The walk's rules: the request's `"policy"` over the defaults, and, when the Rust readers read the files
@@ -915,6 +920,53 @@ impl ReadingHost {
     }
 }
 
+impl ReadingHost {
+    /// Hands a file's `bytes` to the host's `parse`, which runs the readers in another process
+    /// (`garage_ingest_parse` there), so a reader that crashes or hangs costs this file and not the
+    /// run. Whatever goes wrong is the file's failure, which the pipeline remembers with its hash: the
+    /// file is not read again until it changes.
+    fn parse_elsewhere(
+        &self,
+        parse: unsafe extern "C" fn(*mut c_void, *const c_char, *const u8, usize, *mut *mut c_char) -> i32,
+        path: &Path,
+        bytes: &[u8],
+        settings: &garage_readers::Settings,
+    ) -> ReadOutcome {
+        let request = json!({ "path": path.to_string_lossy(), "readers": settings.to_json() });
+        let Ok(request) = CString::new(request.to_string()) else {
+            return ReadOutcome::Failed(format!("a path held a NUL byte: {}", path.display()));
+        };
+        let mut reply: *mut c_char = std::ptr::null_mut();
+        // SAFETY: the host's contract (garage_ingest.h); the request and bytes live through the call.
+        let status = unsafe { parse(self.host.context, request.as_ptr(), bytes.as_ptr(), bytes.len(), &raw mut reply) };
+        let text = if reply.is_null() {
+            String::new()
+        } else {
+            // SAFETY: a non-null reply is a NUL-terminated string the host owns until released.
+            let text = unsafe { CStr::from_ptr(reply) }.to_string_lossy().into_owned();
+            if let Some(release) = self.host.release {
+                // SAFETY: the reply came from this host and is released once.
+                unsafe { release(self.host.context, reply) };
+            }
+            text
+        };
+        if status != 0 {
+            let reason = if text.is_empty() { format!("the reader process failed ({status})") } else { text };
+            return ReadOutcome::Failed(format!("{reason}: {}", path.display()));
+        }
+        match serde_json::from_str::<Value>(&text)
+            .map_err(|error| error.to_string())
+            .and_then(|reply| read_outcome(Some(&reply)))
+        {
+            Ok(Some(outcome)) => outcome,
+            Ok(None) => ReadOutcome::Failed(format!("the reader process gave no answer: {}", path.display())),
+            Err(error) => {
+                ReadOutcome::Failed(format!("the reader process's answer is unreadable ({error}): {}", path.display()))
+            }
+        }
+    }
+}
+
 impl FileHost for ReadingHost {
     fn ensure_local(&mut self, candidate: &FileCandidate) -> bool {
         matches!(Materializer::shared().ensure_local(&candidate.path, &mut self.budget), Materialized::Local)
@@ -925,6 +977,15 @@ impl FileHost for ReadingHost {
     }
 
     fn read(&mut self, candidate: &FileCandidate) -> ReadOutcome {
+        if let (Some(readers), Some(parse)) = (&self.readers, self.host.parse)
+            && !garage_readers::Readers::reads_in_place(&candidate.path)
+        {
+            let settings = *readers.settings();
+            return match readers.load(&candidate.path) {
+                Ok(bytes) => self.parse_elsewhere(parse, &candidate.path, &bytes, &settings),
+                Err(outcome) => *outcome,
+            };
+        }
         if let Some(readers) = &mut self.readers {
             return readers.read(&candidate.path);
         }
@@ -1048,6 +1109,10 @@ impl RemoteHost for ReadingHost {
     }
 
     fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome {
+        if let (Some(readers), Some(parse)) = (&self.readers, self.host.parse) {
+            let settings = *readers.settings();
+            return self.parse_elsewhere(parse, path, bytes, &settings);
+        }
         match &mut self.readers {
             Some(readers) => readers.read_bytes(path, bytes),
             None => ReadOutcome::Failed("a cloud source is read by the Rust readers (\"readers\")".to_owned()),
@@ -1402,6 +1467,67 @@ pub unsafe extern "C" fn garage_ingest_ingest_one(request: *const c_char, result
     call(request, result, ingest_one)
 }
 
+/// A reader's outcome as the host's `read` (and `parse`) answers it; the inverse of `read_outcome`.
+fn outcome_json(outcome: &ReadOutcome) -> Value {
+    match outcome {
+        ReadOutcome::Document(document) => json!({ "document": {
+            "text": document.text,
+            "kind": garage_ingest::pipeline::kind_name(document.kind),
+            "extractor": document.extractor,
+            "extractor_version": document.extractor_version,
+            "title": document.title,
+            "lang": document.lang,
+            "meta": document.meta,
+            "author_hints": document.author_hints,
+        }}),
+        ReadOutcome::NoText(reason) => json!({ "no_text": reason }),
+        ReadOutcome::Placeholder => json!({ "placeholder": true }),
+        ReadOutcome::Failed(reason) => json!({ "failed": reason }),
+        ReadOutcome::Raised(reason) => json!({ "raised": reason }),
+    }
+}
+
+/// Reads one file's bytes with the Rust readers, for a reader process that has no access to the
+/// file: `{"path", "readers": {...extraction settings}}` and `len` bytes at `bytes` ->
+/// `{"document": {...}} | {"no_text"} | {"placeholder"} | {"failed"} | {"raised"}`, the host `read`'s
+/// answer. `path` only names the file (its suffix picks the reader). Readers are kept per thread for
+/// their settings, so a picture's OCR engine loads once.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`], and `bytes` points to `len` readable bytes (or is null when `len` is 0).
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
+pub unsafe extern "C" fn garage_ingest_parse(
+    request: *const c_char,
+    bytes: *const u8,
+    len: usize,
+    result: *mut *mut c_char,
+) -> i32 {
+    call(request, result, |request| {
+        let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
+        let settings = garage_readers::Settings::from_json(request.get("readers").and_then(Value::as_object));
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else if bytes.is_null() {
+            return Err("the bytes pointer was null".to_owned());
+        } else {
+            // SAFETY: the caller passes `len` readable bytes.
+            unsafe { std::slice::from_raw_parts(bytes, len) }
+        };
+        thread_local! {
+            static READERS: std::cell::RefCell<Option<garage_readers::Readers>> = const { std::cell::RefCell::new(None) };
+        }
+        let outcome = READERS.with(|readers| {
+            let mut readers = readers.borrow_mut();
+            if readers.as_ref().is_none_or(|readers| *readers.settings() != settings) {
+                *readers = Some(garage_readers::Readers::new(settings));
+            }
+            readers.as_mut().map(|readers| readers.read_bytes(Path::new(path), bytes))
+        });
+        Ok(outcome_json(&outcome.unwrap_or_else(|| ReadOutcome::Raised("no readers".to_owned()))))
+    })
+}
+
 /// Frees a string this library returned. Null is ignored.
 ///
 /// # Safety
@@ -1418,6 +1544,125 @@ pub unsafe extern "C" fn garage_ingest_string_free(text: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A host `parse` that reads the bytes with `garage_ingest_parse`, as the reader process does.
+    unsafe extern "C" fn parse_here(
+        _: *mut c_void,
+        request: *const c_char,
+        bytes: *const u8,
+        len: usize,
+        reply: *mut *mut c_char,
+    ) -> i32 {
+        // SAFETY: passed straight through; the reply is freed by `release_here`.
+        unsafe { garage_ingest_parse(request, bytes, len, reply) }
+    }
+
+    /// A host `parse` whose reader process died mid-file.
+    unsafe extern "C" fn parse_crashed(
+        _: *mut c_void,
+        _: *const c_char,
+        _: *const u8,
+        _: usize,
+        reply: *mut *mut c_char,
+    ) -> i32 {
+        // SAFETY: a writable out-pointer; freed by `release_here`.
+        unsafe { *reply = CString::new("the reader crashed on this file").unwrap().into_raw() };
+        1
+    }
+
+    unsafe extern "C" fn release_here(_: *mut c_void, reply: *mut c_char) {
+        // SAFETY: every reply here was made with CString::into_raw.
+        drop(unsafe { CString::from_raw(reply) });
+    }
+
+    fn reading_host(parse: ParseCall) -> ReadingHost {
+        ReadingHost {
+            host: GarageIngestHost {
+                context: std::ptr::null_mut(),
+                read: None,
+                release: Some(release_here),
+                progress: None,
+                cancelled: None,
+                shared_names: None,
+                http: None,
+                access_token: None,
+                parse,
+            },
+            budget: Budget::default(),
+            readers: Some(garage_readers::Readers::new(garage_readers::Settings::default())),
+            events: None,
+        }
+    }
+
+    fn candidate(path: &Path) -> FileCandidate {
+        FileCandidate {
+            path: path.to_path_buf(),
+            uri: format!("file://{}", path.display()),
+            size: 0,
+            mtime: 0.0,
+            placeholder: false,
+        }
+    }
+
+    #[test]
+    fn a_file_read_in_the_reader_process_is_the_same_document() {
+        let folder = std::env::temp_dir().join(format!("garage-ffi-parse-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("plan.md");
+        std::fs::write(&path, "# The plan\n\nShip the parser helper, then the checks.\n").unwrap();
+        let here = reading_host(None).read(&candidate(&path));
+        let elsewhere = reading_host(Some(parse_here)).read(&candidate(&path));
+        assert!(matches!(elsewhere, ReadOutcome::Document(_)), "{elsewhere:?}");
+        assert_eq!(elsewhere, here);
+        // Checks that need no parsing still happen here: an empty file never leaves the process.
+        let empty = folder.join("empty.md");
+        std::fs::write(&empty, "").unwrap();
+        assert!(matches!(reading_host(Some(parse_crashed)).read(&candidate(&empty)), ReadOutcome::NoText(_)));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_reader_process_that_dies_fails_only_its_file() {
+        let folder = std::env::temp_dir().join(format!("garage-ffi-crash-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("hostile.pdf");
+        std::fs::write(&path, b"%PDF-1.4 not really").unwrap();
+        match reading_host(Some(parse_crashed)).read(&candidate(&path)) {
+            ReadOutcome::Failed(reason) => assert!(reason.starts_with("the reader crashed on this file: "), "{reason}"),
+            other => panic!("not a failure: {other:?}"),
+        }
+        let mut host = reading_host(Some(parse_crashed));
+        assert!(matches!(
+            RemoteHost::read_bytes(&mut host, Path::new("/Work/hostile.pdf"), b"%PDF"),
+            ReadOutcome::Failed(_)
+        ));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn every_outcome_survives_the_trip_between_processes() {
+        let mut meta = Map::new();
+        meta.insert("page_count".to_owned(), json!(3));
+        let outcomes = [
+            ReadOutcome::Document(Extracted {
+                text: "text".to_owned(),
+                kind: ContentKind::Markdown,
+                extractor: "pdf-markdown".to_owned(),
+                extractor_version: "0.2.0".to_owned(),
+                title: Some("Title".to_owned()),
+                lang: None,
+                meta,
+                author_hints: vec!["Nell Oduya".to_owned()],
+            }),
+            ReadOutcome::NoText("blank".to_owned()),
+            ReadOutcome::Placeholder,
+            ReadOutcome::Failed("broken".to_owned()),
+            ReadOutcome::Raised("bug".to_owned()),
+        ];
+        for outcome in outcomes {
+            assert_eq!(read_outcome(Some(&outcome_json(&outcome))).unwrap(), Some(outcome));
+        }
+    }
 
     fn run(entry: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> i32, request: &str) -> (i32, Value) {
         let request = CString::new(request).unwrap();
