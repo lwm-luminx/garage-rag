@@ -370,6 +370,83 @@ final class StatusPagePresentationTests: XCTestCase {
         XCTAssertEqual(StatusHealth.Fix.openPrivacySettings.label, "Open Privacy Settings…")
         XCTAssertEqual(StatusHealth.Fix.checkSourceAccess.label, "Check Again")
         XCTAssertEqual(StatusHealth.Fix.refreshLlama.label, "Try Again")
+        XCTAssertEqual(StatusHealth.Fix.restartService(id: "ingest-xpc").label, "Restart")
+    }
+
+    // MARK: - Health: helper services
+
+    /// Only a red or yellow Services row is an issue; a healthy or busy one is not.
+    func testServiceIssuesComeFromRedAndYellowRows() throws {
+        let running = XPCServiceInfo(id: "ingest-xpc", name: "", bundleId: "", serviceDescription: "", state: .running(pid: 1, latencyMs: 3, response: "pong"))
+        XCTAssertNil(StatusHealth.ServiceIssue(ServiceRowPresentation.xpc(running, report: nil, test: nil)))
+        let checking = XPCServiceInfo(id: "ingest-xpc", name: "", bundleId: "", serviceDescription: "", state: .checking)
+        XCTAssertNil(StatusHealth.ServiceIssue(ServiceRowPresentation.xpc(checking, report: nil, test: nil)))
+        XCTAssertNil(StatusHealth.ServiceIssue(ServiceRowPresentation.grpc(status: .stopped, listening: "", lastTest: nil)))
+
+        let failedTest = ServiceDiagnosticTestResult(
+            serviceId: "ingest-xpc", testName: "Self Tests", testDescription: "", isSuccess: false, durationMs: 3,
+            summary: "1 of 2 self tests failed", details: ""
+        )
+        let failing = try XCTUnwrap(StatusHealth.ServiceIssue(ServiceRowPresentation.xpc(running, report: nil, test: failedTest)))
+        XCTAssertEqual(failing, StatusHealth.ServiceIssue(id: "ingest-xpc", name: "Ingest", detail: "1 of 2 self tests failed", isUnreachable: false))
+
+        let down = XPCServiceInfo(id: "embed-xpc", name: "", bundleId: "", serviceDescription: "", state: .unreachable(error: "no reply"))
+        let unreachable = try XCTUnwrap(StatusHealth.ServiceIssue(ServiceRowPresentation.xpc(down, report: nil, test: nil)))
+        XCTAssertTrue(unreachable.isUnreachable)
+        XCTAssertEqual(unreachable.name, "Embeddings")
+    }
+
+    func testAHelperThatCantBeReachedOffersARestartOnServices() throws {
+        let health = StatusHealth(
+            database: .running, sourceCount: 1, embeddingModelCount: 1,
+            serviceIssues: [
+                .init(id: "ingest-xpc", name: "Ingest", detail: "1 of 2 self tests failed", isUnreachable: false),
+                .init(id: "embed-xpc", name: "Embeddings", detail: "Can't be reached: no reply", isUnreachable: true),
+            ]
+        )
+        XCTAssertEqual(health.problems.map(\.id), ["service.embed-xpc", "service.ingest-xpc"], "a helper that can't be reached comes first")
+        let down = try XCTUnwrap(health.problems.first)
+        XCTAssertEqual(down.title, "Embeddings isn't answering")
+        XCTAssertEqual(down.severity, .critical)
+        XCTAssertEqual(down.section, .services)
+        XCTAssertEqual(down.fix, .restartService(id: "embed-xpc"))
+        XCTAssertEqual(down.fixLabel, "Restart")
+        let failing = try XCTUnwrap(health.problems.last)
+        XCTAssertEqual(failing.title, "Ingest is failing its tests")
+        XCTAssertEqual(failing.severity, .warning)
+    }
+
+    func testTheIndexManagerHasNoRestartButOpensServices() throws {
+        let health = StatusHealth(
+            database: .running, sourceCount: 1, embeddingModelCount: 1,
+            serviceIssues: [.init(id: "grpc", name: "Index Manager", detail: "bind: address in use", isUnreachable: true)]
+        )
+        let problem = try XCTUnwrap(health.problems.first)
+        XCTAssertEqual(problem.title, "Index Manager isn't answering")
+        XCTAssertNil(problem.fix)
+        XCTAssertEqual(problem.section, .services)
+    }
+
+    /// While the database is down, the backend and the helpers' database tests fail with it: only
+    /// the database is listed, plus any helper that can't be reached at all.
+    func testServiceIssuesWhileTheDatabaseIsDownAreItsConsequence() {
+        let health = StatusHealth(
+            database: .stopped, sourceCount: 1, embeddingModelCount: 1,
+            serviceIssues: [
+                .init(id: "grpc", name: "Index Manager", detail: "stopped", isUnreachable: true),
+                .init(id: "ingest-xpc", name: "Ingest", detail: "Database Connection failed", isUnreachable: false),
+                .init(id: "embed-xpc", name: "Embeddings", detail: "Can't be reached: no reply", isUnreachable: true),
+            ]
+        )
+        XCTAssertEqual(health.problems.map(\.id), ["service.embed-xpc", "database"])
+    }
+
+    func testAnUnreachableEngineIsListedOnce() {
+        let health = StatusHealth(
+            database: .running, sourceCount: 1, embeddingModelCount: 1, llamaError: "Couldn't communicate",
+            serviceIssues: [.init(id: "llama-xpc", name: "Built-in Engine", detail: "Can't be reached: Couldn't communicate", isUnreachable: true)]
+        )
+        XCTAssertEqual(health.problems.map(\.id), ["llama"])
     }
 
     func testServicesOnTheirWayUpOrDownAreNotProblems() {

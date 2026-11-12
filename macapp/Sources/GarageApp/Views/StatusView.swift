@@ -5,9 +5,10 @@ import GarageAppExtensionKit
 import GarageAppExtensions
 import GarageXPCKit
 
-// The Status page: is anything wrong and what fixes it, what the pipeline is doing and how much of
-// the corpus is indexed, and whether each helper process is alive. The helpers' output is folded
-// away at the bottom. The wording of every row is in StatusPagePresentation.swift.
+// The Status page: is anything wrong and what fixes it, and what the pipeline is doing and how much
+// of the corpus is indexed. A helper process shows here only as a problem in Health; the Services
+// page under Advanced has every helper with its tests, restarts and output. The wording of every
+// row is in StatusPagePresentation.swift.
 
 @MainActor
 struct StatusView: View {
@@ -19,11 +20,6 @@ struct StatusView: View {
     }
 
     @State var refreshTimer = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
-    @State var expandedServiceIds: Set<String> = []
-    @State var grpcTestResult: (isSuccess: Bool, summary: String, details: String, durationMs: Double)? = nil
-    @State var isTestingGrpc: Bool = false
-    @State var copiedServiceId: String? = nil
-    @AppStorage("garage.status.showServiceOutput") private var showServiceOutput = false
 
     var body: some View {
         ScrollView {
@@ -32,9 +28,6 @@ struct StatusView: View {
                 healthSection
                 indexingSection
                 automaticUpdatesSection
-                indexManagerSection
-                servicesSection
-                serviceOutputSection
             }
             .padding(20)
         }
@@ -43,6 +36,7 @@ struct StatusView: View {
             Task {
                 await appState.fetchRegisteredSources()
                 await appState.fetchCorpusStats()
+                // Health reports a helper that can't be reached or fails its self tests.
                 await appState.xpcServices.refreshAll()
                 if appState.xpcServices.statusReports.isEmpty {
                     await appState.xpcServices.refreshAllStatusReports()
@@ -160,6 +154,7 @@ struct StatusView: View {
         case .testMCP: false
         case .chooseDisk, .grantFolder, .openPrivacySettings, .checkSourceAccess: false
         case .refreshLlama: appState.llama.isBusy
+        case .restartService(let id): appState.xpcServices.restartingServiceIds.contains(id)
         }
     }
 
@@ -191,6 +186,8 @@ struct StatusView: View {
             _ = appState.testVolumeAccess()
         case .refreshLlama:
             Task { await appState.llama.refreshStatus() }
+        case .restartService(let id):
+            Task { await appState.xpcServices.restart(serviceId: id) }
         }
     }
 
@@ -376,39 +373,6 @@ struct StatusView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
-        }
-    }
-
-    // MARK: - Service output
-
-    /// The XPC manager's log, folded away: it is for looking into a helper that stopped answering,
-    /// not for glancing at.
-    @ViewBuilder
-    private var serviceOutputSection: some View {
-        let lines = appState.xpcServices.logs
-        if !lines.isEmpty {
-            GroupBox {
-                if showServiceOutput {
-                    LogTableView(lines: lines, sourceName: "XPC Services") {
-                        appState.clearLogs(for: "XPC Services")
-                    }
-                    .frame(minHeight: 200, maxHeight: 350)
-                }
-            } label: {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { showServiceOutput.toggle() }
-                } label: {
-                    HStack(spacing: 6) {
-                        DisclosureChevron(isExpanded: showServiceOutput)
-                        Text("Service Output")
-                        Text("\(lines.count.formatted()) \(IndexingPresentation.plural("line", lines.count))")
-                            .foregroundStyle(.secondary)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityIdentifier("status.serviceOutput.toggle")
-            }
         }
     }
 }

@@ -851,7 +851,7 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `GarageMCPService` registration as the Sources, Models and MCP pages.
 - The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
   Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Graph, Search) and Advanced
-  (Database, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
+  (Database, Services, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.
 - Every helper runs its self tests at bootstrap, before it has any configuration, so the

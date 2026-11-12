@@ -208,8 +208,9 @@ final class StoreScreenshotsUITests: GarageUITestCase {
     }
 
     /// Keeps the built-in engine's self-test details in the result bundle (not in the set), so a
-    /// failed test on the Status page can be told apart afterwards.
+    /// failed test on the Services page can be told apart afterwards.
     private func attachBuiltInEngineDetails() {
+        open(section: "services")
         let details = element(identifier: "status.service.llama-xpc.details")
         guard details.waitForExistence(timeout: 5) else { return }
         reveal(details)

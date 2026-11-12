@@ -6,7 +6,7 @@ import GarageXPCKit
 /// each row with Test, Restart and a chevron to its status report, self tests and the last test's
 /// output. Rows carry a small dot rather than a filled circle: seven green circles in a column read
 /// as noise, and the dot is the Models page's idiom for a list of like things.
-extension StatusView {
+extension ServicesView {
     var indexManagerSection: some View {
         GroupBox("Index Manager") {
             grpcRow
