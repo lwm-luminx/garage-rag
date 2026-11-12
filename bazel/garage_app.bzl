@@ -18,6 +18,7 @@ GARAGE_XPC_SERVICES = [
     "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
     "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
     "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
+    "//macapp/Sources/GarageParseXPCService:GarageParseXPCService",
     "//macapp/Sources/GarageXPCService:GarageXPCService",
     "//macapp/Sources/ModelDownloadXPCService:ModelDownloadXPCService",
 ]

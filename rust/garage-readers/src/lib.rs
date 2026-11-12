@@ -123,6 +123,18 @@ impl Settings {
         }
         settings
     }
+
+    /// The settings as `from_json` reads them, for a reader in another process.
+    #[must_use]
+    pub fn to_json(&self) -> Map<String, Value> {
+        let mut object = Map::new();
+        object.insert("max_file_bytes".to_owned(), json!(self.max_file_bytes));
+        object.insert("ocr_min_chars".to_owned(), json!(self.ocr_min_chars));
+        object.insert("index_images".to_owned(), json!(self.index_images));
+        object.insert("pdf_min_chars_per_page".to_owned(), json!(self.pdf_min_chars_per_page));
+        object.insert("spotlight".to_owned(), json!(self.spotlight));
+        object
+    }
 }
 
 /// The file's name and its suffix, lowercased, as `pathlib` splits them (`.bashrc` has no suffix).
@@ -249,39 +261,62 @@ impl Readers {
 
     /// Reads the file at `path` (`dispatch.extract`, then `host_read.read_for_host`'s outcomes).
     pub fn read(&mut self, path: &Path) -> ReadOutcome {
+        match self.load(path) {
+            Ok(bytes) => self.read_bytes(path, &bytes),
+            Err(outcome) => *outcome,
+        }
+    }
+
+    /// Whether the file at `path` must be read here rather than its bytes handed to a reader in
+    /// another process: a Spotlight importer opens the file itself.
+    #[must_use]
+    pub fn reads_in_place(path: &Path) -> bool {
+        reader_for(path) == Ok(Reader::Spotlight)
+    }
+
+    /// The bytes of the file at `path`, after the checks `read` makes before reading it (a cloud
+    /// placeholder, an empty file, one past `max_file_bytes`, a file no reader takes), or the outcome
+    /// those checks give. With `read_bytes`, `read` in two steps, so the parsing can happen elsewhere.
+    ///
+    /// # Errors
+    ///
+    /// The outcome the file gets without being parsed.
+    pub fn load(&self, path: &Path) -> Result<Vec<u8>, Box<ReadOutcome>> {
         let metadata = match std::fs::metadata(path) {
             Ok(metadata) => metadata,
-            Err(error) => return ReadOutcome::Failed(format!("cannot stat {}: {error}", path.display())),
+            Err(error) => {
+                return Err(Box::new(ReadOutcome::Failed(format!("cannot stat {}: {error}", path.display()))));
+            }
         };
         // Before the empty-file check: a cloud stub is zero bytes too, and wants downloading.
         if garage_ingest::placeholder::is_placeholder(path, &metadata) {
-            return ReadOutcome::Placeholder;
+            return Err(Box::new(ReadOutcome::Placeholder));
         }
         let size = metadata.len();
         if size == 0 {
-            return ReadOutcome::NoText(format!("empty file: {}", path.display()));
+            return Err(Box::new(ReadOutcome::NoText(format!("empty file: {}", path.display()))));
         }
         if size > self.settings.max_file_bytes {
-            return ReadOutcome::Failed(format!(
+            return Err(Box::new(ReadOutcome::Failed(format!(
                 "file exceeds max_file_bytes ({size} > {}): {}",
                 self.settings.max_file_bytes,
                 path.display()
-            ));
+            ))));
         }
         if let Err(error) = reader_for(path) {
-            return ReadOutcome::Failed(error);
+            return Err(Box::new(ReadOutcome::Failed(error)));
         }
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) => {
                 // A dataless file the kernel would not download on this thread is still in the cloud.
                 if error.raw_os_error().is_some_and(garage_ingest::materialize::refused_dataless_errno) {
-                    return ReadOutcome::Placeholder;
+                    return Err(Box::new(ReadOutcome::Placeholder));
                 }
-                return ReadOutcome::Failed(format!("{}: {error}", path.display()));
+                return Err(Box::new(ReadOutcome::Failed(format!("{}: {error}", path.display()))));
             }
         };
-        self.read_bytes(path, &bytes)
+        Ok(bytes)
     }
 
     /// Reads a file's `bytes` that are not on disk (a Dropbox download); `path` only names it.

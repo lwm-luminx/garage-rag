@@ -11,7 +11,7 @@ objc_library(
     hdrs = ["GarageIngestFFI/GarageIngestFFI.h"],
     includes = ["GarageIngestFFI"],
     module_name = "GarageIngestFFI",
-    visibility = ["//visibility:private"],
+    visibility = ["//macapp/Sources/GarageParseXPCService:__pkg__"],
     deps = ["//rust/garage-ingest-ffi"],
 )
 
@@ -24,6 +24,7 @@ swift_library(
         "GarageCloudHTTP.swift",
         "GarageIngestRunner.swift",
         "GarageIngestXPCServiceDelegate.swift",
+        "GarageParseClient.swift",
     ],
     module_name = "GarageIngestXPCServiceCore",
     visibility = ["//visibility:public"],
