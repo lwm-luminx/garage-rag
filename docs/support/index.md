@@ -39,7 +39,7 @@ description: Help for Garage, the local RAG app for macOS, Windows and Linux, wi
   <div class="card">
     <span class="card-icon">🧠</span>
     <h3>Embedding Models & Providers</h3>
-    <p>Run embedding models on Garage's built-in llama.cpp engine, Ollama or LM Studio. Backfill vectors, distill facts and switch models seamlessly.</p>
+    <p>Run text and image embedding models on Garage's built-in llama.cpp and Core ML engines, Ollama or LM Studio. Backfill vectors, distill facts and switch models seamlessly.</p>
     <a href="{{ '/support/guide.html' | relative_url }}#models-and-embeddings" class="card-link">Manage Models →</a>
   </div>
 
@@ -88,7 +88,7 @@ If you are experiencing unexpected behavior, check these fundamental items first
 1. **Check Database Status**: Ensure PostgreSQL is running. In the macOS App, open the **Status** page: Health reads "All systems go" or lists each problem with the button that fixes it. In CLI, verify with `garage stats`.
 2. **Verify Full Disk Access**: If indexing `~/Library/Messages` or `~/Library/Mail`, make sure **Full Disk Access** is granted to **Garage** or your Terminal application under **System Settings → Privacy & Security**.
 3. **Verify Embedding Provider**: The built-in engine runs inside Garage, so keep the app running for `garage backfill` and search; if you use Ollama or LM Studio instead, make sure it is running.
-4. **Inspect Application Logs**: In the macOS App, open the **Logs** page to view live streaming logs from PostgreSQL, ingestion, embedding, the MCP HTTP server and the built-in model engine.
+4. **Inspect Application Logs**: In the macOS App, open the **Logs** page to view live streaming logs from PostgreSQL, ingestion, embedding, the MCP HTTP server, the built-in model engine, model downloads and image embeddings.
 
 <div class="callout callout-info">
   <div class="callout-title">💡 Need In-Depth Technical Architecture?</div>

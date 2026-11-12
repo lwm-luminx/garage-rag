@@ -1001,6 +1001,10 @@ public final class LlamaCppEngine: LlamaInferenceEngine, @unchecked Sendable {
             transcript += "assistant:"
             return transcript
         }
+        let rawTemplate = String(cString: template)
+        if rawTemplate.contains("<|turn>") && rawTemplate.contains("<turn|>") {
+            return LlamaCppEngine.formatGemma4Chat(messages: messages)
+        }
 
         var cStrings: [UnsafeMutablePointer<CChar>] = []
         defer { cStrings.forEach { free($0) } }
@@ -1025,6 +1029,24 @@ public final class LlamaCppEngine: LlamaInferenceEngine, @unchecked Sendable {
             throw LlamaEngineError(500, "the model's chat template could not be applied (\(n))")
         }
         return String(decoding: buf.prefix(Int(n)).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+    }
+
+    /// Formats messages using the Gemma 4 canonical chat template (`<bos><|turn>role\n...<turn|>\n`),
+    /// which `llama_chat_apply_template` in llama.cpp 0.4.0 does not yet recognize.
+    public static func formatGemma4Chat(messages: [(role: String, content: String)]) -> String {
+        var out = "<bos>"
+        for m in messages {
+            let role: String
+            switch m.role {
+            case "assistant": role = "model"
+            case "developer": role = "system"
+            default: role = m.role
+            }
+            let content = m.content.trimmingCharacters(in: .whitespacesAndNewlines)
+            out += "<|turn>\(role)\n\(content)<turn|>\n"
+        }
+        out += "<|turn>model\n"
+        return out
     }
 
     // MARK: - Metadata helpers

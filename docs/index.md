@@ -98,7 +98,7 @@ structured_data:
   <div class="card">
     <span class="card-icon">🧠</span>
     <h3>Local models, your choice</h3>
-    <p>Embeddings and fact distillation run on the built-in llama.cpp engine, or on the Ollama or LM Studio server you already have. Switch models without re-ingesting.</p>
+    <p>Embeddings and fact distillation run on the built-in llama.cpp and Core ML engines, or on the Ollama or LM Studio server you already have. Switch models without re-ingesting.</p>
   </div>
 
   <div class="card">

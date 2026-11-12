@@ -8,7 +8,7 @@ redirect_from:
 
 # Garage Support & User Guide
 
-Welcome to the comprehensive support guide for **Garage**. This guide covers system requirements, installation, source management, model configuration, MCP server integrations, and database operations. It describes Garage 1.5.
+Welcome to the comprehensive support guide for **Garage**. This guide covers system requirements, installation, source management, model configuration, MCP server integrations, and database operations. It describes Garage 1.6.
 
 ---
 
@@ -24,9 +24,10 @@ Welcome to the comprehensive support guide for **Garage**. This guide covers sys
    - [Keeping the Index Up to Date](#keeping-up-to-date)
 4. [Embedding Models & Providers](#models-and-embeddings)
    - [The Built-in Engine](#built-in-engine)
+   - [Image Embedding Models](#image-embedding-models)
    - [Ollama Configuration](#ollama-configuration)
    - [LM Studio Configuration & Keychain Tokens](#lm-studio-configuration)
-   - [Fact Distillation](#fact-distillation)
+   - [Fact Distillation & Local Inference](#fact-distillation)
 5. [Model Context Protocol (MCP) Integration](#mcp-integration)
    - [Claude Desktop Integration](#claude-desktop-integration)
    - [Claude Code Integration](#claude-code-integration)
@@ -43,7 +44,7 @@ Welcome to the comprehensive support guide for **Garage**. This guide covers sys
 - **Windows and Linux**: Garage also runs from the command line on [Linux]({{ '/linux.html' | relative_url }}), and a [Windows alpha]({{ '/windows.html' | relative_url }}) is on the way. This guide describes the macOS app; the [command line](#command-line-interface) sections apply everywhere.
 - **Memory**: 8 GB RAM minimum (16 GB+ recommended when running local embedding models)
 - **Disk Space**: ~500 MB for Garage application and embedded PostgreSQL, plus the models you download; database size depends on ingested document corpus
-- **Embedding Backend**: none to install. Garage runs embedding and distillation models itself with its built-in llama.cpp engine; [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) can be used instead
+- **Embedding Backend**: none to install. Garage runs text embedding, distillation and inference models itself with its built-in llama.cpp engine, and image embedding models on Core ML (the Apple Neural Engine); [Ollama](https://ollama.com/) or [LM Studio](https://lmstudio.ai/) can be used instead
 
 ---
 
@@ -68,13 +69,13 @@ The sidebar starts with **Status**, followed by three groups:
   - **Library** shows how much of your library is read, indexed and gleaned for facts, with an **Update Everything** button (circling arrows; **Stop** while a run is on, hover for the tooltip); while it updates it shows the current stage and the Scan › Read › Index › Glean trail. Below it are the source, document, chunk, indexed and fact figures, then the **Automatic Updates** box.
 - **Configuration**
   - **Sources** — one row per source with its state ("24 items to go", "Up to date", "Needs permission to read this folder") and **Scan & Ingest**, which turns into **Cancel** while the source is queued or running. Anything that cannot be read is listed at the top with the button that fixes it. New sources come from location cards, **Add Folder…** or **Custom Source…**.
-  - **Models** — three tabs. **Overall** says whether search is ready and which distillation model is set. **Embedding** lists your embedding models and the presets you can add. **Distillation** picks the fact model and edits the fact prompts. The Providers box's **Built-in engine** row lists the models the built-in engine has loaded, each with **Unload** (the eject symbol).
+  - **Models** — four tabs. **Overall** says whether search is ready, which distillation model is set, and which providers are running. **Embedding** lists your text and image embedding models and the presets you can add. **Distillation** picks the fact model and edits the fact prompts. **Inference** picks the local model that answers `rag_ask`, `rag_agent` and `rag_generate` over MCP (or follows the distillation model). The Providers box's **Built-in engine** row lists the models the built-in engine has loaded, each with **Unload** (the eject symbol).
   - **MCP Server** — whether the local server is up, the assistants connected to it (**Connect**, **Update**, **Disconnect**), and **Try It** to call the tools the way an assistant does.
-- **Data** — **Documents**, **Facts** and **Search** browse and query what has been indexed.
+- **Data** — **Documents**, **Facts**, **Graph** and **Search** browse and query what has been indexed.
 - **Advanced**
   - **Database** — Postgres status (Start, Restart, Stop), the connection URL, schema updates, corpus counts and size on disk, backups and reset.
-  - **Services** — the diagnostics. **Index Manager** shows the background service that runs search and indexing jobs, and what it is doing. **Helper Services** lists every helper process (Built-in Engine runs the models Garage hosts itself) with **Test** (a flask), **Restart** (its icon turns yellow when the helper fails a test and red when it cannot be reached) and a chevron for its status report, self tests and crash report. **Service Output**, folded at the bottom, holds their log.
-  - **Logs** — live logs, one tab each: Unified Log, Postgres, App, Ingest, Embed, MCP Server, Index Manager, Built-in Engine and Downloader, with **Report a Bug**.
+  - **Services** — the diagnostics. **Index Manager** shows the background service that runs search and indexing jobs, and what it is doing. **Helper Services** lists every helper process (Built-in Engine runs GGUF models; Image Embeddings runs Core ML image models) with **Test** (a flask), **Restart** (its icon turns yellow when the helper fails a test and red when it cannot be reached) and a chevron for its status report, self tests and crash report. **Service Output**, folded at the bottom, holds their log.
+  - **Logs** — live logs, one tab each: Unified Log, Postgres, App, Ingest, Embed, MCP Server, Index Manager, Built-in Engine, Downloader and Image Embeddings, with **Report a Bug**.
 
 <h3 id="command-line-interface">Command Line Interface (<code>garage</code>)</h3>
 
@@ -136,7 +137,7 @@ garage add-source apple-mail ~/Library/Mail --kind maildir --class communication
 garage ingest
 ```
 
-Ingest is safe to re-run. Unchanged files are skipped without being read, a file with no text (empty, or an image with no words in it) is remembered and not read again until it changes, and when a document does change only its changed chunks are embedded again.
+Ingest is safe to re-run. Unchanged files are skipped without being read, an empty file (or an image with no words when image indexing is off) is remembered and not read again until it changes, and when a document does change only its changed chunks are embedded again. When image indexing is on (`extraction.index_images`), pictures also get an image chunk so an image embedding model can index them directly.
 
 <h3 id="keeping-up-to-date">Keeping the Index Up to Date</h3>
 
@@ -153,6 +154,10 @@ Garage supports multiple embedding models simultaneously without re-parsing raw 
 <h3 id="built-in-engine">The Built-in Engine</h3>
 
 Garage runs GGUF models itself with llama.cpp (provider `llama_xpc`, Metal-accelerated, on `127.0.0.1` only). Pick a preset in the setup assistant or on **Models → Embedding** and Garage downloads it from Hugging Face. The default embedding model is loaded when Garage starts, so searches are answered at once; the distillation model is loaded only while facts are being gleaned. The built-in engine is available while Garage is running.
+
+<h3 id="image-embedding-models">Image Embedding Models</h3>
+
+In addition to OCR text extraction, Garage can embed pictures and short text queries into one shared vector space using a two-tower Core ML model on the Apple Neural Engine (provider `image_xpc`, hosted by `GarageImageEmbedXPCService`). On **Models → Embedding**, presets marked **IMAGES** (such as **SigLIP 2 Base (256 px)**) download the Core ML image and text towers from Hugging Face. During backfill, image chunks are embedded from the picture files on your Mac while text models skip them; during search, the query is embedded through the image model's text tower so a phrase finds photos, screenshots and diagrams without words in them.
 
 ### Ollama Configuration
 
@@ -180,9 +185,11 @@ Garage runs GGUF models itself with llama.cpp (provider `llama_xpc`, Metal-accel
    garage backfill
    ```
 
-<h3 id="fact-distillation">Fact Distillation</h3>
+<h3 id="fact-distillation">Fact Distillation & Local Inference</h3>
 
-Garage can distill each document into short, self-contained facts, each tied to the passage it came from and searchable like any other text. Pick a model on **Models → Distillation** and click **Glean Facts**, or run `garage enrich-facts`. What the model is asked for comes from the fact prompts (`facts.prompts` in `garage.json`, editable on the same tab); the built-in `default` prompt asks for every standalone claim. Distillation runs on a local model only, and messages are never sent to a model server on another machine.
+Garage can distill each document into short, self-contained facts, each tied to the passage it came from and searchable like any other text. Pick a model on **Models → Distillation** and click **Glean Facts**, or run `garage enrich-facts`. What the model is asked for comes from the fact prompts (`facts.prompts` in `garage.json`, editable on the same tab); the built-in `default` prompt asks for every standalone claim.
+
+The **Models → Inference** tab picks the local chat model that answers `rag_ask`, `rag_agent` ("Ask Garage" in the menu bar) and `rag_generate` over MCP (`inference.model` and `inference.provider` in `garage.json`). Presets marked **TOOLS** are trained for tool calling so `rag_agent` can search and read your corpus in a loop; click **Follow Distillation** to use the distillation model for answers as well. Both distillation and inference run on a local model only, and messages are never sent to a model server on another machine.
 
 ---
 

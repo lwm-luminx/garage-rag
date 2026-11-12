@@ -147,6 +147,161 @@ fn migration_011_drops_empty_placeholder_documents() {
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
+fn migration_025_creates_the_common_session_schema_and_cascades_cleanly() {
+    with_db(|pool| {
+        Box::pin(async move {
+            let client = pool.get().await.unwrap();
+            apply_twice(&client, "025_sessions.sql").await;
+
+            // Cloud kinds and all three vendor session source kinds are accepted; an unknown kind is still refused.
+            for (slug, kind) in [("gm", "gmail"), ("cc", "claude"), ("cx", "chatgpt"), ("agy", "antigravity")] {
+                client
+                    .execute(
+                        "INSERT INTO sources (slug, kind, root, default_class, default_trust) \
+                         VALUES ($1, $2, '/tmp', 'communication', 'received')",
+                        &[&slug, &kind],
+                    )
+                    .await
+                    .unwrap();
+            }
+            assert!(
+                client
+                    .execute(
+                        "INSERT INTO sources (slug, kind, root, default_trust) \
+                         VALUES ('bad', 'bogus', '/tmp', 'received')",
+                        &[],
+                    )
+                    .await
+                    .is_err()
+            );
+
+            let agy_source: i64 = scalar(&client, "SELECT id FROM sources WHERE slug = 'agy'", &[]).await;
+            let model_author: i64 = scalar(
+                &client,
+                "INSERT INTO authors (display_name, is_self) VALUES ('Gemini 4 Carbon', false) RETURNING id",
+                &[],
+            )
+            .await;
+            client
+                .execute(
+                    "INSERT INTO author_identities (author_id, kind, value) \
+                     VALUES ($1, 'ai_model', 'gemini-4-carbon')",
+                    &[&model_author],
+                )
+                .await
+                .unwrap();
+
+            // Synthesized session document + companion plan artifact document.
+            let synth_chunk = chunk(&client, agy_source, "session-doc", "Me: build a schema", "communication").await;
+            let synth_doc: i64 = scalar(&client, "SELECT document_id FROM chunks WHERE id = $1", &[&synth_chunk]).await;
+            let plan_doc = document(&client, agy_source, "plan", "# Implementation Plan", "document").await;
+
+            let parent_session: i64 = scalar(
+                &client,
+                "INSERT INTO sessions (source_id, provider, surface, external_id, document_id, title, \
+                 workspace_path, workspace_paths, primary_model, turn_count) \
+                 VALUES ($1, 'antigravity', 'antigravity', 'conv-1', $2, 'Schema design', \
+                 '/Users/dev/garage-rag', ARRAY['/Users/dev/garage-rag', '/Users/dev/garage-enterprise'], \
+                 'gemini-4-carbon', 2) RETURNING id",
+                &[&agy_source, &synth_doc],
+            )
+            .await;
+            let _subagent_session: i64 = scalar(
+                &client,
+                "INSERT INTO sessions (source_id, provider, surface, external_id, parent_session_id, \
+                 parent_external_id) VALUES ($1, 'antigravity', 'antigravity', 'sub-1', $2, 'conv-1') RETURNING id",
+                &[&agy_source, &parent_session],
+            )
+            .await;
+
+            let user_turn: i64 = scalar(
+                &client,
+                "INSERT INTO session_turns (session_id, external_id, ord, active_ord, role, direction, content) \
+                 VALUES ($1, 'step:0', 0, 0, 'user', 'sent', 'build a common schema for the database') RETURNING id",
+                &[&parent_session],
+            )
+            .await;
+            let assistant_turn: i64 = scalar(
+                &client,
+                "INSERT INTO session_turns (session_id, external_id, parent_turn_id, parent_external_id, \
+                 ord, active_ord, role, direction, author_id, model, content, thinking, output_tokens) \
+                 VALUES ($1, 'step:1', $2, 'step:0', 1, 1, 'assistant', 'received', $3, 'gemini-4-carbon', \
+                 'Created 025_sessions.sql.', 'Checking 003_core.sql constraints first.', 412) RETURNING id",
+                &[&parent_session, &user_turn, &model_author],
+            )
+            .await;
+
+            // Full-text tsvector on visible turn content matches `schema`, not `constraints` (in thinking).
+            assert_eq!(
+                scalar::<i64>(
+                    &client,
+                    "SELECT count(*) FROM session_turns WHERE tsv @@ plainto_tsquery('english', 'schema')",
+                    &[],
+                )
+                .await,
+                1
+            );
+            assert_eq!(
+                scalar::<i64>(
+                    &client,
+                    "SELECT count(*) FROM session_turns WHERE tsv @@ plainto_tsquery('english', 'constraints')",
+                    &[],
+                )
+                .await,
+                0
+            );
+
+            client
+                .execute("UPDATE chunks SET session_turn_id = $1 WHERE id = $2", &[&user_turn, &synth_chunk])
+                .await
+                .unwrap();
+            client
+                .execute(
+                    "INSERT INTO session_tool_calls (session_id, turn_id, ord, tool_name, tool_kind, \
+                     target_path, status, output_bytes) \
+                     VALUES ($1, $2, 0, 'write_file', 'write', '/Users/dev/garage-rag/data/sql/025_sessions.sql', \
+                     'ok', 8192)",
+                    &[&parent_session, &assistant_turn],
+                )
+                .await
+                .unwrap();
+            client
+                .execute(
+                    "INSERT INTO session_artifacts (session_id, turn_id, external_id, kind, title, document_id) \
+                     VALUES ($1, $2, 'implementation_plan.md', 'plan', 'Implementation Plan', $3)",
+                    &[&parent_session, &assistant_turn, &plan_doc],
+                )
+                .await
+                .unwrap();
+
+            // Dropping the synthesized search document leaves the normalized session, turns, tool calls,
+            // and artifact record intact (`ON DELETE SET NULL`).
+            client.execute("DELETE FROM documents WHERE id = $1", &[&synth_doc]).await.unwrap();
+            assert_eq!(
+                scalar::<Option<i64>>(&client, "SELECT document_id FROM sessions WHERE id = $1", &[&parent_session])
+                    .await,
+                None
+            );
+            assert_eq!(
+                scalar::<i64>(&client, "SELECT count(*) FROM session_turns WHERE session_id = $1", &[&parent_session])
+                    .await,
+                2
+            );
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM session_tool_calls", &[]).await, 1);
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM session_artifacts", &[]).await, 1);
+
+            // Dropping the source cascades cleanly through sessions, subagents, turns, tool calls, and artifacts.
+            client.execute("DELETE FROM sources WHERE id = $1", &[&agy_source]).await.unwrap();
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM sessions", &[]).await, 0);
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM session_turns", &[]).await, 0);
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM session_tool_calls", &[]).await, 0);
+            assert_eq!(scalar::<i64>(&client, "SELECT count(*) FROM session_artifacts", &[]).await, 0);
+        })
+    });
+}
+
+#[test]
 fn migration_013_scopes_facts_by_prompt() {
     with_db(|pool| {
         Box::pin(async move {

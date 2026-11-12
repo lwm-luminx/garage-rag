@@ -107,7 +107,7 @@ sqlite3: unable to open database ~/Library/Messages/chat.db: authorization denie
 **Symptom**: `garage backfill`, `garage enrich-facts` or a search fails with `cannot reach <server> at <URL>`.
 
 **Solution**:
-- **Built-in engine** (`llama_xpc`, port `8790`): it runs inside Garage, so open Garage. If the error names a model that is not loaded, load it on the **Models** page; one that is not downloaded is named with where to download it.
+- **Built-in engine** (`llama_xpc`, port `8790`) and **Built-in image engine** (`image_xpc`, Core ML): both run inside Garage, so open Garage. If the error names a model that is not loaded, load it on the **Models** page; one that is not downloaded is named with where to download it.
 - **Ollama**: Verify Ollama is running (`ollama list`). Start Ollama via `ollama serve` or open the Ollama desktop app.
 - **LM Studio**: Open LM Studio, select the **Developer** tab, and click **Start Server** on port `1234`.
 
@@ -180,7 +180,7 @@ Setting `"materialize": false` means online-only placeholders are never download
 
 <h2 id="inspecting-logs">6. Inspecting Diagnostic Logs</h2>
 
-When diagnosing issues, the **Logs** page shows every log live: Unified Log, Postgres, App, Ingest, Embed, MCP Server, Index Manager, Built-in Engine and Downloader. Postgres's output is also at the bottom of the **Database** page.
+When diagnosing issues, the **Logs** page shows every log live: Unified Log, Postgres, App, Ingest, Embed, MCP Server, Index Manager, Built-in Engine, Downloader and Image Embeddings. Postgres's output is also at the bottom of the **Database** page.
 
 The helper services also write log files, in `~/Library/Logs/Garage/` for the direct-download (Developer ID) build. The App Store build is sandboxed, so each helper writes to `Data/Library/Logs/Garage/` inside its own container, `~/Library/Containers/me.rickmark.garage-rag.<helper>/` (for example `me.rickmark.garage-rag.ingest-xpc` for `ingest-xpc.log`, and `me.rickmark.garage-rag.xpc` for `garage-xpc.log`):
 

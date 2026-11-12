@@ -9,7 +9,7 @@ testflight_page: true
 
 <div class="hero">
   <h1>Test Garage on TestFlight</h1>
-  {% if site.app_store_live %}<p>Garage 1.5 is on the <a href="{{ site.app_store_url }}" target="_blank" rel="noopener">Mac App Store</a>. TestFlight, Apple's app for beta software, is where test builds of the next version appear before they reach the store.</p>{% else %}<p>The App Store version of Garage 1.5 is in testing. TestFlight, Apple's app for beta software, installs it on your computer and keeps it up to date while it's in testing.</p>{% endif %}
+  {% if site.app_store_live %}<p>Garage 1.6 is on the <a href="{{ site.app_store_url }}" target="_blank" rel="noopener">Mac App Store</a>. TestFlight, Apple's app for beta software, is where test builds of the next version appear before they reach the store.</p>{% else %}<p>The App Store version of Garage 1.6 is in testing. TestFlight, Apple's app for beta software, installs it on your computer and keeps it up to date while it's in testing.</p>{% endif %}
   {% if testflight_open %}
   <div class="hero-actions">
     <a id="testflight-join" href="{{ site.testflight_url }}" class="btn btn-primary btn-large" target="_blank" rel="noopener">Join the beta in TestFlight ↗</a>
@@ -48,7 +48,7 @@ testflight_page: true
 
 ## If you already use Garage from this site
 
-macOS treats the App Store version and the version from this site as the same app, so installing from TestFlight replaces the copy in your Applications folder. Garage 1.5 from this site and from TestFlight keep their database in the same shared folder, so switching between them keeps your sources and index.
+macOS treats the App Store version and the version from this site as the same app, so installing from TestFlight replaces the copy in your Applications folder. Garage 1.6 from this site and from TestFlight keep their database in the same shared folder, so switching between them keeps your sources and index.
 
 The TestFlight version gets its updates from TestFlight rather than checking this site, and it runs in the App Sandbox that the Mac App Store requires.
 

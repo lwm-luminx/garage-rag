@@ -50,6 +50,32 @@
       "featured": true
     },
     {
+      "name": "Nomic Embed Text v2 MoE",
+      "model_id": "nomic-ai/nomic-embed-text-v2-moe",
+      "model_card_url": "https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe",
+      "maker": "Nomic AI",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "nomic-embed-text-v2-moe",
+      "model_ref": "nomic-embed-text-v2-moe",
+      "provider": "llama_xpc",
+      "native_dims": 768,
+      "default_dims": 768,
+      "distance": "cosine",
+      "supports_mrl": true,
+      "context_size": 512,
+      "download_model_id": "nomic-ai/nomic-embed-text-v2-moe-GGUF",
+      "download_file": "nomic-embed-text-v2-moe.Q8_0.gguf",
+      "sha256": "06e7a7e594a26985523c18383aba4aad39fe6e14f08ffc6ab5b554e1ccdc3cff",
+      "description": "Multilingual mixture-of-experts text embedding model (~100 languages, Apache 2.0, 513 MB) with Matryoshka dimension truncation.",
+      "use_cases": [
+        "Multilingual corpora",
+        "Semantic search",
+        "Matryoshka dimension reduction"
+      ],
+      "featured": false
+    },
+    {
       "name": "mxbai Embed XSmall",
       "model_id": "mixedbread-ai/mxbai-embed-xsmall-v1",
       "model_card_url": "https://huggingface.co/mixedbread-ai/mxbai-embed-xsmall-v1",
@@ -415,6 +441,60 @@
       "featured": false
     },
     {
+      "name": "Gemma 4 E2B Instruct",
+      "model_id": "google/gemma-4-E2B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-E2B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma4-e2b",
+      "model_ref": "gemma4-e2b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/google_gemma-4-E2B-it-GGUF",
+      "download_file": "google_gemma-4-E2B-it-Q4_K_M.gguf",
+      "sha256": "923c4c86177d2ee173a7f5b4fa3d0ac65f5962ab15e6d6a5bc250aec4fd7bf7e",
+      "description": "Google's smallest Gemma 4 (3.5 GB, 2.3B effective parameters, Apache 2.0) with native tool calling and a 128K context window. Fast on any Apple silicon Mac.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Gemma 4 E4B Instruct",
+      "model_id": "google/gemma-4-E4B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-E4B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma4-e4b",
+      "model_ref": "gemma4-e4b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/google_gemma-4-E4B-it-GGUF",
+      "download_file": "google_gemma-4-E4B-it-Q4_K_M.gguf",
+      "sha256": "d35a3aa7a6d47de237fd488bb6f7f3efd62908d828f85a63da0ee93acdbefe9f",
+      "description": "Compact Gemma 4 (5.4 GB, 4.5B effective parameters, Apache 2.0) with native tool calling, strong reasoning and fact distillation.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
       "name": "Granite 4.1 3B Instruct",
       "model_id": "ibm-granite/granite-4.1-3b",
       "model_card_url": "https://huggingface.co/ibm-granite/granite-4.1-3b",
@@ -522,6 +602,33 @@
       "featured": false
     },
     {
+      "name": "Gemma 4 12B Instruct",
+      "model_id": "google/gemma-4-12B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-12B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma4-12b",
+      "model_ref": "gemma4-12b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/gemma-4-12B-it-GGUF",
+      "download_file": "gemma-4-12B-it-Q4_K_M.gguf",
+      "sha256": "3962624dcd25b947d889dc9ae1bf275b61db6cd4dbe694057f34fffef1671509",
+      "description": "Mid-size Gemma 4 (7.7 GB, Apache 2.0) with native tool calling, strong reasoning and fact extraction. Best on 16 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
       "name": "gpt-oss 20B",
       "model_id": "openai/gpt-oss-20b",
       "model_card_url": "https://huggingface.co/openai/gpt-oss-20b",
@@ -575,6 +682,33 @@
       "featured": false
     },
     {
+      "name": "Gemma 4 26B A4B Instruct",
+      "model_id": "google/gemma-4-26B-A4B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-26B-A4B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma4-26b-a4b",
+      "model_ref": "gemma4-26b-a4b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 32768,
+      "tool_calling": true,
+      "download_model_id": "bartowski/google_gemma-4-26B-A4B-it-GGUF",
+      "download_file": "google_gemma-4-26B-A4B-it-Q4_K_M.gguf",
+      "sha256": "a07f72221e8e3f77455ab0d7f7652d01a9f63c262b954aa6932a53275a0e895a",
+      "description": "Mixture-of-experts Gemma 4 (17.0 GB, 3.8B active parameters, Apache 2.0) that runs about as fast as a 4B model with frontier-class reasoning and tool calling. Needs 32 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
       "name": "Qwen 3 30B A3B Instruct 2507",
       "model_id": "Qwen/Qwen3-30B-A3B-Instruct-2507",
       "model_card_url": "https://huggingface.co/Qwen/Qwen3-30B-A3B-Instruct-2507",
@@ -597,6 +731,219 @@
       "use_cases": [
         "Chat / Q&A",
         "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Gemma 4 31B Instruct",
+      "model_id": "google/gemma-4-31B-it",
+      "model_card_url": "https://huggingface.co/google/gemma-4-31B-it",
+      "maker": "Google",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "gemma4-31b",
+      "model_ref": "gemma4-31b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 32768,
+      "tool_calling": true,
+      "download_model_id": "bartowski/google_gemma-4-31B-it-GGUF",
+      "download_file": "google_gemma-4-31B-it-Q4_K_M.gguf",
+      "sha256": "2959c1b0a4f792493bb0092846ea06aec54547e47be979c282634d938d501b75",
+      "description": "Largest dense Gemma 4 (19.6 GB, Apache 2.0) with the family's highest accuracy at reasoning, fact extraction and tool calling. Needs 32 GB or more.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Granite 4.2 3B Instruct",
+      "model_id": "ibm-granite/granite-4.2-3b",
+      "model_card_url": "https://huggingface.co/ibm-granite/granite-4.2-3b",
+      "maker": "IBM",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "granite-4.2-3b",
+      "model_ref": "granite-4.2-3b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "ibm-granite/granite-4.2-3b-GGUF",
+      "download_file": "granite-4.2-3b-Q4_K_M.gguf",
+      "sha256": "e0406663965846ae22a403456eb826ccce5f450840491f71952f18a7cb78e7d5",
+      "description": "Compact IBM Granite 4.2 hybrid Mamba-2/Transformer model (2.2 GB, Apache 2.0) tuned for RAG, structured extraction and tool calling.",
+      "use_cases": [
+        "Fact extraction / distillation",
+        "Chat / Q&A",
+        "Tool calling"
+      ],
+      "featured": true
+    },
+    {
+      "name": "Granite 4.2 8B Instruct",
+      "model_id": "ibm-granite/granite-4.2-8b",
+      "model_card_url": "https://huggingface.co/ibm-granite/granite-4.2-8b",
+      "maker": "IBM",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "granite-4.2-8b",
+      "model_ref": "granite-4.2-8b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "ibm-granite/granite-4.2-8b-GGUF",
+      "download_file": "granite-4.2-8b-Q4_K_M.gguf",
+      "sha256": "16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311",
+      "description": "Mid-size IBM Granite 4.2 hybrid model (5.4 GB, Apache 2.0) with strong grounded Q&A, structured JSON extraction and tool use.",
+      "use_cases": [
+        "Fact extraction / distillation",
+        "Chat / Q&A",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Granite 4.2 30B A3B Instruct",
+      "model_id": "ibm-granite/granite-4.2-30b",
+      "model_card_url": "https://huggingface.co/ibm-granite/granite-4.2-30b",
+      "maker": "IBM",
+      "country_of_origin": "US",
+      "origin_zone": "US",
+      "slug": "granite-4.2-30b",
+      "model_ref": "granite-4.2-30b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 32768,
+      "tool_calling": true,
+      "download_model_id": "ibm-granite/granite-4.2-30b-GGUF",
+      "download_file": "granite-4.2-30b-Q4_K_M.gguf",
+      "sha256": "f299dace85d77ee0e24ca0b6720bd211b1f4cd1f65b9c0a2111e79692e29c9be",
+      "description": "Mixture-of-experts IBM Granite 4.2 (30B total, 3B active per token, 17.7 GB, Apache 2.0): 30B-class quality at 3B inference speed.",
+      "use_cases": [
+        "Fact extraction / distillation",
+        "Chat / Q&A",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Ministral 3 14B Instruct (2512)",
+      "model_id": "mistralai/Ministral-3-14B-Instruct-2512",
+      "model_card_url": "https://huggingface.co/mistralai/Ministral-3-14B-Instruct-2512",
+      "maker": "Mistral AI",
+      "country_of_origin": "FR",
+      "origin_zone": "EU",
+      "slug": "ministral-3-14b-instruct-2512",
+      "model_ref": "ministral-3-14b-instruct-2512",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference",
+        "distillation"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/mistralai_Ministral-3-14B-Instruct-2512-GGUF",
+      "download_file": "mistralai_Ministral-3-14B-Instruct-2512-Q4_K_M.gguf",
+      "sha256": "a95aea79c3043039306f9c3957aa091baf24d428507eb7596c59ddc54ff75b80",
+      "description": "Mistral's 14B dense instruct model (8.2 GB, Apache 2.0) with strong multilingual comprehension, structured output and tool calling.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Fact extraction / distillation",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Qwen 3.5 4B",
+      "model_id": "Qwen/Qwen3.5-4B",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3.5-4B",
+      "maker": "Alibaba (Qwen)",
+      "country_of_origin": "CN",
+      "origin_zone": "CN",
+      "slug": "qwen3.5-4b",
+      "model_ref": "qwen3.5-4b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/Qwen_Qwen3.5-4B-GGUF",
+      "download_file": "Qwen_Qwen3.5-4B-Q4_K_M.gguf",
+      "sha256": "13c16f426047e2de38cd075bdade4a7bcbc8c774384876f677740cda65f8a983",
+      "description": "Compact Qwen 3.5 hybrid Gated-DeltaNet reasoning and chat model (3.0 GB, Apache 2.0) with thinking and tool calling.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Reasoning",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Qwen 3.5 9B",
+      "model_id": "Qwen/Qwen3.5-9B",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3.5-9B",
+      "maker": "Alibaba (Qwen)",
+      "country_of_origin": "CN",
+      "origin_zone": "CN",
+      "slug": "qwen3.5-9b",
+      "model_ref": "qwen3.5-9b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
+      "context_size": 16384,
+      "tool_calling": true,
+      "download_model_id": "bartowski/Qwen_Qwen3.5-9B-GGUF",
+      "download_file": "Qwen_Qwen3.5-9B-Q4_K_M.gguf",
+      "sha256": "d784ce9eda1a5a7b51e8f705a9e6310844bf4f173654d115823c775fdea56d43",
+      "description": "Mid-size Qwen 3.5 hybrid Gated-DeltaNet reasoning and chat model (6.2 GB, Apache 2.0) with strong coding, Q&A and tool calling.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Reasoning",
+        "Tool calling"
+      ],
+      "featured": false
+    },
+    {
+      "name": "Qwen 3.6 35B A3B",
+      "model_id": "Qwen/Qwen3.6-35B-A3B",
+      "model_card_url": "https://huggingface.co/Qwen/Qwen3.6-35B-A3B",
+      "maker": "Alibaba (Qwen)",
+      "country_of_origin": "CN",
+      "origin_zone": "CN",
+      "slug": "qwen3.6-35b-a3b",
+      "model_ref": "qwen3.6-35b-a3b",
+      "provider": "llama_xpc",
+      "tags": [
+        "inference"
+      ],
+      "context_size": 32768,
+      "tool_calling": true,
+      "download_model_id": "bartowski/Qwen_Qwen3.6-35B-A3B-GGUF",
+      "download_file": "Qwen_Qwen3.6-35B-A3B-Q4_K_M.gguf",
+      "sha256": "b46fedd33e0bfb0cae308aa3c158d0a4b2c4a1d2185a1ed6f093cdaf39064772",
+      "description": "Sparse mixture-of-experts Qwen 3.6 model (35B total, 3B active per token, 22.3 GB, Apache 2.0) for agentic reasoning, coding and Q&A.",
+      "use_cases": [
+        "Chat / Q&A",
+        "Reasoning",
         "Tool calling"
       ],
       "featured": false

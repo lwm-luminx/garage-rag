@@ -68,4 +68,21 @@ final class LlamaKnownAnswersTests: XCTestCase {
         XCTAssertTrue(report.failures.contains { $0.hasPrefix("query: 512 dimensions") }, report.details)
         XCTAssertTrue(report.failures.contains { $0.hasPrefix("document: norm") }, report.details)
     }
+
+    func testGemma4ChatTemplateFormatting() {
+        let prompt = LlamaCppEngine.formatGemma4Chat(messages: [
+            (role: "system", content: "You extract facts."),
+            (role: "user", content: "  Garage runs on PostgreSQL.  "),
+            (role: "assistant", content: "Extracted."),
+            (role: "user", content: "Next sentence."),
+        ])
+        XCTAssertEqual(
+            prompt,
+            "<bos><|turn>system\nYou extract facts.<turn|>\n"
+                + "<|turn>user\nGarage runs on PostgreSQL.<turn|>\n"
+                + "<|turn>model\nExtracted.<turn|>\n"
+                + "<|turn>user\nNext sentence.<turn|>\n"
+                + "<|turn>model\n"
+        )
+    }
 }

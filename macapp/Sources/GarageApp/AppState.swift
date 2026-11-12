@@ -320,6 +320,7 @@ final class AppState: ObservableObject {
             Task {
                 if await ModelCatalog.refresh() {
                     fetchPresetModels()
+                    await xpcServices.refreshAll()
                 }
             }
         }

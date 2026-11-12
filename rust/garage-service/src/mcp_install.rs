@@ -101,6 +101,17 @@ pub fn client_targets(project_dir: &Path) -> Vec<ClientTarget> {
         ClientTarget::new("vscode-global", "VS Code (global extension settings)", cline("Code")),
         ClientTarget::new("windsurf", "Windsurf", home.join(".codeium").join("windsurf").join("mcp_config.json")),
         ClientTarget::new("zed", "Zed", zed),
+        ClientTarget::new("antigravity", "Antigravity", home.join(".gemini").join("config").join("mcp_config.json")),
+        ClientTarget {
+            note: "user-wide configuration for Gemini CLI".to_owned(),
+            ..ClientTarget::new(
+                "gemini-cli",
+                "Gemini CLI (global user config)",
+                home.join(".gemini").join("settings.json"),
+            )
+        },
+        ClientTarget::new("kiro", "Kiro", home.join(".kiro").join("settings").join("mcp.json")),
+        ClientTarget::new("amazon-q", "Amazon Q", home.join(".aws").join("amazonq").join("mcp.json")),
     ]
 }
 
@@ -637,12 +648,16 @@ mod tests {
                 "vscode",
                 "vscode-global",
                 "windsurf",
-                "zed"
+                "zed",
+                "antigravity",
+                "gemini-cli",
+                "kiro",
+                "amazon-q"
             ]
         );
         let err = plan_targets("emacs", None, false, Path::new("/tmp")).unwrap_err();
         assert!(err.message().starts_with("unknown target 'emacs'; choose from project, claude-desktop"));
-        assert!(err.message().ends_with("zed, all, any"));
+        assert!(err.message().ends_with("amazon-q, all, any"));
         assert_eq!(http_url("::1", 8787, "mcp"), "http://[::1]:8787/mcp");
         assert_eq!(http_url("127.0.0.1", 8787, "/mcp"), "http://127.0.0.1:8787/mcp");
     }

@@ -555,6 +555,12 @@ final class GarageConfigLoaderTests: XCTestCase {
 
         let factDistil = GarageConfigLoader.loadFactDistilPresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(factDistil.contains { $0.slug == "gemma2-2b" })
+        for slug in ["gemma4-e2b", "gemma4-e4b", "gemma4-12b", "gemma4-26b-a4b", "gemma4-31b"] {
+            let entry = try XCTUnwrap(factDistil.first { $0.slug == slug }, "missing \(slug)")
+            XCTAssertTrue(entry.toolCalling, "\(slug) should be marked tool_calling")
+            XCTAssertEqual(entry.originRegion, "US")
+            XCTAssertEqual(entry.sha256?.count, 64, "\(slug) should carry a SHA-256")
+        }
         // gpt-oss is an inference model only: its reasoning text would land in the facts.
         let inference = GarageConfigLoader.loadInferencePresets(fileURL: try committedCatalogURL())
         XCTAssertTrue(inference.contains { $0.slug == "gpt-oss-20b" })

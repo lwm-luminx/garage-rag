@@ -46,6 +46,20 @@ final class ImageModelCatalogTests: XCTestCase {
         XCTAssertNil(ImageModelResolver.parseCatalog(Data("[1, 2]".utf8)))
     }
 
+    func testCatalogWithoutImageEntriesFallsBackToNextCandidate() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let stale = root.appendingPathComponent("stale-models.json")
+        let bundled = root.appendingPathComponent("bundled-models.json")
+        try Data(#"{"text_embedding": [{"slug": "bge-m3", "name": "BGE-M3", "native_dims": 1024}]}"#.utf8).write(to: stale)
+        try Data(Self.catalog.utf8).write(to: bundled)
+
+        let resolver = ImageModelResolver(catalogURLs: [stale, bundled], modelsDirectory: root)
+        XCTAssertEqual(resolver.catalogSpecs().map(\.slug), ["siglip2-base-256"])
+    }
+
     func testTheCommittedCatalogDescribesSigLIP2() throws {
         // The app bundles data/models/models.json as the fallback catalog; the test's own bundle
         // does not, so this reads the repository copy: from the runfiles under Bazel, else through

@@ -1,7 +1,7 @@
 # Image embedding models for Garage
 
-*September 2026. The survey behind the `image_embedding` section of `docs/.data/models.json` and
-`GarageImageEmbedXPCService`.*
+*September 2026. The survey behind the `image_embedding` section of `data/models/models.json`
+(served at `/.data/models.json`) and `GarageImageEmbedXPCService`.*
 
 ## What Garage needs
 
@@ -73,7 +73,7 @@ files, which are small and whose formatting the conversion does not fix.
 
 - `embedding_models.modality` (`014_model_modality.sql`) separates text and image models; a picture
   gets one `image` chunk whose text is its title or caption and whose vector comes from the file.
-- The `image_xpc` provider is local by construction: no HTTP, an NSXPC bridge from the Python in
+- The `image_xpc` provider is local by construction: no HTTP, an NSXPC bridge from the host in
   each helper to `GarageImageEmbedXPCService` through the endpoint the app hands over, the same way
   `llama_xpc` models are loaded on demand.
 - Search embeds the query through the text tower under an image model, so hybrid search over an

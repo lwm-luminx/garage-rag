@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS sources (
     config                  jsonb       NOT NULL DEFAULT '{}'::jsonb,
     created_at              timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT sources_kind_check
-        CHECK (kind IN ('filesystem', 'git', 'sqlite', 'maildir', 'feed', 'dropbox', 'onedrive', 'outlook', 'google_drive', 'gmail'))
+        CHECK (kind IN ('filesystem', 'git', 'sqlite', 'maildir', 'feed', 'dropbox', 'onedrive', 'outlook', 'google_drive', 'gmail', 'claude', 'chatgpt', 'antigravity'))
 );
 
 -- ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS author_identities (
     value     text   NOT NULL,
     CONSTRAINT author_identities_kind_check
         CHECK (kind IN ('email', 'git_email', 'git_name', 'phone',
-                        'imessage_handle', 'handle')),
+                        'imessage_handle', 'handle', 'ai_model')),
     CONSTRAINT author_identities_unique UNIQUE (kind, value)
 );
 

@@ -318,6 +318,34 @@ final class GarageMCPService: ObservableObject {
                 projectScoped: false,
                 note: "Zed editor settings"
             ),
+            (
+                id: "antigravity",
+                label: "Antigravity",
+                path: home.appendingPathComponent(".gemini/config/mcp_config.json"),
+                projectScoped: false,
+                note: "Google Antigravity AI IDE and CLI"
+            ),
+            (
+                id: "gemini-cli",
+                label: "Gemini CLI (user config)",
+                path: home.appendingPathComponent(".gemini/settings.json"),
+                projectScoped: false,
+                note: "Google Gemini CLI user configuration"
+            ),
+            (
+                id: "kiro",
+                label: "Kiro",
+                path: home.appendingPathComponent(".kiro/settings/mcp.json"),
+                projectScoped: false,
+                note: "Kiro AI IDE"
+            ),
+            (
+                id: "amazon-q",
+                label: "Amazon Q",
+                path: home.appendingPathComponent(".aws/amazonq/mcp.json"),
+                projectScoped: false,
+                note: "Amazon Q Developer CLI"
+            ),
         ]
 
         return standardTargets.map { target in

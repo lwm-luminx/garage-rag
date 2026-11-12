@@ -14,7 +14,7 @@ Migrations are idempotent — `IF NOT EXISTS` plus `duplicate_object` guards for
 enum types — so applying them repeatedly *is* the migration story. Sufficient for
 a single-user local corpus, and it avoids a migration framework.
 
-The files run in order, `001_extensions.sql` through `014_chunk_direction.sql`.
+The files run in order, `001_extensions.sql` through `025_sessions.sql`.
 `001` creates `vector` and `pg_trgm`, and Apache AGE (`age`, graph queries in
 openCypher) only where the server has it installed: the app's bundled Postgres
 always does, Homebrew's and the CI image usually do not, and nothing in the
@@ -60,8 +60,8 @@ provider not on this machine is keyed on `corpus_class` for that reason.
 
 ### `sources`
 
-Registered roots. `kind` ∈ `filesystem | git | sqlite | maildir | feed` — `feed`
-is the extension point for social media connectors.
+Registered roots. `kind` ∈ `filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive | gmail | claude | chatgpt | antigravity` — `feed`
+is the extension point for social media connectors, the cloud kinds read folders and mail through their provider APIs (`020`–`024`), and `claude`, `chatgpt` and `antigravity` index local AI assistant session transcripts and data-export archives (`025_sessions.sql`).
 
 `expected_elements` is the item count of the last scan, which the app's
 progress bars measure ingest against. The rest of that scan lives beside it
@@ -72,10 +72,10 @@ garage.json.
 
 ### `authors` / `author_identities`
 
-An author owns many identities (`git_email`, `email`, `phone`,
-`imessage_handle`, `handle`). Resolution is lookup-by-identity, create-on-miss,
+An author owns many identities (`git_email`, `email`, `git_name`, `phone`,
+`imessage_handle`, `handle`, `ai_model`). Resolution is lookup-by-identity, create-on-miss,
 so the same person arriving first via a git email and later via a PDF byline
-collapses onto one row.
+collapses onto one row, and each assistant model (`ai_model`) resolves to its own non-self author row.
 
 A partial unique index enforces at most one `is_self` author.
 
@@ -268,6 +268,40 @@ These tables are not written yet. Messages ingest (`ingest/conversations.py`)
 reads `chat.db` directly on every run and stores each thread as one `documents`
 row with one chunk per message, keyed on `<chat.db path>#<chat GUID>`; who wrote
 each message is on its chunk (`chunks.direction` / `chunks.sender`).
+
+### `sessions` / `session_turns` / `session_tool_calls` / `session_artifacts`
+
+Normalized storage across Claude (`claude_code`, `claude_cowork`, `claude_web`),
+ChatGPT (`codex`, `chatgpt_web`), and Antigravity (`antigravity`) sessions
+(`025_sessions.sql`), both live `.jsonl` transcripts on disk and exported
+`conversations.json` / `.zip` archives:
+
+- **`sessions`** — one row per thread or subagent run, unique on
+  `(source_id, external_id)`. Carries `provider`, `surface`, subagent linkage
+  (`parent_session_id` / `parent_external_id`), `workspace_path` and
+  `workspace_paths` (for multi-root sessions), `git_branch` / `git_commit`,
+  `primary_model`, cumulative token counts, and `document_id` (`ON DELETE SET
+  NULL`) pointing to the synthesized `documents` row (`communication` /
+  `received`) through which hybrid search, embeddings and fact distillation run.
+- **`session_turns`** — every message or step node in the session graph, unique
+  on `(session_id, external_id)`. `parent_turn_id` (`parent_external_id`)
+  preserves prompt edits and regenerated replies (`mapping[id].parent` in
+  ChatGPT, `parentUuid` in Claude Code), while `active_ord` numbers only the
+  active lineage synthesized into `documents` and `chunks` (leaving abandoned
+  branches and tool/system plumbing queryable in SQL with `active_ord IS NULL`).
+  `thinking` stores chain-of-thought separately from `content` (and out of its
+  generated `tsv`), and each synthesized search chunk links back via
+  `chunks.session_turn_id` (`ON DELETE SET NULL`).
+- **`session_tool_calls`** — structured agent tool invocations (`tool_name`,
+  normalized `tool_kind` ∈ `read | write | exec | search | mcp | subagent |
+  browser | other`, `target_path`, `command`, `status`, `arguments`, bounded
+  `output_preview` and `output_bytes`), avoiding multi-megabyte raw file-read
+  dumps in `chunks`.
+- **`session_artifacts`** — structured outputs produced by or attached to a
+  session (`plan`, `walkthrough`, `document`, `code`, `attachment`, `image`,
+  `other`), such as Antigravity `brain/<id>/*.md` artifacts, Claude artifacts,
+  and ChatGPT Canvas files, optionally linked to their own `documents` row via
+  `document_id` (`ON DELETE SET NULL`).
 
 ### `embedding_models` and the `emb_*` tables
 

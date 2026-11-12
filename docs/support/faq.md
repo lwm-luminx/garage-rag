@@ -46,7 +46,7 @@ redirect_from:
     <p><strong>Your files and the index never do.</strong> What leaves your computer depends only on which AI you connect:</p>
     <ul>
       <li><strong>Claude, ChatGPT and other cloud assistants</strong> (what most people use): the assistant's app queries Garage over MCP and gets only the relevant parts of your collection, the excerpts its searches return and the documents it opens, never the whole index. Garage uploads nothing, but the assistant sends those parts to its provider's servers with your conversation, including excerpts from Messages and Mail if you have indexed them, and handled under the provider's terms.</li>
-      <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp engine on macOS, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
+      <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp and Core ML engines on macOS, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
       <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this computer even then.</li>
     </ul>
     <p>Garage itself sends nothing to the cloud, and that is enforced by tests rather than by convention:</p>
@@ -83,10 +83,10 @@ redirect_from:
     <p>Garage includes streaming, memory-efficient extractors for:</p>
     <ul>
       <li><strong>Markdown & Plain Text:</strong> <code>.md</code>, <code>.txt</code>, <code>.rst</code>, <code>.org</code>, <code>.adoc</code> (with YAML frontmatter stripping).</li>
-      <li><strong>PDF Documents:</strong> Fast extraction via <code>pypdf</code>, with automatic page-level escalation to <code>pdfplumber</code> for embedded data tables.</li>
+      <li><strong>PDF Documents:</strong> Fast native extraction, with automatic page-level escalation for embedded tables and scanned pages.</li>
       <li><strong>Office Documents:</strong> Word (<code>.docx</code>), PowerPoint (<code>.pptx</code>), and Excel (<code>.xlsx</code>).</li>
       <li><strong>Source Code & Config:</strong> <code>.py</code>, <code>.swift</code>, <code>.ts</code>, <code>.rs</code>, <code>.go</code>, <code>.json</code>, <code>.yaml</code>, <code>.toml</code>, etc.</li>
-      <li><strong>Images & Scans:</strong> Local OCR via Tesseract (PNG, JPEG, TIFF, HEIC and more). An image with no text in it is skipped and remembered, not indexed.</li>
+      <li><strong>Images & Scans:</strong> Local OCR via Tesseract (PNG, JPEG, TIFF, HEIC and more), plus Core ML image embeddings (such as <code>siglip2-base-256</code> on the Apple Neural Engine) when image indexing is enabled so a text search can also find photos, screenshots and diagrams without words in them.</li>
       <li><strong>Communications:</strong> Apple Messages (<code>chat.db</code>, one document per conversation) and Apple Mail (<code>.emlx</code>) or <code>.eml</code> messages.</li>
     </ul>
   </div>
@@ -111,7 +111,7 @@ redirect_from:
 <details>
   <summary>Can I use multiple embedding models at once?</summary>
   <div class="faq-content">
-    <p>Yes. Garage decouples text chunks from embedding tables (<code>emb_&lt;model_slug&gt;</code>). You can register multiple models (e.g., <code>bge-m3</code>, <code>nomic-embed-text</code>) and run vector searches across any of them without re-extracting your original files.</p>
+    <p>Yes. Garage decouples chunks from embedding tables (<code>emb_&lt;model_slug&gt;</code>). You can register multiple text and image embedding models (e.g., <code>bge-m3</code>, <code>nomic-embed-text</code>, <code>siglip2-base-256</code>) and run vector searches across any of them without re-extracting your original files.</p>
   </div>
 </details>
 

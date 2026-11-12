@@ -139,11 +139,11 @@ public struct ImageModelResolver: Sendable {
         modelsDirectory.appendingPathComponent(slug, isDirectory: true)
     }
 
-    /// Every image embedding model the first readable catalog lists.
+    /// Every image embedding model the first catalog with image entries lists.
     public func catalogSpecs() -> [ImageModelSpec] {
         for url in catalogURLs {
             guard let data = try? Data(contentsOf: url) else { continue }
-            if let specs = Self.parseCatalog(data) {
+            if let specs = Self.parseCatalog(data), !specs.isEmpty {
                 return specs
             }
         }
