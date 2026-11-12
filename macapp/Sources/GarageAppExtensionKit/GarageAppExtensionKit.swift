@@ -29,6 +29,16 @@ public protocol GarageStatusPanel {
     func makeView(context: GarageAppExtensionContext) -> AnyView
 }
 
+/// What an extension puts in the Status page's top-right corner, in its toolbar: for the account a build is signed
+/// in to (the App Store build's Garage Door, which signs in with Apple).
+@MainActor
+public protocol GarageStatusAccessory {
+    /// Stable and unique among the accessories a build links in.
+    var id: String { get }
+
+    func makeView(context: GarageAppExtensionContext) -> AnyView
+}
+
 /// Work an extension keeps going for the app's whole life, outside any page.
 @MainActor
 public protocol GarageAppExtensionService {
@@ -44,15 +54,18 @@ public protocol GarageAppExtensionService {
 @MainActor
 public struct GarageAppExtensionSet {
     public var statusPanels: [any GarageStatusPanel]
+    public var statusAccessories: [any GarageStatusAccessory]
     public var mcpServerPanels: [any GarageMCPServerPanel]
     public var services: [any GarageAppExtensionService]
 
     public init(
         statusPanels: [any GarageStatusPanel] = [],
+        statusAccessories: [any GarageStatusAccessory] = [],
         mcpServerPanels: [any GarageMCPServerPanel] = [],
         services: [any GarageAppExtensionService] = []
     ) {
         self.statusPanels = statusPanels
+        self.statusAccessories = statusAccessories
         self.mcpServerPanels = mcpServerPanels
         self.services = services
     }
