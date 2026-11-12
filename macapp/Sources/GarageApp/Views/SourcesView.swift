@@ -574,18 +574,8 @@ struct SourcesView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Every row carries a bar (full and green when up to date), so the rows line up.
-                if row.isIndeterminate {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .controlSize(.small)
-                } else {
-                    ProgressView(value: row.progress ?? 0)
-                        .progressViewStyle(.linear)
-                        .controlSize(.small)
-                        .tint(row.statusTone == .active ? .blue : row.statusTone.color)
-                }
-
+                // Every row ends its status line with the same small bar (full when up to date), so
+                // the bars line up down the page without a heavy full-width bar on each source.
                 HStack(spacing: 8) {
                     Text(row.status)
                         .font(.caption)
@@ -597,6 +587,12 @@ struct SourcesView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
+                    SlimProgressBar(
+                        fraction: row.isIndeterminate ? nil : (row.progress ?? 0),
+                        tint: row.statusTone == .active ? .accentColor : row.statusTone.color
+                    )
+                    .frame(width: 96)
+                    .accessibilityIdentifier("sources.row.\(source.slug).progress")
                 }
 
                 if let item = row.currentItem {
