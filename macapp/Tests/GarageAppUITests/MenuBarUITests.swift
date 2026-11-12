@@ -54,7 +54,7 @@ final class MenuBarUITests: GarageUITestCase {
         let row = element(identifier: "menubar.allSystemsGo")
         XCTAssertTrue(row.waitForExistence(timeout: 60), "the popover never said all systems go")
         row.click()
-        XCTAssertTrue(element(text: "Helper Services").waitForExistence(timeout: 15), "the services row did not open Status")
+        XCTAssertTrue(element(text: "Automatic Updates").waitForExistence(timeout: 15), "the services row did not open Status")
         XCTAssertFalse(element(text: "Log Source").exists, "the window stayed on Logs")
     }
 

@@ -4,7 +4,7 @@ import XCTest
 final class AppSectionTests: XCTestCase {
 
     func testAppSectionAllCasesCount() {
-        XCTAssertEqual(AppSection.allCases.count, 10)
+        XCTAssertEqual(AppSection.allCases.count, 11)
     }
 
     func testAppSectionIdentifiers() {
@@ -17,6 +17,7 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.models.id, "Models")
         XCTAssertEqual(AppSection.mcp.id, "MCP Server")
         XCTAssertEqual(AppSection.search.id, "Search")
+        XCTAssertEqual(AppSection.services.id, "Services")
         XCTAssertEqual(AppSection.logs.id, "Logs")
     }
 
@@ -30,13 +31,14 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.models.symbol, "cpu")
         XCTAssertEqual(AppSection.mcp.symbol, "server.rack")
         XCTAssertEqual(AppSection.search.symbol, "magnifyingglass")
+        XCTAssertEqual(AppSection.services.symbol, "gearshape.2")
         XCTAssertEqual(AppSection.logs.symbol, "terminal")
     }
 
     func testSidebarGroups() {
         XCTAssertEqual(SidebarGroup.configuration.sections, [.sources, .models, .mcp])
         XCTAssertEqual(SidebarGroup.data.sections, [.documents, .facts, .graph, .search])
-        XCTAssertEqual(SidebarGroup.advanced.sections, [.database, .logs])
+        XCTAssertEqual(SidebarGroup.advanced.sections, [.database, .services, .logs])
         XCTAssertNil(AppSection.status.group)
     }
 

@@ -4,7 +4,8 @@ import GarageXPCKit
 // What the Status page says, worked out from plain values so it can be tested without a view;
 // each type's `init(appState:)` reads them from the live one. Three questions, three types:
 // is anything wrong (`StatusHealth`), how far along is the index (`IndexingPresentation`), and
-// is each helper process alive (`ServiceRowPresentation`).
+// is each helper process alive (`ServiceRowPresentation`, drawn on the Services page; a helper
+// that is not reaches Status as one of `StatusHealth`'s problems).
 
 // MARK: - Health
 
@@ -29,6 +30,8 @@ struct StatusHealth: Equatable {
         case openPrivacySettings
         case checkSourceAccess
         case refreshLlama
+        /// Restart one helper process (an XPC service id); it starts again on its next request.
+        case restartService(id: String)
 
         var label: String {
             switch self {
@@ -41,6 +44,7 @@ struct StatusHealth: Equatable {
             case .openPrivacySettings: "Open Privacy Settings…"
             case .checkSourceAccess: "Check Again"
             case .refreshLlama: "Try Again"
+            case .restartService: "Restart"
             }
         }
     }
@@ -90,6 +94,39 @@ struct StatusHealth: Equatable {
         var needsFullDiskAccess: Bool = false
     }
 
+    /// A helper process the Services page shows in red or yellow: one that can't be reached, or one
+    /// that runs but fails its self tests or its last test. `id` is the XPC service's, or "grpc"
+    /// for the Index Manager.
+    struct ServiceIssue: Equatable {
+        var id: String
+        var name: String
+        var detail: String
+        var isUnreachable: Bool
+
+        /// The issue a Services row stands for, or nil when the row is healthy or on its way
+        /// somewhere (checking, restarting, not checked yet, stopped).
+        init?(_ row: ServiceRowPresentation) {
+            switch row.state {
+            case .unreachable:
+                isUnreachable = true
+            case .running where row.detailIsError:
+                isUnreachable = false
+            case .running, .checking, .restarting, .stopped, .unknown:
+                return nil
+            }
+            id = row.id
+            name = row.name
+            detail = row.detail
+        }
+
+        init(id: String, name: String, detail: String, isUnreachable: Bool) {
+            self.id = id
+            self.name = name
+            self.detail = detail
+            self.isUnreachable = isUnreachable
+        }
+    }
+
     enum DiskAccess: Equatable {
         case granted
         case notConfigured
@@ -109,6 +146,7 @@ struct StatusHealth: Equatable {
     var lastIngestError: String?
     var isPipelineBusy: Bool
     var launcherPath: String?
+    var serviceIssues: [ServiceIssue]
 
     init(
         database: MenuBarStatus.Database,
@@ -122,7 +160,8 @@ struct StatusHealth: Equatable {
         llamaError: String? = nil,
         lastIngestError: String? = nil,
         isPipelineBusy: Bool = false,
-        launcherPath: String? = nil
+        launcherPath: String? = nil,
+        serviceIssues: [ServiceIssue] = []
     ) {
         self.database = database
         self.mcp = mcp
@@ -136,6 +175,7 @@ struct StatusHealth: Equatable {
         self.lastIngestError = lastIngestError
         self.isPipelineBusy = isPipelineBusy
         self.launcherPath = launcherPath
+        self.serviceIssues = serviceIssues
     }
 
     @MainActor
@@ -170,6 +210,17 @@ struct StatusHealth: Equatable {
 
         let llamaError = appState.llama.isConnected ? nil : appState.llama.lastError
         let launcher = Paths.garageMCP.path
+
+        // The rows the Services page draws, kept here only when they are red or yellow.
+        let grpcRow = ServiceRowPresentation.grpc(status: appState.grpc.status, listening: appState.grpc.listeningPhrase, lastTest: nil)
+        let xpcRows = appState.xpcServices.services.map { service in
+            ServiceRowPresentation.xpc(
+                service,
+                report: appState.xpcServices.statusReports[service.id],
+                test: appState.xpcServices.diagnosticResults[service.id]
+            )
+        }
+        let serviceIssues = ([grpcRow] + xpcRows).compactMap { ServiceIssue($0) }
         self.init(
             database: menuBar.database,
             mcp: menuBar.mcp,
@@ -182,7 +233,8 @@ struct StatusHealth: Equatable {
             llamaError: llamaError,
             lastIngestError: menuBar.lastIngestError,
             isPipelineBusy: menuBar.isBusy,
-            launcherPath: FileManager.default.isExecutableFile(atPath: launcher) ? nil : launcher
+            launcherPath: FileManager.default.isExecutableFile(atPath: launcher) ? nil : launcher,
+            serviceIssues: serviceIssues
         )
     }
 
@@ -299,6 +351,27 @@ struct StatusHealth: Equatable {
                 detail: MenuBarStatus.firstLine(llamaError), detailIsError: true,
                 section: .models, fix: .refreshLlama
             ))
+        }
+
+        for issue in serviceIssues {
+            // The Index Manager starts with the database, and the helpers' self tests check the
+            // database, so while it is down both are consequences of the database's own problem.
+            if database != .running && (issue.id == "grpc" || !issue.isUnreachable) { continue }
+            // The built-in engine's own row already says it can't be reached.
+            if issue.id == "llama-xpc", issue.isUnreachable, let llamaError, !llamaError.isEmpty { continue }
+            if issue.isUnreachable {
+                list.append(Problem(
+                    id: "service.\(issue.id)", severity: .critical, title: "\(issue.name) isn't answering",
+                    detail: issue.detail, detailIsError: true,
+                    section: .services, fix: issue.id == "grpc" ? nil : .restartService(id: issue.id)
+                ))
+            } else {
+                list.append(Problem(
+                    id: "service.\(issue.id)", severity: .warning, title: "\(issue.name) is failing its tests",
+                    detail: issue.detail, detailIsError: true,
+                    section: .services, fix: issue.id == "grpc" ? nil : .restartService(id: issue.id)
+                ))
+            }
         }
 
         if database == .running {

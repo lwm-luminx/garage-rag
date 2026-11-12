@@ -14,6 +14,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case graph = "Graph"
     case search = "Search"
     case database = "Database"
+    case services = "Services"
     case logs = "Logs"
 
     var id: String { rawValue }
@@ -22,6 +23,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .status: "gauge.with.dots.needle.50percent"
         case .database: "cylinder.split.1x2"
+        case .services: "gearshape.2"
         case .sources: "tray.and.arrow.down"
         case .documents: "doc.text.magnifyingglass"
         case .facts: "lightbulb"
@@ -53,7 +55,7 @@ enum SidebarGroup: String, CaseIterable, Identifiable {
         switch self {
         case .configuration: [.sources, .models, .mcp]
         case .data: [.documents, .facts, .graph, .search]
-        case .advanced: [.database, .logs]
+        case .advanced: [.database, .services, .logs]
         }
     }
 }
@@ -208,6 +210,7 @@ struct ContentView: View {
             switch selection ?? .status {
             case .status: StatusView(selection: $selection)
             case .database: DatabaseView()
+            case .services: ServicesView()
             case .sources: SourcesView()
             case .documents:
                 DocumentsView(focus: $documentFocus, openGraph: { focus in

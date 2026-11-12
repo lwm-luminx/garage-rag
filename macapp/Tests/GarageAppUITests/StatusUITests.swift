@@ -96,7 +96,7 @@ final class StatusUITests: GarageUITestCase {
     func testIndexManagerDetailsAndTest() throws {
         try launchApp()
         waitForBackend()
-        open(section: "status")
+        open(section: "services")
 
         let details = element(identifier: "status.service.grpc.details")
         XCTAssertTrue(details.waitForExistence(timeout: 30), "the Index Manager row has no details button")
@@ -121,7 +121,7 @@ final class StatusUITests: GarageUITestCase {
     func testHelperServicesToolbar() throws {
         try launchApp()
         waitForBackend()
-        open(section: "status")
+        open(section: "services")
 
         for identifier in ["status.services.testAll", "status.services.restartAll", "status.services.refresh"] {
             XCTAssertTrue(element(identifier: identifier).waitForExistence(timeout: 30), "Helper Services has no \(identifier)")
@@ -157,7 +157,7 @@ final class StatusUITests: GarageUITestCase {
     func testIndexManagerSaysHowItListens() throws {
         try launchApp()
         waitForBackend()
-        open(section: "status")
+        open(section: "services")
 
         let socket = dataDirectory.appendingPathComponent("s/grpc", isDirectory: false).path
         let address = sockaddr_un()
@@ -173,7 +173,7 @@ final class StatusUITests: GarageUITestCase {
     func testHelperRowsKeepTheirButtonNames() throws {
         try launchApp()
         waitForBackend()
-        open(section: "status")
+        open(section: "services")
 
         let test = element(identifier: "status.service.ingest-xpc.test")
         let restart = element(identifier: "status.service.ingest-xpc.restart")
