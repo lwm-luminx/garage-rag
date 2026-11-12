@@ -921,7 +921,8 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func testVolumeAccess() -> VolumeAccessTestResult {
-        let sourceTuples = registeredSources.map { (slug: $0.slug, root: $0.root) }
+        // A cloud source's root is a folder in the provider's account, read over its API, not a path on this disk.
+        let sourceTuples = registeredSources.filter { !SourceKinds.isCloud($0.kind) }.map { (slug: $0.slug, root: $0.root) }
         let result = volumeAccess.testFullVolumeAccess(sourcePaths: sourceTuples)
         lastCommandSucceeded = result.isAccessible
         lastCommandOutput = result.message

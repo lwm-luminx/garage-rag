@@ -491,7 +491,9 @@ struct SourcesView: View {
     }
 
     private func accessResult(for source: RegisteredSource) -> SourcePathAccessResult? {
-        appState.volumeAccess.lastTestResult?.sourcePathResults.first {
+        // A cloud source has no folder on this disk to check (its root is in the provider's account).
+        if SourceKinds.isCloud(source.kind) { return nil }
+        return appState.volumeAccess.lastTestResult?.sourcePathResults.first {
             $0.slug == source.slug || $0.rawPath == source.root
         }
     }
