@@ -95,4 +95,36 @@ final class IngestFileOpenAccessTests: XCTestCase {
         XCTAssertFalse(sourceRes.isAccessible)
         XCTAssertTrue(sourceRes.statusDescription.contains("opening files failed"))
     }
+
+    func testAccessCheckFollowsALinkedSourceRoot() throws {
+        let tempDir = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("garage_test_link_\(UUID().uuidString)")
+        let folder = tempDir.appendingPathComponent("CloudStorage/Dropbox")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+        try "Content".write(to: folder.appendingPathComponent("note.txt"), atomically: true, encoding: .utf8)
+        let link = tempDir.appendingPathComponent("Dropbox")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: folder)
+
+        let checked = IngestEngine.accessCheckPath(for: link.path, grantedSourceURLs: [:])
+        XCTAssertEqual(checked, folder.resolvingSymlinksInPath().path)
+
+        let result = IngestEngine.shared.testVolumeAccess(request: VolumeAccessTestRequest(
+            rootBookmarkData: nil,
+            sourceBookmarks: nil,
+            sourcePaths: [SourcePathTestItem(slug: "dropbox", root: link.path)]
+        ))
+        let source = try XCTUnwrap(result.sourcePathResults.first)
+        XCTAssertEqual(source.rawPath, link.path)
+        XCTAssertEqual(source.resolvedPath, folder.resolvingSymlinksInPath().path)
+        XCTAssertTrue(source.isAccessible)
+    }
+
+    func testAccessCheckUsesTheGrantedFolderOfASource() {
+        let granted = URL(fileURLWithPath: "/Users/tester/Library/CloudStorage/Dropbox", isDirectory: true)
+        let checked = IngestEngine.accessCheckPath(
+            for: "/Users/tester/Dropbox",
+            grantedSourceURLs: ["/Users/tester/Dropbox": granted]
+        )
+        XCTAssertEqual(checked, "/Users/tester/Library/CloudStorage/Dropbox")
+    }
 }
