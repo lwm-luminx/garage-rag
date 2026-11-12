@@ -172,6 +172,27 @@ final class AppStateTests: XCTestCase {
         XCTAssertEqual(state.lastCommandSucceeded, true)
     }
 
+    /// A cloud source's root ("/Reference" in the Dropbox account) is not a path on this disk, so the
+    /// folder check leaves it out instead of reporting it as unreadable.
+    @MainActor
+    func testVolumeAccessSkipsCloudSources() {
+        let mockStore = MockVolumeBookmarkStore()
+        let mockFS = MockFileSystemAccessor()
+        let localPath = "/Users/test/Notes"
+        mockFS.readablePaths = ["/", "/System", "/Library", "/Applications", "/Users", "/Volumes", localPath]
+        mockFS.directoryContents = [URL(fileURLWithPath: "\(localPath)/note.md")]
+
+        let volumeService = VolumeAccessService(bookmarkStore: mockStore, fileSystem: mockFS)
+        let state = AppState(llama: LlamaService(), volumeAccess: volumeService)
+        state.setRegisteredSourcesForTesting([
+            RegisteredSource(slug: "notes", root: localPath),
+            RegisteredSource(slug: "dropbox", kind: "dropbox", root: "/Reference"),
+        ])
+
+        let result = state.testVolumeAccess()
+        XCTAssertEqual(result.sourcePathResults.map(\.slug), ["notes"])
+    }
+
     @MainActor
     func testCopyDatabaseURLToClipboard() {
         let state = AppState()

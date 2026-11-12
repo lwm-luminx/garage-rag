@@ -196,6 +196,71 @@ deferred; nothing is silently truncated. A stub that is not downloaded gets no
 document (the run counts it as a placeholder), and a file indexed before the sync
 client evicted it is skipped without a download while its stat still matches.
 
+## Dropbox sources
+
+A Dropbox source (kind `dropbox`) reads the account through Dropbox's HTTP API instead of the
+synced folder: Garage lists the folder, and downloads only a file that is new or whose size or
+modification time changed. Content only comes in. The requests go to
+`https://api.dropboxapi.com/2/` and `https://content.dropboxapi.com/2/` and nowhere else
+(`garage-ingest`'s `dropbox::check_destination`, checked again by the host), and carry the source's
+paths and listing cursors, never a document's text. A download is checked against Dropbox's content
+hash and kept in memory only; nothing is written to disk but the index.
+
+Garage holds no Dropbox account itself. The process that runs ingest hands over a short-lived
+access token when asked: in the App Store build the node signs in to Dropbox itself, with Garage Door
+only relaying Dropbox's answer sealed to that node, and keeps and refreshes the token on the node. Door
+holds no token and never sees a file. A build with no token provider (this repository's own
+builds, the CLI and the Windows app, so far) reports a Dropbox source as unavailable.
+
+## OneDrive sources
+
+A OneDrive source (kind `onedrive`, personal OneDrive or OneDrive for Business) reads the drive
+through Microsoft Graph the same way: Garage lists the folder child by child, skipping the folders
+the walker would skip without listing them, and downloads only a file that is new or changed. The
+signed requests go to `https://graph.microsoft.com/v1.0/me/drive/` (and `/v1.0/drives/` for Graph's
+next-page links) and nowhere else (`garage-ingest`'s `onedrive::check_destination`, checked again by
+the host). Graph answers a download with a redirect to a pre-authenticated URL on Microsoft's content
+hosts (`*.sharepoint.com`, `*.1drv.com`, `*.livefilestore.com`, `*.microsoftpersonalcontent.com`);
+the host never follows it, and Garage fetches that URL itself, after the same check, without the
+access token. A download is checked against OneDrive's QuickXorHash and kept in memory only. The
+token comes from the process that runs ingest, as for Dropbox: in the App Store build the node links
+its Microsoft account through Garage Door, which only relays Microsoft's answer sealed to that node.
+
+## Outlook sources
+
+An Outlook source (kind `outlook`, an Outlook.com or Microsoft 365 mailbox) reads mail through
+Microsoft Graph with the same Microsoft account. Garage lists the folder the source names and every
+folder below it (the whole mailbox but Deleted Items, Junk Email, Drafts and the Outbox for `/`), and
+downloads only a message that is new or changed, as its MIME, into memory. The signed requests go to
+`https://graph.microsoft.com/v1.0/me/mailFolders` and `/v1.0/me/messages/` and nowhere else
+(`garage-ingest`'s `outlook::check_destination`, checked again by the host); every one is a `GET`, so
+Garage never sends, moves or deletes mail. Each message is read by the mail reader and filed as a
+`communication`, so, like an `.eml` on disk, it never goes to a model server that is not on this
+computer.
+
+## Google Drive sources
+
+A Google Drive source (kind `google_drive`) reads a folder of My Drive through the Drive API the same
+way: Garage lists it folder by folder, skipping the folders the walker would skip without listing them,
+and downloads only a file that is new or changed, into memory. Google's own documents have no file to
+download, so Garage asks Drive to export them: a Doc as `.docx`, a Sheet as `.xlsx` and a Slides deck
+as `.pptx`, which the Office reader reads; Forms, Drawings and shortcuts are passed over. The signed
+requests go to `https://www.googleapis.com/drive/v3/files` and nowhere else (`garage-ingest`'s
+`google_drive::check_destination`, checked again by the host), and every one is a `GET`. In the App
+Store build the node links its Google account through Garage Door, which redeems Google's code (Google
+requires the web client's secret for that), seals the tokens to the node and keeps none.
+
+## Gmail sources
+
+A Gmail source (kind `gmail`) reads the messages under one label, or the whole mailbox but spam, trash,
+drafts and chats, through the Gmail API with the same Google account. A Gmail message never changes
+once it arrives, so Garage fetches each one once, as its MIME (`format=raw`), into memory, and skips it
+by its id on later runs. The signed requests go to
+`https://gmail.googleapis.com/gmail/v1/users/me/messages` and `/labels` and nowhere else
+(`garage-ingest`'s `gmail::check_destination`, checked again by the host); every one is a `GET`, so
+Garage never sends, labels or deletes mail. Each message is read by the mail reader and filed as a
+`communication`, so it never goes to a model server that is not on this computer.
+
 ## Garage's own endpoints
 
 The app's pieces talk to each other on this computer: the backend to Postgres,
@@ -279,6 +344,14 @@ provider. That includes excerpts from Messages and Mail if you have indexed
 them: the MCP tools serve communications like any other content, and the egress
 guard above governs what Garage itself sends, not what a client does next.
 
+Each client entry Garage writes carries a registration token (`GARAGE_MCP_TOKEN`
+in a stdio entry, a bearer header in an HTTP one), and only its SHA-256 is kept in
+the database. A build with an access policy uses it to tell assistants apart. The
+token proves which registration a reader holds, not which program is running:
+software that runs as you can read an assistant's config file and present that
+assistant's token, and so read what that assistant may read, but never what the
+app may, and uninstalling the entry revokes the token at once.
+
 What happens to an excerpt after an agent receives it is governed by that
 agent's terms and privacy policy, not Garage's. If an indexed source should not
 reach a cloud model, do not connect a cloud-hosted agent, or leave that source
@@ -296,3 +369,16 @@ The database is unencrypted at rest, as Postgres normally is. If you index
 private communications, the database file is as sensitive as the messages
 themselves — consider FileVault (on by default on recent macOS) and treat
 `pg_dump` output accordingly.
+
+The Mac app also puts each document's title and path, and each distilled fact's
+statement, into the Mac's own Spotlight index (Core Spotlight, in the app's
+container on this Mac), so a Spotlight search finds them. No document text goes
+there, and communications (mail, Messages) are never added. The Database page's
+Spotlight switch turns it off and takes every Garage item out of Spotlight;
+"Reset Database" empties it too.
+
+On the Mac, a document type Garage has no reader for (`.rtf`, `.doc`, `.odt`,
+...) is read by the system's own Spotlight importer for it, loaded into the
+ingest's process from `/System/Library/Spotlight` (`extraction.spotlight`). The
+importer reads the file on this machine and sends nothing anywhere; only Apple's
+importers are loaded, never a third party's.

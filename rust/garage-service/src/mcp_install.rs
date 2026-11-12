@@ -14,6 +14,7 @@ use serde_json::{Map, Value, json};
 
 use crate::config::{Config, ensure_psycopg_database_url, expand_home, temp_path};
 use crate::error::{Result, ServiceError};
+use crate::registrations::{TOKEN_ENV, TOKEN_PREFIX, mint_token};
 
 pub const DEFAULT_SERVER_NAME: &str = "garage-rag";
 
@@ -213,22 +214,52 @@ pub struct EntrySpec {
     pub config_path: Option<PathBuf>,
     pub extra_env: BTreeMap<String, String>,
     pub url: Option<String>,
+    /// The registration's token (`docs/plans/access-hooks.md`): `GARAGE_MCP_TOKEN` in a stdio
+    /// entry's `env`, `Authorization: Bearer` in an HTTP entry's `headers`.
+    pub token: Option<String>,
 }
 
 /// The JSON object describing this server (`server_entry`): a URL for the HTTP transport, else
 /// the command the client spawns.
 pub fn server_entry(spec: &EntrySpec) -> Value {
     if let Some(url) = &spec.url {
-        return json!({"type": "http", "url": url});
+        let mut entry = json!({"type": "http", "url": url});
+        if let Some(token) = &spec.token {
+            entry["headers"] = json!({"Authorization": format!("Bearer {token}")});
+        }
+        return entry;
     }
     let (command, args) = server_command(spec.config_path.as_deref());
     let mut entry = Map::new();
     entry.insert("command".to_owned(), Value::String(command));
     entry.insert("args".to_owned(), json!(args));
-    if !spec.extra_env.is_empty() {
-        entry.insert("env".to_owned(), json!(spec.extra_env));
+    // In `env`, never in `args`, so the token does not show in `ps`.
+    let mut env = spec.extra_env.clone();
+    if let Some(token) = &spec.token {
+        env.insert(TOKEN_ENV.to_owned(), token.clone());
+    }
+    if !env.is_empty() {
+        entry.insert("env".to_owned(), json!(env));
     }
     Value::Object(entry)
+}
+
+/// The registration token an entry carries, if any: its `env`'s `GARAGE_MCP_TOKEN`, or the bearer
+/// token in its `headers`.
+pub fn entry_token(entry: &Value) -> Option<String> {
+    let from_env = entry.get("env").and_then(|env| env.get(TOKEN_ENV)).and_then(Value::as_str);
+    let from_header = || {
+        let headers = entry.get("headers")?.as_object()?;
+        let value = headers.iter().find(|(key, _)| key.eq_ignore_ascii_case("authorization"))?.1.as_str()?;
+        value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer "))
+    };
+    from_env.or_else(from_header).filter(|token| token.starts_with(TOKEN_PREFIX)).map(str::to_owned)
+}
+
+/// The token of the entry `server_name` has in `target`'s config, if any.
+pub fn existing_token(target: &ClientTarget, server_name: &str) -> Option<String> {
+    let config = read_client_config(&target.path).ok()?;
+    entry_token(config.get("mcpServers")?.get(server_name)?)
 }
 
 /// An existing client config, or an empty one (`_read_config`). A malformed file is an error, not
@@ -356,20 +387,19 @@ pub fn install(
     Ok(result)
 }
 
-/// Removes this server from `target`'s config (`uninstall`); whether it was there.
+/// Removes this server from `target`'s config (`uninstall`): the removed entry, or `None` when it
+/// was not there.
 ///
 /// # Errors
 ///
 /// A malformed file, or the file system.
-pub fn uninstall(target: &ClientTarget, server_name: &str) -> Result<bool> {
+pub fn uninstall(target: &ClientTarget, server_name: &str) -> Result<Option<Value>> {
     let mut config = read_client_config(&target.path)?;
-    let Some(Value::Object(servers)) = config.get_mut("mcpServers") else { return Ok(false) };
-    if servers.remove(server_name).is_none() {
-        return Ok(false);
-    }
+    let Some(Value::Object(servers)) = config.get_mut("mcpServers") else { return Ok(None) };
+    let Some(entry) = servers.remove(server_name) else { return Ok(None) };
     backup(&target.path);
     write_atomic(&target.path, &config)?;
-    Ok(true)
+    Ok(Some(entry))
 }
 
 /// Whether `target`'s config names the server (`installed_in`); a malformed file counts as no.
@@ -409,6 +439,9 @@ pub struct TargetOutcome {
     pub other_servers: Vec<String>,
     pub preview: Option<Value>,
     pub skipped: Option<String>,
+    /// The registration token written into the entry (a new one, or the one a forced re-install
+    /// found there), for the caller to record; never shown.
+    pub token: Option<String>,
 }
 
 /// How clients will reach the server, and the per-config outcomes (`McpInstallReport`).
@@ -513,7 +546,15 @@ pub fn install_mcp_server(config: &Config, request: &InstallRequest) -> Result<I
             outcomes.push(outcome);
             continue;
         }
+        // The entry's registration token: the one a forced re-install finds there, so the
+        // registration keeps its id and its rules, else a new one. A dry run's preview has none.
+        let token = match existing_token(chosen, &request.name) {
+            Some(token) => token,
+            None => mint_token()?,
+        };
+        let spec = EntrySpec { token: Some(token.clone()), ..spec.clone() };
         let result = install(chosen, &request.name, &spec, request.force, false)?;
+        outcome.token = Some(token);
         outcome.written = true;
         outcome.created_file = result.created_file;
         outcome.backup = result.backup;
@@ -522,12 +563,12 @@ pub fn install_mcp_server(config: &Config, request: &InstallRequest) -> Result<I
     Ok(InstallReport { server_name: request.name.clone(), url, command, args, fell_back: plan.fell_back, outcomes })
 }
 
-/// Removes the server from one client's config (`uninstall_mcp_server`): `(path, removed)`.
+/// Removes the server from one client's config (`uninstall_mcp_server`): `(path, removed entry)`.
 ///
 /// # Errors
 ///
 /// An unknown target, a malformed file, or the file system.
-pub fn uninstall_mcp_server(target: &str, path: Option<&Path>, name: &str) -> Result<(PathBuf, bool)> {
+pub fn uninstall_mcp_server(target: &str, path: Option<&Path>, name: &str) -> Result<(PathBuf, Option<Value>)> {
     let chosen = if let Some(path) = path {
         custom_target(path)
     } else {
@@ -627,8 +668,8 @@ mod tests {
         assert!(err.message().starts_with("'garage-rag' is already configured in "));
         assert!(install(&target, "garage-rag", &spec, true, true).unwrap().replaced_entry);
         assert!(installed_in(&target, "garage-rag"));
-        assert!(uninstall(&target, "garage-rag").unwrap());
-        assert!(!uninstall(&target, "garage-rag").unwrap());
+        assert!(uninstall(&target, "garage-rag").unwrap().is_some());
+        assert!(uninstall(&target, "garage-rag").unwrap().is_none());
         assert!(!installed_in(&target, "garage-rag"));
         std::fs::write(&path, "{not json").unwrap();
         assert!(
@@ -636,6 +677,21 @@ mod tests {
         );
         assert!(!installed_in(&target, "garage-rag"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_http_entry_carries_its_token_as_a_bearer_header() {
+        let spec = EntrySpec {
+            url: Some("http://127.0.0.1:8787/mcp".into()),
+            token: Some("gmr_xyz".into()),
+            ..Default::default()
+        };
+        let entry = server_entry(&spec);
+        assert_eq!(entry["headers"]["Authorization"], json!("Bearer gmr_xyz"));
+        assert_eq!(entry_token(&entry).as_deref(), Some("gmr_xyz"));
+        // Only Garage's own tokens are taken for one.
+        assert_eq!(entry_token(&json!({"headers": {"authorization": "Bearer someone-elses"}})), None);
+        assert_eq!(entry_token(&json!({"type": "http", "url": "http://x"})), None);
     }
 
     #[test]
@@ -647,6 +703,7 @@ mod tests {
             config_path: Some(dir.join("garage.json")),
             extra_env: BTreeMap::from([("GARAGE_DATABASE_URL".to_owned(), "postgresql+psycopg:///g".to_owned())]),
             url: None,
+            token: Some("gmr_abc".to_owned()),
         };
         let result = install(&target, "garage-rag", &spec, false, false).unwrap();
         assert!(result.created_file && result.backup.is_none());
@@ -655,7 +712,10 @@ mod tests {
         assert_eq!(entry["args"][0], json!("--config"));
         assert!(entry["args"][1].as_str().unwrap().ends_with("garage.json"));
         assert_eq!(entry["env"]["GARAGE_DATABASE_URL"], json!("postgresql+psycopg:///g"));
+        assert_eq!(entry["env"]["GARAGE_MCP_TOKEN"], json!("gmr_abc"));
         assert_eq!(entry.as_object().unwrap().keys().collect::<Vec<_>>(), ["command", "args", "env"]);
+        assert_eq!(entry_token(entry).as_deref(), Some("gmr_abc"));
+        assert_eq!(existing_token(&target, "garage-rag").as_deref(), Some("gmr_abc"));
         let report = InstallReport {
             server_name: "garage-rag".into(),
             url: None,

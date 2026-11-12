@@ -23,5 +23,5 @@ pub mod stdio;
 pub mod tools;
 
 pub use corpus::{Caller, Corpus, CorpusError, GrpcCorpus, Transport};
-pub use http::{HttpOptions, HttpServer};
+pub use http::{Endpoint, HttpOptions, HttpServer};
 pub use protocol::Server;

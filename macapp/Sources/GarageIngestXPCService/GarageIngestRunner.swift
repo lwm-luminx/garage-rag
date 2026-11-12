@@ -1,5 +1,6 @@
 import Foundation
 import GarageIngestFFI
+import GarageXPCKit
 
 /// Garage's ingest loop, written in Rust and linked into this process through its C ABI
 /// (`rust/garage-ingest-ffi`, `garage_ingest.h`'s `garage_ingest_run`).
@@ -27,10 +28,19 @@ final class GarageIngestRunner {
     /// Each `IngestProgress` event, as JSON.
     private let progress: (String) -> Void
     private let isCancelled: () -> Bool
+    /// The reader process each file's bytes go to, when this process can reach one (the app, which
+    /// hosts ingest in its own process and embeds GarageParseXPCService). Without it the readers run
+    /// here, as in the ingest service's own process, where a crash costs only that process.
+    private let parser: GarageParseClient?
 
-    init(progress: @escaping (String) -> Void, isCancelled: @escaping () -> Bool) {
+    init(
+        progress: @escaping (String) -> Void,
+        isCancelled: @escaping () -> Bool,
+        parser: GarageParseClient? = GarageParseClient.isAvailable ? GarageParseClient() : nil
+    ) {
         self.progress = progress
         self.isCancelled = isCancelled
+        self.parser = parser
     }
 
     /// Runs `source` (a slug, or `*` for every enabled source). `contactNames` are `[handle, name]`
@@ -81,7 +91,10 @@ final class GarageIngestRunner {
             release: Self.releaseEntry,
             progress: Self.progressEntry,
             cancelled: Self.cancelledEntry,
-            shared_names: nil
+            shared_names: nil,
+            http: Self.httpEntry,
+            access_token: Self.accessTokenEntry,
+            parse: parser == nil ? nil : Self.parseEntry
         )
         var result: UnsafeMutablePointer<CChar>?
         let status = withExtendedLifetime(self) {
@@ -122,6 +135,69 @@ final class GarageIngestRunner {
     private static let progressEntry: @convention(c) (UnsafeMutableRawPointer?, UnsafePointer<CChar>?) -> Void = { context, event in
         guard let context, let event else { return }
         Unmanaged<GarageIngestRunner>.fromOpaque(context).takeUnretainedValue().progress(String(cString: event))
+    }
+
+    /// Answers a host call: the request's JSON object in, `handle`'s JSON object out, or the error's
+    /// message with a nonzero status.
+    private static func answer(
+        _ request: UnsafePointer<CChar>?,
+        _ reply: UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?,
+        _ handle: ([String: Any]) throws -> [String: Any]
+    ) -> Int32 {
+        guard let reply else { return 1 }
+        do {
+            guard
+                let request,
+                let object = try JSONSerialization.jsonObject(with: Data(String(cString: request).utf8)) as? [String: Any]
+            else {
+                throw GarageIngestRunnerError("the request is not a JSON object")
+            }
+            let answer = try JSONSerialization.data(withJSONObject: handle(object))
+            reply.pointee = strdup(String(decoding: answer, as: UTF8.self))
+            return 0
+        } catch {
+            reply.pointee = strdup(error.localizedDescription)
+            return 1
+        }
+    }
+
+    /// A cloud source's requests (`http`: Dropbox, OneDrive), over URLSession.
+    private static let httpEntry: GarageIngestHostCall = { _, request, reply in
+        answer(request, reply) { try GarageCloudHTTP.send($0) }
+    }
+
+    /// A cloud source's token (`access_token`), from the provider the build registered.
+    private static let accessTokenEntry: GarageIngestHostCall = { _, request, reply in
+        answer(request, reply) { object in
+            let token = try GarageCloudCredentials.accessToken(
+                service: object["service"] as? String ?? "",
+                source: object["source"] as? String ?? "",
+                refresh: object["refresh"] as? Bool ?? false
+            )
+            return ["access_token": token]
+        }
+    }
+
+    /// One file's bytes to the reader process (`parse`): its answer, or the file's failure.
+    private static let parseEntry: @convention(c) (
+        UnsafeMutableRawPointer?, UnsafePointer<CChar>?, UnsafePointer<UInt8>?, Int, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?
+    ) -> Int32 = { context, request, bytes, count, reply in
+        guard let context, let request, let reply else { return 1 }
+        let runner = Unmanaged<GarageIngestRunner>.fromOpaque(context).takeUnretainedValue()
+        guard let parser = runner.parser else {
+            reply.pointee = strdup("no reader process")
+            return 1
+        }
+        let text = String(cString: request)
+        let data = bytes.map { Data(bytes: $0, count: count) } ?? Data()
+        switch parser.parse(request: text, bytes: data) {
+        case .reply(let answer):
+            reply.pointee = strdup(answer)
+            return 0
+        case .failed(let reason):
+            reply.pointee = strdup(reason)
+            return 1
+        }
     }
 
     private static let cancelledEntry: @convention(c) (UnsafeMutableRawPointer?) -> Bool = { context in

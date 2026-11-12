@@ -279,6 +279,10 @@ fn run_ingest(request: &Value, state: &mut IngestProgress) -> Result<Value, Fail
         progress: Some(ingest_progress),
         cancelled: None,
         shared_names: None,
+        // No HTTPS client and no cloud account here: a cloud source (Dropbox, OneDrive, Outlook, Google Drive, Gmail) fails as unavailable.
+        http: None,
+        access_token: None,
+        parse: None,
     };
     let request = CString::new(request.to_string()).map_err(|_| Failure::failed("the request held a NUL byte"))?;
     let mut result: *mut c_char = std::ptr::null_mut();

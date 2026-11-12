@@ -397,9 +397,9 @@ pub fn scan_feed(root: &Path, source_slug: &str, ticker: &mut Ticker<'_>) -> Sca
 /// What each kind counts, for a scan that could not start (`_ITEM_TYPES`).
 fn item_type(kind: &str) -> &'static str {
     match kind {
-        "filesystem" | "git" => "files",
+        "filesystem" | "git" | "dropbox" | "onedrive" | "google_drive" => "files",
         "sqlite" => "records",
-        "maildir" => "messages",
+        "maildir" | "outlook" | "gmail" => "messages",
         "feed" => "entries",
         _ => "items",
     }
@@ -414,6 +414,12 @@ pub fn scan_source(
     options: &ScanOptions<'_>,
     ticker: &mut Ticker<'_>,
 ) -> ScanResult {
+    if crate::is_cloud_kind(kind) {
+        // A cloud source (Dropbox, OneDrive, Outlook, Google Drive, Gmail) is listed, and counted, when it is ingested.
+        let mut result = ScanResult::new(source_slug, kind, root, item_type(kind));
+        result.details.insert("remote".to_owned(), json!(kind));
+        return result;
+    }
     let root = expand_home(root);
     if let Some(problem) = root_problem(&root) {
         let mut result = ScanResult::new(source_slug, kind, &root, item_type(kind));

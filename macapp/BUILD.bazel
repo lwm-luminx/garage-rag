@@ -58,6 +58,9 @@ xcodeproj(
             "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
         ),
         top_level_target(
+            "//macapp/Sources/GarageParseXPCService:GarageParseXPCService",
+        ),
+        top_level_target(
             "//macapp/Sources/GarageXPCService:GarageXPCService",
         ),
         top_level_target(

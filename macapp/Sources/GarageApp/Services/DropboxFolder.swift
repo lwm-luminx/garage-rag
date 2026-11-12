@@ -15,17 +15,20 @@ enum DropboxFolder {
     /// The path the Dropbox preset offers, with the home folder as `~`. `~/Dropbox` when it exists
     /// (a real folder or the link the migration leaves), then the personal account's folder from
     /// `info.json`, then a business account's, then the File Provider folder; nil when none exists.
+    /// A link found there is followed (`resolve`), so the preset names the folder itself: the
+    /// sandboxed app's grant covers the folder a link leads to, never the link in the home folder.
     static func locate(
         home: URL,
         exists: (String) -> Bool,
-        infoJSON: () -> Data?
+        infoJSON: () -> Data?,
+        resolve: (String) -> String = { $0 }
     ) -> String? {
         let homePath = home.standardizedFileURL.path
         var candidates = [homePath + "/Dropbox"]
         candidates += accountPaths(in: infoJSON())
         candidates.append(homePath + "/" + cloudStoragePath)
         guard let found = candidates.first(where: exists) else { return nil }
-        return abbreviatingHome(found, home: homePath)
+        return abbreviatingHome(resolve(found), home: homePath)
     }
 
     /// `locate` against the real home folder and disk. A folder once found is remembered for the
@@ -41,7 +44,8 @@ enum DropboxFolder {
         found = locate(
             home: home,
             exists: { FileManager.default.fileExists(atPath: $0) },
-            infoJSON: { try? Data(contentsOf: home.appendingPathComponent(".dropbox/info.json")) }
+            infoJSON: { try? Data(contentsOf: home.appendingPathComponent(".dropbox/info.json")) },
+            resolve: { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path }
         )
         return found
     }

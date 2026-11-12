@@ -68,14 +68,14 @@ permalink: /door/
 One setting for your whole account decides what Garage Door may do. Each level keeps everything below it, and none of them uploads your library.
 
 <ol class="privacy-levels">
-  <li><strong>Entirely private.</strong> Everything stays on your computers. Door reaches none of them.</li>
-  <li><strong>Entirely private, with remote access.</strong> Your assistants and Garage Remote reach your computers through Door's tunnel. Nothing is kept or read on the way. <em>Where every account starts.</em></li>
-  <li><strong>Sharing between your own computers.</strong> Your computers share with each other through Door, which carries only sealed keys.</li>
-  <li><strong>Semi private: your library, models you bring.</strong> Your library stays on your computers, which may send a question and its excerpts to a model provider you choose. Messages and mail still never leave them.</li>
-  <li><strong>Augmented with Garage's servers.</strong> Garage's servers help your computers, and Door keeps the keys you give it in its vault.</li>
+  <li><strong>Private node.</strong> Everything stays on each of your computers. Door reaches none of them.</li>
+  <li><strong>Private cluster.</strong> Your own computers share with each other through Door, which carries only sealed keys. Nothing reaches them from outside.</li>
+  <li><strong>Private with end-to-end remote.</strong> Garage Remote reaches your computers over a connection sealed end to end, which Door relays and cannot read. Each computer decides whether your phone may also ask its own model; that is off until you turn it on. The sealed connection is still being built: until it ships, Garage Remote connects the way an assistant does, at the next level. <em>Where every new account starts.</em></li>
+  <li><strong>Private with public providers.</strong> Assistants such as Claude and ChatGPT reach your computers through Door, and your computers may send a question and its excerpts to an AI service you connect. Each of these reads what it is sent. Your library stays on your computers, and messages and mail still never leave them for a model.</li>
+  <li><strong>Augmented.</strong> Garage's servers help your computers, and Door keeps the keys you give it in its vault.</li>
 </ol>
 
-You can make your account more private from anywhere, and it takes effect at once: Door closes your computers' connections when you go below remote access. Making it less private takes one of your own computers, so a stolen browser session can't open your account up.
+You can make your account more private from anywhere, and it takes effect at once: Door closes your computers' connections when you go below end-to-end remote, and turns assistants away below public providers. Making it less private takes one of your own computers, so a stolen browser session can't open your account up.
 
 ## Questions
 
@@ -91,7 +91,7 @@ You can make your account more private from anywhere, and it takes effect at onc
 
 <details>
 <summary>Can I turn it off?</summary>
-<p>Yes. Turn Garage Door off in Garage, or set your privacy level to entirely private from your account, and your computer's connection closes. Revoke an assistant from your account and it loses access at once.</p>
+<p>Yes. Turn Garage Door off in Garage, or set your privacy level to private node or private cluster from your account, and your computer's connection closes. Revoke an assistant from your account and it loses access at once.</p>
 </details>
 
 <details>

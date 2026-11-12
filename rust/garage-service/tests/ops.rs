@@ -135,6 +135,76 @@ fn sources_are_added_synced_imported_and_removed() {
             let missing = client.add_source(add("gone", &dir.join("nope"), "", "")).await.unwrap_err();
             assert_eq!(missing.code(), Code::InvalidArgument);
             assert!(missing.message().ends_with("nope does not exist"));
+            // A Dropbox source names a folder in the Dropbox, which need not exist on this Mac.
+            let dropbox = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "dbx".into(),
+                    root: "Work/".into(),
+                    kind: "dropbox".into(),
+                    corpus_class: String::new(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((dropbox.created, dropbox.root.as_str()), (true, "/Work"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "dbx".into() }).await.unwrap();
+            // So does a OneDrive source, in the drive.
+            let onedrive = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "od".into(),
+                    root: "/".into(),
+                    kind: "onedrive".into(),
+                    corpus_class: String::new(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((onedrive.created, onedrive.root.as_str()), (true, "/"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "od".into() }).await.unwrap();
+            // And an Outlook source, a folder in the mailbox.
+            let outlook = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "mail".into(),
+                    root: "Inbox/Projects".into(),
+                    kind: "outlook".into(),
+                    corpus_class: "communication".into(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((outlook.created, outlook.root.as_str()), (true, "/Inbox/Projects"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "mail".into() }).await.unwrap();
+            // And a Google Drive source, a folder of My Drive.
+            let drive = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gd".into(),
+                    root: "Work".into(),
+                    kind: "google_drive".into(),
+                    corpus_class: String::new(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((drive.created, drive.root.as_str()), (true, "/Work"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "gd".into() }).await.unwrap();
+            // And a Gmail source, a label.
+            let gmail = client
+                .add_source(proto::AddSourceRequest {
+                    slug: "gm".into(),
+                    root: "INBOX".into(),
+                    kind: "gmail".into(),
+                    corpus_class: "communication".into(),
+                    trust: String::new(),
+                })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!((gmail.created, gmail.root.as_str()), (true, "/INBOX"));
+            client.remove_source(proto::RemoveSourceRequest { slug: "gm".into() }).await.unwrap();
             let bad = client.add_source(add("x", &root, "", "secret")).await.unwrap_err();
             assert_eq!(bad.code(), Code::InvalidArgument);
             assert!(bad.message().contains("'secret' is not a valid TrustTier"));

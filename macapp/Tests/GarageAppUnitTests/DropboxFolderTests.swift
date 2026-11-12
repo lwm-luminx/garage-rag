@@ -16,6 +16,16 @@ final class DropboxFolderTests: XCTestCase {
         XCTAssertEqual(found, "~/Dropbox")
     }
 
+    func testHomeFolderLinkIsFollowedToTheFolder() {
+        let found = DropboxFolder.locate(
+            home: home,
+            exists: { $0 == "/Users/tester/Dropbox" },
+            infoJSON: { nil },
+            resolve: { $0 == "/Users/tester/Dropbox" ? "/Users/tester/Library/CloudStorage/Dropbox" : $0 }
+        )
+        XCTAssertEqual(found, "~/Library/CloudStorage/Dropbox")
+    }
+
     func testInfoJSONNamesTheFolderWhenThereIsNoLink() {
         let found = locate(
             existing: ["/Volumes/Data/Dropbox"],

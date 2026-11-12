@@ -63,6 +63,12 @@ public protocol GarageMCPServerServiceProtocol: GarageCommonXPCServiceProtocol, 
     func startServer(host: String, port: Int, path: String, options: [String: String], with reply: @escaping (Bool, String?) -> Void)
     func stopServer(with reply: @escaping (Bool, String?) -> Void)
     func isServerRunning(with reply: @escaping (Bool) -> Void)
+    /// Answers one HTTP exchange of MCP's streamable transport without a listener, for a client
+    /// that carries MCP's HTTP requests over a channel of its own: UTF-8 JSON
+    /// `{"method", "headers": {name: value}, "body"}` in, `{"status", "headers", "body"}` out, or
+    /// nil and the reason. Sessions start at `initialize` and live in the service until it exits or
+    /// GarageService's address changes. It needs no `startServer`: the HTTP listener stays off.
+    func exchange(_ request: Data, with reply: @escaping (Data?, String?) -> Void)
 }
 
 /// Objective-C protocol for Garage Core Backend XPC Service communication. It receives the

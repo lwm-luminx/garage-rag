@@ -53,7 +53,7 @@ permalink: /pro/
   <div class="card">
     <span class="card-icon">🎚️</span>
     <h3>One privacy setting you control</h3>
-    <p>Your account's privacy level decides what Garage Door may do, from "entirely private" up. Making it more private works from anywhere and takes effect at once; making it less private takes one of your own computers.</p>
+    <p>Your account's privacy level decides what Garage Door may do, from "private node" up to "augmented"; assistants on the web need "private with public providers". Making it more private works from anywhere and takes effect at once; making it less private takes one of your own computers.</p>
   </div>
 </div>
 

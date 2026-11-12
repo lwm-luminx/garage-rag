@@ -4,6 +4,7 @@
 
 use std::sync::Arc;
 
+use garage_access::SqlFilter;
 use tokio_postgres::types::ToSql;
 
 use crate::db::{Client, vector_text};
@@ -68,6 +69,9 @@ pub struct SearchFilters {
     pub sources: Vec<String>,
     pub author: Option<String>,
     pub direction: Option<String>,
+    /// The access policy's condition for the caller (`docs/plans/access-hooks.md`), inside both
+    /// engines' candidate queries so it applies before fusion. `None`: no condition.
+    pub access: Option<SqlFilter>,
 }
 
 /// Turns the query into the model's vector: the process's embedder, or a stub in tests.
@@ -186,6 +190,15 @@ pub async fn search(
     if let Some(direction) = filters.direction.as_deref().filter(|d| !d.is_empty()) {
         let p = params.push(direction.to_owned());
         where_parts.push(format!("c.direction = ${p}::text"));
+    }
+    if let Some(access) = &filters.access {
+        let condition = access
+            .render(params.0.len())
+            .map_err(|e| ServiceError::failed(format!("the access policy's filter: {e}")))?;
+        for value in &access.params {
+            params.push(value.clone());
+        }
+        where_parts.push(condition);
     }
     let where_clause = where_parts.join(" AND ");
 
@@ -334,6 +347,11 @@ pub async fn search(
     // The probe width is per transaction (`SET LOCAL`), as `apply_search_tuning` set it.
     let tx = client.transaction().await?;
     tx.batch_execute(&format!("SET LOCAL hnsw.ef_search = {}", hnsw_ef_search.clamp(1, 1000))).await?;
+    if filters.access.is_some() {
+        // A filtered HNSW scan stops at ef_search candidates, most of which the filter may drop;
+        // pgvector 0.8's iterative scan keeps walking until the filtered candidates fill the depth.
+        tx.batch_execute("SET LOCAL hnsw.iterative_scan = relaxed_order").await?;
+    }
     let rows = tx.query(&sql, &params.refs()).await?;
     tx.commit().await?;
     Ok(rows
@@ -357,20 +375,25 @@ pub async fn search(
         .collect())
 }
 
-/// Counts by `(corpus_class, trust_tier)` over the documents in state `ok` (`corpus_overview`).
+/// Counts by `(corpus_class, trust_tier)` over the documents in state `ok` (`corpus_overview`) that
+/// `access` lets through.
 ///
 /// # Errors
 ///
 /// The server.
-pub async fn corpus_overview(client: &Client) -> Result<Vec<serde_json::Value>> {
+pub async fn corpus_overview(client: &Client, access: Option<&SqlFilter>) -> Result<Vec<serde_json::Value>> {
+    let mut params: Vec<crate::access::Param> = Vec::new();
+    let visible = crate::access::document_condition("d.id", access, &mut params)?;
     let rows = client
         .query(
-            "SELECT d.corpus_class::text, d.trust_tier::text, count(DISTINCT d.id) AS documents, count(c.id) AS chunks
-             FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
-             WHERE d.state = 'ok'
-             GROUP BY d.corpus_class, d.trust_tier
-             ORDER BY count(DISTINCT d.id) DESC",
-            &[],
+            &format!(
+                "SELECT d.corpus_class::text, d.trust_tier::text, count(DISTINCT d.id) AS documents, count(c.id) AS chunks
+                 FROM documents d LEFT JOIN chunks c ON c.document_id = d.id
+                 WHERE d.state = 'ok' AND {visible}
+                 GROUP BY d.corpus_class, d.trust_tier
+                 ORDER BY count(DISTINCT d.id) DESC"
+            ),
+            &crate::access::refs(&params),
         )
         .await?;
     Ok(rows

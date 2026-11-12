@@ -14,6 +14,7 @@
 #define GARAGE_INGEST_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -142,15 +143,35 @@ typedef struct GarageIngestHost {
     // {"directory"}; the reply {"names": [[handle, name], ...]} (garage_rag.ingest.host_read's
     // shared_names_for_host). May be null; a null member or a failed call means no shared names.
     GarageIngestHostCall shared_names;
+    // For a Dropbox source (kind "dropbox"): one HTTPS request to Dropbox's API, already approved by
+    // the library (https://api.dropboxapi.com/2/... or https://content.dropboxapi.com/2/... only).
+    // The request is {"method", "url", "headers": [[name, value], ...], "body_base64", "timeout_seconds"};
+    // the reply {"status", "headers": [[name, value], ...], "body_base64"}, whatever the status. Send it
+    // to that URL alone: no proxy, no redirect followed, and never log its headers (they carry the
+    // token). A nonzero return means no reply came. May be null when no source is a Dropbox source.
+    GarageIngestHostCall http;
+    // For a Dropbox source: a short-lived access token. The request is {"service": "dropbox",
+    // "source": slug, "refresh": bool} ("refresh" after Dropbox refused the last token); the reply
+    // {"access_token"}. A nonzero return's reply is the reason, shown as the source's error (no
+    // account connected, say). May be null, when a Dropbox source cannot be read.
+    GarageIngestHostCall access_token;
+    // Reads one file's bytes in another process, so a reader that crashes or hangs costs the file
+    // and not the process running ingest. Asked, when the request has "readers", for every file but
+    // those a Spotlight importer reads in place: `request` is {"path", "readers": {...settings}},
+    // with the file's `len` bytes; the reply is garage_ingest_parse's there. A nonzero return is the
+    // file's failure, its reply the reason ("the reader crashed on this file"), remembered with the
+    // file's hash so it is not read again until it changes. May be null: the library reads the files.
+    int32_t (*parse)(void *context, const char *request, const uint8_t *bytes, size_t len, char **reply);
 } GarageIngestHost;
 
 // Runs one source as garage_ingest_ingest_source does, reading each file through `host`: the
 // same request without "files" and "cancel_after", plus "budget" (as for garage_ingest_ensure_local).
 // The library makes placeholders local within the budget (on its own thread; this thread's reads of
 // dataless files are refused) and hashes each file's bytes itself. With "readers": {"max_file_bytes",
-// "ocr_min_chars", "index_images", "pdf_min_chars_per_page"} (each optional, garage.json's extraction.*)
-// it also reads each file's text and a Messages source's shared names with its own readers
-// (rust/garage-readers), and tells GarageService which reader gave up on a file. The reply holds the run id,
+// "ocr_min_chars", "index_images", "pdf_min_chars_per_page", "spotlight"} (each optional, garage.json's
+// extraction.*) it also reads each file's text and a Messages source's shared names with its own readers
+// (rust/garage-readers), and tells GarageService which reader gave up on a file; with "spotlight" on (the
+// default) the walk also takes the document types only the Mac's Spotlight importers read. The reply holds the run id,
 // counters, walk stats, whether the walk completed and the budget at the end, or "unavailable" /
 // "error" as for garage_ingest_ingest_source. The host's functions are called on this thread only.
 int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *host, char **result);
@@ -167,6 +188,12 @@ int32_t garage_ingest_run_source(const char *request, const GarageIngestHost *ho
 int32_t garage_ingest_run(const char *request, const GarageIngestHost *host, char **result);
 
 // Frees a string one of the calls above returned. Null is ignored.
+// Reads one file's bytes with the Rust readers, in a reader process with no access to the file:
+// {"path", "readers": {...extraction settings}} and `len` bytes -> {"document": {...}} | {"no_text"} |
+// {"placeholder"} | {"failed"} | {"raised"}, the answer GarageIngestHost.read gives. `path` only names
+// the file; its suffix picks the reader.
+int32_t garage_ingest_parse(const char *request, const uint8_t *bytes, size_t len, char **result);
+
 void garage_ingest_string_free(char *text);
 
 #ifdef __cplusplus

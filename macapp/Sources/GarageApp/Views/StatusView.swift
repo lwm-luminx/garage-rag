@@ -1,6 +1,8 @@
 import SwiftUI
 import AppKit
 import Combine
+import GarageAppExtensionKit
+import GarageAppExtensions
 import GarageXPCKit
 
 // The Status page: is anything wrong and what fixes it, what the pipeline is doing and how much of
@@ -26,6 +28,7 @@ struct StatusView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                extensionPanels
                 healthSection
                 indexingSection
                 automaticUpdatesSection
@@ -51,6 +54,19 @@ struct StatusView: View {
                 await appState.fetchCorpusStats()
                 await appState.xpcServices.refreshAll()
             }
+        }
+    }
+
+    // MARK: - Extensions
+
+    /// The panels the build's extensions put first on the page (none in this repository's builds).
+    @ViewBuilder
+    private var extensionPanels: some View {
+        let endpoint = appState.mcp.status == .running ? appState.mcp.endpoint : nil
+        let context = GarageAppExtensionContext(mcpHTTPEndpoint: endpoint)
+        let panels = GarageAppExtensions.installed.statusPanels
+        ForEach(panels.indices, id: \.self) { index in
+            panels[index].makeView(context: context)
         }
     }
 

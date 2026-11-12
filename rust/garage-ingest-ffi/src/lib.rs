@@ -7,9 +7,14 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-use garage_ingest::attribution::{AuthorTally, GitHistory, RepoAttribution, SelfIdentity, Signals, TrustTier};
+use garage_ingest::attribution::{AuthorTally, GitHistory, NoGit, RepoAttribution, SelfIdentity, Signals, TrustTier};
 use garage_ingest::contact_names::ContactNames;
+use garage_ingest::dropbox::{self, RemoteHost};
 use garage_ingest::facade::{self, Connection, GrpcStorage, GrpcTarget};
+use garage_ingest::gmail;
+use garage_ingest::google_drive;
+use garage_ingest::onedrive;
+use garage_ingest::outlook;
 use garage_ingest::pipeline::{
     self, Context, Counters, DocumentPayload, ExistingStat, Extracted, FileCandidate, FileHost, IngestSettings,
     ReadOutcome, SourceInfo, Storage,
@@ -22,6 +27,7 @@ use garage_ingest::{
 };
 use serde_json::{Map, Value, json};
 
+mod base64;
 mod service;
 
 /// The call succeeded; the result is its JSON.
@@ -79,11 +85,7 @@ fn root(request: &Map<String, Value>) -> Result<PathBuf, String> {
 
 fn walk(request: &Map<String, Value>) -> Outcome {
     let root = root(request)?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let include_code = request.get("include_code").and_then(Value::as_bool).unwrap_or(false);
     let expanded = garage_ingest::walk::expand_home(&root);
     let exclude_prefixes = match request.get("exclude_prefixes") {
@@ -550,11 +552,7 @@ fn ingest_one(request: &Map<String, Value>) -> Outcome {
     let source = source_info(request.get("source"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let supplied;
     let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
         library_history()
@@ -683,11 +681,7 @@ fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
 
 /// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does.
 fn scan(request: &Map<String, Value>) -> Outcome {
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let options = ScanOptions {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         policy: &policy,
@@ -712,6 +706,18 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     )
 }
 
+/// The desktop client folder a cloud source is linked to: a Dropbox source reads the Dropbox app's
+/// folder when it is on this node, unless the request names one (`"local_folder"`: a path, or
+/// `false` for none).
+fn local_folder(request: &Map<String, Value>, kind: &str) -> Option<PathBuf> {
+    match request.get("local_folder") {
+        Some(Value::String(path)) => Some(PathBuf::from(path)),
+        Some(Value::Bool(false)) => None,
+        _ if kind == dropbox::KIND => dropbox::local_folder(),
+        _ => None,
+    }
+}
+
 /// `BeginIngestSession`, the scan, then [`source::ingest_source`] with the host `make_host` builds for
 /// the source's root; `finish` adds what the host has to say to the reply.
 fn run_source_with<H: SourceHost>(
@@ -727,16 +733,13 @@ fn run_source_with<H: SourceHost>(
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
         messages: false,
+        local_folder: None,
     };
     let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
-    let policy = match request.get("policy") {
-        None | Some(Value::Null) => WalkPolicy::default(),
-        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
-        Some(_) => return Err("\"policy\" is not an object".to_owned()),
-    };
+    let policy = walk_policy(request)?;
     let supplied;
     let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
         library_history()
@@ -764,7 +767,8 @@ fn run_source_with<H: SourceHost>(
         // GarageService remembers a no-text or failed file with the reader that gave up on it.
         storage = storage.with_extractor_revision(garage_readers::revision);
     }
-    let options = SourceOptions { messages: session.kind == "sqlite", ..options };
+    let local_folder = local_folder(request, &session.kind);
+    let options = SourceOptions { messages: session.kind == "sqlite", local_folder, ..options };
     let context = Context {
         source: &source,
         identity: &identity,
@@ -774,16 +778,42 @@ fn run_source_with<H: SourceHost>(
         policy: &policy,
         force: request.get("force").and_then(Value::as_bool).unwrap_or(false),
     };
-    let mut host = make_host(garage_ingest::walk::expand_home(&source.root), &scan);
+    let cloud = garage_ingest::is_cloud_kind(&session.kind);
+    let context = if cloud { Context { git: &NoGit, ..context } } else { context };
+    let root = if cloud { source.root.clone() } else { garage_ingest::walk::expand_home(&source.root) };
+    let mut host = make_host(root, &scan);
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
-    match source::ingest_source(&mut host, &mut storage, &context, &scan, &options) {
+    let outcome = if cloud {
+        match host.remote() {
+            Some(remote) if session.kind == onedrive::KIND => {
+                onedrive::ingest_onedrive_source(remote, &mut storage, slug, &context, &options)
+            }
+            Some(remote) if session.kind == outlook::KIND => {
+                outlook::ingest_outlook_source(remote, &mut storage, slug, &context, &options)
+            }
+            Some(remote) if session.kind == google_drive::KIND => {
+                google_drive::ingest_google_drive_source(remote, &mut storage, slug, &context, &options)
+            }
+            Some(remote) if session.kind == gmail::KIND => {
+                gmail::ingest_gmail_source(remote, &mut storage, slug, &context, &options)
+            }
+            Some(remote) => dropbox::ingest_dropbox_source(remote, &mut storage, slug, &context, &options),
+            None => Err(SourceError::Unavailable(format!("this run cannot read a {} source", session.kind))),
+        }
+    } else {
+        source::ingest_source(&mut host, &mut storage, &context, &scan, &options)
+    };
+    match outcome {
         Ok(run) => {
             let stats: Map<String, Value> =
                 run.walk_stats.fields().iter().map(|&(name, count)| (name.to_owned(), json!(count))).collect();
             reply.insert("counters".to_owned(), counters_json(&run.counters));
             reply.insert("walk_stats".to_owned(), Value::Object(stats));
             reply.insert("completed".to_owned(), json!(run.completed));
+            if run.read_locally > 0 {
+                reply.insert("read_locally".to_owned(), json!(run.read_locally));
+            }
         }
         Err(SourceError::Unavailable(problem)) => {
             reply.insert("unavailable".to_owned(), Value::String(problem));
@@ -800,6 +830,10 @@ fn run_source_with<H: SourceHost>(
 /// to the reason (or leaves it null). `*reply` is freed with the host's `release`.
 pub type HostCall = Option<unsafe extern "C" fn(*mut c_void, *const c_char, *mut *mut c_char) -> i32>;
 
+/// The host's `parse`: a request, a file's bytes and their length, and the reply.
+pub type ParseCall =
+    Option<unsafe extern "C" fn(*mut c_void, *const c_char, *const u8, usize, *mut *mut c_char) -> i32>;
+
 /// The process a run reads files in. See `garage_ingest.h` for each member.
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -810,6 +844,25 @@ pub struct GarageIngestHost {
     pub progress: Option<unsafe extern "C" fn(*mut c_void, *const c_char)>,
     pub cancelled: Option<unsafe extern "C" fn(*mut c_void) -> bool>,
     pub shared_names: HostCall,
+    pub http: HostCall,
+    pub access_token: HostCall,
+    pub parse: ParseCall,
+}
+
+/// The walk's rules: the request's `"policy"` over the defaults, and, when the Rust readers read the files
+/// with `spotlight` on (the default), the extensions only the Mac's Spotlight importers read.
+fn walk_policy(request: &Map<String, Value>) -> Result<WalkPolicy, String> {
+    let mut policy = match request.get("policy") {
+        None | Some(Value::Null) => WalkPolicy::default(),
+        Some(Value::Object(overrides)) => WalkPolicy::with_overrides(overrides).map_err(|error| error.to_string())?,
+        Some(_) => return Err("\"policy\" is not an object".to_owned()),
+    };
+    if let Some(Value::Object(readers)) = request.get("readers")
+        && garage_readers::Settings::from_json(Some(readers)).spotlight
+    {
+        policy.indexable_extensions.extend(garage_readers::spotlight_extensions());
+    }
+    Ok(policy)
 }
 
 /// The Rust readers a request asks for with `"readers": {...}` (their `extraction.*` settings, with
@@ -867,6 +920,53 @@ impl ReadingHost {
     }
 }
 
+impl ReadingHost {
+    /// Hands a file's `bytes` to the host's `parse`, which runs the readers in another process
+    /// (`garage_ingest_parse` there), so a reader that crashes or hangs costs this file and not the
+    /// run. Whatever goes wrong is the file's failure, which the pipeline remembers with its hash: the
+    /// file is not read again until it changes.
+    fn parse_elsewhere(
+        &self,
+        parse: unsafe extern "C" fn(*mut c_void, *const c_char, *const u8, usize, *mut *mut c_char) -> i32,
+        path: &Path,
+        bytes: &[u8],
+        settings: &garage_readers::Settings,
+    ) -> ReadOutcome {
+        let request = json!({ "path": path.to_string_lossy(), "readers": settings.to_json() });
+        let Ok(request) = CString::new(request.to_string()) else {
+            return ReadOutcome::Failed(format!("a path held a NUL byte: {}", path.display()));
+        };
+        let mut reply: *mut c_char = std::ptr::null_mut();
+        // SAFETY: the host's contract (garage_ingest.h); the request and bytes live through the call.
+        let status = unsafe { parse(self.host.context, request.as_ptr(), bytes.as_ptr(), bytes.len(), &raw mut reply) };
+        let text = if reply.is_null() {
+            String::new()
+        } else {
+            // SAFETY: a non-null reply is a NUL-terminated string the host owns until released.
+            let text = unsafe { CStr::from_ptr(reply) }.to_string_lossy().into_owned();
+            if let Some(release) = self.host.release {
+                // SAFETY: the reply came from this host and is released once.
+                unsafe { release(self.host.context, reply) };
+            }
+            text
+        };
+        if status != 0 {
+            let reason = if text.is_empty() { format!("the reader process failed ({status})") } else { text };
+            return ReadOutcome::Failed(format!("{reason}: {}", path.display()));
+        }
+        match serde_json::from_str::<Value>(&text)
+            .map_err(|error| error.to_string())
+            .and_then(|reply| read_outcome(Some(&reply)))
+        {
+            Ok(Some(outcome)) => outcome,
+            Ok(None) => ReadOutcome::Failed(format!("the reader process gave no answer: {}", path.display())),
+            Err(error) => {
+                ReadOutcome::Failed(format!("the reader process's answer is unreadable ({error}): {}", path.display()))
+            }
+        }
+    }
+}
+
 impl FileHost for ReadingHost {
     fn ensure_local(&mut self, candidate: &FileCandidate) -> bool {
         matches!(Materializer::shared().ensure_local(&candidate.path, &mut self.budget), Materialized::Local)
@@ -877,6 +977,15 @@ impl FileHost for ReadingHost {
     }
 
     fn read(&mut self, candidate: &FileCandidate) -> ReadOutcome {
+        if let (Some(readers), Some(parse)) = (&self.readers, self.host.parse)
+            && !garage_readers::Readers::reads_in_place(&candidate.path)
+        {
+            let settings = *readers.settings();
+            return match readers.load(&candidate.path) {
+                Ok(bytes) => self.parse_elsewhere(parse, &candidate.path, &bytes, &settings),
+                Err(outcome) => *outcome,
+            };
+        }
         if let Some(readers) = &mut self.readers {
             return readers.read(&candidate.path);
         }
@@ -925,6 +1034,10 @@ impl SourceHost for ReadingHost {
         (self.budget.files_done, self.budget.bytes_done)
     }
 
+    fn remote(&mut self) -> Option<&mut dyn RemoteHost> {
+        Some(self)
+    }
+
     fn shared_names(&mut self, directory: &Path) -> Vec<(String, String)> {
         if self.readers.is_some() {
             return garage_readers::shared_names(directory);
@@ -936,6 +1049,82 @@ impl SourceHost for ReadingHost {
         // Names are a nicety: a host that cannot read them leaves the handles as they are.
         let reply = self.call(self.host.shared_names, "shared_names", &request).unwrap_or_default();
         name_pairs(serde_json::from_str::<Value>(&reply).ok().as_ref().and_then(|reply| reply.get("names")))
+    }
+}
+
+impl RemoteHost for ReadingHost {
+    fn access_token(&mut self, service: &str, slug: &str, refresh: bool) -> Result<String, String> {
+        if self.host.access_token.is_none() {
+            return Err(format!(
+                "this app cannot read {service} sources: it has no {service} account to read them with"
+            ));
+        }
+        let request = json!({ "service": service, "source": slug, "refresh": refresh });
+        let reply = self.call(self.host.access_token, "access_token", &request)?;
+        let reply: Value = serde_json::from_str(&reply)
+            .map_err(|error| format!("the host's access_token replied with bad JSON: {error}"))?;
+        reply
+            .get("access_token")
+            .and_then(Value::as_str)
+            .filter(|token| !token.is_empty())
+            .map(str::to_owned)
+            .ok_or_else(|| "the host's access_token replied with no token".to_owned())
+    }
+
+    fn send(&mut self, request: &dropbox::HttpRequest) -> Result<dropbox::HttpResponse, String> {
+        // The library's own checks, again, at the last step before the request leaves it.
+        dropbox::check_destination(&request.url)
+            .or_else(|_| onedrive::check_destination(&request.url))
+            .or_else(|_| outlook::check_destination(&request.url))
+            .or_else(|_| google_drive::check_destination(&request.url))
+            .or_else(|_| gmail::check_destination(&request.url))?;
+        let headers: Vec<Value> = request.headers.iter().map(|(name, value)| json!([name, value])).collect();
+        let body = json!({
+            "method": request.method,
+            "url": request.url,
+            "headers": headers,
+            "body_base64": base64::encode(&request.body),
+            "timeout_seconds": request.timeout.as_secs(),
+        });
+        let reply = self.call(self.host.http, "http", &body)?;
+        let reply: Value =
+            serde_json::from_str(&reply).map_err(|error| format!("the host's http replied with bad JSON: {error}"))?;
+        let status = reply
+            .get("status")
+            .and_then(Value::as_u64)
+            .and_then(|status| u16::try_from(status).ok())
+            .ok_or("the host's http replied with no status")?;
+        let headers = reply
+            .get("headers")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(|pair| {
+                let pair = pair.as_array()?;
+                Some((pair.first()?.as_str()?.to_owned(), pair.get(1)?.as_str()?.to_owned()))
+            })
+            .collect();
+        let body = base64::decode(reply.get("body_base64").and_then(Value::as_str).unwrap_or_default())?;
+        Ok(dropbox::HttpResponse { status, headers, body })
+    }
+
+    fn read_bytes(&mut self, path: &Path, bytes: &[u8]) -> ReadOutcome {
+        if let (Some(readers), Some(parse)) = (&self.readers, self.host.parse) {
+            let settings = *readers.settings();
+            return self.parse_elsewhere(parse, path, bytes, &settings);
+        }
+        match &mut self.readers {
+            Some(readers) => readers.read_bytes(path, bytes),
+            None => ReadOutcome::Failed("a cloud source is read by the Rust readers (\"readers\")".to_owned()),
+        }
+    }
+
+    fn cancelled(&mut self) -> bool {
+        SourceHost::cancelled(self)
+    }
+
+    fn progress(&mut self, phase: &str, current_item: Option<&str>, counters: &Counters) {
+        SourceHost::progress(self, phase, current_item, counters);
     }
 }
 
@@ -1207,8 +1396,9 @@ pub unsafe extern "C" fn garage_ingest_ingest_source(request: *const c_char, res
 /// the request is the same without `"files"` and `"cancel_after"`, plus the materialize `"budget"` (as for
 /// [`garage_ingest_ensure_local`]). Placeholders are made local within the budget and the bytes are hashed
 /// here; the host's `read` reads the text, unless the request has `"readers": {"max_file_bytes"?,
-/// "ocr_min_chars"?, "index_images"?, "pdf_min_chars_per_page"?}`, when [`garage_readers`] read it (and a
-/// Messages source's shared names) and GarageService hears each reader's revision. Progress and cancellation go through the host. The reply holds
+/// "ocr_min_chars"?, "index_images"?, "pdf_min_chars_per_page"?, "spotlight"?}`, when [`garage_readers`] read it
+/// (and a Messages source's shared names) and GarageService hears each reader's revision; with `spotlight` on
+/// (the default) the walk also takes the document types only the Mac's Spotlight importers read. Progress and cancellation go through the host. The reply holds
 /// `"budget"` (as it stands at the end) in place of `"progress"`.
 ///
 /// # Safety
@@ -1277,6 +1467,67 @@ pub unsafe extern "C" fn garage_ingest_ingest_one(request: *const c_char, result
     call(request, result, ingest_one)
 }
 
+/// A reader's outcome as the host's `read` (and `parse`) answers it; the inverse of `read_outcome`.
+fn outcome_json(outcome: &ReadOutcome) -> Value {
+    match outcome {
+        ReadOutcome::Document(document) => json!({ "document": {
+            "text": document.text,
+            "kind": garage_ingest::pipeline::kind_name(document.kind),
+            "extractor": document.extractor,
+            "extractor_version": document.extractor_version,
+            "title": document.title,
+            "lang": document.lang,
+            "meta": document.meta,
+            "author_hints": document.author_hints,
+        }}),
+        ReadOutcome::NoText(reason) => json!({ "no_text": reason }),
+        ReadOutcome::Placeholder => json!({ "placeholder": true }),
+        ReadOutcome::Failed(reason) => json!({ "failed": reason }),
+        ReadOutcome::Raised(reason) => json!({ "raised": reason }),
+    }
+}
+
+/// Reads one file's bytes with the Rust readers, for a reader process that has no access to the
+/// file: `{"path", "readers": {...extraction settings}}` and `len` bytes at `bytes` ->
+/// `{"document": {...}} | {"no_text"} | {"placeholder"} | {"failed"} | {"raised"}`, the host `read`'s
+/// answer. `path` only names the file (its suffix picks the reader). Readers are kept per thread for
+/// their settings, so a picture's OCR engine loads once.
+///
+/// # Safety
+///
+/// As [`garage_ingest_policy`], and `bytes` points to `len` readable bytes (or is null when `len` is 0).
+#[cfg_attr(feature = "exports", unsafe(no_mangle))]
+pub unsafe extern "C" fn garage_ingest_parse(
+    request: *const c_char,
+    bytes: *const u8,
+    len: usize,
+    result: *mut *mut c_char,
+) -> i32 {
+    call(request, result, |request| {
+        let path = request.get("path").and_then(Value::as_str).ok_or("the request has no \"path\" string")?;
+        let settings = garage_readers::Settings::from_json(request.get("readers").and_then(Value::as_object));
+        let bytes: &[u8] = if len == 0 {
+            &[]
+        } else if bytes.is_null() {
+            return Err("the bytes pointer was null".to_owned());
+        } else {
+            // SAFETY: the caller passes `len` readable bytes.
+            unsafe { std::slice::from_raw_parts(bytes, len) }
+        };
+        thread_local! {
+            static READERS: std::cell::RefCell<Option<garage_readers::Readers>> = const { std::cell::RefCell::new(None) };
+        }
+        let outcome = READERS.with(|readers| {
+            let mut readers = readers.borrow_mut();
+            if readers.as_ref().is_none_or(|readers| *readers.settings() != settings) {
+                *readers = Some(garage_readers::Readers::new(settings));
+            }
+            readers.as_mut().map(|readers| readers.read_bytes(Path::new(path), bytes))
+        });
+        Ok(outcome_json(&outcome.unwrap_or_else(|| ReadOutcome::Raised("no readers".to_owned()))))
+    })
+}
+
 /// Frees a string this library returned. Null is ignored.
 ///
 /// # Safety
@@ -1293,6 +1544,125 @@ pub unsafe extern "C" fn garage_ingest_string_free(text: *mut c_char) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A host `parse` that reads the bytes with `garage_ingest_parse`, as the reader process does.
+    unsafe extern "C" fn parse_here(
+        _: *mut c_void,
+        request: *const c_char,
+        bytes: *const u8,
+        len: usize,
+        reply: *mut *mut c_char,
+    ) -> i32 {
+        // SAFETY: passed straight through; the reply is freed by `release_here`.
+        unsafe { garage_ingest_parse(request, bytes, len, reply) }
+    }
+
+    /// A host `parse` whose reader process died mid-file.
+    unsafe extern "C" fn parse_crashed(
+        _: *mut c_void,
+        _: *const c_char,
+        _: *const u8,
+        _: usize,
+        reply: *mut *mut c_char,
+    ) -> i32 {
+        // SAFETY: a writable out-pointer; freed by `release_here`.
+        unsafe { *reply = CString::new("the reader crashed on this file").unwrap().into_raw() };
+        1
+    }
+
+    unsafe extern "C" fn release_here(_: *mut c_void, reply: *mut c_char) {
+        // SAFETY: every reply here was made with CString::into_raw.
+        drop(unsafe { CString::from_raw(reply) });
+    }
+
+    fn reading_host(parse: ParseCall) -> ReadingHost {
+        ReadingHost {
+            host: GarageIngestHost {
+                context: std::ptr::null_mut(),
+                read: None,
+                release: Some(release_here),
+                progress: None,
+                cancelled: None,
+                shared_names: None,
+                http: None,
+                access_token: None,
+                parse,
+            },
+            budget: Budget::default(),
+            readers: Some(garage_readers::Readers::new(garage_readers::Settings::default())),
+            events: None,
+        }
+    }
+
+    fn candidate(path: &Path) -> FileCandidate {
+        FileCandidate {
+            path: path.to_path_buf(),
+            uri: format!("file://{}", path.display()),
+            size: 0,
+            mtime: 0.0,
+            placeholder: false,
+        }
+    }
+
+    #[test]
+    fn a_file_read_in_the_reader_process_is_the_same_document() {
+        let folder = std::env::temp_dir().join(format!("garage-ffi-parse-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("plan.md");
+        std::fs::write(&path, "# The plan\n\nShip the parser helper, then the checks.\n").unwrap();
+        let here = reading_host(None).read(&candidate(&path));
+        let elsewhere = reading_host(Some(parse_here)).read(&candidate(&path));
+        assert!(matches!(elsewhere, ReadOutcome::Document(_)), "{elsewhere:?}");
+        assert_eq!(elsewhere, here);
+        // Checks that need no parsing still happen here: an empty file never leaves the process.
+        let empty = folder.join("empty.md");
+        std::fs::write(&empty, "").unwrap();
+        assert!(matches!(reading_host(Some(parse_crashed)).read(&candidate(&empty)), ReadOutcome::NoText(_)));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_reader_process_that_dies_fails_only_its_file() {
+        let folder = std::env::temp_dir().join(format!("garage-ffi-crash-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("hostile.pdf");
+        std::fs::write(&path, b"%PDF-1.4 not really").unwrap();
+        match reading_host(Some(parse_crashed)).read(&candidate(&path)) {
+            ReadOutcome::Failed(reason) => assert!(reason.starts_with("the reader crashed on this file: "), "{reason}"),
+            other => panic!("not a failure: {other:?}"),
+        }
+        let mut host = reading_host(Some(parse_crashed));
+        assert!(matches!(
+            RemoteHost::read_bytes(&mut host, Path::new("/Work/hostile.pdf"), b"%PDF"),
+            ReadOutcome::Failed(_)
+        ));
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn every_outcome_survives_the_trip_between_processes() {
+        let mut meta = Map::new();
+        meta.insert("page_count".to_owned(), json!(3));
+        let outcomes = [
+            ReadOutcome::Document(Extracted {
+                text: "text".to_owned(),
+                kind: ContentKind::Markdown,
+                extractor: "pdf-markdown".to_owned(),
+                extractor_version: "0.2.0".to_owned(),
+                title: Some("Title".to_owned()),
+                lang: None,
+                meta,
+                author_hints: vec!["Nell Oduya".to_owned()],
+            }),
+            ReadOutcome::NoText("blank".to_owned()),
+            ReadOutcome::Placeholder,
+            ReadOutcome::Failed("broken".to_owned()),
+            ReadOutcome::Raised("bug".to_owned()),
+        ];
+        for outcome in outcomes {
+            assert_eq!(read_outcome(Some(&outcome_json(&outcome))).unwrap(), Some(outcome));
+        }
+    }
 
     fn run(entry: unsafe extern "C" fn(*const c_char, *mut *mut c_char) -> i32, request: &str) -> (i32, Value) {
         let request = CString::new(request).unwrap();

@@ -18,6 +18,7 @@ GARAGE_XPC_SERVICES = [
     "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
     "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
     "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
+    "//macapp/Sources/GarageParseXPCService:GarageParseXPCService",
     "//macapp/Sources/GarageXPCService:GarageXPCService",
     "//macapp/Sources/ModelDownloadXPCService:ModelDownloadXPCService",
 ]
@@ -57,8 +58,8 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         # Developer ID: the App Group plus the application identifier its profile backs, so the app
         # keeps the Postgres password in the App Group keychain the launchers read without a prompt.
         entitlements = select({
-            "//bazel:is_store": "//macapp/Sources/GarageApp:Garage.entitlements",
-            "//bazel:is_developer_id": "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
+            "//bazel:is_store": "//bazel:store_app_entitlements",
+            "//bazel:is_developer_id": "//bazel:developer_id_app_entitlements",
             # Signed with an Apple Development certificate of the App Group's team: the group alone,
             # since without a profile there is no application identifier (//bazel:BUILD.bazel).
             "//bazel:is_local_app_group": "//macapp/externals:GarageAppGroup.entitlements",

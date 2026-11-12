@@ -240,7 +240,22 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `ingest/conversations.py` over the FOSS `messages-markdown` crate (crates.io, from
   `lwm-luminx/markdown-extract`, which bundles its own SQLite)) and the scanners that count a source first
   (`ingest/scanner.py`, in `scanner.rs`: feeds read as expat would, in `feed.rs`, and databases through the
-  system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
+  system's SQLite, bound by hand in `sqlite.rs`, so a Cargo build on Linux needs `libsqlite3-dev`) and a Dropbox source read
+  through Dropbox's HTTP API (`dropbox.rs`, kind `dropbox`, root a folder in the Dropbox: listed, compared by
+  stat, downloaded into memory, checked against Dropbox's content hash and read with `Readers::read_bytes`; the
+  host carries each request after `dropbox::check_destination` approved it and supplies the access token,
+  `garage_ingest.h`'s `http` and `access_token`; the Swift host takes the token from `GarageCloudCredentials`,
+  which only the App Store build's extensions fill, signed in through Garage Door, which holds no token) and a
+  OneDrive source read through Microsoft Graph (`onedrive.rs`, kind `onedrive`: the folder's tree listed child by
+  child, a download fetched from the pre-authenticated URL Graph redirects to, without the token, and checked against
+  its QuickXorHash; the same host calls, the token asked for with `"service": "onedrive"`) and an Outlook mailbox
+  through Graph (`outlook.rs`, kind `outlook`: a mail folder and the folders below it, or the whole mailbox for `/`,
+  each new or changed message downloaded as MIME with Graph's immutable id as its URI and read by the mail reader as a
+  `communication`; `"service": "outlook"`) and a Google Drive folder through the Drive API (`google_drive.rs`, kind
+  `google_drive`: listed folder by folder, a file's URI its Drive id, Docs, Sheets and Slides exported as `.docx`,
+  `.xlsx` and `.pptx` for the Office reader; `"service": "google_drive"`) and Gmail (`gmail.rs`, kind `gmail`: a
+  label or the whole mailbox, each message fetched once as `format=raw` MIME, since Gmail messages never change, and
+  read by the mail reader as a `communication`; `"service": "gmail"`), persisting through `GrpcStorage` (`facade.rs`, the `GrpcIngestStorageGateway` port:
   `BeginIngestSession`, `PersistScan`, `CheckDocumentStat`, one `PersistDocument` per call and
   `FinalizeIngestSession`). `garage-ingest-ffi`
   exports them as JSON over a C ABI (`include/garage_ingest.h`). `garage_ingest_run_source` runs a whole source,
@@ -250,7 +265,8 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   "service"`, over `GetSetting`) and the app's `IngestProgress` events field for field. With `"readers": {...}`
   (`extraction.*`, also read over `GetSetting`) either run reads every file itself with `rust/garage-readers`: `extract/dispatch.py`'s routes over garage-text,
   the FOSS `mail-markdown`, `pdf-markdown` and `office-markdown` crates and garage-ocr (Vision on the Mac,
-  Tesseract elsewhere, `extract/image.py`'s policy), plus `extract/nicknames.py`'s shared names (rusqlite and
+  Tesseract elsewhere, `extract/image.py`'s policy), the Mac's Spotlight importers for other documents
+  (`rust/garage-spotlight`, `extraction.spotlight`), plus `extract/nicknames.py`'s shared names (rusqlite and
   `plist`). Mail, PDF, Office and pictures are new readers with their own revisions, so each such file is read
   again once; `CheckDocumentStat` and the no-text and failed `PersistDocument`s carry the reader's revision
   (`extractor_revision`), which GarageService remembers. `extraction.plugins` does not apply to the Rust readers yet. GarageIngestXPCService runs it (`GarageIngestRunner`, linked
@@ -263,6 +279,10 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
   `garage-embed`'s host and egress rules) and the streamable HTTP transport (GET answers 405).
   `garage-mcp-ffi` is its C ABI (`include/garage_mcp.h`). GarageMCPServerService runs
   it on GarageXPCKit (`GarageMCPRustServer`), and the stdio `garage-mcp` launcher runs it in-process (`rust/garage-cli`, below).
+  Its `http::Endpoint` is the streamable transport without a socket (one exchange in, one reply out, sessions
+  kept); `garage_mcp_endpoint_*` exports it and GarageMCPServerService answers it over XPC (`exchange`, with the
+  listener off), for a client that carries MCP's HTTP requests itself: the App Store build's Garage Door tunnel,
+  which lives in garage-enterprise.
 - **The backend** (`rust/garage-service`, [docs/plans/python-removal.md](docs/plans/python-removal.md)) ports
   `garage_rag/service` (GarageService over tokio-postgres + deadpool) one stage at a time: so far the database
   layer (`db.rs`, the app's socket URL), `garage.json` (`config.rs`, `SECTIONS` as data), the migrations, the model
@@ -514,7 +534,11 @@ above maps them to crates); the Rust code keeps their names in its docs.
   `communication`) through the FOSS `pdf-markdown`, `office-markdown` and `mail-markdown` crates
   (`lwm-luminx/markdown-extract`); pictures through `garage-ocr`, Vision on the Mac and Tesseract
   elsewhere (`extract/image.py`'s policy; no Tesseract on Windows yet, so pictures read as no text
-  there). Messages `chat.db` (`sqlite` sources) is not walked file
+  there). On the Mac, a document type no built-in reader takes (`.rtf`, `.doc`, `.odt`, ...) goes to
+  the system's own Spotlight importer for it (`rust/garage-spotlight`: the `MDImporter` CFPlugIn loaded
+  in-process from `/System/Library/Spotlight` only, never a third party's, and never for pictures,
+  media, contacts, calendars, messages, text or code), behind `extraction.spotlight` (on); the walk takes
+  those extensions only when the Rust readers read with it on. Messages `chat.db` (`sqlite` sources) is not walked file
   by file: `conversations.rs` (over the `messages-markdown` crate) stores each thread as one document with one chunk per message,
   each carrying `chunks.direction` (`sent`/`received`) and `chunks.sender` (`014_chunk_direction.sql`) for
   search's `direction` filter; messages in no `chat_message_join` row join their sender's one-to-one chat.
@@ -594,6 +618,13 @@ above maps them to crates); the Rust code keeps their names in its docs.
   config-changing methods (sources, models, `SetSetting`, MCP install/uninstall, and `InitDb`, whose
   `schema_dir` names SQL to run) are answered only by a server bound to the Unix socket; a server on a
   TCP port gives `PERMISSION_DENIED`, since `SetSetting embedding.ollama_host` widens egress.
+
+- **Access hooks** (`rust/garage-access`, [docs/plans/access-hooks.md](docs/plans/access-hooks.md)) — every
+  corpus read names its `Caller` (the app, `garage`, or an MCP client from `CorpusCaller`) and asks the
+  build's `AccessPolicy` for a `SqlFilter` over `d`/`s`, which goes inside the read's own `WHERE`. Garage
+  ships no policy: a plain build links `rust/garage-access-none` as `garage_access_extension`, and a build
+  with one sets the label flag `//rust/garage-access:extension` (garage-enterprise does). A new
+  GarageService method must be placed in `READ_PATHS` (`garage-service/src/access.rs`), or its test fails.
 
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction
@@ -797,13 +828,22 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   checked in (RELEASING.md, "GitHub release"). This repository keeps the seam they plug
   into, `bazel/platforms.bzl`: `signed_macos_platform` sets rules_apple's `signing_certificate_name`,
   `//bazel:distribution` (`developer_id` | `store`, behind `//bazel:is_developer_id` / `is_store`) and
-  the three provisioning-profile label flags; `codesign` targets name no identity and take the flag's.
+  the three provisioning-profile label flags, and optionally Garage.app's entitlements per distribution and a
+  `GarageAppExtensions` Swift module (`//macapp/Sources/GarageApp:extensions`, contract in
+  `macapp/Sources/GarageAppExtensionKit`; builds here link the empty one), which is how the store build adds
+  its closed features; `codesign` targets name no identity and take the flag's.
   Builds here sign with the best identity the keychain has (`//bazel:local_auto`, the default;
   `bazel/signing_identity.bzl`): an Apple Development certificate (Team ID, no profile, no hardened
   runtime; `//bazel:is_local_development`, and the App Group too when it is the group's team,
   `//bazel:is_local_app_group`), else the self-signed local identity, else ad hoc.
   `--config=adhoc` (CI) and `--config=local_signed` force one; `GARAGE_SIGNING_IDENTITY` in the environment
   (or `build --repo_env=` in `user.bazelrc`; `aspect` rejects it on the command line) names one.
+- `SpotlightIndexer` (`Services/SpotlightIndex.swift`) puts each document's title and path and each
+  distilled fact's statement into the app's Core Spotlight index (never communications, never document
+  text), rebuilt after each pipeline run and when a source is removed, emptied by Reset Database and
+  by the Database page's Spotlight switch (`garage.spotlight.enabled`). Opening an item shows its
+  document on the Documents page (`ContentView`'s `onContinueUserActivity`). The rules are plain values
+  (`SpotlightEntries`) with unit tests.
 - `FirstRunCoordinator` (+ `Views/FirstRunView.swift`) is the first-run setup assistant that replaces
   the sidebar UI until the user finishes or skips it (`garage.firstRun.completed` default): wait for
   services → pick template sources → pick embedding/distillation models → connect MCP clients. It

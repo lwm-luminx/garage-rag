@@ -1,0 +1,12 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+
+# The access extension a plain build links: it registers no policy. //rust/garage-access:extension
+# defaults to it; a build with a policy points that flag at its own library.
+rust_library(
+    name = "garage-access-none",
+    srcs = glob(["src/**/*.rs"]),
+    crate_name = "garage_access_extension",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = ["//rust/garage-access"],
+)

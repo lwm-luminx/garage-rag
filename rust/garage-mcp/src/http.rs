@@ -6,6 +6,11 @@
 //! The server sends nothing unasked, so a GET for a standalone event stream is answered 405, which
 //! the specification allows. This replaces the Python server's listener at the same address; it
 //! adds none.
+//!
+//! [`Endpoint`] is the transport without a socket: one exchange (method, headers, body) in, one
+//! reply out. The listener answers through it, and so can a host that carries MCP's HTTP exchanges
+//! some other way (`garage_mcp_exchange`: the App Store build's Garage Door tunnel, over XPC), so
+//! sessions and replies are the same whichever way a request came.
 
 use std::collections::HashSet;
 use std::convert::Infallible;
@@ -98,12 +103,9 @@ impl Security {
     }
 
     /// The SDK's `validate_request`: `None` when the request may go on.
-    fn check(&self, headers: &HeaderMap, is_post: bool) -> Option<Response<Full<Bytes>>> {
-        if is_post {
-            let content_type = header(headers, "content-type").map(str::to_ascii_lowercase);
-            if !content_type.is_some_and(|value| value.starts_with("application/json")) {
-                return Some(plain(StatusCode::BAD_REQUEST, "Invalid Content-Type header"));
-            }
+    fn check(&self, headers: &HeaderMap, is_post: bool) -> Option<Reply> {
+        if let Some(refusal) = content_type_refusal(headers, is_post) {
+            return Some(refusal);
         }
         if !self.protect {
             return None;
@@ -121,33 +123,63 @@ impl Security {
     }
 }
 
+/// The `content-type` a POST must carry: `None` when the request may go on.
+fn content_type_refusal(headers: &HeaderMap, is_post: bool) -> Option<Reply> {
+    if !is_post {
+        return None;
+    }
+    let content_type = header(headers, "content-type").map(str::to_ascii_lowercase);
+    if content_type.is_some_and(|value| value.starts_with("application/json")) {
+        None
+    } else {
+        Some(plain(StatusCode::BAD_REQUEST, "Invalid Content-Type header"))
+    }
+}
+
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
 
-fn plain(status: StatusCode, text: &str) -> Response<Full<Bytes>> {
-    let mut response = Response::new(Full::new(Bytes::from(text.to_string())));
-    *response.status_mut() = status;
-    response.headers_mut().insert("content-type", HeaderValue::from_static("text/plain; charset=utf-8"));
-    response
+/// One reply of the transport, before it is a hyper response or a host's JSON.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Reply {
+    pub status: StatusCode,
+    pub headers: HeaderMap,
+    pub body: Bytes,
+}
+
+impl Reply {
+    fn new(status: StatusCode, content_type: &'static str, body: impl Into<Bytes>) -> Self {
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", HeaderValue::from_static(content_type));
+        Self { status, headers, body: body.into() }
+    }
+
+    fn with_session(mut self, session: Option<&str>) -> Self {
+        if let Some(session) = session
+            && let Ok(value) = HeaderValue::from_str(session)
+        {
+            self.headers.insert(SESSION_HEADER, value);
+        }
+        self
+    }
+
+    fn into_response(self) -> Response<Full<Bytes>> {
+        let mut response = Response::new(Full::new(self.body));
+        *response.status_mut() = self.status;
+        *response.headers_mut() = self.headers;
+        response
+    }
+}
+
+fn plain(status: StatusCode, text: &str) -> Reply {
+    Reply::new(status, "text/plain; charset=utf-8", text.to_string())
 }
 
 /// A JSON-RPC error with no id, as the transport sends for a request it cannot take.
-fn rpc_error(status: StatusCode, code: i64, message: &str, session: Option<&str>) -> Response<Full<Bytes>> {
+fn rpc_error(status: StatusCode, code: i64, message: &str, session: Option<&str>) -> Reply {
     let body = json!({"jsonrpc": "2.0", "id": null, "error": {"code": code, "message": message}});
-    let mut response = Response::new(Full::new(Bytes::from(body.to_string())));
-    *response.status_mut() = status;
-    response.headers_mut().insert("content-type", HeaderValue::from_static("application/json"));
-    with_session(&mut response, session);
-    response
-}
-
-fn with_session(response: &mut Response<Full<Bytes>>, session: Option<&str>) {
-    if let Some(session) = session
-        && let Ok(value) = HeaderValue::from_str(session)
-    {
-        response.headers_mut().insert(SESSION_HEADER, value);
-    }
+    Reply::new(status, "application/json", body.to_string()).with_session(session)
 }
 
 /// A new session id: 32 hex digits from the system's random source.
@@ -181,14 +213,73 @@ fn accepts(headers: &HeaderMap) -> (bool, bool) {
     (json, sse)
 }
 
-struct State {
+/// The streamable HTTP transport without a socket: the server and its sessions.
+///
+/// It checks what the specification asks of a request (the method, the session, `Accept`,
+/// `Content-Type`, the JSON-RPC envelope) but not the `Host` and `Origin` of the listener's
+/// DNS-rebinding protection, which only a socket a browser can reach needs.
+pub struct Endpoint {
     server: Arc<Server>,
-    security: Security,
-    path: String,
     sessions: Mutex<HashSet<String>>,
 }
 
-impl State {
+impl Endpoint {
+    pub fn new(server: Arc<Server>) -> Self {
+        Self { server, sessions: Mutex::new(HashSet::new()) }
+    }
+
+    /// Answers one exchange, blocking while a tool runs (call it off any async worker).
+    pub fn answer(&self, method: &Method, headers: &HeaderMap, body: &[u8]) -> Reply {
+        let is_post = method == Method::POST;
+        if let Some(refusal) = content_type_refusal(headers, is_post) {
+            return refusal;
+        }
+        match *method {
+            Method::POST => match self.admit(headers) {
+                Ok(_) if body.len() > MAX_BODY_BYTES => plain(StatusCode::PAYLOAD_TOO_LARGE, "Request body too large"),
+                Ok(known) => self.post(headers, known, body),
+                Err(refusal) => refusal,
+            },
+            Method::DELETE => self.delete(headers),
+            _ => Self::not_allowed(headers),
+        }
+    }
+
+    /// [`Endpoint::answer`] in JSON, for hosts that carry exchanges over their own channel:
+    /// `{"method": "POST", "headers": {name: value}, "body": "..."}` in,
+    /// `{"status": 200, "headers": {name: value}, "body": "..."}` out. Bodies are UTF-8 text, as
+    /// MCP's JSON and event streams are; header names come out in lower case.
+    pub fn exchange(&self, request: &Value) -> Value {
+        let method = request
+            .get("method")
+            .and_then(Value::as_str)
+            .and_then(|method| Method::from_bytes(method.to_ascii_uppercase().as_bytes()).ok())
+            .unwrap_or(Method::GET);
+        let mut headers = HeaderMap::new();
+        if let Some(given) = request.get("headers").and_then(Value::as_object) {
+            for (name, value) in given {
+                if let (Ok(name), Some(Ok(value))) = (
+                    hyper::header::HeaderName::from_bytes(name.to_ascii_lowercase().as_bytes()),
+                    value.as_str().map(HeaderValue::from_str),
+                ) {
+                    headers.insert(name, value);
+                }
+            }
+        }
+        let body = request.get("body").and_then(Value::as_str).unwrap_or_default();
+        let reply = self.answer(&method, &headers, body.as_bytes());
+        let headers: serde_json::Map<String, Value> = reply
+            .headers
+            .iter()
+            .filter_map(|(name, value)| Some((name.as_str().to_string(), json!(value.to_str().ok()?))))
+            .collect();
+        json!({
+            "status": reply.status.as_u16(),
+            "headers": headers,
+            "body": String::from_utf8_lossy(&reply.body),
+        })
+    }
+
     fn caller(headers: &HeaderMap) -> Caller {
         let mut caller = Caller::new(Transport::Http);
         caller.registration_token = header(headers, "authorization")
@@ -198,30 +289,16 @@ impl State {
         caller
     }
 
-    async fn serve(self: Arc<Self>, request: Request<Incoming>) -> Response<Full<Bytes>> {
-        let is_post = request.method() == Method::POST;
-        if request.uri().path() != self.path {
-            return plain(StatusCode::NOT_FOUND, "Not Found");
-        }
-        if let Some(refusal) = self.security.check(request.headers(), is_post) {
-            return refusal;
-        }
-        match *request.method() {
-            Method::POST => self.post(request).await,
-            Method::DELETE => self.delete(request.headers()),
-            _ => {
-                let session = header(request.headers(), SESSION_HEADER).map(str::to_string);
-                let mut response =
-                    rpc_error(StatusCode::METHOD_NOT_ALLOWED, -32600, "Method Not Allowed", session.as_deref());
-                response.headers_mut().insert("allow", HeaderValue::from_static("POST, DELETE"));
-                response
-            }
-        }
+    fn not_allowed(headers: &HeaderMap) -> Reply {
+        let session = header(headers, SESSION_HEADER);
+        let mut reply = rpc_error(StatusCode::METHOD_NOT_ALLOWED, -32600, "Method Not Allowed", session);
+        reply.headers.insert("allow", HeaderValue::from_static("POST, DELETE"));
+        reply
     }
 
     /// The session a request names: `Ok(None)` for none, `Err` with the reply for an unknown one.
     #[allow(clippy::result_large_err)]
-    fn session(&self, headers: &HeaderMap) -> Result<Option<String>, Response<Full<Bytes>>> {
+    fn session(&self, headers: &HeaderMap) -> Result<Option<String>, Reply> {
         match header(headers, SESSION_HEADER) {
             None => Ok(None),
             Some(id) if self.sessions.lock().is_ok_and(|sessions| sessions.contains(id)) => Ok(Some(id.to_string())),
@@ -229,7 +306,7 @@ impl State {
         }
     }
 
-    fn delete(&self, headers: &HeaderMap) -> Response<Full<Bytes>> {
+    fn delete(&self, headers: &HeaderMap) -> Reply {
         match self.session(headers) {
             Err(refusal) => refusal,
             Ok(None) => rpc_error(StatusCode::BAD_REQUEST, -32600, "Bad Request: Missing session ID", None),
@@ -237,35 +314,31 @@ impl State {
                 if let Ok(mut sessions) = self.sessions.lock() {
                     sessions.remove(&id);
                 }
-                let mut response = Response::new(Full::new(Bytes::new()));
-                response.headers_mut().insert("content-type", HeaderValue::from_static("application/json"));
-                with_session(&mut response, Some(&id));
-                response
+                Reply::new(StatusCode::OK, "application/json", Bytes::new()).with_session(Some(&id))
             }
         }
     }
 
-    async fn post(self: Arc<Self>, request: Request<Incoming>) -> Response<Full<Bytes>> {
-        let (parts, body) = request.into_parts();
-        let headers = parts.headers;
-        let known = match self.session(&headers) {
-            Ok(known) => known,
-            Err(refusal) => return refusal,
-        };
-        let (json_ok, sse_ok) = accepts(&headers);
+    /// What a POST is checked for before its body is read: the session it names and `Accept`.
+    #[allow(clippy::result_large_err)]
+    fn admit(&self, headers: &HeaderMap) -> Result<Option<String>, Reply> {
+        let known = self.session(headers)?;
+        let (json_ok, sse_ok) = accepts(headers);
         if !(json_ok && sse_ok) {
-            return rpc_error(
+            return Err(rpc_error(
                 StatusCode::NOT_ACCEPTABLE,
                 -32600,
                 "Not Acceptable: Client must accept both application/json and text/event-stream",
                 known.as_deref(),
-            );
+            ));
         }
-        let bytes = match Limited::new(body, MAX_BODY_BYTES).collect().await {
-            Ok(collected) => collected.to_bytes(),
-            Err(_) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "Request body too large"),
-        };
-        let message: Value = match serde_json::from_slice(&bytes) {
+        Ok(known)
+    }
+
+    /// A POST that was admitted: its message answered as one server-sent event. Blocks while the
+    /// tool runs.
+    fn post(&self, headers: &HeaderMap, known: Option<String>, bytes: &[u8]) -> Reply {
+        let message: Value = match serde_json::from_slice(bytes) {
             Ok(message) => message,
             Err(error) => {
                 return rpc_error(StatusCode::BAD_REQUEST, -32700, &format!("Parse error: {error}"), known.as_deref());
@@ -293,25 +366,57 @@ impl State {
         };
         if !is_request(&message) {
             // A notification or a response: accepted, nothing to say.
-            let mut response = Response::new(Full::new(Bytes::new()));
-            *response.status_mut() = StatusCode::ACCEPTED;
-            response.headers_mut().insert("content-type", HeaderValue::from_static("application/json"));
-            with_session(&mut response, Some(&session));
-            return response;
+            return Reply::new(StatusCode::ACCEPTED, "application/json", Bytes::new()).with_session(Some(&session));
         }
-        let caller = Self::caller(&headers);
-        let server = Arc::clone(&self.server);
-        // Tools block on the facade and the model: off the async workers.
-        let reply = tokio::task::spawn_blocking(move || server.handle(&message, &caller)).await.ok().flatten();
-        let reply = reply
+        let reply = self
+            .server
+            .handle(&message, &Self::caller(headers))
             .unwrap_or_else(|| json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32603, "message": "no reply"}}));
-        let event = format!("event: message\ndata: {reply}\n\n");
-        let mut response = Response::new(Full::new(Bytes::from(event)));
-        let headers = response.headers_mut();
-        headers.insert("content-type", HeaderValue::from_static("text/event-stream"));
-        headers.insert("cache-control", HeaderValue::from_static("no-cache, no-transform"));
-        with_session(&mut response, Some(&session));
-        response
+        let mut reply = Reply::new(StatusCode::OK, "text/event-stream", format!("event: message\ndata: {reply}\n\n"))
+            .with_session(Some(&session));
+        reply.headers.insert("cache-control", HeaderValue::from_static("no-cache, no-transform"));
+        reply
+    }
+}
+
+struct State {
+    endpoint: Arc<Endpoint>,
+    security: Security,
+    path: String,
+}
+
+impl State {
+    async fn serve(self: Arc<Self>, request: Request<Incoming>) -> Response<Full<Bytes>> {
+        let is_post = request.method() == Method::POST;
+        if request.uri().path() != self.path {
+            return plain(StatusCode::NOT_FOUND, "Not Found").into_response();
+        }
+        if let Some(refusal) = self.security.check(request.headers(), is_post) {
+            return refusal.into_response();
+        }
+        match *request.method() {
+            Method::POST => self.post(request).await.into_response(),
+            Method::DELETE => self.endpoint.delete(request.headers()).into_response(),
+            _ => Endpoint::not_allowed(request.headers()).into_response(),
+        }
+    }
+
+    async fn post(self: Arc<Self>, request: Request<Incoming>) -> Reply {
+        let (parts, body) = request.into_parts();
+        let headers = parts.headers;
+        let known = match self.endpoint.admit(&headers) {
+            Ok(known) => known,
+            Err(refusal) => return refusal,
+        };
+        let bytes = match Limited::new(body, MAX_BODY_BYTES).collect().await {
+            Ok(collected) => collected.to_bytes(),
+            Err(_) => return plain(StatusCode::PAYLOAD_TOO_LARGE, "Request body too large"),
+        };
+        let endpoint = Arc::clone(&self.endpoint);
+        // Tools block on the facade and the model: off the async workers.
+        tokio::task::spawn_blocking(move || endpoint.post(&headers, known, &bytes))
+            .await
+            .unwrap_or_else(|_| rpc_error(StatusCode::INTERNAL_SERVER_ERROR, -32603, "the tool's thread failed", None))
     }
 }
 
@@ -349,10 +454,9 @@ impl HttpServer {
             );
         }
         let state = Arc::new(State {
-            server,
+            endpoint: Arc::new(Endpoint::new(server)),
             security: Security::new(options, address.port()),
             path: options.path.clone(),
-            sessions: Mutex::new(HashSet::new()),
         });
         let (shutdown, mut stop) = watch::channel(false);
         let running = Arc::new(AtomicBool::new(true));
@@ -416,5 +520,109 @@ impl HttpServer {
 impl Drop for HttpServer {
     fn drop(&mut self) {
         self.shutdown_now();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chat::{Chat, ChatError};
+    use crate::corpus::{Corpus, CorpusError, DocumentQuery, SearchQuery};
+
+    struct Empty;
+
+    impl Corpus for Empty {
+        fn search(&self, _: &Caller, _: &SearchQuery) -> Result<Value, CorpusError> {
+            Ok(json!({"query": "", "results": []}))
+        }
+        fn document(&self, _: &Caller, _: &DocumentQuery) -> Result<Value, CorpusError> {
+            Ok(json!({}))
+        }
+        fn sources(&self, _: &Caller) -> Result<Value, CorpusError> {
+            Ok(json!({"sources": []}))
+        }
+        fn authors(&self, _: &Caller, _: i32) -> Result<Value, CorpusError> {
+            Ok(json!({"authors": []}))
+        }
+        fn stats(&self, _: &Caller) -> Result<Value, CorpusError> {
+            Ok(json!({}))
+        }
+        fn setting(&self, _: &str) -> Result<Value, CorpusError> {
+            Ok(Value::Null)
+        }
+    }
+
+    fn endpoint() -> Endpoint {
+        let chat: crate::tools::ChatFactory =
+            Arc::new(|_| Err::<Box<dyn Chat>, _>(ChatError("no model in tests".into())));
+        Endpoint::new(Arc::new(Server::with_chat(Arc::new(Empty), chat)))
+    }
+
+    fn post(endpoint: &Endpoint, session: Option<&str>, message: &Value) -> Value {
+        let mut headers = json!({
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        });
+        if let Some(session) = session {
+            headers["mcp-session-id"] = json!(session);
+        }
+        endpoint.exchange(&json!({"method": "POST", "headers": headers, "body": message.to_string()}))
+    }
+
+    #[test]
+    fn a_session_starts_at_initialize_and_carries_the_calls_after_it() {
+        let endpoint = endpoint();
+        let initialize = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {
+            "protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "t", "version": "1"}}});
+        let reply = post(&endpoint, None, &initialize);
+        assert_eq!(reply["status"], 200);
+        assert_eq!(reply["headers"]["content-type"], "text/event-stream");
+        let session = reply["headers"]["mcp-session-id"].as_str().unwrap().to_string();
+        assert_eq!(session.len(), 32);
+        assert!(reply["body"].as_str().unwrap().starts_with("event: message\ndata: {"));
+
+        let initialized = json!({"jsonrpc": "2.0", "method": "notifications/initialized"});
+        let reply = post(&endpoint, Some(&session), &initialized);
+        assert_eq!(reply["status"], 202);
+        assert_eq!(reply["body"], "");
+
+        let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
+        let reply = post(&endpoint, Some(&session), &list);
+        assert_eq!(reply["status"], 200);
+        assert!(reply["body"].as_str().unwrap().contains("rag_search"));
+
+        let reply = endpoint.exchange(&json!({"method": "DELETE", "headers": {"mcp-session-id": session}}));
+        assert_eq!(reply["status"], 200);
+        let reply = post(&endpoint, Some(&session), &list);
+        assert_eq!(reply["status"], 404);
+    }
+
+    #[test]
+    fn a_call_without_a_session_or_with_the_wrong_headers_is_refused() {
+        let endpoint = endpoint();
+        let list = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"});
+        assert_eq!(post(&endpoint, None, &list)["status"], 400);
+        assert_eq!(post(&endpoint, Some("not-a-session"), &list)["status"], 404);
+
+        let reply = endpoint
+            .exchange(&json!({"method": "POST", "headers": {"accept": "application/json, text/event-stream"},
+            "body": list.to_string()}));
+        assert_eq!(reply["status"], 400, "no content-type");
+        let reply = endpoint.exchange(&json!({"method": "POST",
+            "headers": {"content-type": "application/json", "accept": "application/json"}, "body": list.to_string()}));
+        assert_eq!(reply["status"], 406);
+        let reply = endpoint.exchange(&json!({"method": "GET", "headers": {}}));
+        assert_eq!(reply["status"], 405);
+        assert_eq!(reply["headers"]["allow"], "POST, DELETE");
+        let reply = post(&endpoint, None, &json!({"id": 1, "method": "initialize"}));
+        assert_eq!(reply["status"], 400, "not JSON-RPC 2.0");
+    }
+
+    #[test]
+    fn no_host_header_is_needed_without_a_socket() {
+        // The listener's DNS-rebinding check wants a Host; an exchange carried by the app has none.
+        let endpoint = endpoint();
+        let initialize = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}});
+        assert_eq!(post(&endpoint, None, &initialize)["status"], 200);
     }
 }

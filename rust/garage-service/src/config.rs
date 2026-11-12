@@ -248,6 +248,14 @@ pub static SECTIONS: &[Setting] = &[
     ),
     setting!(
         "extraction",
+        "spotlight",
+        "spotlight",
+        Kind::Bool,
+        true,
+        "On the Mac, read document types no built-in reader takes (such as .rtf, .doc and .odt) with the system's own Spotlight importers, loaded in-process from /System/Library/Spotlight. Only Apple's importers are used, never a third party's, and never for pictures, media, contacts, calendars, messages, plain text or code. Has no effect on other platforms."
+    ),
+    setting!(
+        "extraction",
         "plugins",
         "extraction_plugins",
         Kind::StrList,
@@ -695,6 +703,10 @@ impl SourceSpec {
 
     /// `root` with a leading `~` expanded.
     pub fn expanded_root(&self) -> PathBuf {
+        if garage_ingest::is_cloud_kind(&self.kind) {
+            // A folder in the cloud service, not on this machine.
+            return PathBuf::from(garage_ingest::dropbox::display_root(&self.root));
+        }
         expand_home(Path::new(&self.root))
     }
 }
@@ -1056,7 +1068,7 @@ mod tests {
         for setting in SECTIONS {
             assert_eq!(config.setting(&setting.name()).unwrap(), setting.default_value());
         }
-        assert_eq!(SECTIONS.len(), 44);
+        assert_eq!(SECTIONS.len(), 45);
     }
 
     #[test]

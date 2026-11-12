@@ -35,7 +35,7 @@ struct SourcesView: View {
     /// a new folder or kind fills in a new one; a name the person typed is kept.
     @State private var suggestedSlug = ""
 
-    private let kinds = ["filesystem", "git", "sqlite", "maildir", "feed"]
+    private var kinds: [String] { SourceKinds.offered(cloudAvailable: GarageCloudCredentials.isAvailable) }
     private let classes = ["document", "code", "communication"]
     private let trusts = ["authored", "reference", "received"]
 
@@ -58,7 +58,10 @@ struct SourcesView: View {
             refreshSourcesAndTestDisk()
         }
         .onChange(of: root) { _, _ in suggestSlugIfUnedited() }
-        .onChange(of: kind) { _, _ in suggestSlugIfUnedited() }
+        .onChange(of: kind) { _, newKind in
+            if let mail = SourceKinds.defaultClass(newKind) { corpusClass = mail }
+            suggestSlugIfUnedited()
+        }
         .onDisappear {
             ingestAutoDismissTask?.cancel()
             ingestAutoDismissTask = nil
@@ -488,7 +491,9 @@ struct SourcesView: View {
     }
 
     private func accessResult(for source: RegisteredSource) -> SourcePathAccessResult? {
-        appState.volumeAccess.lastTestResult?.sourcePathResults.first {
+        // A cloud source has no folder on this disk to check (its root is in the provider's account).
+        if SourceKinds.isCloud(source.kind) { return nil }
+        return appState.volumeAccess.lastTestResult?.sourcePathResults.first {
             $0.slug == source.slug || $0.rawPath == source.root
         }
     }
@@ -500,7 +505,9 @@ struct SourcesView: View {
             access: access,
             activity: activity(for: source),
             lastRun: lastRun(for: source),
-            isCancellingAll: appState.isCancellingAll
+            isCancellingAll: appState.isCancellingAll,
+            localClient: CloudClientFolders.state(for: source.kind),
+            cloudLink: SourceKinds.isCloud(source.kind) ? GarageCloudCredentials.status(service: source.kind) : nil
         )
         let isRemoving = appState.sourcesBeingRemoved.contains(source.slug)
 
@@ -567,18 +574,8 @@ struct SourcesView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Every row carries a bar (full and green when up to date), so the rows line up.
-                if row.isIndeterminate {
-                    ProgressView()
-                        .progressViewStyle(.linear)
-                        .controlSize(.small)
-                } else {
-                    ProgressView(value: row.progress ?? 0)
-                        .progressViewStyle(.linear)
-                        .controlSize(.small)
-                        .tint(row.statusTone == .active ? .blue : row.statusTone.color)
-                }
-
+                // Every row ends its status line with the same small bar (full when up to date), so
+                // the bars line up down the page without a heavy full-width bar on each source.
                 HStack(spacing: 8) {
                     Text(row.status)
                         .font(.caption)
@@ -590,6 +587,12 @@ struct SourcesView: View {
                             .font(.caption.monospacedDigit())
                             .foregroundStyle(.secondary)
                     }
+                    SlimProgressBar(
+                        fraction: row.isIndeterminate ? nil : (row.progress ?? 0),
+                        tint: row.statusTone == .active ? .accentColor : row.statusTone.color
+                    )
+                    .frame(width: 96)
+                    .accessibilityIdentifier("sources.row.\(source.slug).progress")
                 }
 
                 if let item = row.currentItem {
@@ -894,10 +897,17 @@ struct SourcesView: View {
                     Text("Folder")
                         .gridColumnAlignment(.trailing)
                     HStack(spacing: 8) {
-                        TextField("~/Notes", text: $root)
+                        TextField(SourceKinds.rootPlaceholder(kind), text: $root)
                             .textFieldStyle(.roundedBorder)
                             .accessibilityIdentifier("sources.form.root")
                         Button("Choose…") { chooseRoot() }
+                            .disabled(SourceKinds.isCloud(kind))
+                    }
+                }
+                if let state = CloudClientFolders.state(for: kind) {
+                    GridRow {
+                        Text("Local app")
+                        localClientRow(state)
                     }
                 }
                 GridRow {
@@ -919,7 +929,7 @@ struct SourcesView: View {
                     Text("Contents")
                     HStack(spacing: 12) {
                         Picker("Kind", selection: $kind) {
-                            ForEach(kinds, id: \.self) { Text($0).tag($0) }
+                            ForEach(kinds, id: \.self) { Text(SourceKinds.title($0)).tag($0) }
                         }
                         .labelsHidden()
                         .fixedSize()
@@ -963,16 +973,40 @@ struct SourcesView: View {
         }
     }
 
+    /// Whether the cloud kind's own app keeps its folder on this node: the folder the source is
+    /// linked to, or a button that installs the app.
+    @ViewBuilder
+    private func localClientRow(_ state: CloudClientFolders.State) -> some View {
+        HStack(spacing: 8) {
+            switch state {
+            case .linked(let client, let folder):
+                Image(systemName: "link")
+                    .foregroundStyle(.green)
+                Text("Linked to the \(client.app) folder on this node, \(folder)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help("\(client.app)'s API lists the files and spots changes. A file whose copy in this folder is on disk is read from it; online-only files are downloaded.")
+                    .accessibilityIdentifier("sources.form.localClient.linked")
+            case .notInstalled(let client):
+                Image(systemName: "arrow.down.circle")
+                    .foregroundStyle(.secondary)
+                Text("The \(client.app) app isn't on this node, so every file is downloaded.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Install \(client.app)…") {
+                    NSWorkspace.shared.open(client.installURL)
+                }
+                .controlSize(.small)
+                .accessibilityIdentifier("sources.form.localClient.install")
+            }
+        }
+    }
+
     /// One line on what the three pickers mean, in the order they appear.
     private var contentsHint: String {
-        let what: String
-        switch kind {
-        case "git": what = "a git repository"
-        case "sqlite": what = "a SQLite database (Messages)"
-        case "maildir": what = "mailboxes"
-        case "feed": what = "a feed"
-        default: what = "files in a folder"
-        }
+        let what = SourceKinds.describe(kind)
         let who: String
         switch trust {
         case "authored": who = "you wrote"

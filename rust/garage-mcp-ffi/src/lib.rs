@@ -1,7 +1,10 @@
 //! The MCP server's C ABI, declared in `include/garage_mcp.h`.
 //!
 //! GarageMCPServerService starts and stops the streamable HTTP server through it; a single
-//! message can be answered too (for a stdio front end, and for the parity tests). Requests,
+//! message can be answered too (for a stdio front end, and for the parity tests), and so can one
+//! HTTP exchange of the streamable transport without a listener (an endpoint: for a host that
+//! carries MCP's HTTP requests over its own channel, as the App Store build's Garage Door tunnel
+//! does over XPC). Requests,
 //! results and the host's calls are UTF-8 JSON. The host carries the local model's HTTP requests
 //! (LlamaXPCService over NSXPC, Ollama and LM Studio with the system's HTTP stack) and loads a
 //! llama.cpp model on demand; the server decides what is asked and where it may go.
@@ -12,7 +15,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use garage_embed::{GrpcTarget, Host, HttpRequest, HttpResponse};
-use garage_mcp::{Caller, GrpcCorpus, HttpOptions, HttpServer, Server, Transport};
+use garage_mcp::{Caller, Endpoint, GrpcCorpus, HttpOptions, HttpServer, Server, Transport};
 use serde_json::{Map, Value, json};
 
 /// The call succeeded; the result is its JSON.
@@ -316,6 +319,97 @@ pub unsafe extern "C" fn garage_mcp_handle(
     status
 }
 
+/// The streamable HTTP transport without a listener, opaque to C: the server and its sessions.
+pub struct GarageMcpEndpoint {
+    endpoint: Endpoint,
+}
+
+/// Makes an endpoint: `{"grpc": {...}}` -> `{}`.
+///
+/// # Safety
+///
+/// `request` is a NUL-terminated string; `host` points to a valid [`GarageMcpHost`] whose
+/// functions stay callable, from any thread, until [`garage_mcp_endpoint_free`] returns; `endpoint`
+/// and `result` point to writable storage. `*endpoint` is set only on success.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_mcp_endpoint_new(
+    request: *const c_char,
+    host: *const GarageMcpHost,
+    endpoint: *mut *mut GarageMcpEndpoint,
+    result: *mut *mut c_char,
+) -> i32 {
+    if result.is_null() || endpoint.is_null() {
+        return GARAGE_MCP_BAD_REQUEST;
+    }
+    // SAFETY: the caller's contract is the function's.
+    let (status, value, made) = unsafe {
+        guarded(request, host, |request, host| match server_of(request, host) {
+            Ok(server) => (GARAGE_MCP_OK, json!({}), Some(Endpoint::new(Arc::new(server)))),
+            Err(message) => (GARAGE_MCP_BAD_REQUEST, json!({ "error": message }), None),
+        })
+    };
+    if let Some(made) = made {
+        // SAFETY: checked non-null above.
+        unsafe { *endpoint = Box::into_raw(Box::new(GarageMcpEndpoint { endpoint: made })) };
+    }
+    // SAFETY: checked non-null above.
+    unsafe { write_result(result, &value) };
+    status
+}
+
+/// Answers one HTTP exchange, blocking while a tool runs:
+/// `{"method": "POST", "headers": {name: value}, "body": "..."}` ->
+/// `{"status": 200, "headers": {name: value}, "body": "..."}`. Sessions start at `initialize` and
+/// live in the endpoint. The `Host` and `Origin` checks of the listener do not apply. Calls may
+/// come from several threads at once.
+///
+/// # Safety
+///
+/// `endpoint` came from [`garage_mcp_endpoint_new`] and was not freed; `request` is a
+/// NUL-terminated string; `result` points to writable storage for a string the caller frees with
+/// [`garage_mcp_string_free`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_mcp_endpoint_exchange(
+    endpoint: *const GarageMcpEndpoint,
+    request: *const c_char,
+    result: *mut *mut c_char,
+) -> i32 {
+    if result.is_null() || endpoint.is_null() || request.is_null() {
+        return GARAGE_MCP_BAD_REQUEST;
+    }
+    let outcome = catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: the caller passes a NUL-terminated string.
+        let request = unsafe { CStr::from_ptr(request) };
+        match serde_json::from_slice::<Value>(request.to_bytes()) {
+            Ok(request @ Value::Object(_)) => {
+                // SAFETY: the caller's contract: a live endpoint this library made.
+                let endpoint = unsafe { &(*endpoint).endpoint };
+                (GARAGE_MCP_OK, endpoint.exchange(&request))
+            }
+            Ok(_) => (GARAGE_MCP_BAD_REQUEST, json!({ "error": "the request is not a JSON object" })),
+            Err(error) => (GARAGE_MCP_BAD_REQUEST, json!({ "error": format!("the request is not JSON: {error}") })),
+        }
+    }));
+    let (status, value) = outcome.unwrap_or_else(|_| (GARAGE_MCP_PANIC, json!({ "error": "the MCP server panicked" })));
+    // SAFETY: checked non-null above.
+    unsafe { write_result(result, &value) };
+    status
+}
+
+/// Frees an endpoint and its sessions.
+///
+/// # Safety
+///
+/// `endpoint` came from [`garage_mcp_endpoint_new`] and was not freed before (or is null), and no
+/// exchange on it is running.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn garage_mcp_endpoint_free(endpoint: *mut GarageMcpEndpoint) {
+    if !endpoint.is_null() {
+        // SAFETY: the caller's contract: an endpoint this library made with Box::into_raw.
+        drop(unsafe { Box::from_raw(endpoint) });
+    }
+}
+
 /// Frees a result one of the calls above wrote.
 ///
 /// # Safety
@@ -326,5 +420,56 @@ pub unsafe extern "C" fn garage_mcp_string_free(text: *mut c_char) {
     if !text.is_null() {
         // SAFETY: the caller's contract: a string this library made with CString::into_raw.
         drop(unsafe { CString::from_raw(text) });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call(text: &str, f: impl FnOnce(*const c_char, *mut *mut c_char) -> i32) -> (i32, Value) {
+        let text = CString::new(text).unwrap();
+        let mut result: *mut c_char = std::ptr::null_mut();
+        let status = f(text.as_ptr(), &raw mut result);
+        // SAFETY: the library wrote a NUL-terminated string, freed once below.
+        let value = serde_json::from_slice(unsafe { CStr::from_ptr(result) }.to_bytes()).unwrap();
+        // SAFETY: as above.
+        unsafe { garage_mcp_string_free(result) };
+        (status, value)
+    }
+
+    #[test]
+    fn an_endpoint_answers_exchanges_with_sessions_and_no_listener() {
+        let host = GarageMcpHost { context: std::ptr::null_mut(), http: None, ensure_llama_model: None, release: None };
+        let mut endpoint: *mut GarageMcpEndpoint = std::ptr::null_mut();
+        let (status, _) = call(r#"{"grpc": {"socket": "/nonexistent/garage.sock"}}"#, |request, result| {
+            // SAFETY: valid pointers for the call; the host has no functions to call.
+            unsafe { garage_mcp_endpoint_new(request, &raw const host, &raw mut endpoint, result) }
+        });
+        assert_eq!(status, GARAGE_MCP_OK);
+        assert!(!endpoint.is_null());
+
+        let initialize = json!({
+            "method": "POST",
+            "headers": {"content-type": "application/json", "accept": "application/json, text/event-stream"},
+            "body": json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}).to_string(),
+        });
+        let (status, reply) = call(&initialize.to_string(), |request, result| {
+            // SAFETY: a live endpoint and valid pointers.
+            unsafe { garage_mcp_endpoint_exchange(endpoint, request, result) }
+        });
+        assert_eq!(status, GARAGE_MCP_OK);
+        assert_eq!(reply["status"], 200);
+        assert!(reply["headers"]["mcp-session-id"].is_string());
+
+        let (status, reply) = call("[]", |request, result| {
+            // SAFETY: as above.
+            unsafe { garage_mcp_endpoint_exchange(endpoint, request, result) }
+        });
+        assert_eq!(status, GARAGE_MCP_BAD_REQUEST);
+        assert!(reply["error"].is_string());
+
+        // SAFETY: made above, freed once, nothing running.
+        unsafe { garage_mcp_endpoint_free(endpoint) };
     }
 }

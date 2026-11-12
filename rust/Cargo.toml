@@ -3,6 +3,8 @@
 [workspace]
 resolver = "3"
 members = [
+    "garage-access",
+    "garage-access-none",
     "garage-cli",
     "garage-cli-uniffi",
     "garage-embed",
@@ -20,6 +22,7 @@ members = [
     "garage-readers",
     "garage-service",
     "garage-service-ffi",
+    "garage-spotlight",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -29,6 +32,8 @@ members = [
 ]
 # protogen needs protoc; everything else builds without it.
 default-members = [
+    "garage-access",
+    "garage-access-none",
     "garage-cli",
     "garage-cli-uniffi",
     "garage-embed",
@@ -46,6 +51,7 @@ default-members = [
     "garage-readers",
     "garage-service",
     "garage-service-ffi",
+    "garage-spotlight",
     "garage-text",
     "garage-text-ffi",
     "garage-text-plugin",
@@ -62,6 +68,9 @@ repository = "https://github.com/lwm-luminx/garage-rag"
 publish = false
 
 [workspace.dependencies]
+garage-access = { path = "garage-access" }
+# The access extension this build links (docs/plans/access-hooks.md): none, in garage-rag.
+garage-access-extension = { path = "garage-access-none", package = "garage-access-none" }
 garage-embed = { path = "garage-embed" }
 garage-cli-uniffi = { path = "garage-cli-uniffi" }
 garage-embed-uniffi = { path = "garage-embed-uniffi" }
@@ -72,12 +81,15 @@ garage-mcp = { path = "garage-mcp" }
 garage-ocr = { path = "garage-ocr", default-features = false }
 garage-readers = { path = "garage-readers", default-features = false }
 garage-service = { path = "garage-service" }
+garage-spotlight = { path = "garage-spotlight" }
 garage-plugin = { path = "garage-plugin" }
 garage-text = { path = "garage-text" }
 indexmap = "2.14"
 # LangExtract's prompt, parse and alignment steps (no I/O of its own) behind EnrichFacts' FactExtractor.
 langextract-rs = "0.1.0"
 libc = "0.2"
+# MCP registration tokens (rust/garage-service/src/registrations.rs): the system's random source.
+getrandom = "0.4"
 # Apple Messages' chat.db, thread by thread: the FOSS markdown-extract crates (docs/plans/rust-plugins.md).
 messages-markdown = "0.1.0"
 # The readers for mail, PDF and Office files, from the same markdown-extract crates.

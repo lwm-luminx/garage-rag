@@ -1,17 +1,19 @@
 load("@rules_apple//apple:macos.bzl", "macos_ui_test")
 load("@rules_swift//swift:swift.bzl", "swift_library")
 
-# The base test case and the fixture corpus's description, compiled into
-# //macapp/Tests/GarageAppModelUITests too. That bundle cannot link this library: XCTest would
-# then run every test here in it as well.
+# The base test cases and the fixture corpus's description, compiled into
+# //macapp/Tests/GarageAppModelUITests too, and into the UI tests of a repository that builds the
+# signed distributions (StoreUITestCase launches its App Store build). A bundle cannot link this
+# library instead: XCTest would then run every test here in it as well.
 filegroup(
     name = "support_srcs",
     testonly = True,
     srcs = [
         "FixtureCorpus.swift",
         "GarageUITestCase.swift",
+        "StoreUITestCase.swift",
     ],
-    visibility = ["//macapp/Tests/GarageAppModelUITests:__pkg__"],
+    visibility = ["//visibility:public"],
 )
 
 swift_library(

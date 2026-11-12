@@ -63,8 +63,15 @@ pub async fn add_source(
 ) -> Result<AddSourceResult> {
     check_choice(trust, &TRUST_TIERS, "TrustTier")?;
     check_choice(corpus_class, &CORPUS_CLASSES, "CorpusClass")?;
-    let expanded = expand_home(Path::new(root));
-    if let Err(e) = std::fs::metadata(&expanded)
+    let cloud = garage_ingest::is_cloud_kind(kind);
+    let expanded = if cloud {
+        // A folder in the cloud service (Dropbox, OneDrive, a mailbox, Google Drive, a Gmail label): whether it exists is the service's to say, at the first ingest.
+        std::path::PathBuf::from(garage_ingest::dropbox::display_root(root))
+    } else {
+        expand_home(Path::new(root))
+    };
+    if !cloud
+        && let Err(e) = std::fs::metadata(&expanded)
         && e.kind() != std::io::ErrorKind::PermissionDenied
     {
         return Err(ServiceError::invalid(format!("{} does not exist", expanded.display())));

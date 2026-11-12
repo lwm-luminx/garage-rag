@@ -9,6 +9,7 @@
 //! walk ran out of files.
 
 use std::ops::ControlFlow;
+use std::path::PathBuf;
 
 use serde_json::{Map, Value};
 
@@ -95,6 +96,13 @@ pub trait SourceHost: FileHost {
         (0, 0)
     }
 
+    /// The host's cloud side, for a cloud source ([`crate::dropbox`], [`crate::onedrive`],
+    /// [`crate::outlook`], [`crate::google_drive`], [`crate::gmail`]);
+    /// none by default.
+    fn remote(&mut self) -> Option<&mut dyn crate::dropbox::RemoteHost> {
+        None
+    }
+
     /// The names iMessage contacts shared, as `(handle, name)`, from the `NickNameCache` beside a Messages
     /// database in `directory` (`extract/nicknames.py`'s `read_shared_names`); none by default.
     fn shared_names(&mut self, _directory: &std::path::Path) -> Vec<(String, String)> {
@@ -111,6 +119,8 @@ pub struct SourceRun {
     pub walk_stats: WalkStats,
     /// Whether the walk ran out of files, so the run covered the whole source.
     pub completed: bool,
+    /// Files a linked cloud source read from its desktop client's folder instead of downloading.
+    pub read_locally: u64,
 }
 
 /// A run that failed as a whole.
@@ -141,6 +151,9 @@ pub struct SourceOptions {
     pub limit: Option<u64>,
     /// A Messages (`sqlite`) source: its databases are read thread by thread, not walked.
     pub messages: bool,
+    /// A cloud source's desktop client folder on this node (`dropbox::local_folder`): a listed file
+    /// whose copy there is on disk and matches is read from it instead of downloaded.
+    pub local_folder: Option<PathBuf>,
 }
 
 /// `st_mtime` as Python's walker hands it on: through `datetime.fromtimestamp(..., UTC).timestamp()`,
@@ -372,7 +385,13 @@ mod tests {
             policy: &policy,
             force: false,
         };
-        ingest_source(host, storage, &context, scan, &SourceOptions { include_code: false, limit, messages: false })
+        ingest_source(
+            host,
+            storage,
+            &context,
+            scan,
+            &SourceOptions { include_code: false, limit, messages: false, local_folder: None },
+        )
     }
 
     #[test]
