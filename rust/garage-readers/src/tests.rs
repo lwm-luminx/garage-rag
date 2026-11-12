@@ -235,3 +235,57 @@ fn author_hints_drop_tool_names_and_duplicates() {
         ["Nell Oduya", "Tomas Brandt"]
     );
 }
+
+/// A one-page PDF whose page sits `depth` /Pages nodes down, as a real file's page tree did when it
+/// overflowed the Mac app's 512 KB ingest thread.
+fn deep_page_tree_pdf(depth: usize) -> Vec<u8> {
+    let mut objects: Vec<String> = vec!["<< /Type /Catalog /Pages 2 0 R >>".to_owned()];
+    // Objects 2 ..= depth + 1 are the /Pages chain; depth + 2 the page, depth + 3 its content, depth + 4 the font.
+    for level in 0..depth {
+        let id = level + 2;
+        let parent = if level == 0 { String::new() } else { format!(" /Parent {} 0 R", id - 1) };
+        objects.push(format!("<< /Type /Pages /Kids [{} 0 R] /Count 1{parent} >>", id + 1));
+    }
+    let page = depth + 2;
+    objects.push(format!(
+        "<< /Type /Page /Parent {} 0 R /MediaBox [0 0 612 792] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>",
+        page - 1,
+        page + 1,
+        page + 2
+    ));
+    let stream = "BT /F1 18 Tf 72 720 Td (Knots worth knowing about deep trees) Tj ET";
+    objects.push(format!("<< /Length {} >>\nstream\n{stream}\nendstream", stream.len()));
+    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned());
+
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes(),
+    );
+    pdf
+}
+
+#[test]
+fn a_deep_page_tree_reads_on_a_small_stack() {
+    let folder = folder("deep-pdf");
+    let path = write(&folder, "deep.pdf", &deep_page_tree_pdf(3_000));
+    // A GCD worker's stack, which the Mac app's ingest runs on.
+    let outcome = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || Readers::new(Settings::default()).read(&path))
+        .unwrap()
+        .join()
+        .unwrap();
+    let read = document(outcome);
+    assert!(read.text.contains("Knots worth knowing"), "{}", read.text);
+    std::fs::remove_dir_all(&folder).unwrap();
+}

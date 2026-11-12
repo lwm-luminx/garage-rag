@@ -249,15 +249,19 @@ impl Readers {
                 return ReadOutcome::Failed(format!("{}: {error}", path.display()));
             }
         };
-        let outcome = match reader {
+        if reader == Reader::Image {
+            return self.image(path, &bytes);
+        }
+        let settings = &self.settings;
+        let outcome = on_parser_stack(|| match reader {
             Reader::Text(kind) => Ok(text_document(kind, path, &bytes)),
             Reader::Mail => mail_document(path, &bytes),
-            Reader::Pdf => pdf_document(path, &bytes, &self.settings),
+            Reader::Pdf => pdf_document(path, &bytes, settings),
             Reader::Docx => office_document(path, &bytes, office_markdown::Format::Docx),
             Reader::Pptx => office_document(path, &bytes, office_markdown::Format::Pptx),
             Reader::Xlsx => office_document(path, &bytes, office_markdown::Format::Spreadsheet),
-            Reader::Image => return self.image(path, &bytes),
-        };
+            Reader::Image => unreachable!("pictures are read above"),
+        });
         match outcome {
             Ok(document) if garage_text::text::py_strip(&document.text).is_empty() => {
                 ReadOutcome::NoText(format!("extractor {} produced no text: {}", document.extractor, path.display()))
@@ -433,6 +437,30 @@ pub fn clean_author_hints<S: AsRef<str>>(values: &[S]) -> Vec<String> {
         out.push(candidate.chars().take(200).collect());
     }
     out
+}
+
+/// The stack a document parser runs on. The PDF reader walks a page tree, and the mail and Office
+/// readers their documents, by recursion as deep as the file nests; a GCD worker thread, which runs
+/// the Mac app's ingest, has 512 KB, and a real PDF's page tree overflowed it and took the whole app
+/// down. The stack is reserved, not committed, so a large one costs only address space.
+const PARSER_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+/// Runs `parse` on a thread of its own with [`PARSER_STACK_BYTES`] of stack, so a deeply nested
+/// document is read wherever the caller's thread came from. When no such thread can be made it runs
+/// on the caller's.
+fn on_parser_stack<T: Send>(parse: impl FnOnce() -> T + Send) -> T {
+    let slot = std::sync::Mutex::new(Some(parse));
+    let take = || slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take().expect("parsed once");
+    std::thread::scope(|scope| {
+        let spawned = std::thread::Builder::new()
+            .name("garage-readers-parse".to_owned())
+            .stack_size(PARSER_STACK_BYTES)
+            .spawn_scoped(scope, || take()());
+        match spawned {
+            Ok(handle) => handle.join().unwrap_or_else(|panic| std::panic::resume_unwind(panic)),
+            Err(_) => take()(),
+        }
+    })
 }
 
 fn truncated(value: &str, limit: usize) -> String {
