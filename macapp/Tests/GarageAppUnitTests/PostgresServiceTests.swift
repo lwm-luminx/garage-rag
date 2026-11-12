@@ -10,6 +10,20 @@ final class PostgresServiceTests: XCTestCase {
         XCTAssertEqual(service.status, .stopped)
     }
 
+    func testLeftoverServerLinesAreRecognized() {
+        // What our postmaster prints when one left by a crashed run still holds the cluster.
+        XCTAssertTrue(PostgresService.isLeftoverServerLine(
+            "FATAL:  pre-existing shared memory block is still in use"
+        ))
+        XCTAssertTrue(PostgresService.isLeftoverServerLine(
+            "FATAL:  lock file \"postmaster.pid\" already exists"
+        ))
+        XCTAssertFalse(PostgresService.isLeftoverServerLine("LOG:  database system is ready to accept connections"))
+        XCTAssertFalse(PostgresService.isLeftoverServerLine("FATAL:  could not load library \"vector.dylib\""))
+        // Waiting outlasts Postgres's one-minute lock file recheck, after which the leftover exits.
+        XCTAssertGreaterThan(PostgresService.leftoverServerGrace, 60)
+    }
+
     @MainActor
     func testDefaultPortAndDatabase() {
         let service = PostgresService()

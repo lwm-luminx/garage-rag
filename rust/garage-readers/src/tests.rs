@@ -235,3 +235,70 @@ fn author_hints_drop_tool_names_and_duplicates() {
         ["Nell Oduya", "Tomas Brandt"]
     );
 }
+
+/// A one-page PDF whose page sits `depth` /Pages nodes down, as a real file's page tree did when it
+/// overflowed the Mac app's 512 KB ingest thread.
+pub(crate) fn deep_page_tree_pdf(depth: usize) -> Vec<u8> {
+    let mut objects: Vec<String> = vec!["<< /Type /Catalog /Pages 2 0 R >>".to_owned()];
+    // Objects 2 ..= depth + 1 are the /Pages chain; depth + 2 the page, depth + 3 its content, depth + 4 the font.
+    for level in 0..depth {
+        let id = level + 2;
+        let parent = if level == 0 { String::new() } else { format!(" /Parent {} 0 R", id - 1) };
+        objects.push(format!("<< /Type /Pages /Kids [{} 0 R] /Count 1{parent} >>", id + 1));
+    }
+    let page = depth + 2;
+    objects.push(format!(
+        "<< /Type /Page /Parent {} 0 R /MediaBox [0 0 612 792] /Contents {} 0 R /Resources << /Font << /F1 {} 0 R >> >> >>",
+        page - 1,
+        page + 1,
+        page + 2
+    ));
+    let stream = "BT /F1 18 Tf 72 720 Td (Knots worth knowing about deep trees) Tj ET";
+    objects.push(format!("<< /Length {} >>\nstream\n{stream}\nendstream", stream.len()));
+    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>".to_owned());
+
+    let mut pdf = b"%PDF-1.4\n".to_vec();
+    let mut offsets = Vec::new();
+    for (index, object) in objects.iter().enumerate() {
+        offsets.push(pdf.len());
+        pdf.extend_from_slice(format!("{} 0 obj\n{object}\nendobj\n", index + 1).as_bytes());
+    }
+    let xref = pdf.len();
+    pdf.extend_from_slice(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes());
+    for offset in offsets {
+        pdf.extend_from_slice(format!("{offset:010} 00000 n \n").as_bytes());
+    }
+    pdf.extend_from_slice(
+        format!("trailer\n<< /Size {} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF\n", objects.len() + 1).as_bytes(),
+    );
+    pdf
+}
+
+#[test]
+fn a_deep_page_tree_parses_on_a_small_stack() {
+    // A GCD worker's 512 KB, which the Mac app's ingest runs on, overflowed before parsers had a
+    // stack of their own (a real 160-page file nests 161 deep).
+    let bytes = deep_page_tree_pdf(3_000);
+    let text = std::thread::Builder::new()
+        .stack_size(512 * 1024)
+        .spawn(move || on_parser_stack(|| pdf_markdown::convert_with(&bytes, &pdf_markdown::Options::default())))
+        .unwrap()
+        .join()
+        .unwrap()
+        .unwrap()
+        .markdown;
+    assert!(text.contains("Knots worth knowing"), "{text}");
+}
+
+#[test]
+fn a_page_tree_past_the_limit_is_refused_with_its_reason() {
+    let folder = folder("deep-pdf");
+    let mut readers = Readers::new(Settings::default());
+    let shallow = document(readers.read(&write(&folder, "shallow.pdf", &deep_page_tree_pdf(40))));
+    assert!(shallow.text.contains("Knots worth knowing"), "{}", shallow.text);
+    match readers.read(&write(&folder, "deep.pdf", &deep_page_tree_pdf(5_000))) {
+        ReadOutcome::Failed(reason) => assert!(reason.contains("page tree nests more than 4096 levels"), "{reason}"),
+        other => panic!("not refused: {other:?}"),
+    }
+    std::fs::remove_dir_all(&folder).unwrap();
+}
