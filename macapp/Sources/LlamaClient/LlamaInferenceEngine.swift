@@ -168,6 +168,12 @@ public extension LlamaInferenceEngine {
 
 private func normalizeRoutePath(_ path: String) -> String {
     var p = path.trimmingCharacters(in: .whitespacesAndNewlines)
+    // An absolute-form request target (`http://localhost/v1/embeddings`), which garage-service's
+    // host sends over the Unix socket, where the XPC route passes only a path.
+    if let scheme = p.range(of: "://") {
+        let rest = p[scheme.upperBound...]
+        p = rest.firstIndex(where: { $0 == "/" || $0 == "?" }).map { String(rest[$0...]) } ?? "/"
+    }
     if let queryIndex = p.firstIndex(of: "?") {
         p = String(p[..<queryIndex])
     }
