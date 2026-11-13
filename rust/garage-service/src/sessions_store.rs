@@ -31,21 +31,14 @@ pub async fn persist_session_payload(
     let Some(raw) = session_json.filter(|s| !s.trim().is_empty()) else {
         return Ok(HashMap::new());
     };
-    let parsed_val: Value = serde_json::from_str(raw)
-        .map_err(|e| ServiceError::invalid(format!("invalid session_json: {e}")))?;
+    let parsed_val: Value =
+        serde_json::from_str(raw).map_err(|e| ServiceError::invalid(format!("invalid session_json: {e}")))?;
     let payload = SessionWritePayload::from_json(&parsed_val).map_err(ServiceError::invalid)?;
 
     match payload {
         SessionWritePayload::ArtifactLink { session_external_id, artifact_external_id } => {
-            link_artifact_document(
-                tx,
-                source_id,
-                doc_id,
-                content_hash,
-                &session_external_id,
-                &artifact_external_id,
-            )
-            .await?;
+            link_artifact_document(tx, source_id, doc_id, content_hash, &session_external_id, &artifact_external_id)
+                .await?;
             Ok(HashMap::new())
         }
         SessionWritePayload::Session(record) => {
@@ -66,11 +59,7 @@ async fn link_artifact_document(
     session_external_id: &str,
     artifact_external_id: &str,
 ) -> Result<()> {
-    tx.execute(
-        "UPDATE session_artifacts SET document_id = NULL WHERE document_id = $1",
-        &[&doc_id],
-    )
-    .await?;
+    tx.execute("UPDATE session_artifacts SET document_id = NULL WHERE document_id = $1", &[&doc_id]).await?;
     tx.execute(
         "UPDATE session_artifacts sa \
          SET document_id = $1, content_sha256 = $2 \
@@ -157,17 +146,11 @@ async fn upsert_session_row(
     content_hash: &[u8],
     record: &SessionRecord,
 ) -> Result<i64> {
-    let parent_ext = record
-        .parent_external_id
-        .as_deref()
-        .filter(|p| !p.is_empty() && *p != record.external_id);
+    let parent_ext = record.parent_external_id.as_deref().filter(|p| !p.is_empty() && *p != record.external_id);
     let parent_session_id = if let Some(p_ext) = parent_ext {
-        tx.query_opt(
-            "SELECT id FROM sessions WHERE source_id = $1 AND external_id = $2",
-            &[&source_id, &p_ext],
-        )
-        .await?
-        .map(|r| r.get::<_, i64>(0))
+        tx.query_opt("SELECT id FROM sessions WHERE source_id = $1 AND external_id = $2", &[&source_id, &p_ext])
+            .await?
+            .map(|r| r.get::<_, i64>(0))
     } else {
         None
     };
@@ -234,10 +217,8 @@ async fn sync_session_turns(
     surface: &str,
     turns: &[SessionTurnRecord],
 ) -> Result<HashMap<String, i64>> {
-    let self_author_id: Option<i64> = tx
-        .query_opt("SELECT id FROM authors WHERE is_self ORDER BY id LIMIT 1", &[])
-        .await?
-        .map(|r| r.get(0));
+    let self_author_id: Option<i64> =
+        tx.query_opt("SELECT id FROM authors WHERE is_self ORDER BY id LIMIT 1", &[]).await?.map(|r| r.get(0));
     let mut model_authors: HashMap<String, i64> = HashMap::new();
     let mut turn_ids: HashMap<String, i64> = HashMap::with_capacity(turns.len());
     let mut kept_ids: Vec<i64> = Vec::with_capacity(turns.len());
@@ -287,22 +268,15 @@ async fn sync_session_turns(
     if kept_ids.is_empty() {
         tx.execute("DELETE FROM session_turns WHERE session_id = $1", &[&session_id]).await?;
     } else {
-        tx.execute(
-            "DELETE FROM session_turns WHERE session_id = $1 AND NOT (id = ANY($2))",
-            &[&session_id, &kept_ids],
-        )
-        .await?;
+        tx.execute("DELETE FROM session_turns WHERE session_id = $1 AND NOT (id = ANY($2))", &[&session_id, &kept_ids])
+            .await?;
     }
 
     for (turn_id, parent_ext) in deferred_parents {
         if let Some(&parent_id) = turn_ids.get(&parent_ext)
             && parent_id != turn_id
         {
-            tx.execute(
-                "UPDATE session_turns SET parent_turn_id = $2 WHERE id = $1",
-                &[&turn_id, &parent_id],
-            )
-            .await?;
+            tx.execute("UPDATE session_turns SET parent_turn_id = $2 WHERE id = $1", &[&turn_id, &parent_id]).await?;
         }
     }
     Ok(turn_ids)
@@ -376,10 +350,7 @@ async fn replace_session_tool_calls(
     let mut per_turn_ord: HashMap<i64, i32> = HashMap::new();
     for call in calls {
         let Some(&turn_id) = turn_ids.get(&call.turn_external_id) else { continue };
-        let result_turn_id = call
-            .result_turn_external_id
-            .as_deref()
-            .and_then(|ext| turn_ids.get(ext).copied());
+        let result_turn_id = call.result_turn_external_id.as_deref().and_then(|ext| turn_ids.get(ext).copied());
         let next_ord = per_turn_ord.entry(turn_id).or_insert(0);
         let ord = if call.ord >= *next_ord { call.ord } else { *next_ord };
         *next_ord = ord + 1;
@@ -443,26 +414,13 @@ async fn sync_session_artifacts(
         let id: i64 = tx
             .query_one(
                 &stmt,
-                &[
-                    &session_id,
-                    &turn_id,
-                    &art.external_id,
-                    &art.kind,
-                    &art.title,
-                    &art.mime,
-                    &art.uri,
-                    &sha,
-                    &meta,
-                ],
+                &[&session_id, &turn_id, &art.external_id, &art.kind, &art.title, &art.mime, &art.uri, &sha, &meta],
             )
             .await?
             .get(0);
         kept_ids.push(id);
     }
-    tx.execute(
-        "DELETE FROM session_artifacts WHERE session_id = $1 AND NOT (id = ANY($2))",
-        &[&session_id, &kept_ids],
-    )
-    .await?;
+    tx.execute("DELETE FROM session_artifacts WHERE session_id = $1 AND NOT (id = ANY($2))", &[&session_id, &kept_ids])
+        .await?;
     Ok(())
 }

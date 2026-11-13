@@ -134,16 +134,11 @@ pub fn render_session(
     max_chunks: usize,
 ) -> Result<(String, Vec<SynthesizedTurnChunk>), String> {
     let header = session_header(record);
-    let mut active_turns: Vec<&SessionTurnRecord> =
-        record.turns.iter().filter(|t| t.active_ord.is_some()).collect();
+    let mut active_turns: Vec<&SessionTurnRecord> = record.turns.iter().filter(|t| t.active_ord.is_some()).collect();
     active_turns.sort_by_key(|t| t.active_ord.unwrap_or(i32::MAX));
 
     if active_turns.is_empty() {
-        let fallback = format!(
-            "{header}\n\nTurns: {}, Tool calls: {}",
-            record.turns.len(),
-            record.tool_calls.len()
-        );
+        let fallback = format!("{header}\n\nTurns: {}, Tool calls: {}", record.turns.len(), record.tool_calls.len());
         let len = fallback.chars().count();
         return Ok((
             fallback.clone(),
@@ -173,15 +168,7 @@ pub fn render_session(
         offset += 2; // "\n\n" separator
         let length = paragraph.chars().count();
         if chunks.len() < cap {
-            append_turn_chunks(
-                &paragraph,
-                offset,
-                chunk_size,
-                cap,
-                record,
-                turn,
-                &mut chunks,
-            )?;
+            append_turn_chunks(&paragraph, offset, chunk_size, cap, record, turn, &mut chunks)?;
         }
         parts.push(paragraph);
         offset += length;
@@ -201,11 +188,7 @@ fn append_turn_chunks(
     let pieces: Vec<String> = if paragraph.chars().count() <= chunk_size {
         vec![paragraph.to_owned()]
     } else {
-        chunk_prose(paragraph, chunk_size, 0)
-            .map_err(|e| e.to_string())?
-            .into_iter()
-            .map(|c| c.text)
-            .collect()
+        chunk_prose(paragraph, chunk_size, 0).map_err(|e| e.to_string())?.into_iter().map(|c| c.text).collect()
     };
     let sender = if turn.is_self || turn.role == "user" {
         Some("me".to_owned())
@@ -332,8 +315,7 @@ fn ingest_parsed_session(
 ) -> Result<(u64, u64, u64), String> {
     let size = context.settings.chunk_size;
     let sig = signature(size);
-    let (text, synth_chunks) =
-        render_session(&parsed.record, size, context.settings.max_chunks_per_document)?;
+    let (text, synth_chunks) = render_session(&parsed.record, size, context.settings.max_chunks_per_document)?;
     let content_hash = hex_digest(text.as_bytes());
     let existing = storage.check_stat(&parsed.uri)?;
     let session_unchanged = existing.exists
@@ -351,11 +333,7 @@ fn ingest_parsed_session(
         storage.record_seen(&parsed.uri)?;
         skipped += 1;
     } else {
-        let title = parsed
-            .record
-            .title
-            .clone()
-            .unwrap_or_else(|| parsed.record.external_id.clone());
+        let title = parsed.record.title.clone().unwrap_or_else(|| parsed.record.external_id.clone());
         let meta = build_session_meta(&parsed.record);
         let session_json = SessionWritePayload::Session(Box::new(parsed.record)).to_json().to_string();
         let chunks = synth_chunks
@@ -423,8 +401,7 @@ fn ingest_companion_document(
     } else {
         (context.settings.chunk_size, context.settings.chunk_overlap)
     };
-    let raw_chunks = chunk_text(&comp.text, kind, &comp.extension, size, overlap)
-        .map_err(|e| e.to_string())?;
+    let raw_chunks = chunk_text(&comp.text, kind, &comp.extension, size, overlap).map_err(|e| e.to_string())?;
     let chunker_name = raw_chunks.first().map_or("markdown", |c| c.chunker.as_str());
     let sig = format!("{}:{chunker_name}:{size}:{overlap}", if is_code { "code" } else { "markdown" });
     let content_hash = hex_digest(comp.text.as_bytes());
@@ -536,11 +513,7 @@ pub fn ingest_sessions_source(
         match item {
             Ok(parsed) => {
                 let uri = parsed.uri.clone();
-                let label = parsed
-                    .record
-                    .title
-                    .clone()
-                    .unwrap_or_else(|| parsed.record.external_id.clone());
+                let label = parsed.record.title.clone().unwrap_or_else(|| parsed.record.external_id.clone());
                 match ingest_parsed_session(storage, parsed, context) {
                     Ok((indexed, skipped, written)) => {
                         counters.indexed += indexed;

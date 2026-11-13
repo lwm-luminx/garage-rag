@@ -654,7 +654,7 @@ fn settings_are_written_and_reloaded_and_clients_are_registered() {
             assert!(unknown.message().starts_with("unknown target 'emacs'; choose from project, "));
 
             let status = client.mcp_status(proto::McpStatusRequest {}).await.unwrap().into_inner();
-            assert_eq!(status.clients.len(), 10);
+            assert_eq!(status.clients.len(), 14);
             assert_eq!(status.clients[0].key, "project");
             assert!(status.server_command.contains("garage-mcp"));
 

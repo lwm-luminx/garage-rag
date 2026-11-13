@@ -26,11 +26,7 @@ struct DiscoveredBrain {
 }
 
 /// Counts Antigravity conversations under `root` for `scan_source`.
-pub(super) fn count_antigravity_items(
-    root: &Path,
-    details: &mut Map<String, Value>,
-    mut tick: impl FnMut(u64),
-) -> u64 {
+pub(super) fn count_antigravity_items(root: &Path, details: &mut Map<String, Value>, mut tick: impl FnMut(u64)) -> u64 {
     let (brains, zips) = discover_antigravity_targets(root);
     let mut total = brains.len() as u64;
     let mut companion_files = 0_u64;
@@ -501,10 +497,7 @@ impl AntigravityState {
         }
         let in_tok = obj.get("input_tokens").and_then(Value::as_i64).and_then(|n| i32::try_from(n).ok());
         let out_tok = obj.get("output_tokens").and_then(Value::as_i64).and_then(|n| i32::try_from(n).ok());
-        let cache_tok = obj
-            .get("cache_read_tokens")
-            .and_then(Value::as_i64)
-            .and_then(|n| i32::try_from(n).ok());
+        let cache_tok = obj.get("cache_read_tokens").and_then(Value::as_i64).and_then(|n| i32::try_from(n).ok());
         if in_tok.is_some() || out_tok.is_some() || cache_tok.is_some() {
             self.has_tokens = true;
             self.input_tokens += i64::from(in_tok.unwrap_or(0));
@@ -515,8 +508,8 @@ impl AntigravityState {
         if let Some(calls) = obj.get("tool_calls").and_then(Value::as_array) {
             for (c_idx, call_val) in calls.iter().enumerate() {
                 let Some(call_obj) = call_val.as_object() else { continue };
-                let name = clean_opt(call_obj.get("name").and_then(Value::as_str), true)
-                    .unwrap_or_else(|| "tool".to_owned());
+                let name =
+                    clean_opt(call_obj.get("name").and_then(Value::as_str), true).unwrap_or_else(|| "tool".to_owned());
                 let mut args = call_obj
                     .get("args")
                     .or_else(|| call_obj.get("arguments"))
@@ -656,12 +649,7 @@ impl AntigravityState {
         }
     }
 
-    fn finish(
-        mut self,
-        bytes: &[u8],
-        mtime: f64,
-        companions_in: Vec<CompanionInput>,
-    ) -> (ParsedSession, Vec<String>) {
+    fn finish(mut self, bytes: &[u8], mtime: f64, companions_in: Vec<CompanionInput>) -> (ParsedSession, Vec<String>) {
         let mut active_ord = 0_i32;
         for turn in &mut self.turns {
             if matches!(turn.role.as_str(), "user" | "assistant")
@@ -759,10 +747,7 @@ fn extract_subagent_conversation_id(output: &str) -> Option<String> {
     for prefix in ["\"conversationId\":\"", "\"conversationId\": \"", "conversationId: "] {
         if let Some(idx) = output.find(prefix) {
             let rest = &output[idx + prefix.len()..];
-            let id: String = rest
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
-                .collect();
+            let id: String = rest.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-').collect();
             if id.len() >= 8 {
                 return Some(id);
             }
