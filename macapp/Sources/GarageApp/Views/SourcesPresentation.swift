@@ -83,6 +83,9 @@ struct SourceRowPresentation: Equatable {
     /// stands in for it.
     let progress: Double?
     let isIndeterminate: Bool
+    /// An up-to-date source has nothing in progress, so its bar is hidden (its space kept, so the
+    /// rows stay the same height); every other state shows it.
+    var showsProgressBar: Bool { isIndeterminate || status != Self.upToDateStatus }
     /// The counts at the right of the status line, in monospace.
     let counts: String?
     let currentItem: String?
@@ -91,6 +94,8 @@ struct SourceRowPresentation: Equatable {
     let showsCancel: Bool
     let cancelTitle: String
     let cancelDisabled: Bool
+
+    static let upToDateStatus = "Up to date"
 
     static func make(
         source: RegisteredSource,
@@ -102,7 +107,7 @@ struct SourceRowPresentation: Equatable {
         cloudLink: GarageCloudLinkStatus? = nil
     ) -> SourceRowPresentation {
         let symbol = Self.symbol(for: source)
-        let tint = Self.tint(forCorpusClass: source.corpusClass)
+        let tint = Self.tint(forKind: source.kind, corpusClass: source.corpusClass)
         var badges: [Badge] = []
 
         // What the person set up, before what the pipeline is doing.
@@ -156,8 +161,9 @@ struct SourceRowPresentation: Equatable {
         var cancelTitle = "Cancel"
         var cancelDisabled = false
 
+        let coveredCount = source.documentCount + source.additionalDocumentCount
         let indexedFraction: Double? = source.expectedElements > 0
-            ? min(1, Double(source.documentCount) / Double(max(source.documentCount, source.expectedElements)))
+            ? min(1, Double(coveredCount) / Double(max(coveredCount, source.expectedElements)))
             : nil
 
         switch activity {
@@ -211,7 +217,7 @@ struct SourceRowPresentation: Equatable {
                 status = "Disabled: skipped by every scan and ingest"
                 tone = .neutral
                 counts = Self.indexedCounts(for: source)
-            } else if source.documentCount == 0 {
+            } else if coveredCount == 0 {
                 if source.expectedElements > 0 {
                     status = "\(source.expectedElements.formatted()) \(Self.plural("item", source.expectedElements)) found, none indexed yet"
                 } else {
@@ -219,16 +225,18 @@ struct SourceRowPresentation: Equatable {
                 }
                 tone = .neutral
                 progress = indexedFraction
-            } else if source.expectedElements > source.documentCount {
-                let remaining = source.expectedElements - source.documentCount
+            } else if source.expectedElements > coveredCount {
+                let remaining = source.expectedElements - coveredCount
                 status = "\(remaining.formatted()) \(Self.plural("item", remaining)) to go"
                 tone = .active
                 progress = indexedFraction
                 counts = Self.indexedCounts(for: source)
             } else {
-                status = "Up to date"
+                status = Self.upToDateStatus
                 tone = .good
-                counts = Self.indexedCounts(for: source)
+                // Nothing left to index: the count alone, not "39 of 37" against a scan that is
+                // older than the documents it counted.
+                counts = Self.documentCountsText(for: source)
                 if let lastRun, lastRun.wasCancelled {
                     status = "Last ingest was cancelled"
                     tone = .neutral
@@ -236,7 +244,7 @@ struct SourceRowPresentation: Equatable {
             }
             // A row with nothing to count still draws a bar: full when it has documents, empty when not.
             if progress == nil {
-                progress = source.documentCount > 0 ? 1 : 0
+                progress = coveredCount > 0 ? 1 : 0
             }
         }
 
@@ -259,12 +267,24 @@ struct SourceRowPresentation: Equatable {
         )
     }
 
+    static func documentCountsText(for source: RegisteredSource) -> String {
+        let base = "\(source.documentCount.formatted()) \(plural("document", source.documentCount))"
+        if source.additionalDocumentCount > 0 {
+            return "\(base) · \(source.additionalDocumentCount.formatted()) linked"
+        }
+        return base
+    }
+
     /// "1,180 of 1,204 documents" when a scan counted the folder, "1,204 documents" otherwise.
     static func indexedCounts(for source: RegisteredSource) -> String {
         if source.expectedElements > 0 {
-            return "\(source.documentCount.formatted()) of \(source.expectedElements.formatted()) documents"
+            let base = "\(source.documentCount.formatted()) of \(source.expectedElements.formatted()) documents"
+            if source.additionalDocumentCount > 0 {
+                return "\(base) · \(source.additionalDocumentCount.formatted()) linked"
+            }
+            return base
         }
-        return "\(source.documentCount.formatted()) \(plural("document", source.documentCount))"
+        return documentCountsText(for: source)
     }
 
     static func runCounts(seen: Int, total: Int, indexed: Int, skipped: Int, failed: Int, itemType: String) -> String {
@@ -297,12 +317,16 @@ struct SourceRowPresentation: Equatable {
             return "chevron.left.forwardslash.chevron.right"
         case "feed":
             return "dot.radiowaves.up.forward"
+        case "claude", "chatgpt", "antigravity":
+            return "sparkles"
         case "dropbox":
             return "shippingbox"
         case "onedrive", "google_drive":
             return "cloud"
         case "outlook", "gmail":
             return "envelope"
+        case "spotlight":
+            return "magnifyingglass"
         default:
             break
         }
@@ -318,6 +342,15 @@ struct SourceRowPresentation: Equatable {
         if root.contains("mobile documents") || root.contains("icloud") { return "icloud" }
         if source.corpusClass == "code" { return "chevron.left.forwardslash.chevron.right" }
         return "folder"
+    }
+
+    /// The source kinds that read AI assistant transcripts (Claude, Codex / ChatGPT, Antigravity).
+    static let aiTranscriptKinds: Set<String> = ["claude", "chatgpt", "antigravity"]
+
+    /// The circle's colour for a source: AI transcripts are communications, but get their own indigo so
+    /// they don't read as Messages or Mail; everything else follows the corpus class.
+    static func tint(forKind kind: String, corpusClass: String) -> Color {
+        aiTranscriptKinds.contains(kind.lowercased()) ? .indigo : tint(forCorpusClass: corpusClass)
     }
 
     /// The circle's colour follows the corpus class, as `CorpusClassBadge` does.
@@ -661,7 +694,7 @@ enum SourcesSummary {
 /// `GarageCloudCredentials` provider is installed in this process (the App Store build's, through Garage
 /// Door); the open-source build keeps the kinds but has no account to read them with.
 enum SourceKinds {
-    static let local = ["filesystem", "git", "sqlite", "maildir", "feed"]
+    static let local = ["filesystem", "git", "sqlite", "maildir", "feed", "claude", "chatgpt", "antigravity", "spotlight"]
     static let cloud = ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
 
     static func offered(cloudAvailable: Bool) -> [String] {
@@ -675,6 +708,10 @@ enum SourceKinds {
     /// The picker's label for a kind.
     static func title(_ kind: String) -> String {
         switch kind.lowercased() {
+        case "claude": "Claude"
+        case "chatgpt": "ChatGPT / Codex"
+        case "antigravity": "Antigravity"
+        case "spotlight": "Spotlight"
         case "dropbox": "Dropbox"
         case "onedrive": "OneDrive"
         case "outlook": "Outlook mail"
@@ -691,6 +728,10 @@ enum SourceKinds {
         case "sqlite": "a SQLite database (Messages)"
         case "maildir": "mailboxes"
         case "feed": "a feed"
+        case "claude": "Claude Code, Cowork, or Claude Web sessions"
+        case "chatgpt": "Codex sessions or a ChatGPT export"
+        case "antigravity": "Antigravity sessions and artifacts"
+        case "spotlight": "files indexed by macOS Spotlight under a folder, linking any already in Garage"
         case "dropbox": "a folder in your Dropbox"
         case "onedrive": "a folder in your OneDrive"
         case "outlook": "an Outlook mail folder and those below it"
@@ -703,6 +744,10 @@ enum SourceKinds {
     /// The root field's placeholder: where a source of the kind starts.
     static func rootPlaceholder(_ kind: String) -> String {
         switch kind.lowercased() {
+        case "claude": "~/.claude or ~/Downloads/claude-export.zip"
+        case "chatgpt": "~/.codex or ~/Downloads/chatgpt-export.zip"
+        case "antigravity": "~/.gemini/antigravity/brain"
+        case "spotlight": "~ or ~/Documents"
         case "dropbox", "onedrive", "google_drive": "/ or /Work/Notes"
         case "outlook": "/ or Inbox/Projects"
         case "gmail": "/ or INBOX"
@@ -711,9 +756,9 @@ enum SourceKinds {
         }
     }
 
-    /// The class a new source of the kind should take: mail is a communication.
+    /// The class a new source of the kind should take: mail and AI sessions are communications.
     static func defaultClass(_ kind: String) -> String? {
-        ["outlook", "gmail"].contains(kind.lowercased()) ? "communication" : nil
+        ["outlook", "gmail", "claude", "chatgpt", "antigravity"].contains(kind.lowercased()) ? "communication" : nil
     }
 }
 
@@ -736,10 +781,21 @@ enum SourceSlugSuggestion {
             let file = (trimmed as NSString).lastPathComponent
             let name = (file as NSString).deletingPathExtension
             base = FirstRunSourceTemplate.slug(forFolderNamed: name.isEmpty ? file : name)
+        case "claude", "chatgpt", "antigravity":
+            let path = trimmed.hasSuffix("/") && trimmed.count > 1 ? String(trimmed.dropLast()) : trimmed
+            let file = (path as NSString).lastPathComponent
+            let stripped = file.hasPrefix(".") ? file : (file as NSString).deletingPathExtension
+            var name = stripped.isEmpty ? file : stripped
+            if kind.lowercased() == "antigravity", name.lowercased() == "brain" {
+                name = "antigravity"
+            }
+            base = FirstRunSourceTemplate.slug(forFolderNamed: name)
         default:
             let path = trimmed.hasSuffix("/") && trimmed.count > 1 ? String(trimmed.dropLast()) : trimmed
             var name = (path as NSString).lastPathComponent
-            if name == "~" || name.isEmpty || name == "/" { name = SourceKinds.isCloud(kind) ? kind : "home" }
+            if name == "~" || name.isEmpty || name == "/" {
+                name = (SourceKinds.isCloud(kind) || kind.lowercased() == "spotlight") ? kind : "home"
+            }
             if name == "com~apple~CloudDocs" { name = "icloud-drive" }
             // The cloud clients' folders (`CloudClientFolders`) are named for their accounts.
             if name.hasPrefix("OneDrive") { name = "onedrive" }

@@ -166,7 +166,9 @@ extension ModelsView {
                     .accessibilityIdentifier("models.overall.manageDistillation")
                 }
 
-                let others = distillationModelItems.filter { $0.slug != appState.factsModel }
+                // The overview lists what can be picked now: presets whose file isn't on disk (and
+                // isn't downloading) stay on the Distillation tab, where they can be downloaded.
+                let others = distillationModelItems.filter { $0.slug != appState.factsModel && isOnDiskOrServed($0) }
                 if !others.isEmpty {
                     Divider()
                     VStack(alignment: .leading, spacing: 4) {

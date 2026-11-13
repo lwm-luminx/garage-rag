@@ -130,3 +130,66 @@ fn the_system_imports_rich_text() {
     assert!(matches!(import(&junk), Outcome::NoText(_) | Outcome::Failed(_)));
     std::fs::remove_dir_all(&folder).unwrap();
 }
+
+#[test]
+fn personal_records_are_never_taken_from_the_index() {
+    let tree = |types: &[&str]| types.iter().map(|&uti| uti.to_owned()).collect::<Vec<_>>();
+    assert!(index::private_content_type(&tree(&["com.apple.mail.emlx", "public.email-message", "public.content"])));
+    assert!(index::private_content_type(&tree(&["public.vcard", "public.contact"])));
+    assert!(index::private_content_type(&tree(&["com.apple.ical.ics", "public.calendar-event"])));
+    assert!(index::private_content_type(&tree(&["com.apple.ichat.transcript"])));
+    assert!(index::private_content_type(&tree(&["com.apple.Photos.library", "com.apple.package"])));
+    assert!(!index::private_content_type(&tree(&["com.adobe.pdf", "public.data", "public.content"])));
+    assert!(!index::private_content_type(&tree(&["net.daringfireball.markdown", "public.plain-text"])));
+    assert!(!index::private_content_type(&[]));
+}
+
+#[test]
+fn a_source_query_narrows_the_default_and_never_replaces_it() {
+    assert_eq!(index::query_string(None), index::DEFAULT_QUERY);
+    assert_eq!(index::query_string(Some("  ")), index::DEFAULT_QUERY);
+    assert_eq!(
+        index::query_string(Some("kMDItemLastUsedDate >= $time.today(-30)")),
+        format!("({}) && (kMDItemLastUsedDate >= $time.today(-30))", index::DEFAULT_QUERY)
+    );
+}
+
+#[cfg(not(target_os = "macos"))]
+#[test]
+fn the_index_is_a_mac_feature() {
+    assert!(index::search(Path::new("/tmp"), index::DEFAULT_QUERY).is_err());
+    assert!(index::attributes(Path::new("/tmp/a.pdf")).is_empty());
+}
+
+/// Spotlight on this Mac, over this crate's own folder: whatever the index holds of it is searched
+/// and described. The index is the system's and may hold none of a fresh checkout (CI runners often
+/// turn it off, and Bazel's sandbox is never indexed), so an empty answer skips rather than fails.
+#[cfg(target_os = "macos")]
+#[test]
+fn the_index_is_searched_and_described_on_this_mac() {
+    let Ok(scope) = std::fs::canonicalize(env!("CARGO_MANIFEST_DIR")) else {
+        eprintln!("skipped: manifest dir {} is unavailable at test runtime", env!("CARGO_MANIFEST_DIR"));
+        return;
+    };
+    // A malformed query is refused, not run.
+    assert!(index::search(&scope, "kMDItemDisplayName ==").is_err());
+    let items = match index::search(&scope, index::DEFAULT_QUERY) {
+        Ok(items) if !items.is_empty() => items,
+        outcome => {
+            eprintln!("skipped: Spotlight holds nothing of {} ({outcome:?})", scope.display());
+            return;
+        }
+    };
+    assert!(items.iter().all(|item| item.path.starts_with(&scope)), "{items:?}");
+    assert!(items.iter().all(|item| !index::private_content_type(&item.content_types)), "{items:?}");
+    assert!(items.iter().all(|item| item.content_types.iter().any(|uti| uti == "public.content")), "{items:?}");
+    assert!(items.windows(2).all(|pair| pair[0].path < pair[1].path), "not sorted and unique: {items:?}");
+    let first = &items[0];
+    let attributes = index::attributes(&first.path);
+    let name = first.path.file_name().unwrap().to_string_lossy().into_owned();
+    let stem = name.split('.').next().unwrap_or_default().to_owned();
+    let display = attributes.iter().find(|(key, _)| key == "kMDItemDisplayName").map(|(_, value)| value);
+    assert!(matches!(display, Some(index::Value::Text(shown)) if shown.starts_with(&stem)), "{attributes:?}");
+    // Nothing is described for a file the index does not hold.
+    assert!(index::attributes(&scope.join("no such file.pdf")).is_empty());
+}

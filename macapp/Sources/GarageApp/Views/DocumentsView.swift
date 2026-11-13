@@ -38,9 +38,10 @@ public struct DocumentsView: View {
     private let trustTiers = CorpusTaxonomy.withAllSentinel(CorpusTaxonomy.trustTiers)
 
     /// Centers the Graph page on a document.
-    private let openGraph: (GraphFocus) -> Void
+    /// Nil where the build has no Graph page: the "Show in Graph" button is left out.
+    private let openGraph: ((GraphFocus) -> Void)?
 
-    public init(focus: Binding<DocumentFocus?> = .constant(nil), openGraph: @escaping (GraphFocus) -> Void = { _ in }) {
+    public init(focus: Binding<DocumentFocus?> = .constant(nil), openGraph: ((GraphFocus) -> Void)? = nil) {
         self._focus = focus
         self.openGraph = openGraph
     }
@@ -260,6 +261,9 @@ public struct DocumentsView: View {
                 CorpusClassBadge(corpusClass: doc.corpusClass)
                 TrustTierBadge(tier: doc.trustTier)
                 TagBadge(doc.sourceSlug)
+                ForEach(doc.additionalSources, id: \.self) { slug in
+                    TagBadge("+\(slug)")
+                }
                 Spacer()
                 if doc.factCount > 0 {
                     Text("\(doc.factCount) fact\(doc.factCount == 1 ? "" : "s")")
@@ -332,6 +336,9 @@ public struct DocumentsView: View {
                     CorpusClassBadge(corpusClass: detail.corpusClass)
                     TrustTierBadge(tier: detail.trustTier)
                     TagBadge(detail.sourceSlug)
+                    ForEach(detail.additionalSources, id: \.self) { slug in
+                        TagBadge("+\(slug)")
+                    }
                     if !detail.state.isEmpty {
                         StatusBadge(detail.state.uppercased(), tint: detail.state == "ok" ? .green : .red)
                     }
@@ -361,12 +368,14 @@ public struct DocumentsView: View {
                     metaField("Chunks", "\(detail.chunks.count)", identifier: "documents.detail.chunkCount")
                     if !detail.facts.isEmpty { metaField("Facts", "\(detail.facts.count)") }
                     Spacer()
-                    Button("Show in Graph") {
-                        openGraph(GraphFocus(label: "Document", key: detail.id))
+                    if let openGraph {
+                        Button("Show in Graph") {
+                            openGraph(GraphFocus(label: "Document", key: detail.id))
+                        }
+                        .controlSize(.small)
+                        .accessibilityIdentifier("documents.detail.graph")
+                        .help("Center the Graph page on this document: its chunks, authors and facts")
                     }
-                    .controlSize(.small)
-                    .accessibilityIdentifier("documents.detail.graph")
-                    .help("Center the Graph page on this document: its chunks, authors and facts")
                     Button {
                         glean(detail)
                     } label: {

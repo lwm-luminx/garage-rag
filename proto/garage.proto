@@ -186,6 +186,7 @@ message DocumentSummary {
     string state = 11;
     string ingested_at = 12;
     int32 fact_count = 13;
+    repeated string additional_sources = 14;
 }
 
 message ListDocumentsRequest {
@@ -250,6 +251,7 @@ message DocumentDetail {
     string error = 15;
     string ingested_at = 16;
     repeated DocumentAuthorInfo authors = 17;
+    repeated string additional_sources = 18;
 }
 
 message GetDocumentRequest {
@@ -433,6 +435,7 @@ message SourceInfo {
     string root = 7;
     int64 document_count = 8;
     int64 expected_elements = 9;
+    int64 additional_document_count = 10;
 }
 
 message ListSourcesRequest {}
@@ -882,7 +885,9 @@ message BeginIngestSessionResponse {
     reserved "allow_cloud_enrichment";
     int64 run_id = 7;
     repeated string source_slugs = 8;
-    string kind = 9;  // filesystem | git | sqlite | maildir: picks the scanner
+    string kind = 9;  // filesystem | git | sqlite | maildir | feed | spotlight | dropbox | onedrive | outlook | google_drive | gmail | claude | chatgpt | antigravity
+    // Optional Spotlight MDQuery narrowing predicate from sources.config.query; empty otherwise.
+    string query = 10;
 }
 
 message PersistScanRequest {
@@ -919,6 +924,10 @@ message CheckDocumentStatResponse {
     string chunker = 5;
     string state = 6;
     string source_sha256 = 7;
+    // Set (> 0) when another source already owns a documents row at this URI.
+    int64 existing_document_id = 8;
+    // True when source_slug already links to existing_document_id in document_sources.
+    bool already_linked = 9;
 }
 
 message DocumentAuthorPayload {
@@ -943,12 +952,15 @@ message DocumentChunkPayload {
     // Message chunks only (chunks.direction/sender); empty otherwise.
     string direction = 9;
     string sender = 10;
+    // Session chunks only: the external_id of the originating session_turns row; empty otherwise.
+    string session_turn_external_id = 11;
 }
 
 message PersistDocumentRequest {
     int64 run_id = 1;
     string source_slug = 2;
     string uri = 3;
+    // placeholder | extract_failed | no_text | rejected | seen | refresh_metadata | replace | link_additional
     string action = 4;
     string title = 5;
     string lang = 6;
@@ -969,6 +981,9 @@ message PersistDocumentRequest {
     // The no_text and extract_failed actions: the caller's reader and its version, remembered with the outcome
     // (see CheckDocumentStatRequest.extractor_revision). Empty: the server's own Python reader's.
     string extractor_revision = 21;
+    // Session sources (claude, chatgpt, antigravity): normalized relational session payload or
+    // companion artifact link JSON written atomically alongside documents and chunks. Empty otherwise.
+    string session_json = 22;
 }
 
 message PersistDocumentResponse {

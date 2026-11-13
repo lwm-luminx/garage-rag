@@ -6,7 +6,8 @@
 
 use std::collections::{HashMap, HashSet};
 
-use serde_json::{Map, Value};
+use chrono::{DateTime, Utc};
+use serde_json::{Map, Value, json};
 use tokio_postgres::Transaction;
 
 use crate::config::Config;
@@ -25,6 +26,7 @@ pub struct SourceContext {
     pub run_id: i64,
     pub kind: String,
     pub source_slugs: Vec<String>,
+    pub query: String,
 }
 
 /// What is known of a document before its file is read (`ExistingDocStat`).
@@ -37,6 +39,8 @@ pub struct ExistingDocStat {
     pub chunker: String,
     pub state: String,
     pub source_sha256: String,
+    pub existing_document_id: Option<i64>,
+    pub already_linked: bool,
 }
 
 /// One author of a document as the pipeline attributed it (`AuthorPayload`).
@@ -64,6 +68,7 @@ pub struct ChunkPayload {
     pub chunker: Option<String>,
     pub direction: Option<String>,
     pub sender: Option<String>,
+    pub session_turn_external_id: Option<String>,
 }
 
 /// Everything `replace_document` writes.
@@ -86,6 +91,7 @@ pub struct DocumentPayload {
     pub trust_tier: String,
     pub authors: Vec<AuthorPayload>,
     pub chunks: Vec<ChunkPayload>,
+    pub session_json: Option<String>,
 }
 
 struct SourceRow {
@@ -95,12 +101,14 @@ struct SourceRow {
     kind: String,
     default_class: String,
     default_trust: String,
+    query: String,
 }
 
 async fn source_by_slug(tx: &Transaction<'_>, slug: &str) -> Result<SourceRow> {
     let row = tx
         .query_opt(
-            "SELECT id, slug, root, kind, default_class::text, default_trust::text FROM sources WHERE slug = $1",
+            "SELECT id, slug, root, kind, default_class::text, default_trust::text, \
+             coalesce(config->>'query', '') FROM sources WHERE slug = $1",
             &[&slug],
         )
         .await?
@@ -112,6 +120,7 @@ async fn source_by_slug(tx: &Transaction<'_>, slug: &str) -> Result<SourceRow> {
         kind: row.get(3),
         default_class: row.get(4),
         default_trust: row.get(5),
+        query: row.get(6),
     })
 }
 
@@ -144,7 +153,8 @@ pub async fn begin_session(client: &mut Client, config: &Config, source_slug: &s
     let (source, source_slugs) = if source_slug == "*" {
         let rows = tx
             .query(
-                "SELECT id, slug, root, kind, default_class::text, default_trust::text FROM sources WHERE enabled ORDER BY id",
+                "SELECT id, slug, root, kind, default_class::text, default_trust::text, \
+                 coalesce(config->>'query', '') FROM sources WHERE enabled ORDER BY id",
                 &[],
             )
             .await?;
@@ -158,6 +168,7 @@ pub async fn begin_session(client: &mut Client, config: &Config, source_slug: &s
                 kind: first.get(3),
                 default_class: first.get(4),
                 default_trust: first.get(5),
+                query: first.get(6),
             },
             slugs,
         )
@@ -179,6 +190,7 @@ pub async fn begin_session(client: &mut Client, config: &Config, source_slug: &s
         run_id,
         kind: source.kind,
         source_slugs,
+        query: source.query,
     })
 }
 
@@ -235,6 +247,7 @@ async fn remembered_outcome(
         chunker: String::new(),
         state: row.get(0),
         source_sha256: row.get::<_, Option<Vec<u8>>>(3).map(|b| hex_string(&b)).unwrap_or_default(),
+        ..Default::default()
     }))
 }
 
@@ -292,6 +305,33 @@ pub async fn check_stat(
             &[&source.id, &uri],
         )
         .await?;
+    if doc.is_none()
+        && source.kind == "spotlight"
+        && let Some(row) = tx
+            .query_opt(
+                "SELECT d.id, \
+                        coalesce(extract(epoch FROM ds.mtime)::float8, extract(epoch FROM d.mtime)::float8, 0.0), \
+                        ds.source_id IS NOT NULL, \
+                        coalesce(d.byte_size, 0) \
+                 FROM documents d \
+                 LEFT JOIN document_sources ds ON ds.document_id = d.id AND ds.source_id = $1 \
+                 WHERE d.uri = $2 AND d.source_id <> $1 AND d.state = 'ok' \
+                 ORDER BY d.id \
+                 LIMIT 1",
+                &[&source.id, &uri],
+            )
+            .await?
+    {
+        return Ok(ExistingDocStat {
+            exists: false,
+            byte_size: row.get(3),
+            mtime: row.get(1),
+            state: "ok".to_owned(),
+            existing_document_id: Some(row.get(0)),
+            already_linked: row.get(2),
+            ..Default::default()
+        });
+    }
     let state: Option<String> = doc.as_ref().map(|row| row.get(4));
     if state.as_deref() != Some("ok")
         && let Some(remembered) = remembered_outcome(&tx, source.id, uri, extractor_revision).await?
@@ -307,6 +347,7 @@ pub async fn check_stat(
         chunker: row.get::<_, Option<String>>(3).unwrap_or_default(),
         state: state.unwrap_or_default(),
         source_sha256: row.get::<_, Option<Vec<u8>>>(5).map(|b| hex_string(&b)).unwrap_or_default(),
+        ..Default::default()
     })
 }
 
@@ -461,6 +502,94 @@ pub async fn refresh_metadata(
     Ok(())
 }
 
+async fn attach_authors(tx: &Transaction<'_>, doc_id: i64, authors: &[AuthorPayload]) -> Result<()> {
+    let mut seen_authors: HashSet<(i64, String)> = HashSet::new();
+    for author in authors {
+        if author.name.is_empty() {
+            continue;
+        }
+        let author_id = get_or_create_author(tx, &author.name, &author.identities, author.is_self).await?;
+        let role = if author.role.is_empty() { "author".to_owned() } else { author.role.clone() };
+        if !seen_authors.insert((author_id, role.clone())) {
+            continue;
+        }
+        let confidence = if author.confidence == 0.0 { 1.0_f32 } else { author.confidence };
+        let evidence = author.evidence.clone().filter(|e| !e.is_empty());
+        tx.execute(
+            "INSERT INTO document_authors (document_id, author_id, role, confidence, evidence) \
+             VALUES ($1, $2, CAST($3::text AS author_role), $4, $5) \
+             ON CONFLICT (document_id, author_id, role) DO NOTHING",
+            &[&doc_id, &author_id, &role, &confidence, &evidence],
+        )
+        .await
+        .map_err(|e| {
+            if e.to_string().contains("author_role") {
+                ServiceError::invalid(format!("unknown author role {role:?}"))
+            } else {
+                e.into()
+            }
+        })?;
+    }
+    Ok(())
+}
+
+/// Links an additional source (typically Spotlight) to an existing `'ok'` document owned by another
+/// source, merging metadata, backfilling an empty title, and adding newly attributed authors
+/// without touching content, chunks, or primary ownership (`link_additional_document`).
+///
+/// # Errors
+///
+/// [`ServiceError::NotFound`] if the source slug is unknown or no `'ok'` document exists at
+/// `uri` on another source; an invalid author role; or the database server.
+#[allow(clippy::too_many_arguments)]
+pub async fn link_additional_document(
+    client: &mut Client,
+    run_id: i64,
+    source_slug: &str,
+    uri: &str,
+    mtime: f64,
+    title: Option<&str>,
+    meta: &Map<String, Value>,
+    authors: &[AuthorPayload],
+) -> Result<i64> {
+    let tx = client.transaction().await?;
+    let source = source_by_slug(&tx, source_slug).await?;
+    let row = tx
+        .query_opt(
+            "SELECT id FROM documents WHERE uri = $1 AND source_id <> $2 AND state = 'ok' ORDER BY id LIMIT 1",
+            &[&uri, &source.id],
+        )
+        .await?
+        .ok_or_else(|| ServiceError::not_found(format!("No existing ok document to link at {uri}")))?;
+    let doc_id: i64 = row.get(0);
+    let mtime_opt = (mtime != 0.0).then_some(mtime);
+    let meta_val = Value::Object(meta.clone());
+    tx.execute(
+        "INSERT INTO document_sources (document_id, source_id, uri, mtime, meta, linked_at) \
+         VALUES ($1, $2, $3, to_timestamp($4), $5, now()) \
+         ON CONFLICT (document_id, source_id) DO UPDATE SET \
+         uri = EXCLUDED.uri, \
+         mtime = COALESCE(EXCLUDED.mtime, document_sources.mtime), \
+         meta = document_sources.meta || EXCLUDED.meta, \
+         linked_at = now()",
+        &[&doc_id, &source.id, &uri, &mtime_opt, &meta_val],
+    )
+    .await?;
+    let title_opt = title.map(str::trim).filter(|s| !s.is_empty());
+    tx.execute(
+        "UPDATE documents SET \
+         meta = meta || $2::jsonb, \
+         title = CASE WHEN COALESCE(btrim(title), '') = '' THEN NULLIF(btrim($3), '') ELSE title END \
+         WHERE id = $1",
+        &[&doc_id, &meta_val, &title_opt],
+    )
+    .await?;
+    attach_authors(&tx, doc_id, authors).await?;
+    mark_seen(&tx, run_id, uri).await?;
+    tx.commit().await?;
+    Ok(doc_id)
+}
+
 /// Replaces the document, its authors and its chunks (`replace_document`); how many chunks it now
 /// has. A chunk whose ord, hash, text and chunker are unchanged keeps its row, so its vectors in
 /// every model table survive; it takes the new offsets, heading, direction and sender in place.
@@ -490,7 +619,58 @@ pub async fn replace_document(
     let version = if payload.extractor_version.is_empty() { "1".to_owned() } else { payload.extractor_version.clone() };
     let chunker = payload.chunker.clone().filter(|c| !c.is_empty());
     let content = payload.content.clone().filter(|c| !c.is_empty());
-    let meta = Value::Object(payload.meta.clone());
+    let mut meta_map = payload.meta.clone();
+
+    // Order-independence: if a non-spotlight source is indexing a URI currently owned by a
+    // spotlight source, promote the existing row in place so chunks and embeddings survive and
+    // demote the spotlight link into document_sources.
+    if source.kind != "spotlight" {
+        let owned = tx
+            .query_opt("SELECT id FROM documents WHERE source_id = $1 AND uri = $2", &[&source.id, &uri])
+            .await?
+            .is_some();
+        if !owned
+            && let Some(sp_row) = tx
+                .query_opt(
+                    "SELECT d.id, d.source_id, d.mtime, d.meta \
+                     FROM documents d \
+                     JOIN sources s ON s.id = d.source_id \
+                     WHERE d.uri = $1 AND s.kind = 'spotlight' \
+                     ORDER BY d.id \
+                     LIMIT 1",
+                    &[&uri],
+                )
+                .await?
+        {
+            let existing_doc_id: i64 = sp_row.get(0);
+            let spotlight_source_id: i64 = sp_row.get(1);
+            let prior_mtime: Option<DateTime<Utc>> = sp_row.get(2);
+            let prior_meta: Value = sp_row.get(3);
+            let spotlight_meta = match prior_meta.get("spotlight").cloned() {
+                Some(val) => {
+                    if !meta_map.contains_key("spotlight") {
+                        meta_map.insert("spotlight".to_owned(), val.clone());
+                    }
+                    json!({ "spotlight": val })
+                }
+                None => json!({}),
+            };
+            tx.execute("UPDATE documents SET source_id = $1 WHERE id = $2", &[&source.id, &existing_doc_id]).await?;
+            tx.execute(
+                "INSERT INTO document_sources (document_id, source_id, uri, mtime, meta, linked_at) \
+                 VALUES ($1, $2, $3, $4, $5, now()) \
+                 ON CONFLICT (document_id, source_id) DO UPDATE SET \
+                 uri = EXCLUDED.uri, \
+                 mtime = COALESCE(EXCLUDED.mtime, document_sources.mtime), \
+                 meta = document_sources.meta || EXCLUDED.meta, \
+                 linked_at = now()",
+                &[&existing_doc_id, &spotlight_source_id, &uri, &prior_mtime, &spotlight_meta],
+            )
+            .await?;
+        }
+    }
+
+    let meta = Value::Object(meta_map);
     let doc_id: i64 = tx
         .query_one(
             "INSERT INTO documents (source_id, uri, corpus_class, trust_tier, title, mime, lang, byte_size, mtime, \
@@ -524,36 +704,23 @@ pub async fn replace_document(
         .await
         .map_err(|e| map_enum_error(e, &class, &trust))?
         .get(0);
+    tx.execute("DELETE FROM document_sources WHERE document_id = $1 AND source_id = $2", &[&doc_id, &source.id])
+        .await?;
     forget_outcome(&tx, source.id, uri).await?;
 
     // Authors.
     tx.execute("DELETE FROM document_authors WHERE document_id = $1", &[&doc_id]).await?;
-    let mut seen_authors: HashSet<(i64, String)> = HashSet::new();
-    for author in &payload.authors {
-        if author.name.is_empty() {
-            continue;
-        }
-        let author_id = get_or_create_author(&tx, &author.name, &author.identities, author.is_self).await?;
-        let role = if author.role.is_empty() { "author".to_owned() } else { author.role.clone() };
-        if !seen_authors.insert((author_id, role.clone())) {
-            continue;
-        }
-        let confidence = if author.confidence == 0.0 { 1.0_f32 } else { author.confidence };
-        let evidence = author.evidence.clone().filter(|e| !e.is_empty());
-        tx.execute(
-            "INSERT INTO document_authors (document_id, author_id, role, confidence, evidence) \
-             VALUES ($1, $2, CAST($3::text AS author_role), $4, $5)",
-            &[&doc_id, &author_id, &role, &confidence, &evidence],
-        )
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("author_role") {
-                ServiceError::invalid(format!("unknown author role {role:?}"))
-            } else {
-                e.into()
-            }
-        })?;
-    }
+    attach_authors(&tx, doc_id, &payload.authors).await?;
+
+    // Normalized session tables (`025_sessions.sql`), if this document belongs to a session source.
+    let session_turn_ids = crate::sessions_store::persist_session_payload(
+        &tx,
+        source.id,
+        doc_id,
+        &content_hash,
+        payload.session_json.as_deref(),
+    )
+    .await?;
 
     // Chunks: keep the unchanged, drop the rest, add the new.
     let doc_chunker = chunker.clone().unwrap_or_else(|| "default".to_owned());
@@ -603,14 +770,15 @@ pub async fn replace_document(
     }
     let update = tx
         .prepare(
-            "UPDATE chunks SET token_count = $2, char_start = $3, char_end = $4, heading_path = $5, direction = $6, sender = $7 \
+            "UPDATE chunks SET token_count = $2, char_start = $3, char_end = $4, heading_path = $5, \
+             direction = $6, sender = $7, session_turn_id = $8 \
              WHERE id = $1",
         )
         .await?;
     let insert = tx
         .prepare(
             "INSERT INTO chunks (document_id, ord, text, token_count, char_start, char_end, heading_path, chunk_sha256, chunker, \
-             direction, sender) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+             direction, sender, session_turn_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
         )
         .await?;
     for c in &payload.chunks {
@@ -618,8 +786,13 @@ pub async fn replace_document(
         let heading = c.heading_path.clone().filter(|h| !h.is_empty());
         let direction = c.direction.clone().filter(|d| !d.is_empty());
         let sender = c.sender.clone().filter(|s| !s.is_empty());
+        let session_turn_id = c.session_turn_external_id.as_deref().and_then(|ext| session_turn_ids.get(ext).copied());
         if let Some(id) = kept.get(&c.ord) {
-            tx.execute(&update, &[id, &token_count, &c.char_start, &c.char_end, &heading, &direction, &sender]).await?;
+            tx.execute(
+                &update,
+                &[id, &token_count, &c.char_start, &c.char_end, &heading, &direction, &sender, &session_turn_id],
+            )
+            .await?;
             continue;
         }
         let (sha, chunker, _) = &wanted[&c.ord];
@@ -637,6 +810,7 @@ pub async fn replace_document(
                 chunker,
                 &direction,
                 &sender,
+                &session_turn_id,
             ],
         )
         .await?;
@@ -709,7 +883,7 @@ pub async fn finalize_session(
 // ---------------------------------------------------------------------------
 
 /// Resolves an author by identity, creating one on first sight (`get_or_create_author`); its id.
-async fn get_or_create_author(
+pub(crate) async fn get_or_create_author(
     tx: &Transaction<'_>,
     name: &str,
     identities: &[(String, String)],

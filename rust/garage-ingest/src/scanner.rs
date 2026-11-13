@@ -2,7 +2,8 @@
 //!
 //! The scan is quick and opens as little as it can. What it counts depends on the source's kind:
 //! indexable files for `filesystem` and `git` (the same rules as the walk, so the count is what a
-//! run will see), threads or rows for `sqlite`, message files for `maildir` and entries for `feed`.
+//! run will see), threads or rows for `sqlite`, message files for `maildir` and entries for `feed`,
+//! and for `spotlight` the files Spotlight's index lists, through the same rules ([`crate::spotlight`]).
 //! Every walk here is `os.walk`'s: top-down, unreadable directories passed over silently, symlinked
 //! directories listed but not entered.
 
@@ -39,7 +40,7 @@ pub struct ScanResult {
 }
 
 impl ScanResult {
-    fn new(source_slug: &str, kind: &str, root: &Path, item_type: &str) -> Self {
+    pub(crate) fn new(source_slug: &str, kind: &str, root: &Path, item_type: &str) -> Self {
         Self {
             source_slug: source_slug.to_owned(),
             kind: kind.to_owned(),
@@ -96,6 +97,9 @@ pub struct ScanOptions<'a> {
     /// Read a git source's tracked-file count through libgit2. Off, the detail is left out, as in a
     /// Python with no git reader.
     pub read_git: bool,
+    /// A `spotlight` source's query and the roots it leaves to other sources; none for every other
+    /// kind (and a Spotlight source then takes every document, covering nothing).
+    pub spotlight: Option<&'a crate::spotlight::SpotlightOptions>,
 }
 
 /// Hands the running count to a callback at most once per [`PROGRESS_INTERVAL`] (`_ProgressTicker`).
@@ -107,6 +111,10 @@ pub struct Ticker<'a> {
 impl<'a> Ticker<'a> {
     pub fn new(report: Option<&'a mut dyn FnMut(u64)>) -> Self {
         Self { report, last: Instant::now() }
+    }
+
+    pub(crate) fn report_count(&mut self, count: u64) {
+        self.tick(count);
     }
 
     fn tick(&mut self, count: u64) {
@@ -397,10 +405,11 @@ pub fn scan_feed(root: &Path, source_slug: &str, ticker: &mut Ticker<'_>) -> Sca
 /// What each kind counts, for a scan that could not start (`_ITEM_TYPES`).
 fn item_type(kind: &str) -> &'static str {
     match kind {
-        "filesystem" | "git" | "dropbox" | "onedrive" | "google_drive" => "files",
+        "filesystem" | "git" | "dropbox" | "onedrive" | "google_drive" | "spotlight" => "files",
         "sqlite" => "records",
         "maildir" | "outlook" | "gmail" => "messages",
         "feed" => "entries",
+        "claude" | "chatgpt" | "antigravity" => "sessions",
         _ => "items",
     }
 }
@@ -433,6 +442,8 @@ pub fn scan_source(
         "sqlite" => scan_sqlite(&root, source_slug, ticker),
         "maildir" => scan_maildir(&root, source_slug, ticker),
         "feed" => scan_feed(&root, source_slug, ticker),
+        k if crate::is_session_kind(k) => crate::sessions::scan_sessions(&root, source_slug, k, ticker),
+        crate::spotlight::KIND => crate::spotlight::scan_spotlight(&root, source_slug, options, &prefixes, ticker),
         _ => scan_filesystem(&root, source_slug, options, &prefixes, ticker),
     }
 }
@@ -474,7 +485,7 @@ mod tests {
 
     fn scan(kind: &str, root: &Path, include_code: bool) -> ScanResult {
         let policy = WalkPolicy::default();
-        let options = ScanOptions { include_code, policy: &policy, read_git: false };
+        let options = ScanOptions { include_code, policy: &policy, read_git: false, spotlight: None };
         scan_source("s", kind, root, &options, &mut Ticker::new(None))
     }
 

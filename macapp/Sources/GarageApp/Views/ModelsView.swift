@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import GarageAppExtensions
 import LlamaClient
 import LlamaModelLoader
 import ModelDownloadClient
@@ -108,9 +109,16 @@ struct ModelsView: View {
         case inference = "Inference"
 
         var id: Self { self }
+
+        /// The tabs this build offers: Distillation only where the build's extensions turn it on.
+        static func offered(showsDistillation: Bool) -> [Page] {
+            allCases.filter { $0 != .distillation || showsDistillation }
+        }
     }
 
     @State var selectedTab: Page = .overall
+    /// Whether this build offers fact distillation (`GarageAppExtensionSet.showsDistillation`).
+    var showsDistillation: Bool { GarageAppExtensions.installed.showsDistillation }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -118,7 +126,7 @@ struct ModelsView: View {
             // Refresh keeps to the trailing edge.
             ZStack {
                 Picker("Page", selection: $selectedTab) {
-                    ForEach(Page.allCases) { tab in
+                    ForEach(Page.offered(showsDistillation: showsDistillation)) { tab in
                         Text(tab.rawValue).tag(tab)
                     }
                 }
@@ -156,7 +164,9 @@ struct ModelsView: View {
                     switch selectedTab {
                     case .overall:
                         AnyView(overallEmbeddingSection)
-                        AnyView(overallDistillationSection)
+                        if showsDistillation {
+                            AnyView(overallDistillationSection)
+                        }
                         AnyView(providersSection)
                         AnyView(activitySection)
                     case .embedding:
@@ -303,8 +313,21 @@ struct ModelsView: View {
     /// download/load helpers written for embedding rows apply unchanged.
     var distillationModelItems: [UnifiedModelItem] {
         let presets = appState.inferencePresets
-        return (presets.filter(\.isForDistillation) + presets.filter { !$0.isForDistillation })
-            .map { UnifiedModelItem(preset: $0) }
+        return onDiskFirst((presets.filter(\.isForDistillation) + presets.filter { !$0.isForDistillation })
+            .map { UnifiedModelItem(preset: $0) })
+    }
+
+    /// Whether a model can be used now: its file is on disk or downloading, or its provider (Ollama,
+    /// LM Studio) serves it without a file of ours.
+    func isOnDiskOrServed(_ item: UnifiedModelItem) -> Bool {
+        !item.provider.downloadsFiles || isModelFileDownloaded(item: item) || getActiveDownloadTask(item: item) != nil
+    }
+
+    /// The models that can be used now first, then the ones still to download, each group in its
+    /// original order.
+    func onDiskFirst(_ items: [UnifiedModelItem]) -> [UnifiedModelItem] {
+        let ready = items.filter(isOnDiskOrServed)
+        return ready + items.filter { !isOnDiskOrServed($0) }
     }
 
     /// The facts model garage.json names, when it is not one of the presets on the page.
@@ -375,8 +398,8 @@ struct ModelsView: View {
     /// The `inference_models` presets tagged for inference, those that call tools first.
     var inferenceModelItems: [UnifiedModelItem] {
         let presets = appState.inferencePresets.filter(\.isForInference)
-        return (presets.filter(\.toolCalling) + presets.filter { !$0.toolCalling })
-            .map { UnifiedModelItem(preset: $0) }
+        return onDiskFirst((presets.filter(\.toolCalling) + presets.filter { !$0.toolCalling })
+            .map { UnifiedModelItem(preset: $0) })
     }
 
     /// The inference model garage.json names, when it is not one of the presets on the page.

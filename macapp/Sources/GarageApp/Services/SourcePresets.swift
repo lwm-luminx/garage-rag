@@ -26,6 +26,18 @@ struct SourcePreset: Identifiable, Hashable, Sendable {
         title: "Apple Mail",
         spec: SourceSpec(slug: "apple-mail", root: "~/Library/Mail", kind: "maildir", corpusClass: "communication", trust: "received")
     )
+    static let claude = SourcePreset(
+        title: "Claude",
+        spec: SourceSpec(slug: "claude", root: "~/.claude", kind: "claude", corpusClass: "communication", trust: "received")
+    )
+    static let codex = SourcePreset(
+        title: "Codex",
+        spec: SourceSpec(slug: "codex", root: "~/.codex", kind: "chatgpt", corpusClass: "communication", trust: "received")
+    )
+    static let antigravity = SourcePreset(
+        title: "Antigravity",
+        spec: SourceSpec(slug: "antigravity", root: "~/.gemini/antigravity", kind: "antigravity", corpusClass: "communication", trust: "received")
+    )
     static let documents = SourcePreset(
         title: "Documents",
         spec: SourceSpec(slug: "documents", root: "~/Documents", kind: "filesystem", corpusClass: "document", trust: "authored")
@@ -50,7 +62,7 @@ struct SourcePreset: Identifiable, Hashable, Sendable {
     }
 
     /// Every preset, for the Sources page menu.
-    static var all: [SourcePreset] { [messages, mail, documents, downloads, desktop, dropbox] }
+    static var all: [SourcePreset] { [messages, mail, claude, codex, antigravity, documents, downloads, desktop, dropbox] }
 
     /// The first-run quick-add set. Dropbox only when its folder was found.
     static var quickAdd: [SourcePreset] {

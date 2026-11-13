@@ -20,10 +20,16 @@
 //! Garage's own readers decide which files come here ([`extensions`] lists what the system can
 //! import; `garage-readers` subtracts what it reads itself). On every other platform [`extensions`]
 //! is empty and [`import`] imports nothing.
+//!
+//! [`index`] reads the index itself (`MDQuery`), for the `spotlight` source kind: which files a
+//! folder holds and what Spotlight knows about each, never their text.
 
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+pub mod index;
+#[cfg(target_os = "macos")]
+mod index_macos;
 #[cfg(target_os = "macos")]
 mod macos;
 

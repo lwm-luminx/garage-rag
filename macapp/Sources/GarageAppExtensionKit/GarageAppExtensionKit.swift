@@ -57,17 +57,27 @@ public struct GarageAppExtensionSet {
     public var statusAccessories: [any GarageStatusAccessory]
     public var mcpServerPanels: [any GarageMCPServerPanel]
     public var services: [any GarageAppExtensionService]
+    /// Whether the Graph page (and the "Show in Graph" actions that lead to it) is offered. Off in
+    /// the open-source build, where the knowledge graph is not finished; a build that ships it turns it on.
+    public var showsGraph: Bool
+    /// Whether the Models page offers fact distillation (its Distillation tab and the Overall card).
+    /// Off in the open-source build; a build that ships it turns it on.
+    public var showsDistillation: Bool
 
     public init(
         statusPanels: [any GarageStatusPanel] = [],
         statusAccessories: [any GarageStatusAccessory] = [],
         mcpServerPanels: [any GarageMCPServerPanel] = [],
-        services: [any GarageAppExtensionService] = []
+        services: [any GarageAppExtensionService] = [],
+        showsGraph: Bool = false,
+        showsDistillation: Bool = false
     ) {
         self.statusPanels = statusPanels
         self.statusAccessories = statusAccessories
         self.mcpServerPanels = mcpServerPanels
         self.services = services
+        self.showsGraph = showsGraph
+        self.showsDistillation = showsDistillation
     }
 
     /// No extensions: every build of this repository.

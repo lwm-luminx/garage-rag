@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS sources (
     config                  jsonb       NOT NULL DEFAULT '{}'::jsonb,
     created_at              timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT sources_kind_check
-        CHECK (kind IN ('filesystem', 'git', 'sqlite', 'maildir', 'feed', 'dropbox', 'onedrive', 'outlook', 'google_drive', 'gmail', 'claude', 'chatgpt', 'antigravity'))
+        CHECK (kind IN ('filesystem', 'git', 'sqlite', 'maildir', 'feed', 'dropbox', 'onedrive', 'outlook', 'google_drive', 'gmail', 'claude', 'chatgpt', 'antigravity', 'spotlight'))
 );
 
 -- ---------------------------------------------------------------------------

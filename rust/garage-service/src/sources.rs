@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::config::{Config, SourceSpec, expand_home, read_config_file, save_config};
 use crate::db::Client;
@@ -143,6 +143,31 @@ pub async fn remove_source(client: &mut Client, config_path: Option<&Path>, slug
     let mut count = 0i64;
     if let Some(row) = &source {
         let id: i64 = row.get(0);
+        // Promote owned documents that have at least one enabled additional source
+        // (preferring non-spotlight sources, then oldest link) before cascade delete.
+        let owned_ids = tx.query("SELECT id FROM documents WHERE source_id = $1", &[&id]).await?;
+        for doc_row in owned_ids {
+            let doc_id: i64 = doc_row.get(0);
+            if let Some(winner_row) = tx
+                .query_opt(
+                    "SELECT ds.source_id FROM document_sources ds \
+                     JOIN sources s ON s.id = ds.source_id \
+                     WHERE ds.document_id = $1 AND s.enabled AND ds.source_id <> $2 \
+                     ORDER BY (s.kind = 'spotlight') ASC, ds.linked_at ASC, ds.source_id ASC \
+                     LIMIT 1",
+                    &[&doc_id, &id],
+                )
+                .await?
+            {
+                let winner_id: i64 = winner_row.get(0);
+                tx.execute("UPDATE documents SET source_id = $1 WHERE id = $2", &[&winner_id, &doc_id]).await?;
+                tx.execute(
+                    "DELETE FROM document_sources WHERE document_id = $1 AND source_id = $2",
+                    &[&doc_id, &winner_id],
+                )
+                .await?;
+            }
+        }
         count = tx.query_one("SELECT count(*) FROM documents WHERE source_id = $1", &[&id]).await?.get(0);
         tx.execute("DELETE FROM sources WHERE id = $1", &[&id]).await?;
     }
@@ -226,6 +251,25 @@ impl SyncResult {
 }
 
 /// Applies the sources the config file declares to the database (`sync_sources`). Declared
+fn query_from_config(stored: &Value) -> Option<String> {
+    stored.get("query").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
+}
+
+fn spec_config_value(spec: &SourceSpec, base: Option<Value>) -> Value {
+    let mut map = match base {
+        Some(Value::Object(map)) => map,
+        _ => Map::new(),
+    };
+    map.insert("include_code".to_owned(), Value::Bool(spec.include_code));
+    if let Some(q) = &spec.query {
+        map.insert("query".to_owned(), Value::String(q.clone()));
+    } else {
+        map.remove("query");
+    }
+    Value::Object(map)
+}
+
+/// Applies `config`'s declared sources to the database (`sync_sources`). The file wins when the
 /// sources win: each is created or updated to match the file. Sources only in the database are
 /// reported, never deleted.
 ///
@@ -262,7 +306,7 @@ pub async fn sync_sources(client: &mut Client, config: &Config, apply: bool) -> 
                         &spec.corpus_class,
                         &spec.trust,
                         &spec.enabled,
-                        &json!({"include_code": spec.include_code}).to_string(),
+                        &spec_config_value(spec, None).to_string(),
                     ],
                 )
                 .await?;
@@ -272,19 +316,16 @@ pub async fn sync_sources(client: &mut Client, config: &Config, apply: bool) -> 
         };
         let stored_config: Value = row.get(5);
         let include_code = stored_config.get("include_code").and_then(Value::as_bool).unwrap_or(false);
+        let stored_query = query_from_config(&stored_config);
         let changed = row.get::<_, String>(0) != spec.kind
             || row.get::<_, String>(1) != root
             || row.get::<_, String>(2) != spec.corpus_class
             || row.get::<_, String>(3) != spec.trust
             || row.get::<_, bool>(4) != spec.enabled
-            || include_code != spec.include_code;
+            || include_code != spec.include_code
+            || stored_query != spec.query;
         if changed {
             if apply {
-                let mut merged = match stored_config {
-                    Value::Object(map) => map,
-                    _ => Map::new(),
-                };
-                merged.insert("include_code".to_owned(), Value::Bool(spec.include_code));
                 tx.execute(
                     "UPDATE sources SET kind = $2, root = $3, default_class = CAST($4::text AS corpus_class), \
                      default_trust = CAST($5::text AS trust_tier), enabled = $6, config = CAST($7::text AS jsonb) WHERE slug = $1",
@@ -295,7 +336,7 @@ pub async fn sync_sources(client: &mut Client, config: &Config, apply: bool) -> 
                         &spec.corpus_class,
                         &spec.trust,
                         &spec.enabled,
-                        &Value::Object(merged).to_string(),
+                        &spec_config_value(spec, Some(stored_config)).to_string(),
                     ],
                 )
                 .await?;
@@ -365,6 +406,7 @@ pub async fn import_sources(client: &Client, target: &Path) -> Result<ImportSour
             corpus_class: row.get(3),
             trust: row.get(4),
             include_code: stored.get("include_code").and_then(Value::as_bool).unwrap_or(false),
+            query: query_from_config(&stored),
             enabled: row.get(6),
         });
         added.push(slug);
@@ -468,10 +510,7 @@ pub async fn reconcile_source(
         .map(|r| r.get(0))
         .collect();
     result.candidates = i64::try_from(ids.len()).unwrap_or(i64::MAX);
-    if ids.is_empty() {
-        return Ok(result);
-    }
-    if !force && result.fraction() > max_delete_fraction {
+    if !ids.is_empty() && !force && result.fraction() > max_delete_fraction {
         result.refused = true;
         result.reason = format!(
             "would delete {} of {} documents ({:.0}% > {:.0}%); if the source really shrank that much, re-run with --force",
@@ -485,34 +524,57 @@ pub async fn reconcile_source(
     if dry_run {
         return Ok(result);
     }
-    // Cascades through chunks into every per-model embedding table.
-    tx.execute("DELETE FROM documents WHERE id = ANY($1)", &[&ids]).await?;
+    if !ids.is_empty() {
+        // Cascades through chunks into every per-model embedding table.
+        tx.execute("DELETE FROM documents WHERE id = ANY($1)", &[&ids]).await?;
+    }
+    // Unlink stale additional-source links whose URIs were not seen in this run.
+    tx.execute(
+        "DELETE FROM document_sources ds WHERE ds.source_id = $1 \
+         AND NOT EXISTS (SELECT 1 FROM ingest_seen s WHERE s.run_id = $2 AND s.uri = ds.uri)",
+        &[&source_id, &run_id],
+    )
+    .await?;
     tx.commit().await?;
     result.deleted = result.candidates;
     Ok(result)
 }
 
 /// The sources a scan covers (`scan_sources`' query): `*` or empty is every enabled source; a
-/// slug names one, enabled or not. `(slug, kind, root)` each.
+/// slug names one, enabled or not. `(slug, kind, root, query)` each.
 ///
 /// # Errors
 ///
 /// [`ServiceError::NotFound`] for an unknown slug, or the server.
-pub async fn scan_targets(client: &Client, source: &str) -> Result<Vec<(String, String, PathBuf)>> {
+pub async fn scan_targets(client: &Client, source: &str) -> Result<Vec<(String, String, PathBuf, Option<String>)>> {
     let rows = if source.is_empty() || source == "*" {
-        client.query("SELECT slug, kind, root FROM sources WHERE enabled ORDER BY id", &[]).await?
+        client
+            .query(
+                "SELECT slug, kind, root, NULLIF(btrim(coalesce(config->>'query', '')), '') \
+                 FROM sources WHERE enabled ORDER BY id",
+                &[],
+            )
+            .await?
     } else {
-        let rows = client.query("SELECT slug, kind, root FROM sources WHERE slug = $1", &[&source]).await?;
+        let rows = client
+            .query(
+                "SELECT slug, kind, root, NULLIF(btrim(coalesce(config->>'query', '')), '') \
+                 FROM sources WHERE slug = $1",
+                &[&source],
+            )
+            .await?;
         if rows.is_empty() {
             return Err(ServiceError::not_found(format!("no such source: {source}")));
         }
         rows
     };
-    Ok(rows.iter().map(|r| (r.get(0), r.get(1), PathBuf::from(r.get::<_, String>(2)))).collect())
+    Ok(rows.iter().map(|r| (r.get(0), r.get(1), PathBuf::from(r.get::<_, String>(2)), r.get(3))).collect())
 }
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
+
     use super::*;
 
     #[test]

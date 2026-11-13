@@ -119,10 +119,15 @@ pub const LIST_SOURCES: Command = Command {
             table.column(col, if col == "docs" { Justify::Right } else { Justify::Left });
         }
         for s in &sources {
+            let docs = if s.additional_document_count > 0 {
+                format!("{} (+{} linked)", commas(s.document_count), commas(s.additional_document_count))
+            } else {
+                commas(s.document_count)
+            };
             table.row(&[
                 s.slug.as_str(),
                 s.kind.as_str(),
-                &commas(s.document_count),
+                &docs,
                 s.corpus_class.as_str(),
                 s.trust_tier.as_str(),
                 if s.enabled { "yes" } else { "no" },

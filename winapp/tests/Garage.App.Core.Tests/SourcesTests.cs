@@ -12,8 +12,9 @@ public sealed class SourcesTests
 {
     private static RegisteredSource Source(
         string slug = "notes", string kind = "filesystem", string root = "~/Notes", string corpusClass = "document",
-        bool enabled = true, SourceOrigin origin = SourceOrigin.Both, long documents = 0, long expected = 0) =>
-        new(slug, kind, root, corpusClass, "authored", enabled, origin, documents, expected);
+        bool enabled = true, SourceOrigin origin = SourceOrigin.Both, long documents = 0, long expected = 0,
+        long additionalDocuments = 0) =>
+        new(slug, kind, root, corpusClass, "authored", enabled, origin, documents, expected, additionalDocuments);
 
     private static SourceRowPresentation Row(RegisteredSource source, SourceAccess? access = null, SourceActivity activity = SourceActivity.Idle)
     {
@@ -74,6 +75,48 @@ public sealed class SourcesTests
     }
 
     [Fact]
+    public void Additional_linked_documents_count_toward_progress_and_append_linked_counts()
+    {
+        SourceRowPresentation linkedOnly = Row(Source(kind: "spotlight", root: "~", documents: 0, expected: 10, additionalDocuments: 10));
+        Assert.Equal(SourceRowPresentation.UpToDateStatus, linkedOnly.Status);
+        Assert.Equal(SourceTone.Good, linkedOnly.StatusTone);
+        Assert.Equal(1, linkedOnly.Progress);
+        Assert.Contains("linked", linkedOnly.Counts);
+        Assert.Equal("0 of 10 documents · 10 linked", linkedOnly.Counts);
+
+        SourceRowPresentation mixed = Row(Source(kind: "spotlight", root: "~", documents: 2, expected: 10, additionalDocuments: 8));
+        Assert.Equal(SourceRowPresentation.UpToDateStatus, mixed.Status);
+        Assert.Equal(SourceTone.Good, mixed.StatusTone);
+        Assert.Equal(1, mixed.Progress);
+        Assert.Contains("linked", mixed.Counts);
+        Assert.Equal("2 of 10 documents · 8 linked", mixed.Counts);
+
+        SourceRowPresentation partial = Row(Source(kind: "spotlight", root: "~", documents: 2, expected: 10, additionalDocuments: 3));
+        Assert.Equal("5 items to go", partial.Status);
+        Assert.Equal(0.5, partial.Progress);
+        Assert.Equal("2 of 10 documents · 3 linked", partial.Counts);
+
+        SourceRowPresentation unscanned = Row(Source(kind: "spotlight", root: "~", documents: 0, expected: 0, additionalDocuments: 10));
+        Assert.Equal(SourceRowPresentation.UpToDateStatus, unscanned.Status);
+        Assert.Equal(1, unscanned.Progress);
+        Assert.Equal("0 documents · 10 linked", unscanned.Counts);
+
+        RegisteredSource fromProto = RegisteredSource.From(new SourceInfo
+        {
+            Slug = "spotlight",
+            Kind = "spotlight",
+            Root = "~",
+            CorpusClass = "document",
+            TrustTier = "authored",
+            Enabled = true,
+            DocumentCount = 2,
+            ExpectedElements = 10,
+            AdditionalDocumentCount = 8,
+        });
+        Assert.Equal(8, fromProto.AdditionalDocumentCount);
+    }
+
+    [Fact]
     public void Setup_badges_name_what_is_unusual_about_a_source()
     {
         SourceRowPresentation row = Row(Source(enabled: false, origin: SourceOrigin.Config));
@@ -117,6 +160,11 @@ public sealed class SourcesTests
     [InlineData("maildir", "~/Library/Mail", "document", SourceSymbol.Mail)]
     [InlineData("git", "~/Developer/garage", "document", SourceSymbol.Code)]
     [InlineData("sqlite", "~/data/app.db", "document", SourceSymbol.Database)]
+    [InlineData("claude", "~/.claude", "communication", SourceSymbol.Message)]
+    [InlineData("chatgpt", "~/.codex", "communication", SourceSymbol.Message)]
+    [InlineData("antigravity", "~/.gemini/antigravity/brain", "communication", SourceSymbol.Message)]
+    [InlineData("spotlight", "~", "document", SourceSymbol.Search)]
+    [InlineData("spotlight", "~/Documents", "document", SourceSymbol.Search)]
     [InlineData("filesystem", "~/Documents", "document", SourceSymbol.Documents)]
     [InlineData("filesystem", @"C:\Users\me\Documents", "document", SourceSymbol.Documents)]
     [InlineData("filesystem", "~/Downloads", "document", SourceSymbol.Downloads)]
@@ -149,6 +197,14 @@ public sealed class SourcesTests
     [InlineData("   ", "filesystem", "")]
     [InlineData("/tmp/fixtures/chat.db", "sqlite", "chat")]
     [InlineData("https://example.com/feed.xml", "feed", "example-com")]
+    [InlineData("~/.claude", "claude", "claude")]
+    [InlineData(@"C:\Users\me\Downloads\chatgpt-export.zip", "chatgpt", "chatgpt-export")]
+    [InlineData("~/.gemini/antigravity/brain", "antigravity", "antigravity")]
+    [InlineData("~", "spotlight", "spotlight")]
+    [InlineData("/", "spotlight", "spotlight")]
+    [InlineData("", "spotlight", "spotlight")]
+    [InlineData("   ", "SPOTLIGHT", "spotlight")]
+    [InlineData("~/Documents", "spotlight", "documents")]
     public void The_suggested_name_comes_from_the_folder_and_the_kind(string root, string kind, string expected) =>
         Assert.Equal(expected, SourceSlugSuggestion.Suggest(root, kind, new HashSet<string>()));
 
@@ -157,6 +213,7 @@ public sealed class SourcesTests
     {
         Assert.Equal("notes-2", SourceSlugSuggestion.Suggest("~/Notes", "filesystem", new HashSet<string> { "notes" }));
         Assert.Equal("notes-3", SourceSlugSuggestion.Suggest("~/Notes", "filesystem", new HashSet<string> { "notes", "notes-2" }));
+        Assert.Equal("spotlight-2", SourceSlugSuggestion.Suggest("~", "spotlight", new HashSet<string> { "spotlight" }));
     }
 
     [Fact]

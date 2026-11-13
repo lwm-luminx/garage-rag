@@ -39,6 +39,12 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(SidebarGroup.configuration.sections, [.sources, .models, .mcp])
         XCTAssertEqual(SidebarGroup.data.sections, [.documents, .facts, .graph, .search])
         XCTAssertEqual(SidebarGroup.advanced.sections, [.database, .services, .logs])
+    }
+
+    func testTheGraphPageIsOnlyOfferedWhereTheBuildTurnsItOn() {
+        XCTAssertEqual(SidebarGroup.data.sections(showsGraph: false), [.documents, .facts, .search])
+        XCTAssertEqual(SidebarGroup.data.sections(showsGraph: true), [.documents, .facts, .graph, .search])
+        XCTAssertEqual(SidebarGroup.configuration.sections(showsGraph: false), [.sources, .models, .mcp])
         XCTAssertNil(AppSection.status.group)
     }
 

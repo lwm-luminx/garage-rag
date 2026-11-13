@@ -32,7 +32,8 @@ rust_static_library(
 
 # The system libraries the static library's dependencies need, which a Rust static library does not
 # carry to its linker: zlib and iconv for libgit2 (//rust/garage-git links them for a Rust binary),
-# and SystemConfiguration on macOS for `whoami`, which tokio-postgres reads the default user with. The XPC
+# and SystemConfiguration on macOS for `whoami`, which tokio-postgres reads the default user with, and
+# Vision for //rust/garage-ocr's picture reader. The XPC
 # services get them from their frameworks; the launcher helpers link nothing else.
 cc_library(
     name = "garage-cli",
@@ -43,6 +44,8 @@ cc_library(
             "-liconv",
             "-framework",
             "SystemConfiguration",
+            "-framework",
+            "Vision",
         ],
         "//conditions:default": [],
     }),

@@ -129,6 +129,30 @@ final class FirstRunTests: XCTestCase {
         XCTAssertEqual(documents?.needsFullDiskAccess, false)
     }
 
+    func testAISessionTemplatesFollowTheirFoldersWithoutFullDiskAccess() {
+        let home = URL(fileURLWithPath: "/Users/tester")
+        let present: Set<String> = ["/Users/tester/.claude", "/Users/tester/.gemini/antigravity"]
+        let templates = FirstRunSourceTemplate.builtIn(
+            home: home,
+            exists: { present.contains($0) },
+            readable: { _ in false }
+        )
+
+        let claude = templates.first { $0.id == SourcePreset.claude.id }
+        XCTAssertEqual(claude?.isAvailable, true)
+        XCTAssertEqual(claude?.kind, "claude")
+        XCTAssertEqual(claude?.isCommunication, true)
+        XCTAssertEqual(claude?.needsFullDiskAccess, false)
+
+        let codex = templates.first { $0.id == SourcePreset.codex.id }
+        XCTAssertEqual(codex?.isAvailable, false, "no ~/.codex on this Mac")
+        XCTAssertEqual(codex?.needsFullDiskAccess, false)
+
+        let antigravity = templates.first { $0.id == SourcePreset.antigravity.id }
+        XCTAssertEqual(antigravity?.isAvailable, true)
+        XCTAssertEqual(antigravity?.kind, "antigravity")
+    }
+
     func testTheSandboxBeforeAnyGrantAssumesEveryLocationIsThere() {
         let templates = FirstRunSourceTemplate.builtIn(
             home: URL(fileURLWithPath: "/Users/tester"),
@@ -148,7 +172,7 @@ final class FirstRunTests: XCTestCase {
 
     func testSharedTemplatesAgreeWithTheSourcePresets() {
         let templates = FirstRunSourceTemplate.builtIn(home: URL(fileURLWithPath: "/Users/tester"), exists: { _ in true }, readable: { _ in true })
-        for preset in [SourcePreset.documents, .desktop, .downloads, .dropbox, .messages, .mail] {
+        for preset in [SourcePreset.documents, .desktop, .downloads, .dropbox, .messages, .mail, .claude, .codex, .antigravity] {
             let template = templates.first { $0.id == preset.id }
             XCTAssertNotNil(template, preset.id)
             XCTAssertEqual(template?.spec, preset.spec, preset.id)

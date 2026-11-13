@@ -13,6 +13,7 @@ public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
     public let includeCode: Bool
     public let origin: SourceOrigin
     public var documentCount: Int
+    public var additionalDocumentCount: Int
     public var expectedElements: Int
 
     public enum SourceOrigin: String, Sendable, Codable {
@@ -31,6 +32,7 @@ public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
         includeCode: Bool = false,
         origin: SourceOrigin = .config,
         documentCount: Int = 0,
+        additionalDocumentCount: Int = 0,
         expectedElements: Int = 0
     ) {
         self.slug = slug
@@ -42,7 +44,37 @@ public struct RegisteredSource: Identifiable, Hashable, Sendable, Codable {
         self.includeCode = includeCode
         self.origin = origin
         self.documentCount = documentCount
+        self.additionalDocumentCount = additionalDocumentCount
         self.expectedElements = expectedElements
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case slug
+        case kind
+        case root
+        case corpusClass
+        case trust
+        case enabled
+        case includeCode
+        case origin
+        case documentCount
+        case additionalDocumentCount
+        case expectedElements
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.slug = try container.decode(String.self, forKey: .slug)
+        self.kind = try container.decode(String.self, forKey: .kind)
+        self.root = try container.decode(String.self, forKey: .root)
+        self.corpusClass = try container.decode(String.self, forKey: .corpusClass)
+        self.trust = try container.decode(String.self, forKey: .trust)
+        self.enabled = try container.decode(Bool.self, forKey: .enabled)
+        self.includeCode = try container.decode(Bool.self, forKey: .includeCode)
+        self.origin = try container.decode(SourceOrigin.self, forKey: .origin)
+        self.documentCount = try container.decode(Int.self, forKey: .documentCount)
+        self.additionalDocumentCount = try container.decodeIfPresent(Int.self, forKey: .additionalDocumentCount) ?? 0
+        self.expectedElements = try container.decode(Int.self, forKey: .expectedElements)
     }
 
     /// Expanded filesystem path, expanding '~' if present.

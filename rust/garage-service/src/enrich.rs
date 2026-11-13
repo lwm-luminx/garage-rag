@@ -281,7 +281,17 @@ pub async fn documents_to_enrich(client: &Client, source: &str, document_id: Opt
     let rows = if source.is_empty() || source == "*" {
         client.query(&format!("SELECT {DOCUMENT_COLUMNS} {joins} ORDER BY d.id"), &[]).await?
     } else {
-        client.query(&format!("SELECT {DOCUMENT_COLUMNS} {joins} WHERE s.slug = $1 ORDER BY d.id"), &[&source]).await?
+        client
+            .query(
+                &format!(
+                    "SELECT {DOCUMENT_COLUMNS} {joins} \
+                     WHERE (s.slug = $1 OR EXISTS (SELECT 1 FROM document_sources ds \
+                     JOIN sources s2 ON s2.id = ds.source_id WHERE ds.document_id = d.id AND s2.slug = $1)) \
+                     ORDER BY d.id"
+                ),
+                &[&source],
+            )
+            .await?
     };
     Ok(rows.iter().map(document_row).collect())
 }

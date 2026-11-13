@@ -96,11 +96,12 @@ fn sources_schema() -> Value {
             "properties": {
                 "slug": {"type": "string", "description": "Short unique name, e.g. 'dropbox'."},
                 "root": {"type": "string", "description": "Directory or file to index. '~' is expanded."},
-                "kind": {"type": "string", "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive | gmail"},
+                "kind": {"type": "string", "description": "filesystem | git | sqlite | maildir | feed | spotlight | claude | chatgpt | antigravity | dropbox | onedrive | outlook | google_drive | gmail"},
                 "class": {"type": "string", "description": "Default grouping: document | code | communication"},
                 "trust": {"type": "string", "description": "Default trust: authored | reference | received"},
                 "include_code": {"type": "boolean", "description": "Index source files as well as documents."},
-                "enabled": {"type": "boolean", "description": "Set false to skip this source."}
+                "enabled": {"type": "boolean", "description": "Set false to skip this source."},
+                "query": {"type": "string", "description": "Optional Spotlight predicate narrowing the default document query (spotlight sources only)."}
             }
         }
     })

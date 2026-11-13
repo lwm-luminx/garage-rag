@@ -281,8 +281,10 @@ pub fn ingest_conversation(
                 text: chunk.text,
                 direction: Some(chunk.direction.to_owned()),
                 sender: chunk.sender,
+                session_turn_external_id: None,
             })
             .collect(),
+        session_json: None,
     };
     storage.replace_document(&uri, document).map(Some)
 }

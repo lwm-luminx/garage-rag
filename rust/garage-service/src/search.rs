@@ -177,7 +177,10 @@ pub async fn search(
     }
     if !filters.sources.is_empty() {
         let p = params.push(filters.sources.clone());
-        where_parts.push(format!("s.slug = ANY(${p}::text[])"));
+        where_parts.push(format!(
+            "(s.slug = ANY(${p}::text[]) OR EXISTS (SELECT 1 FROM document_sources ds \
+             JOIN sources s2 ON s2.id = ds.source_id WHERE ds.document_id = d.id AND s2.slug = ANY(${p}::text[])))"
+        ));
     }
     if let Some(author) = filters.author.as_deref().filter(|a| !a.is_empty()) {
         let p = params.push(format!("%{author}%"));

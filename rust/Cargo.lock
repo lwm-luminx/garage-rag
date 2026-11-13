@@ -1027,12 +1027,15 @@ version = "0.1.0"
 name = "garage-ingest"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "garage-facade",
  "garage-git",
+ "garage-spotlight",
  "libc",
  "messages-markdown",
  "regex",
  "serde_json",
+ "zip",
 ]
 
 [[package]]

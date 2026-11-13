@@ -76,4 +76,22 @@ final class SpotlightEntriesTests: XCTestCase {
         XCTAssertNil(SpotlightEntries.documentID(forIdentifier: "garage.document.x"))
         XCTAssertNil(SpotlightEntries.documentID(forIdentifier: "other.document.42"))
     }
+
+    func testDocumentItemsCarryAdditionalSources() {
+        var summary = Garage_DocumentSummary()
+        summary.id = 10
+        summary.sourceSlug = "notes"
+        summary.additionalSources = ["spotlight", "backup"]
+        let listItem = DocumentListItem(summary: summary)
+        XCTAssertEqual(listItem.additionalSources, ["spotlight", "backup"])
+
+        var detail = Garage_DocumentDetail()
+        detail.id = 10
+        detail.sourceSlug = "notes"
+        detail.additionalSources = ["spotlight"]
+        var response = Garage_GetDocumentResponse()
+        response.document = detail
+        let detailItem = DocumentDetailItem(response: response)
+        XCTAssertEqual(detailItem.additionalSources, ["spotlight"])
+    }
 }

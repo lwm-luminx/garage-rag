@@ -409,7 +409,7 @@ pub fn walk_while(
     Walked::Walked
 }
 
-fn consider(
+pub(crate) fn consider(
     dir: &Path,
     name: &str,
     policy: &WalkPolicy,

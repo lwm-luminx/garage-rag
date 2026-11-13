@@ -13,11 +13,13 @@ final class SourcesPresentationTests: XCTestCase {
         includeCode: Bool = false,
         origin: RegisteredSource.SourceOrigin = .both,
         documents: Int = 0,
+        additionalDocuments: Int = 0,
         expected: Int = 0
     ) -> RegisteredSource {
         RegisteredSource(
             slug: slug, kind: kind, root: root, corpusClass: corpusClass, enabled: enabled,
-            includeCode: includeCode, origin: origin, documentCount: documents, expectedElements: expected
+            includeCode: includeCode, origin: origin, documentCount: documents,
+            additionalDocumentCount: additionalDocuments, expectedElements: expected
         )
     }
 
@@ -80,19 +82,22 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(row.statusTone, .active)
         XCTAssertEqual(row.counts, "1,180 of 1,204 documents")
         XCTAssertEqual(row.progress.map { ($0 * 1000).rounded() / 1000 }, 0.98)
+        XCTAssertTrue(row.showsProgressBar)
     }
 
-    func testAFullyIndexedSourceIsUpToDateWithAFullBar() {
+    func testAFullyIndexedSourceIsUpToDateAndHidesItsBar() {
         let row = SourceRowPresentation.make(source: source(documents: 1_204, expected: 1_204), access: nil, activity: .idle, lastRun: nil)
         XCTAssertEqual(row.status, "Up to date")
         XCTAssertEqual(row.statusTone, .good)
         XCTAssertEqual(row.progress, 1)
-        XCTAssertEqual(row.counts, "1,204 of 1,204 documents")
+        XCTAssertFalse(row.showsProgressBar, "an up-to-date row hides its bar")
+        XCTAssertEqual(row.counts, "1,204 documents")
     }
 
     func testMoreDocumentsThanTheScanExpectedStillReadsAsUpToDate() {
         let row = SourceRowPresentation.make(source: source(documents: 40, expected: 30), access: nil, activity: .idle, lastRun: nil)
         XCTAssertEqual(row.status, "Up to date")
+        XCTAssertEqual(row.counts, "40 documents", "no \"40 of 30\" once there is nothing left to index")
     }
 
     func testAnUnscannedSourceWithDocumentsShowsTheCountAlone() {
@@ -216,6 +221,13 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "maildir", root: "~/Library/Mail")), "envelope")
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "git", root: "~/Developer/garage")), "chevron.left.forwardslash.chevron.right")
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "sqlite", root: "~/data/app.db")), "cylinder")
+        XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "claude", root: "~/.claude")), "sparkles")
+        XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "chatgpt", root: "~/.codex")), "sparkles")
+        XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "antigravity", root: "~/.gemini/antigravity/brain")), "sparkles")
+        XCTAssertEqual(SourceRowPresentation.tint(forKind: "claude", corpusClass: "communication"), .indigo)
+        XCTAssertEqual(SourceRowPresentation.tint(forKind: "chatgpt", corpusClass: "communication"), .indigo)
+        XCTAssertEqual(SourceRowPresentation.tint(forKind: "maildir", corpusClass: "communication"), .green)
+        XCTAssertEqual(SourceRowPresentation.tint(forKind: "filesystem", corpusClass: "document"), .blue)
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(root: "~/Documents")), "doc.text")
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(root: "~/Downloads")), "arrow.down.circle")
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(root: "~/Dropbox")), "shippingbox")
@@ -447,6 +459,9 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/tmp/fixtures/chat.db", kind: "sqlite", taken: []), "chat")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "https://example.com/feed.xml", kind: "feed", taken: []), "example-com")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Library/Mail", kind: "maildir", taken: []), "apple-mail")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/.claude", kind: "claude", taken: []), "claude")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Downloads/chatgpt-export.zip", kind: "chatgpt", taken: []), "chatgpt-export")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/.gemini/antigravity/brain", kind: "antigravity", taken: []), "antigravity")
     }
 
     func testAPresetLocationKeepsThePresetsName() {
@@ -471,22 +486,33 @@ final class SourcesPresentationTests: XCTestCase {
     // MARK: - Cloud kinds
 
     func testCloudKindsAreOfferedOnlyWithAnAccountProvider() {
-        XCTAssertEqual(SourceKinds.offered(cloudAvailable: false), ["filesystem", "git", "sqlite", "maildir", "feed"])
+        XCTAssertEqual(
+            SourceKinds.offered(cloudAvailable: false),
+            ["filesystem", "git", "sqlite", "maildir", "feed", "claude", "chatgpt", "antigravity", "spotlight"]
+        )
         XCTAssertEqual(
             SourceKinds.offered(cloudAvailable: true).suffix(5),
             ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
         )
         XCTAssertTrue(SourceKinds.isCloud("Google_Drive"))
         XCTAssertFalse(SourceKinds.isCloud("maildir"))
+        XCTAssertFalse(SourceKinds.isCloud("claude"))
         XCTAssertEqual(SourceKinds.title("google_drive"), "Google Drive")
+        XCTAssertEqual(SourceKinds.title("claude"), "Claude")
+        XCTAssertEqual(SourceKinds.title("chatgpt"), "ChatGPT / Codex")
+        XCTAssertEqual(SourceKinds.title("antigravity"), "Antigravity")
         XCTAssertEqual(SourceKinds.title("git"), "git")
     }
 
     func testMailKindsAreCommunicationsAndNameTheirRoot() {
         XCTAssertEqual(SourceKinds.defaultClass("outlook"), "communication")
         XCTAssertEqual(SourceKinds.defaultClass("gmail"), "communication")
+        XCTAssertEqual(SourceKinds.defaultClass("claude"), "communication")
+        XCTAssertEqual(SourceKinds.defaultClass("chatgpt"), "communication")
+        XCTAssertEqual(SourceKinds.defaultClass("antigravity"), "communication")
         XCTAssertNil(SourceKinds.defaultClass("onedrive"))
         XCTAssertEqual(SourceKinds.rootPlaceholder("gmail"), "/ or INBOX")
+        XCTAssertEqual(SourceKinds.rootPlaceholder("antigravity"), "~/.gemini/antigravity/brain")
         XCTAssertEqual(SourceKinds.describe("outlook"), "an Outlook mail folder and those below it")
     }
 
@@ -496,5 +522,52 @@ final class SourcesPresentationTests: XCTestCase {
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "Inbox/Projects", kind: "outlook", taken: []), "projects")
         XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "filesystem", taken: []), "home")
         XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "gmail", root: "/INBOX")), "envelope")
+    }
+
+    // MARK: - Spotlight & linked documents
+
+    func testSpotlightKindPresentationAndSlug() {
+        XCTAssertEqual(SourceKinds.title("spotlight"), "Spotlight")
+        XCTAssertEqual(
+            SourceKinds.describe("spotlight"),
+            "files indexed by macOS Spotlight under a folder, linking any already in Garage"
+        )
+        XCTAssertEqual(SourceKinds.rootPlaceholder("spotlight"), "~ or ~/Documents")
+        XCTAssertNil(SourceKinds.defaultClass("spotlight"))
+        XCTAssertFalse(SourceKinds.isCloud("spotlight"))
+        XCTAssertEqual(SourceRowPresentation.symbol(for: source(kind: "spotlight", root: "~")), "magnifyingglass")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~", kind: "spotlight", taken: []), "spotlight")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "/", kind: "spotlight", taken: ["spotlight"]), "spotlight-2")
+        XCTAssertEqual(SourceSlugSuggestion.suggest(root: "~/Documents", kind: "spotlight", taken: []), "documents")
+    }
+
+    func testLinkedDocumentsCountTowardProgressAndUpToDateStatus() {
+        let allLinked = SourceRowPresentation.make(
+            source: source(kind: "spotlight", root: "~", documents: 0, additionalDocuments: 10, expected: 10),
+            access: nil, activity: .idle, lastRun: nil
+        )
+        XCTAssertEqual(allLinked.status, "Up to date")
+        XCTAssertEqual(allLinked.statusTone, .good)
+        XCTAssertEqual(allLinked.progress, 1)
+        XCTAssertFalse(allLinked.showsProgressBar)
+        XCTAssertEqual(allLinked.counts, "0 documents · 10 linked")
+
+        let mixedUpToDate = SourceRowPresentation.make(
+            source: source(kind: "spotlight", root: "~", documents: 2, additionalDocuments: 8, expected: 10),
+            access: nil, activity: .idle, lastRun: nil
+        )
+        XCTAssertEqual(mixedUpToDate.status, "Up to date")
+        XCTAssertEqual(mixedUpToDate.statusTone, .good)
+        XCTAssertEqual(mixedUpToDate.progress, 1)
+        XCTAssertEqual(mixedUpToDate.counts, "2 documents · 8 linked")
+
+        let partiallyCovered = SourceRowPresentation.make(
+            source: source(kind: "spotlight", root: "~", documents: 2, additionalDocuments: 3, expected: 10),
+            access: nil, activity: .idle, lastRun: nil
+        )
+        XCTAssertEqual(partiallyCovered.status, "5 items to go")
+        XCTAssertEqual(partiallyCovered.statusTone, .active)
+        XCTAssertEqual(partiallyCovered.progress, 0.5)
+        XCTAssertEqual(partiallyCovered.counts, "2 of 10 documents · 3 linked")
     }
 }

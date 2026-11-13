@@ -14,7 +14,7 @@ Migrations are idempotent — `IF NOT EXISTS` plus `duplicate_object` guards for
 enum types — so applying them repeatedly *is* the migration story. Sufficient for
 a single-user local corpus, and it avoids a migration framework.
 
-The files run in order, `001_extensions.sql` through `025_sessions.sql`.
+The files run in order, `001_extensions.sql` through `026_spotlight_sources.sql`.
 `001` creates `vector` and `pg_trgm`, and Apache AGE (`age`, graph queries in
 openCypher) only where the server has it installed: the app's bundled Postgres
 always does, Homebrew's and the CI image usually do not, and nothing in the
@@ -60,14 +60,15 @@ provider not on this machine is keyed on `corpus_class` for that reason.
 
 ### `sources`
 
-Registered roots. `kind` ∈ `filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive | gmail | claude | chatgpt | antigravity` — `feed`
-is the extension point for social media connectors, the cloud kinds read folders and mail through their provider APIs (`020`–`024`), and `claude`, `chatgpt` and `antigravity` index local AI assistant session transcripts and data-export archives (`025_sessions.sql`).
+Registered roots. `kind` ∈ `filesystem | git | sqlite | maildir | feed | spotlight | dropbox | onedrive | outlook | google_drive | gmail | claude | chatgpt | antigravity` — `feed`
+is the extension point for social media connectors, `spotlight` queries macOS Spotlight (`MDQuery` scoped to `root`, using Apple's `.mdimporter` plug-ins and linking already-indexed documents via `document_sources`, `026_spotlight_sources.sql`), the cloud kinds read folders and mail through their provider APIs (`020`–`024`), and `claude`, `chatgpt` and `antigravity` index local AI assistant session transcripts and data-export archives (`025_sessions.sql`).
 
 `expected_elements` is the item count of the last scan, which the app's
 progress bars measure ingest against. The rest of that scan lives beside it
 (`008_source_scan.sql`): `scan_item_type` (files, messages, …), `scan_details`
 (the scanner's per-kind breakdown) and `scanned_at`. `config` holds only the
-source's own settings, such as `include_code`, as written by `sync` from
+source's own settings, such as `include_code` and `query` (optional Spotlight
+predicate narrowing the default document query), as written by `sync` from
 garage.json.
 
 ### `authors` / `author_identities`
@@ -104,6 +105,18 @@ M:N with `role` (`author`, `committer`, `sender`, `recipient`, `cc`),
 `confidence`, and `evidence` — `git-log:self-commits:4/4`,
 `path-rule:Reference`, `document-metadata`. Evidence makes a misattribution
 diagnosable instead of mysterious.
+
+### `document_sources`
+
+Additional source links (`026_spotlight_sources.sql`), keyed on `(document_id,
+source_id)` (`ON DELETE CASCADE`) and unique on `(source_id, uri)`. Lets a
+secondary source such as `spotlight` observe and enrich a file already owned by
+another source (merging `meta`, backfilling an empty `title`, and adding
+`document_authors`) without duplicating `documents`, `chunks`, or vector
+embeddings. When a primary source is removed, owned documents with an enabled
+additional source promote one to primary (`documents.source_id`) instead of being
+deleted; access policies continue evaluating against the document's primary
+`source_id` so `DENY` rules on owning sources are never bypassed.
 
 ### `chunks`
 

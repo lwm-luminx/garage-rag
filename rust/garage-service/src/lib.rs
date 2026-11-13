@@ -35,6 +35,7 @@ pub mod schema;
 pub mod search;
 pub mod server;
 pub mod service;
+pub mod sessions_store;
 pub mod sources;
 
 pub use error::{Result, ServiceError};

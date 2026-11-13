@@ -126,6 +126,8 @@ pub struct DocumentSummary {
     pub ingested_at: ::prost::alloc::string::String,
     #[prost(int32, tag = "13")]
     pub fact_count: i32,
+    #[prost(string, repeated, tag = "14")]
+    pub additional_sources: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListDocumentsRequest {
@@ -238,6 +240,8 @@ pub struct DocumentDetail {
     pub ingested_at: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "17")]
     pub authors: ::prost::alloc::vec::Vec<DocumentAuthorInfo>,
+    #[prost(string, repeated, tag = "18")]
+    pub additional_sources: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct GetDocumentRequest {
@@ -540,6 +544,8 @@ pub struct SourceInfo {
     pub document_count: i64,
     #[prost(int64, tag = "9")]
     pub expected_elements: i64,
+    #[prost(int64, tag = "10")]
+    pub additional_document_count: i64,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct ListSourcesRequest {}
@@ -1264,9 +1270,12 @@ pub struct BeginIngestSessionResponse {
     pub run_id: i64,
     #[prost(string, repeated, tag = "8")]
     pub source_slugs: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// filesystem | git | sqlite | maildir: picks the scanner
+    /// filesystem | git | sqlite | maildir | feed | spotlight | dropbox | onedrive | outlook | google_drive | gmail | claude | chatgpt | antigravity
     #[prost(string, tag = "9")]
     pub kind: ::prost::alloc::string::String,
+    /// Optional Spotlight MDQuery narrowing predicate from sources.config.query; empty otherwise.
+    #[prost(string, tag = "10")]
+    pub query: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistScanRequest {
@@ -1316,6 +1325,12 @@ pub struct CheckDocumentStatResponse {
     pub state: ::prost::alloc::string::String,
     #[prost(string, tag = "7")]
     pub source_sha256: ::prost::alloc::string::String,
+    /// Set (> 0) when another source already owns a documents row at this URI.
+    #[prost(int64, tag = "8")]
+    pub existing_document_id: i64,
+    /// True when source_slug already links to existing_document_id in document_sources.
+    #[prost(bool, tag = "9")]
+    pub already_linked: bool,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocumentAuthorPayload {
@@ -1359,6 +1374,9 @@ pub struct DocumentChunkPayload {
     pub direction: ::prost::alloc::string::String,
     #[prost(string, tag = "10")]
     pub sender: ::prost::alloc::string::String,
+    /// Session chunks only: the external_id of the originating session_turns row; empty otherwise.
+    #[prost(string, tag = "11")]
+    pub session_turn_external_id: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistDocumentRequest {
@@ -1368,6 +1386,7 @@ pub struct PersistDocumentRequest {
     pub source_slug: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub uri: ::prost::alloc::string::String,
+    /// placeholder | extract_failed | no_text | rejected | seen | refresh_metadata | replace | link_additional
     #[prost(string, tag = "4")]
     pub action: ::prost::alloc::string::String,
     #[prost(string, tag = "5")]
@@ -1406,6 +1425,10 @@ pub struct PersistDocumentRequest {
     /// (see CheckDocumentStatRequest.extractor_revision). Empty: the server's own Python reader's.
     #[prost(string, tag = "21")]
     pub extractor_revision: ::prost::alloc::string::String,
+    /// Session sources (claude, chatgpt, antigravity): normalized relational session payload or
+    /// companion artifact link JSON written atomically alongside documents and chunks. Empty otherwise.
+    #[prost(string, tag = "22")]
+    pub session_json: ::prost::alloc::string::String,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct PersistDocumentResponse {

@@ -245,8 +245,17 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
         }
         /// Wraps one of the shared `SourcePreset`s so the assistant can never
         /// disagree with the Sources/Status pages on a slug, root or class.
-        func shared(_ preset: SourcePreset, subtitle: String, symbol: String) -> FirstRunSourceTemplate {
-            if preset.spec.corpusClass == "communication", !assumeAvailable {
+        ///
+        /// `fullDiskAccess` marks the folders macOS keeps behind Full Disk Access (Mail, Messages); the
+        /// AI session folders are communications too but sit in plain dotfolders, so only their
+        /// existence is checked.
+        func shared(
+            _ preset: SourcePreset,
+            subtitle: String,
+            symbol: String,
+            fullDiskAccess: Bool = false
+        ) -> FirstRunSourceTemplate {
+            if fullDiskAccess, !assumeAvailable {
                 let canRead = readable(resolvedPath(preset.spec.root, home: home))
                 return FirstRunSourceTemplate(
                     id: preset.id,
@@ -311,8 +320,11 @@ struct FirstRunSourceTemplate: Identifiable, Hashable {
             extra(id: "icloud-drive", title: "iCloud Drive", subtitle: "Documents synced through iCloud", symbol: "icloud", root: "~/Library/Mobile Documents/com~apple~CloudDocs"),
             shared(.dropbox, subtitle: "Your Dropbox folder", symbol: "shippingbox"),
             extra(id: "developer", title: "Developer", subtitle: "Code repositories under ~/Developer", symbol: "chevron.left.forwardslash.chevron.right", root: "~/Developer", kind: "git", corpusClass: "code"),
-            shared(.messages, subtitle: "iMessage and SMS history (Garage never sends it off this Mac)", symbol: "message"),
-            shared(.mail, subtitle: "Local mailboxes (Garage never sends them off this Mac)", symbol: "envelope"),
+            shared(.messages, subtitle: "iMessage and SMS history (Garage never sends it off this Mac)", symbol: "message", fullDiskAccess: true),
+            shared(.mail, subtitle: "Local mailboxes (Garage never sends them off this Mac)", symbol: "envelope", fullDiskAccess: true),
+            shared(.claude, subtitle: "Claude Code and Cowork sessions in ~/.claude", symbol: "sparkles"),
+            shared(.codex, subtitle: "Codex sessions in ~/.codex", symbol: "sparkles"),
+            shared(.antigravity, subtitle: "Antigravity conversations and artifacts", symbol: "sparkles"),
         ]
     }
 

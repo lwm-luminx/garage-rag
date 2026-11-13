@@ -826,14 +826,28 @@ final class PostgresService: ObservableObject {
     /// Fetches all registered ingest sources directly from the backing database along with their document counts.
     func listRegisteredSources() async throws -> [RegisteredSource] {
         try requireRunning()
-        let sql = """
+        let runner = try commandRunner()
+        let sqlWithAdditional = """
+        SELECT s.slug, s.kind, s.root, s.default_class::text, s.default_trust::text, s.enabled, count(d.id), coalesce(s.expected_elements, 0), (SELECT count(*) FROM document_sources ds WHERE ds.source_id = s.id)
+        FROM sources s
+        LEFT JOIN documents d ON d.source_id = s.id
+        GROUP BY s.id, s.slug, s.kind, s.root, s.default_class, s.default_trust, s.enabled, s.expected_elements
+        ORDER BY s.id;
+        """
+        let sqlWithoutAdditional = """
         SELECT s.slug, s.kind, s.root, s.default_class::text, s.default_trust::text, s.enabled, count(d.id), coalesce(s.expected_elements, 0)
         FROM sources s
         LEFT JOIN documents d ON d.source_id = s.id
         GROUP BY s.id, s.slug, s.kind, s.root, s.default_class, s.default_trust, s.enabled, s.expected_elements
         ORDER BY s.id;
         """
-        let rows = try await commandRunner().query(sql)
+        let rows: [[String]]
+        do {
+            rows = try await runner.query(sqlWithAdditional)
+        } catch {
+            // Unmigrated databases without `document_sources` fall back to the 8-column query.
+            rows = try await runner.query(sqlWithoutAdditional)
+        }
         var sources: [RegisteredSource] = []
         for parts in rows {
             guard parts.count >= 6 else { continue }
@@ -845,6 +859,7 @@ final class PostgresService: ObservableObject {
             let enabled = parts[5] == "t" || parts[5] == "true"
             let docCount = parts.count >= 7 ? (Int(parts[6]) ?? 0) : 0
             let expectedElements = parts.count >= 8 ? (Int(parts[7]) ?? 0) : 0
+            let additionalDocCount = parts.count >= 9 ? (Int(parts[8]) ?? 0) : 0
             sources.append(RegisteredSource(
                 slug: slug,
                 kind: kind,
@@ -855,6 +870,7 @@ final class PostgresService: ObservableObject {
                 includeCode: false,
                 origin: .database,
                 documentCount: docCount,
+                additionalDocumentCount: additionalDocCount,
                 expectedElements: expectedElements
             ))
         }

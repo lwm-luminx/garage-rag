@@ -111,6 +111,8 @@ tonic-prost = "0.14"
 tonic-prost-build = "0.14"
 unicode-normalization = "0.1.26"
 yaml-rust2 = { version = "0.13", default-features = false }
+# Export archives (.zip) for Claude, ChatGPT and Antigravity session sources (garage-ingest).
+zip = { version = "9.3", default-features = false, features = ["deflate"] }
 hyper-util = { version = "0.1", features = ["tokio"] }
 # The MCP server's streamable HTTP transport (rust/garage-mcp): hyper is already under tonic.
 bytes = "1.12"

@@ -21,6 +21,7 @@ use garage_ingest::pipeline::{
 };
 use garage_ingest::scanner::{ScanOptions, Ticker, scan_source};
 use garage_ingest::source::{self, ScanSummary, SourceError, SourceHost, SourceOptions};
+use garage_ingest::spotlight::SpotlightOptions;
 use garage_ingest::{
     Budget, ContentKind, LibGitHistory, Materializer, Outcome as Materialized, WalkOptions, WalkPolicy, WalkStats,
     Walked,
@@ -408,6 +409,8 @@ fn existing_stat(value: Option<&Value>) -> Result<ExistingStat, String> {
         chunker: text_field(object, "chunker"),
         state: text_field(object, "state"),
         source_sha256: text_field(object, "source_sha256"),
+        existing_document_id: object.get("existing_document_id").and_then(Value::as_i64).filter(|id| *id > 0),
+        already_linked: object.get("already_linked").and_then(Value::as_bool).unwrap_or(false),
     })
 }
 
@@ -679,16 +682,34 @@ fn facade_target(object: &Map<String, Value>) -> Result<GrpcTarget, String> {
     Ok(GrpcTarget::Tcp { host: object.get("host").and_then(Value::as_str).unwrap_or("127.0.0.1").to_owned(), port })
 }
 
+fn non_empty_trimmed(value: Option<&Value>) -> Option<String> {
+    value.and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_owned)
+}
+
+fn spotlight_query(request: &Map<String, Value>) -> Option<String> {
+    non_empty_trimmed(request.get("spotlight").and_then(|s| s.get("query")))
+        .or_else(|| non_empty_trimmed(request.get("query")))
+}
+
+fn spotlight_options(request: &Map<String, Value>) -> SpotlightOptions {
+    SpotlightOptions { query: spotlight_query(request) }
+}
+
 /// Counts a source's items, as `ingest/scanner.py`'s `scan_source` does.
 fn scan(request: &Map<String, Value>) -> Outcome {
-    let policy = walk_policy(request)?;
+    let mut policy = walk_policy(request)?;
+    let slug = request.get("source_slug").and_then(Value::as_str).unwrap_or_default();
+    let kind = request.get("kind").and_then(Value::as_str).unwrap_or("filesystem");
+    let spotlight = (kind == garage_ingest::spotlight::KIND).then(|| {
+        policy = garage_ingest::spotlight::policy_with_importers(&policy);
+        spotlight_options(request)
+    });
     let options = ScanOptions {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         policy: &policy,
         read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(true),
+        spotlight: spotlight.as_ref(),
     };
-    let slug = request.get("source_slug").and_then(Value::as_str).unwrap_or_default();
-    let kind = request.get("kind").and_then(Value::as_str).unwrap_or("filesystem");
     Ok(scan_source(slug, kind, Path::new(&root(request)?), &options, &mut Ticker::new(None)).to_json())
 }
 
@@ -699,7 +720,7 @@ fn ingest_source(request: &Map<String, Value>) -> Outcome {
     let shared_names = request.get("shared_names").and_then(Value::as_object).cloned().unwrap_or_default();
     run_source_with(
         request,
-        |root, _| StatedFiles { root, files, shared_names, cancel_after, asked: 0, progress: Vec::new() },
+        |root, _, _| StatedFiles { root, files, shared_names, cancel_after, asked: 0, progress: Vec::new() },
         |host, reply| {
             reply.insert("progress".to_owned(), Value::Array(host.progress));
         },
@@ -718,28 +739,59 @@ fn local_folder(request: &Map<String, Value>, kind: &str) -> Option<PathBuf> {
     }
 }
 
+fn session_spotlight_and_scan(
+    request: &Map<String, Value>,
+    slug: &str,
+    kind: &str,
+    root: &str,
+    session_query: &str,
+    policy: &mut WalkPolicy,
+    include_code: bool,
+) -> Result<(bool, Option<SpotlightOptions>, ScanSummary), String> {
+    let is_spotlight = kind == garage_ingest::spotlight::KIND;
+    let spotlight_opts = is_spotlight.then(|| {
+        *policy = garage_ingest::spotlight::policy_with_importers(policy);
+        let query = spotlight_query(request)
+            .or_else(|| (!session_query.trim().is_empty()).then(|| session_query.trim().to_owned()));
+        SpotlightOptions { query }
+    });
+    let scan = if let Some(scan) = request.get("scan").filter(|scan| !scan.is_null()) {
+        scan_summary(Some(scan))?
+    } else {
+        let scan_options = ScanOptions {
+            include_code,
+            policy,
+            read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
+            spotlight: spotlight_opts.as_ref(),
+        };
+        scan_source(slug, kind, Path::new(root), &scan_options, &mut Ticker::new(None)).summary()
+    };
+    Ok((is_spotlight, spotlight_opts, scan))
+}
+
 /// `BeginIngestSession`, the scan, then [`source::ingest_source`] with the host `make_host` builds for
 /// the source's root; `finish` adds what the host has to say to the reply.
 fn run_source_with<H: SourceHost>(
     request: &Map<String, Value>,
-    make_host: impl FnOnce(PathBuf, &ScanSummary) -> H,
+    make_host: impl FnOnce(PathBuf, &ScanSummary, bool) -> H,
     finish: impl FnOnce(H, &mut Map<String, Value>),
 ) -> Outcome {
     let facade = request.get("facade").and_then(Value::as_object).ok_or("the request has no \"facade\" object")?;
     let slug = facade.get("source_slug").and_then(Value::as_str).ok_or("\"facade\" has no \"source_slug\"")?;
     let connection = Connection::connect(&facade_target(facade)?, facade.get("token").and_then(Value::as_str))
         .map_err(|error| error.to_string())?;
-    let options = SourceOptions {
+    let mut options = SourceOptions {
         include_code: request.get("include_code").and_then(Value::as_bool).unwrap_or(false),
         limit: request.get("limit").and_then(Value::as_u64),
         messages: false,
+        session_kind: None,
         local_folder: None,
+        spotlight: None,
     };
-    let scan_given = request.get("scan").filter(|scan| !scan.is_null());
     let settings = ingest_settings(request.get("settings"))?;
     let identity = identity(request)?;
     let names = contact_names(request.get("contact_names"))?;
-    let policy = walk_policy(request)?;
+    let mut policy = walk_policy(request)?;
     let supplied;
     let git: &dyn GitHistory = if request.get("read_git").and_then(Value::as_bool).unwrap_or(false) {
         library_history()
@@ -749,26 +801,27 @@ fn run_source_with<H: SourceHost>(
     };
 
     let session = facade::begin_session(&connection, slug, options.include_code).map_err(|error| error.to_string())?;
+    let (is_spotlight, spotlight_opts, scan) = session_spotlight_and_scan(
+        request,
+        slug,
+        &session.kind,
+        &session.root,
+        &session.query,
+        &mut policy,
+        options.include_code,
+    )?;
     let source = source_info(Some(&json!({
         "root": session.root, "default_class": session.default_class, "default_trust": session.default_trust,
     })))?;
-    let scan = if let Some(scan) = scan_given {
-        scan_summary(Some(scan))?
-    } else {
-        let options = ScanOptions {
-            include_code: options.include_code,
-            policy: &policy,
-            read_git: request.get("read_git").and_then(Value::as_bool).unwrap_or(false),
-        };
-        scan_source(slug, &session.kind, Path::new(&session.root), &options, &mut Ticker::new(None)).summary()
-    };
     let mut storage = GrpcStorage::new(connection, session.run_id, slug);
     if rust_readers(request)?.is_some() {
         // GarageService remembers a no-text or failed file with the reader that gave up on it.
         storage = storage.with_extractor_revision(garage_readers::revision);
     }
-    let local_folder = local_folder(request, &session.kind);
-    let options = SourceOptions { messages: session.kind == "sqlite", local_folder, ..options };
+    options.messages = session.kind == "sqlite";
+    options.session_kind = garage_ingest::is_session_kind(&session.kind).then(|| session.kind.clone());
+    options.local_folder = local_folder(request, &session.kind);
+    options.spotlight = spotlight_opts;
     let context = Context {
         source: &source,
         identity: &identity,
@@ -781,7 +834,7 @@ fn run_source_with<H: SourceHost>(
     let cloud = garage_ingest::is_cloud_kind(&session.kind);
     let context = if cloud { Context { git: &NoGit, ..context } } else { context };
     let root = if cloud { source.root.clone() } else { garage_ingest::walk::expand_home(&source.root) };
-    let mut host = make_host(root, &scan);
+    let mut host = make_host(root, &scan, is_spotlight);
     let mut reply = Map::new();
     reply.insert("run_id".to_owned(), json!(session.run_id));
     let outcome = if cloud {
@@ -1139,12 +1192,17 @@ fn send_event(host: &GarageIngestHost, event: &Value) {
 /// Runs one walked source through GarageService, reading each file through the host.
 fn run_source(request: &Map<String, Value>, host: GarageIngestHost) -> Outcome {
     let budget = budget_from(request)?;
-    let readers = rust_readers(request)?;
+    let mut readers = rust_readers(request)?;
     // Only the materialize thread may start a download; a read here of a dataless file fails instead.
     let _policy = garage_ingest::materialize::refusing_dataless_reads();
     run_source_with(
         request,
-        |_root, _| ReadingHost { host, budget, readers, events: None },
+        |_root, _, is_spotlight| {
+            if is_spotlight && let Some(readers) = readers.as_mut() {
+                readers.set_spotlight(true);
+            }
+            ReadingHost { host, budget, readers, events: None }
+        },
         |host, reply| {
             reply.insert("budget".to_owned(), budget_json(&host.budget));
         },
@@ -1744,5 +1802,21 @@ mod tests {
         let (status, reply) = run(garage_ingest_root_problem, r#"{"root": "/no/such/garage/root"}"#);
         assert_eq!(status, GARAGE_INGEST_OK);
         assert_eq!(reply["problem"], "path does not exist: /no/such/garage/root");
+    }
+
+    #[test]
+    fn spotlight_options_extract_trimmed_non_empty_query() {
+        let nested = json!({"spotlight": {"query": "  kMDItemFSName == '*.pdf'  "}});
+        assert_eq!(
+            spotlight_options(nested.as_object().unwrap()),
+            SpotlightOptions { query: Some("kMDItemFSName == '*.pdf'".to_owned()) }
+        );
+        let top = json!({"query": "  kMDItemContentType == 'public.rtf' "});
+        assert_eq!(
+            spotlight_options(top.as_object().unwrap()),
+            SpotlightOptions { query: Some("kMDItemContentType == 'public.rtf'".to_owned()) }
+        );
+        let blank = json!({"spotlight": {"query": "   "}, "query": ""});
+        assert_eq!(spotlight_options(blank.as_object().unwrap()), SpotlightOptions { query: None });
     }
 }

@@ -48,6 +48,7 @@ public static class Look
         SourceSymbol.Message => "",
         SourceSymbol.Mail => "",
         SourceSymbol.Feed => "",
+        SourceSymbol.Search => "\uE721",
         _ => "",
     };
 

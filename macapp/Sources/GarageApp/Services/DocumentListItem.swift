@@ -7,6 +7,7 @@ public struct DocumentListItem: Identifiable, Hashable, Sendable {
     public let uri: String
     public let title: String
     public let sourceSlug: String
+    public let additionalSources: [String]
     public let corpusClass: String
     public let trustTier: String
     public let mime: String
@@ -22,6 +23,7 @@ public struct DocumentListItem: Identifiable, Hashable, Sendable {
         self.uri = summary.uri
         self.title = summary.title
         self.sourceSlug = summary.sourceSlug
+        self.additionalSources = summary.additionalSources
         self.corpusClass = summary.corpusClass
         self.trustTier = summary.trustTier
         self.mime = summary.mime
@@ -113,6 +115,7 @@ public struct DocumentDetailItem: Identifiable, Hashable, Sendable {
     public let uri: String
     public let title: String
     public let sourceSlug: String
+    public let additionalSources: [String]
     public let corpusClass: String
     public let trustTier: String
     public let mime: String
@@ -135,6 +138,7 @@ public struct DocumentDetailItem: Identifiable, Hashable, Sendable {
         self.uri = document.uri
         self.title = document.title
         self.sourceSlug = document.sourceSlug
+        self.additionalSources = document.additionalSources
         self.corpusClass = document.corpusClass
         self.trustTier = document.trustTier
         self.mime = document.mime

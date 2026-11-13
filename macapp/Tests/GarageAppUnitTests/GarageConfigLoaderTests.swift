@@ -29,8 +29,31 @@ final class GarageConfigLoaderTests: XCTestCase {
         XCTAssertFalse(source.includeCode)
         XCTAssertEqual(source.origin, .config)
         XCTAssertEqual(source.documentCount, 42)
+        XCTAssertEqual(source.additionalDocumentCount, 0)
         XCTAssertFalse(source.expandedRootPath.hasPrefix("~"))
         XCTAssertEqual(source.expandedRootURL.path, GarageAppGroup.realHomeDirectory + "/Dropbox")
+    }
+
+    func testRegisteredSourceDecodesWithoutAdditionalDocumentCount() throws {
+        let legacyJSON = Data("""
+        {
+            "slug": "notes",
+            "kind": "filesystem",
+            "root": "~/Notes",
+            "corpusClass": "document",
+            "trust": "authored",
+            "enabled": true,
+            "includeCode": false,
+            "origin": "Config File",
+            "documentCount": 7,
+            "expectedElements": 10
+        }
+        """.utf8)
+        let decoded = try JSONDecoder().decode(RegisteredSource.self, from: legacyJSON)
+        XCTAssertEqual(decoded.slug, "notes")
+        XCTAssertEqual(decoded.documentCount, 7)
+        XCTAssertEqual(decoded.additionalDocumentCount, 0)
+        XCTAssertEqual(decoded.expectedElements, 10)
     }
 
     func testLoadSourcesFromConfigJSON() throws {

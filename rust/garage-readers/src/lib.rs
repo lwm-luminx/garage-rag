@@ -259,12 +259,51 @@ impl Readers {
         &self.settings
     }
 
+    /// Enables or disables system Spotlight importers on these readers.
+    pub fn set_spotlight(&mut self, enabled: bool) {
+        self.settings.spotlight = enabled;
+    }
+
     /// Reads the file at `path` (`dispatch.extract`, then `host_read.read_for_host`'s outcomes).
     pub fn read(&mut self, path: &Path) -> ReadOutcome {
+        if reader_for(path) == Ok(Reader::Spotlight) {
+            return self.read_spotlight(path);
+        }
         match self.load(path) {
             Ok(bytes) => self.read_bytes(path, &bytes),
             Err(outcome) => *outcome,
         }
+    }
+
+    fn read_spotlight(&self, path: &Path) -> ReadOutcome {
+        let metadata = match std::fs::metadata(path) {
+            Ok(metadata) => metadata,
+            Err(error) => return ReadOutcome::Failed(format!("cannot stat {}: {error}", path.display())),
+        };
+        if garage_ingest::placeholder::is_placeholder(path, &metadata) {
+            return ReadOutcome::Placeholder;
+        }
+        let size = metadata.len();
+        if size == 0 {
+            return ReadOutcome::NoText(format!("empty file: {}", path.display()));
+        }
+        if size > self.settings.max_file_bytes {
+            return ReadOutcome::Failed(format!(
+                "file exceeds max_file_bytes ({size} > {}): {}",
+                self.settings.max_file_bytes,
+                path.display()
+            ));
+        }
+        if !self.settings.spotlight {
+            return ReadOutcome::Failed(format!(
+                "Spotlight importers are off (extraction.spotlight): {}",
+                path.display()
+            ));
+        }
+        if !metadata.is_file() {
+            return ReadOutcome::Failed(format!("Spotlight importers read files on disk only: {}", path.display()));
+        }
+        spotlight_document(path)
     }
 
     /// Whether the file at `path` must be read here rather than its bytes handed to a reader in

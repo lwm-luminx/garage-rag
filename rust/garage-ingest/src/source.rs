@@ -151,9 +151,13 @@ pub struct SourceOptions {
     pub limit: Option<u64>,
     /// A Messages (`sqlite`) source: its databases are read thread by thread, not walked.
     pub messages: bool,
+    /// An AI session source (`claude`, `chatgpt`, `antigravity`): read session by session, not walked.
+    pub session_kind: Option<String>,
     /// A cloud source's desktop client folder on this node (`dropbox::local_folder`): a listed file
     /// whose copy there is on disk and matches is read from it instead of downloaded.
     pub local_folder: Option<PathBuf>,
+    /// A `spotlight` source: list files through the Spotlight index and link existing documents as additional.
+    pub spotlight: Option<crate::spotlight::SpotlightOptions>,
 }
 
 /// `st_mtime` as Python's walker hands it on: through `datetime.fromtimestamp(..., UTC).timestamp()`,
@@ -213,6 +217,31 @@ pub fn ingest_source(
         if host.cancelled() {
             host.progress("cancelled", None, &run.counters);
         }
+        return Ok(run);
+    }
+
+    if let Some(kind) = options.session_kind.as_deref() {
+        run.completed =
+            crate::sessions::ingest_sessions_source(host, storage, context, kind, options.limit, &mut run.counters);
+        finalize(storage, host, &run)?;
+        if host.cancelled() {
+            host.progress("cancelled", None, &run.counters);
+        }
+        return Ok(run);
+    }
+
+    if let Some(spotlight) = options.spotlight.as_ref() {
+        run.completed = crate::spotlight::ingest_spotlight_source(
+            host,
+            storage,
+            context,
+            options.include_code,
+            options.limit,
+            spotlight,
+            &mut run,
+        )
+        .map_err(SourceError::Unavailable)?;
+        finalize(storage, host, &run)?;
         return Ok(run);
     }
 
@@ -390,7 +419,7 @@ mod tests {
             storage,
             &context,
             scan,
-            &SourceOptions { include_code: false, limit, messages: false, local_folder: None },
+            &SourceOptions { include_code: false, limit, ..SourceOptions::default() },
         )
     }
 

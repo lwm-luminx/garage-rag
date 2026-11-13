@@ -418,7 +418,7 @@
           },
           "kind": {
             "type": "string",
-            "description": "filesystem | git | sqlite | maildir | feed | dropbox | onedrive | outlook | google_drive | gmail"
+            "description": "filesystem | git | sqlite | maildir | feed | spotlight | claude | chatgpt | antigravity | dropbox | onedrive | outlook | google_drive | gmail"
           },
           "class": {
             "type": "string",
@@ -435,6 +435,10 @@
           "enabled": {
             "type": "boolean",
             "description": "Set false to skip this source."
+          },
+          "query": {
+            "type": "string",
+            "description": "Optional Spotlight predicate narrowing the default document query (spotlight sources only)."
           }
         }
       }

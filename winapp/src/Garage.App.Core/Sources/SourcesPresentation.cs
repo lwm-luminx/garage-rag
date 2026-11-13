@@ -55,6 +55,9 @@ public enum SourceSymbol
 
     /// <summary>A feed.</summary>
     Feed,
+
+    /// <summary>A Spotlight index.</summary>
+    Search,
 }
 
 /// <summary>Where a source is declared: the database, <c>garage.json</c>, or both.</summary>
@@ -80,13 +83,14 @@ public sealed record RegisteredSource(
     bool Enabled = true,
     SourceOrigin Origin = SourceOrigin.Both,
     long DocumentCount = 0,
-    long ExpectedElements = 0)
+    long ExpectedElements = 0,
+    long AdditionalDocumentCount = 0)
 {
     /// <summary>From a <c>SourceInfo</c>.</summary>
     public static RegisteredSource From(SourceInfo info, SourceOrigin origin = SourceOrigin.Both)
     {
         ArgumentNullException.ThrowIfNull(info);
-        return new(info.Slug, info.Kind, info.Root, info.CorpusClass, info.TrustTier, info.Enabled, origin, info.DocumentCount, info.ExpectedElements);
+        return new(info.Slug, info.Kind, info.Root, info.CorpusClass, info.TrustTier, info.Enabled, origin, info.DocumentCount, info.ExpectedElements, info.AdditionalDocumentCount);
     }
 }
 
@@ -182,6 +186,9 @@ public sealed record SourceRowPresentation(
     string CancelTitle = "Cancel",
     bool CancelDisabled = false)
 {
+    /// <summary>The status text for an up-to-date source.</summary>
+    public const string UpToDateStatus = "Up to date";
+
     /// <summary>
     /// The row for <paramref name="source"/>, given its access check, what is running, the running
     /// ingest's snapshot when <paramref name="activity"/> is <see cref="SourceActivity.Ingesting"/>, and
@@ -212,8 +219,9 @@ public sealed record SourceRowPresentation(
             badges.Add(new("UNREADABLE", SourceTone.Bad));
         }
 
+        long coveredCount = source.DocumentCount + source.AdditionalDocumentCount;
         double? indexedFraction = source.ExpectedElements > 0
-            ? Math.Min(1, (double)source.DocumentCount / Math.Max(source.DocumentCount, source.ExpectedElements))
+            ? Math.Min(1, (double)coveredCount / Math.Max(coveredCount, source.ExpectedElements))
             : null;
 
         string status;
@@ -289,7 +297,7 @@ public sealed record SourceRowPresentation(
                     tone = SourceTone.Neutral;
                     counts = IndexedCounts(source);
                 }
-                else if (source.DocumentCount == 0)
+                else if (coveredCount == 0)
                 {
                     status = source.ExpectedElements > 0
                         ? string.Create(CultureInfo.CurrentCulture, $"{source.ExpectedElements:N0} {Plural("item", source.ExpectedElements)} found, none indexed yet")
@@ -297,9 +305,9 @@ public sealed record SourceRowPresentation(
                     tone = SourceTone.Neutral;
                     progress = indexedFraction;
                 }
-                else if (source.ExpectedElements > source.DocumentCount)
+                else if (source.ExpectedElements > coveredCount)
                 {
-                    long remaining = source.ExpectedElements - source.DocumentCount;
+                    long remaining = source.ExpectedElements - coveredCount;
                     status = string.Create(CultureInfo.CurrentCulture, $"{remaining:N0} {Plural("item", remaining)} to go");
                     tone = SourceTone.Active;
                     progress = indexedFraction;
@@ -307,7 +315,7 @@ public sealed record SourceRowPresentation(
                 }
                 else
                 {
-                    status = "Up to date";
+                    status = UpToDateStatus;
                     tone = SourceTone.Good;
                     counts = IndexedCounts(source);
                     if (lastRun is { WasCancelled: true })
@@ -317,7 +325,7 @@ public sealed record SourceRowPresentation(
                     }
                 }
                 // A row with nothing to count still draws a bar: full with documents, empty without.
-                progress ??= source.DocumentCount > 0 ? 1 : 0;
+                progress ??= coveredCount > 0 ? 1 : 0;
                 break;
         }
 
@@ -346,13 +354,16 @@ public sealed record SourceRowPresentation(
         return string.Join(" · ", parts);
     }
 
-    /// <summary>"1,180 of 1,204 documents" when a scan counted the folder, "1,204 documents" otherwise.</summary>
+    /// <summary>"1,180 of 1,204 documents" when a scan counted the folder, "1,204 documents" otherwise, with linked documents appended when present.</summary>
     public static string IndexedCounts(RegisteredSource source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        return source.ExpectedElements > 0
+        string baseCounts = source.ExpectedElements > 0
             ? string.Create(CultureInfo.CurrentCulture, $"{source.DocumentCount:N0} of {source.ExpectedElements:N0} documents")
             : string.Create(CultureInfo.CurrentCulture, $"{source.DocumentCount:N0} {Plural("document", source.DocumentCount)}");
+        return source.AdditionalDocumentCount > 0
+            ? string.Create(CultureInfo.CurrentCulture, $"{baseCounts} · {source.AdditionalDocumentCount:N0} linked")
+            : baseCounts;
     }
 
     /// <summary>"item" or "items".</summary>
@@ -374,6 +385,10 @@ public sealed record SourceRowPresentation(
                 return SourceSymbol.Code;
             case "feed":
                 return SourceSymbol.Feed;
+            case "claude" or "chatgpt" or "antigravity":
+                return SourceSymbol.Message;
+            case "spotlight":
+                return SourceSymbol.Search;
         }
         string last = root[(root.LastIndexOf('/') + 1)..];
         switch (last)
@@ -425,7 +440,9 @@ public static class SourceSlugSuggestion
         string trimmed = root.Trim();
         if (trimmed.Length == 0)
         {
-            return "";
+            return kind.Equals("spotlight", StringComparison.OrdinalIgnoreCase)
+                ? UniqueSlug("spotlight", taken)
+                : "";
         }
         string name;
         switch (kind.ToLowerInvariant())
@@ -438,11 +455,21 @@ public static class SourceSlugSuggestion
                 string stem = System.IO.Path.GetFileNameWithoutExtension(file);
                 name = stem.Length > 0 ? stem : file;
                 break;
+            case "claude" or "chatgpt" or "antigravity":
+                string entry = LastComponent(trimmed);
+                string entryStem = System.IO.Path.GetFileNameWithoutExtension(entry);
+                name = entry.StartsWith('.') || entryStem.Length == 0 ? entry : entryStem;
+                if (kind.Equals("antigravity", StringComparison.OrdinalIgnoreCase)
+                    && name.Equals("brain", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = "antigravity";
+                }
+                break;
             default:
                 name = LastComponent(trimmed);
                 if (name is "~" or "" or "/")
                 {
-                    name = "home";
+                    name = kind.Equals("spotlight", StringComparison.OrdinalIgnoreCase) ? "spotlight" : "home";
                 }
                 else if (name == "com~apple~CloudDocs")
                 {

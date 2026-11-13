@@ -21,7 +21,7 @@ namespace Garage.App.Pages;
 public sealed partial class SourcesPage : Page
 {
     /// <summary>The source kinds AddSource takes, as the Mac's form lists them.</summary>
-    private static readonly string[] Kinds = ["filesystem", "git", "sqlite", "maildir", "feed"];
+    private static readonly string[] Kinds = ["filesystem", "git", "sqlite", "maildir", "feed", "claude", "chatgpt", "antigravity"];
 
     private PageModels _pages = null!;
     private SourcesViewModel _model = null!;
@@ -265,6 +265,17 @@ public sealed partial class SourcesPage : Page
         bool slugEdited = editing is not null;
         root.TextChanged += (_, _) =>
         {
+            if (!slugEdited)
+            {
+                slug.Text = SourceSlugSuggestion.Suggest(root.Text, kind.SelectedItem as string ?? "filesystem", _model.TakenSlugs);
+            }
+        };
+        kind.SelectionChanged += (_, _) =>
+        {
+            if (kind.SelectedItem is "claude" or "chatgpt" or "antigravity")
+            {
+                corpusClass.SelectedItem = "communication";
+            }
             if (!slugEdited)
             {
                 slug.Text = SourceSlugSuggestion.Suggest(root.Text, kind.SelectedItem as string ?? "filesystem", _model.TakenSlugs);

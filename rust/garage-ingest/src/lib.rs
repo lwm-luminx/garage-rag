@@ -7,6 +7,7 @@
 //! through libgit2 in [`history`]), and the per-file decisions of the ingest loop ([`pipeline`], with
 //! message handles named through [`contact_names`]), and the loop over a walked source ([`source`]),
 //! with a Messages source read thread by thread ([`conversations`], over the `messages-markdown` crate),
+//! and a Spotlight source listed by the system's index and read from disk ([`spotlight`]),
 //! persisting through GarageService ([`facade`]).
 //!
 //! Python's modules were the specification: each piece was held to its Python original through
@@ -32,9 +33,11 @@ pub mod placeholder;
 pub mod policy;
 pub mod quality;
 pub mod scanner;
+pub mod sessions;
 pub mod sha256;
 pub mod source;
 pub mod splitters;
+pub mod spotlight;
 pub mod sqlite;
 pub mod walk;
 
@@ -45,6 +48,7 @@ pub use materialize::{Budget, Materializer, Outcome};
 pub use policy::WalkPolicy;
 pub use quality::{Verdict, assess};
 pub use scanner::{ScanOptions, ScanResult, scan_source};
+pub use sessions::is_session_kind;
 pub use walk::{Candidate, WalkOptions, WalkStats, Walked, default_exclude_prefixes, root_problem, walk, walk_while};
 
 /// Whether a source of `kind` is read through a cloud service's API rather than from disk

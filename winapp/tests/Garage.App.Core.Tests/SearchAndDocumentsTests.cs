@@ -173,6 +173,31 @@ public sealed class SearchAndDocumentsTests
         Assert.Equal("markdown 3 · recursive:1000/150", detail.ExtractedBy);
     }
 
+    [Fact]
+    public void Document_list_item_and_detail_map_additional_sources()
+    {
+        DocumentListItem item = DocumentListItem.From(new DocumentSummary
+        {
+            Id = 1,
+            Uri = "/n/a.md",
+            SourceSlug = "notes",
+            AdditionalSources = { "spotlight", "icloud" },
+        });
+        Assert.Equal(["spotlight", "icloud"], item.AdditionalSources);
+
+        Garage.App.Core.Documents.DocumentDetail detail = Garage.App.Core.Documents.DocumentDetail.From(new GetDocumentResponse
+        {
+            Document = new Garage.DocumentDetail
+            {
+                Id = 1,
+                Uri = "/n/a.md",
+                SourceSlug = "notes",
+                AdditionalSources = { "spotlight" },
+            },
+        });
+        Assert.Equal(["spotlight"], detail.AdditionalSources);
+    }
+
     [Theory]
     [InlineData(0, "0 bytes")]
     [InlineData(1, "1 byte")]

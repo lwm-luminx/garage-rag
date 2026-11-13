@@ -191,19 +191,24 @@ pub(super) fn run(request: &Map<String, Value>, host: GarageIngestHost) -> Outco
         request.insert("facade".to_owned(), Value::Object(facade_object));
         // Each source gets the whole budget, as each `ingest_source` call builds its own.
         let budget = budget_from(&request)?;
-        let readers = super::rust_readers(&request)?;
+        let mut readers = super::rust_readers(&request)?;
         let mut events: Option<SourceEvents> = None;
         let reply = super::run_source_with(
             &request,
-            |_root, scan| ReadingHost {
-                host,
-                budget,
-                readers,
-                events: Some(SourceEvents {
-                    source: slug.clone(),
-                    total_items: scan.item_count,
-                    item_type: scan.item_type.clone(),
-                }),
+            |_root, scan, is_spotlight| {
+                if is_spotlight && let Some(readers) = readers.as_mut() {
+                    readers.set_spotlight(true);
+                }
+                ReadingHost {
+                    host,
+                    budget,
+                    readers,
+                    events: Some(SourceEvents {
+                        source: slug.clone(),
+                        total_items: scan.item_count,
+                        item_type: scan.item_type.clone(),
+                    }),
+                }
             },
             |reading, reply| {
                 reply.insert("budget".to_owned(), budget_json(&reading.budget));

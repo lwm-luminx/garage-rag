@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import CoreSpotlight
+import GarageAppExtensions
 import GarageXPCKit
 
 /// The pages, in sidebar order: Status on its own at the top, then each `SidebarGroup`'s pages.
@@ -58,6 +59,11 @@ enum SidebarGroup: String, CaseIterable, Identifiable {
         case .advanced: [.database, .services, .logs]
         }
     }
+
+    /// The group's pages this build offers: Graph only where the build's extensions turn it on.
+    func sections(showsGraph: Bool) -> [AppSection] {
+        sections.filter { $0 != .graph || showsGraph }
+    }
 }
 
 struct ContentView: View {
@@ -86,6 +92,8 @@ struct ContentView: View {
     @State private var pendingPresentation: Task<Void, Never>?
     @AppStorage(SplashPreferences.showAtLaunchKey) private var showSplashAtLaunch = true
     @State private var window: NSWindow?
+    /// Whether this build offers the Graph page (`GarageAppExtensionSet.showsGraph`).
+    private var showsGraph: Bool { GarageAppExtensions.installed.showsGraph }
 
     var body: some View {
         Group {
@@ -156,6 +164,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .garageShowSection)) { notification in
             // The menu bar popover asks for a page; the assistant, when it is up, keeps the window.
             guard let section = notification.object as? AppSection else { return }
+            guard section != .graph || showsGraph else { return }
             selection = section
         }
         .onContinueUserActivity(CSSearchableItemActionType) { activity in
@@ -196,7 +205,7 @@ struct ContentView: View {
 
                 ForEach(SidebarGroup.allCases) { group in
                     Section(group.rawValue) {
-                        ForEach(group.sections) { section in
+                        ForEach(group.sections(showsGraph: showsGraph)) { section in
                             Label(section.rawValue, systemImage: section.symbol)
                                 .tag(section)
                                 .accessibilityIdentifier("sidebar.\(section)")
@@ -213,18 +222,18 @@ struct ContentView: View {
             case .services: ServicesView()
             case .sources: SourcesView()
             case .documents:
-                DocumentsView(focus: $documentFocus, openGraph: { focus in
+                DocumentsView(focus: $documentFocus, openGraph: showsGraph ? { focus in
                     graphFocus = focus
                     selection = .graph
-                })
+                } : nil)
             case .facts:
                 FactsView(openDocument: { focus in
                     documentFocus = focus
                     selection = .documents
-                }, openGraph: { focus in
+                }, openGraph: showsGraph ? { focus in
                     graphFocus = focus
                     selection = .graph
-                })
+                } : nil)
             case .graph:
                 GraphView(focus: $graphFocus, openDocument: { focus in
                     documentFocus = focus

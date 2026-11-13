@@ -338,7 +338,11 @@ impl GarageServiceTrait for GarageService {
         let mut filters: Vec<String> = Vec::new();
         if !r.source.is_empty() {
             params.push(Box::new(r.source.clone()));
-            filters.push(format!("s.slug = ${}", params.len()));
+            filters.push(format!(
+                "(s.slug = ${0} OR EXISTS (SELECT 1 FROM document_sources ds \
+                 JOIN sources s2 ON s2.id = ds.source_id WHERE ds.document_id = d.id AND s2.slug = ${0}))",
+                params.len()
+            ));
         }
         if !r.corpus_class.is_empty() {
             params.push(Box::new(r.corpus_class.clone()));
@@ -372,11 +376,13 @@ impl GarageServiceTrait for GarageService {
         let rows = client
             .query(
                 &format!(
-                    "SELECT d.id, d.uri, d.title, s.slug, d.corpus_class::text, d.trust_tier::text, d.mime, d.lang, d.byte_size, \
-                     (SELECT count(*) FROM chunks c WHERE c.document_id = d.id)::int AS chunk_count, d.state::text, d.ingested_at, \
-                     (SELECT count(*) FROM facts f WHERE f.document_id = d.id)::int AS fact_count \
-                     FROM documents d JOIN sources s ON s.id = d.source_id {where_clause} \
-                     ORDER BY d.ingested_at DESC, d.id DESC LIMIT ${} OFFSET ${}",
+                     "SELECT d.id, d.uri, d.title, s.slug, d.corpus_class::text, d.trust_tier::text, d.mime, d.lang, d.byte_size, \
+                      (SELECT count(*) FROM chunks c WHERE c.document_id = d.id)::int AS chunk_count, d.state::text, d.ingested_at, \
+                      (SELECT count(*) FROM facts f WHERE f.document_id = d.id)::int AS fact_count, \
+                      ARRAY(SELECT s2.slug FROM document_sources ds JOIN sources s2 ON s2.id = ds.source_id \
+                            WHERE ds.document_id = d.id ORDER BY s2.slug) \
+                      FROM documents d JOIN sources s ON s.id = d.source_id {where_clause} \
+                      ORDER BY d.ingested_at DESC, d.id DESC LIMIT ${} OFFSET ${}",
                     params.len() - 1,
                     params.len()
                 ),
@@ -400,6 +406,7 @@ impl GarageServiceTrait for GarageService {
                 state: row.get(10),
                 ingested_at: isoformat_opt(row.get(11)),
                 fact_count: row.get(12),
+                additional_sources: row.get(13),
             })
             .collect();
         ok(proto::ListDocumentsResponse {
@@ -486,6 +493,17 @@ impl GarageServiceTrait for GarageService {
             Value::Object(map) => json_text(&map),
             _ => String::new(),
         };
+        let additional_sources: Vec<String> = client
+            .query(
+                "SELECT s2.slug FROM document_sources ds JOIN sources s2 ON s2.id = ds.source_id \
+                 WHERE ds.document_id = $1 ORDER BY s2.slug",
+                &[&id],
+            )
+            .await
+            .map_err(ServiceError::from)?
+            .iter()
+            .map(|r| r.get(0))
+            .collect();
         let detail = proto::DocumentDetail {
             id: row.get(0),
             uri: row.get(1),
@@ -504,6 +522,7 @@ impl GarageServiceTrait for GarageService {
             error: row.get::<_, Option<String>>(14).unwrap_or_default(),
             ingested_at: isoformat_opt(row.get(15)),
             authors,
+            additional_sources,
         };
         let shown = if detail.title.is_empty() { detail.uri.clone() } else { detail.title.clone() };
         ok(proto::GetDocumentResponse {
@@ -580,7 +599,8 @@ impl GarageServiceTrait for GarageService {
         let rows = client
             .query(
                 "SELECT s.slug, s.kind, s.default_class::text, s.default_trust::text, s.enabled, s.root, \
-                 (SELECT count(*) FROM documents d WHERE d.source_id = s.id), s.expected_elements \
+                 (SELECT count(*) FROM documents d WHERE d.source_id = s.id), s.expected_elements, \
+                 (SELECT count(*) FROM document_sources ds WHERE ds.source_id = s.id) \
                  FROM sources s ORDER BY s.id",
                 &[],
             )
@@ -597,6 +617,7 @@ impl GarageServiceTrait for GarageService {
                 root: s.get(5),
                 document_count: s.get(6),
                 expected_elements: s.get(7),
+                additional_document_count: s.get(8),
             })
             .collect();
         ok(proto::ListSourcesResponse { formatted_output: format!("{} sources registered", sources.len()), sources })
@@ -780,6 +801,7 @@ impl GarageServiceTrait for GarageService {
             run_id: ctx.run_id,
             source_slugs: ctx.source_slugs,
             kind: ctx.kind,
+            query: ctx.query,
         })
     }
 
@@ -814,6 +836,8 @@ impl GarageServiceTrait for GarageService {
             chunker: stat.chunker,
             state: stat.state,
             source_sha256: stat.source_sha256,
+            existing_document_id: stat.existing_document_id.unwrap_or(0),
+            already_linked: stat.already_linked,
         })
     }
 
@@ -872,6 +896,22 @@ impl GarageServiceTrait for GarageService {
                 )
                 .await?;
             }
+            "link_additional" => {
+                let meta = json_object(&r.meta_json)?;
+                let authors = authors_from_proto(&r.authors);
+                let title = opt(&r.title);
+                gateway::link_additional_document(
+                    &mut client,
+                    run_id,
+                    slug,
+                    uri,
+                    r.mtime,
+                    title.as_deref(),
+                    &meta,
+                    &authors,
+                )
+                .await?;
+            }
             "replace" => {
                 let payload = DocumentPayload {
                     title: opt(&r.title),
@@ -891,18 +931,7 @@ impl GarageServiceTrait for GarageService {
                     meta: json_object(&r.meta_json)?,
                     corpus_class: r.corpus_class.clone(),
                     trust_tier: r.trust_tier.clone(),
-                    authors: r
-                        .authors
-                        .iter()
-                        .map(|a| AuthorPayload {
-                            name: a.name.clone(),
-                            role: if a.role.is_empty() { "author".into() } else { a.role.clone() },
-                            confidence: if a.confidence == 0.0 { 1.0 } else { a.confidence },
-                            evidence: opt(&a.evidence),
-                            identities: a.identities.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-                            is_self: a.is_self,
-                        })
-                        .collect(),
+                    authors: authors_from_proto(&r.authors),
                     chunks: r
                         .chunks
                         .iter()
@@ -917,8 +946,10 @@ impl GarageServiceTrait for GarageService {
                             chunker: opt(&c.chunker),
                             direction: opt(&c.direction),
                             sender: opt(&c.sender),
+                            session_turn_external_id: opt(&c.session_turn_external_id),
                         })
                         .collect(),
+                    session_json: opt(&r.session_json),
                 };
                 chunks_written = gateway::replace_document(&mut client, run_id, slug, uri, &payload).await?;
             }
@@ -1667,18 +1698,32 @@ fn scan_progress(source: &str, source_items: u64, total_items: u64) -> proto::Sc
     }
 }
 
+fn authors_from_proto(authors: &[proto::DocumentAuthorPayload]) -> Vec<AuthorPayload> {
+    authors
+        .iter()
+        .map(|a| AuthorPayload {
+            name: a.name.clone(),
+            role: if a.role.is_empty() { "author".into() } else { a.role.clone() },
+            confidence: if a.confidence == 0.0 { 1.0 } else { a.confidence },
+            evidence: opt(&a.evidence),
+            identities: a.identities.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            is_self: a.is_self,
+        })
+        .collect()
+}
+
 /// Scans each target in turn, as `scan_sources` did, sending the running count while a source is
 /// walked, each source's result when it is done, and the summary last. A closed channel (the
 /// client went away) ends the scan at its next step.
 async fn run_scan(
     pool: &Pool,
-    targets: Vec<(String, String, PathBuf)>,
+    targets: Vec<(String, String, PathBuf, Option<String>)>,
     include_code: bool,
     tx: &ScanSender,
 ) -> std::result::Result<(), Status> {
     let mut results: Vec<ScanResult> = Vec::new();
     let mut found_before: u64 = 0;
-    for (slug, kind, root) in targets {
+    for (slug, kind, root, query) in targets {
         if tx.send(Ok(scan_progress(&slug, 0, found_before))).await.is_err() {
             return Ok(());
         }
@@ -1687,8 +1732,17 @@ async fn run_scan(
             let mut report = |count: u64| {
                 let _ = progress.blocking_send(Ok(scan_progress(&scanned_slug, count, before + count)));
             };
-            let policy = WalkPolicy::default();
-            let options = ScanOptions { include_code, policy: &policy, read_git: true };
+            let base_policy = WalkPolicy::default();
+            let spotlight_policy;
+            let policy = if kind == garage_ingest::spotlight::KIND {
+                spotlight_policy = garage_ingest::spotlight::policy_with_importers(&base_policy);
+                &spotlight_policy
+            } else {
+                &base_policy
+            };
+            let spotlight_opts = (kind == garage_ingest::spotlight::KIND)
+                .then_some(garage_ingest::spotlight::SpotlightOptions { query });
+            let options = ScanOptions { include_code, policy, read_git: true, spotlight: spotlight_opts.as_ref() };
             scan_source(&scanned_slug, &kind, &root, &options, &mut Ticker::new(Some(&mut report)))
         })
         .await

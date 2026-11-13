@@ -44,6 +44,10 @@ pub struct ExistingStat {
     pub state: String,
     /// The raw bytes' hash.
     pub source_sha256: String,
+    /// Set when another source already owns a document row at this URI.
+    pub existing_document_id: Option<i64>,
+    /// True when this source already links to `existing_document_id` in `document_sources`.
+    pub already_linked: bool,
 }
 
 impl ExistingStat {
@@ -232,6 +236,8 @@ pub struct ChunkPayload {
     pub direction: Option<String>,
     /// A message chunk's `chunks.sender`: `me` or the handle that wrote it.
     pub sender: Option<String>,
+    /// A session chunk's originating `session_turns.external_id`.
+    pub session_turn_external_id: Option<String>,
 }
 
 /// A document to write (`replace_document`'s arguments).
@@ -267,6 +273,8 @@ pub struct DocumentPayload {
     pub authors: Vec<AuthorPayload>,
     /// Its chunks.
     pub chunks: Vec<ChunkPayload>,
+    /// Normalized relational session payload or companion artifact link JSON (`025_sessions.sql`).
+    pub session_json: Option<String>,
 }
 
 /// The facade calls ingest makes for one file (`IngestStorageGateway`'s `record_*`,
@@ -330,6 +338,23 @@ pub trait Storage {
     ///
     /// Why the call failed.
     fn replace_document(&mut self, uri: &str, document: DocumentPayload) -> Result<usize, String>;
+    /// `link_additional`: links the current source to an existing document already owned by
+    /// another source at `uri`, attaching supplementary metadata and authors without duplicating
+    /// chunks or embeddings.
+    ///
+    /// # Errors
+    ///
+    /// Why the call failed.
+    fn link_additional(
+        &mut self,
+        _uri: &str,
+        _mtime: f64,
+        _title: Option<&str>,
+        _meta: &Map<String, Value>,
+        _authors: &[AuthorPayload],
+    ) -> Result<(), String> {
+        Err("link_additional not implemented".to_owned())
+    }
 }
 
 /// `IngestCounters`.
@@ -668,6 +693,7 @@ pub fn ingest_one(
             text: chunk.text,
             direction: None,
             sender: None,
+            session_turn_external_id: None,
         })
         .collect();
     let document = DocumentPayload {
@@ -686,6 +712,7 @@ pub fn ingest_one(
         trust_tier: attribution.trust.as_str().to_owned(),
         authors,
         chunks,
+        session_json: None,
     };
     let written = storage.replace_document(&candidate.uri, document)?;
     counters.chunks_written += written as u64;

@@ -574,8 +574,9 @@ struct SourcesView: View {
                         .foregroundStyle(.tertiary)
                 }
 
-                // Every row ends its status line with the same small bar (full when up to date), so
-                // the bars line up down the page without a heavy full-width bar on each source.
+                // Every row ends its status line with the same small bar, so the bars line up down the
+                // page without a heavy full-width bar on each source. Up to date, it is hidden but keeps
+                // its space.
                 HStack(spacing: 8) {
                     Text(row.status)
                         .font(.caption)
@@ -592,6 +593,8 @@ struct SourcesView: View {
                         tint: row.statusTone == .active ? .accentColor : row.statusTone.color
                     )
                     .frame(width: 96)
+                    .opacity(row.showsProgressBar ? 1 : 0)
+                    .accessibilityHidden(!row.showsProgressBar)
                     .accessibilityIdentifier("sources.row.\(source.slug).progress")
                 }
 
@@ -800,7 +803,7 @@ struct SourcesView: View {
             HStack(alignment: .top, spacing: 10) {
                 MenuBarSymbolCircle(
                     symbol: template.symbol,
-                    tint: SourceRowPresentation.tint(forCorpusClass: template.corpusClass),
+                    tint: SourceRowPresentation.tint(forKind: template.kind, corpusClass: template.corpusClass),
                     isActive: template.isAvailable && !registered
                 )
                 VStack(alignment: .leading, spacing: 4) {

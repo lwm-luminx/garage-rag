@@ -11,9 +11,9 @@ use garage_facade::proto::{
     DocumentChunkPayload, FinalizeIngestSessionRequest, GetSettingRequest, ListSourcesRequest, PersistDocumentRequest,
     PersistScanRequest,
 };
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use crate::pipeline::{Counters, DocumentPayload, ExistingStat, Storage};
+use crate::pipeline::{AuthorPayload, Counters, DocumentPayload, ExistingStat, Storage};
 use crate::source::{ScanSummary, SourceStorage};
 
 pub use garage_facade::{Connection, GrpcTarget};
@@ -72,6 +72,8 @@ impl GrpcStorage {
             chunker: reply.chunker,
             state: reply.state,
             source_sha256: reply.source_sha256,
+            existing_document_id: (reply.existing_document_id > 0).then_some(reply.existing_document_id),
+            already_linked: reply.already_linked,
         })
     }
 
@@ -278,6 +280,7 @@ impl Storage for GrpcStorage {
                 chunker: chunk.chunker,
                 direction: chunk.direction.unwrap_or_default(),
                 sender: chunk.sender.unwrap_or_default(),
+                session_turn_external_id: chunk.session_turn_external_id.unwrap_or_default(),
             })
             .collect();
         let meta_json = if document.meta.is_empty() {
@@ -301,9 +304,45 @@ impl Storage for GrpcStorage {
             trust_tier: document.trust_tier,
             authors,
             chunks,
+            session_json: document.session_json.unwrap_or_default(),
             ..action(uri, "replace")
         })?;
         Ok(usize::try_from(written).unwrap_or_default())
+    }
+
+    fn link_additional(
+        &mut self,
+        uri: &str,
+        mtime: f64,
+        title: Option<&str>,
+        meta: &Map<String, Value>,
+        authors: &[AuthorPayload],
+    ) -> Result<(), String> {
+        let meta_json = if meta.is_empty() {
+            "{}".to_owned()
+        } else {
+            serde_json::to_string(meta).map_err(|error| error.to_string())?
+        };
+        let authors = authors
+            .iter()
+            .map(|author| DocumentAuthorPayload {
+                name: author.name.clone(),
+                role: author.role.clone(),
+                #[allow(clippy::cast_possible_truncation)]
+                confidence: author.confidence as f32,
+                evidence: author.evidence.clone(),
+                identities: author.identities.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+                is_self: author.is_self,
+            })
+            .collect();
+        self.persist(PersistDocumentRequest {
+            title: title.unwrap_or_default().to_owned(),
+            mtime,
+            meta_json,
+            authors,
+            ..action(uri, "link_additional")
+        })
+        .map(drop)
     }
 }
 

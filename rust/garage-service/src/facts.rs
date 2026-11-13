@@ -138,7 +138,10 @@ fn fact_filters(filters: &FactFilters) -> Result<Filters> {
     }
     if !filters.source.is_empty() {
         let p = built.bind(Box::new(filters.source.clone()));
-        built.base.push(format!("s.slug = {p}"));
+        built.base.push(format!(
+            "(s.slug = {p} OR EXISTS (SELECT 1 FROM document_sources ds \
+             JOIN sources s2 ON s2.id = ds.source_id WHERE ds.document_id = d.id AND s2.slug = {p}))"
+        ));
     }
     if !filters.corpus_class.is_empty() {
         if !CORPUS_CLASS_NAMES.contains(&filters.corpus_class.as_str()) {

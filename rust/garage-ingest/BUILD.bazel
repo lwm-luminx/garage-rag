@@ -13,10 +13,13 @@ rust_library(
     deps = [
         "//rust/garage-facade",
         "//rust/garage-git",
+        "//rust/garage-spotlight",
+        "@crates//:chrono",
         "@crates//:libc",
         "@crates//:messages-markdown",
         "@crates//:regex",
         "@crates//:serde_json",
+        "@crates//:zip",
     ],
 )
 

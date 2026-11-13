@@ -22,14 +22,19 @@ rust_static_library(
 )
 
 # A static Rust library carries no link options of its own, so the system libraries libgit2 needs
-# (//rust/garage-git:libgit2_linked: zlib, and iconv on macOS) are named again here. The ingest service
+# (//rust/garage-git:libgit2_linked: zlib, and iconv on macOS) are named again here, and Vision for
+# //rust/garage-ocr's picture reader (//rust/garage-ocr:vision_linked). The ingest service
 # used to get them through Python.framework.
 cc_library(
     name = "garage-ingest-ffi",
     hdrs = ["include/garage_ingest.h"],
     includes = ["include"],
     linkopts = ["-lz"] + select({
-        "@platforms//os:macos": ["-liconv"],
+        "@platforms//os:macos": [
+            "-liconv",
+            "-framework",
+            "Vision",
+        ],
         "//conditions:default": [],
     }),
     visibility = ["//visibility:public"],

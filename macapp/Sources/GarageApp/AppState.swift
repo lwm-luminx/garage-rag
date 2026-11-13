@@ -505,6 +505,7 @@ final class AppState: ObservableObject {
                     includeCode: existing.includeCode,
                     origin: .both,
                     documentCount: ds.documentCount,
+                    additionalDocumentCount: ds.additionalDocumentCount,
                     expectedElements: ds.expectedElements
                 )
             } else {

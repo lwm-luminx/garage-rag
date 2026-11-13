@@ -10,14 +10,19 @@ namespace Garage.App.Core.Documents;
 /// <summary>One document in the list (the Mac's <c>DocumentListItem</c>).</summary>
 public sealed record DocumentListItem(
     long Id, string Uri, string Title, string SourceSlug, string CorpusClass, string TrustTier,
-    string Mime, long ByteSize, int ChunkCount, int FactCount, string State, string IngestedAt)
+    string Mime, long ByteSize, int ChunkCount, int FactCount, string State, string IngestedAt,
+    IReadOnlyList<string>? AdditionalSources = null)
 {
+    /// <summary>Additional source slugs linked to this document.</summary>
+    public IReadOnlyList<string> AdditionalSources { get; init; } = AdditionalSources ?? [];
+
     /// <summary>From a <c>DocumentSummary</c>.</summary>
     public static DocumentListItem From(DocumentSummary summary)
     {
         ArgumentNullException.ThrowIfNull(summary);
         return new(summary.Id, summary.Uri, summary.Title, summary.SourceSlug, summary.CorpusClass, summary.TrustTier,
-            summary.Mime, summary.ByteSize, summary.ChunkCount, summary.FactCount, summary.State, summary.IngestedAt);
+            summary.Mime, summary.ByteSize, summary.ChunkCount, summary.FactCount, summary.State, summary.IngestedAt,
+            [.. summary.AdditionalSources]);
     }
 
     /// <summary>The title shown: title, file name, or "(untitled)".</summary>
@@ -51,8 +56,12 @@ public sealed record DocumentChunk(long Id, int Ord, string Text, int TokenCount
 public sealed record DocumentDetail(
     long Id, string Uri, string Title, string SourceSlug, string CorpusClass, string TrustTier, string Mime,
     long ByteSize, string Extractor, string ExtractorVersion, string Chunker, string State, string Error,
-    string IngestedAt, IReadOnlyList<string> Authors, IReadOnlyList<DocumentChunk> Chunks, IReadOnlyList<string> Facts)
+    string IngestedAt, IReadOnlyList<string> Authors, IReadOnlyList<DocumentChunk> Chunks, IReadOnlyList<string> Facts,
+    IReadOnlyList<string>? AdditionalSources = null)
 {
+    /// <summary>Additional source slugs linked to this document.</summary>
+    public IReadOnlyList<string> AdditionalSources { get; init; } = AdditionalSources ?? [];
+
     /// <summary>From a <c>GetDocument</c> reply.</summary>
     public static DocumentDetail From(GetDocumentResponse response)
     {
@@ -62,7 +71,8 @@ public sealed record DocumentDetail(
             d.Extractor, d.ExtractorVersion, d.Chunker, d.State, d.Error, d.IngestedAt,
             [.. d.Authors.Select(a => string.IsNullOrEmpty(a.Role) || a.Role == "author" ? a.Name : $"{a.Name} ({a.Role})")],
             [.. response.Chunks.OrderBy(c => c.Ord).Select(c => new DocumentChunk(c.Id, c.Ord, c.Text, c.TokenCount, c.HeadingPath))],
-            [.. response.Facts.OrderBy(f => f.Ord).Select(f => f.Fact)]);
+            [.. response.Facts.OrderBy(f => f.Ord).Select(f => f.Fact)],
+            [.. d.AdditionalSources]);
     }
 
     /// <summary>The title shown.</summary>

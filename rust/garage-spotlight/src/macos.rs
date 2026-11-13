@@ -133,10 +133,10 @@ struct UrlVtbl {
 }
 
 /// A CoreFoundation object this code owns, released when dropped.
-struct Owned(CFTypeRef);
+pub(crate) struct Owned(pub(crate) CFTypeRef);
 
 impl Owned {
-    fn new(object: CFTypeRef) -> Option<Self> {
+    pub(crate) fn new(object: CFTypeRef) -> Option<Self> {
         // `then`, not `then_some`: `Self(null)` built eagerly would be dropped, and CFRelease(NULL) traps.
         (!object.is_null()).then(|| Self(object))
     }
@@ -151,10 +151,10 @@ impl Drop for Owned {
 
 /// An autorelease pool for one importer call: importers built on Cocoa autorelease, and this thread
 /// has no run loop to drain a pool for them.
-struct Pool(*mut c_void);
+pub(crate) struct Pool(*mut c_void);
 
 impl Pool {
-    fn push() -> Self {
+    pub(crate) fn push() -> Self {
         // SAFETY: no preconditions.
         Self(unsafe { objc_autoreleasePoolPush() })
     }
@@ -167,14 +167,14 @@ impl Drop for Pool {
     }
 }
 
-fn cf_string(text: &str) -> Option<Owned> {
+pub(crate) fn cf_string(text: &str) -> Option<Owned> {
     let length = CFIndex::try_from(text.len()).ok()?;
     // SAFETY: `text` is valid UTF-8 of that length.
     Owned::new(unsafe { CFStringCreateWithBytes(ptr::null(), text.as_ptr(), length, kCFStringEncodingUTF8, 0) })
 }
 
 /// The Rust string of a CoreFoundation value, when it is a string.
-fn rust_string(value: CFTypeRef) -> Option<String> {
+pub(crate) fn rust_string(value: CFTypeRef) -> Option<String> {
     // SAFETY: `value` is null or a live CoreFoundation object.
     unsafe {
         if value.is_null() || CFGetTypeID(value) != CFStringGetTypeID() {
@@ -188,7 +188,7 @@ fn rust_string(value: CFTypeRef) -> Option<String> {
 }
 
 /// The strings of a CoreFoundation value, when it is an array (others are skipped).
-fn rust_strings(value: CFTypeRef) -> Vec<String> {
+pub(crate) fn rust_strings(value: CFTypeRef) -> Vec<String> {
     // SAFETY: `value` is null or a live CoreFoundation object.
     unsafe {
         if value.is_null() || CFGetTypeID(value) != CFArrayGetTypeID() {
@@ -336,8 +336,9 @@ fn call(interface: Interface, path: &Path, uti: &str, importer: &Importer) -> Ou
         let dictionary = attributes.0.cast_mut();
         let succeeded = match interface {
             Interface::Url(interface) => {
+                let is_dir = u8::from(path.is_dir());
                 let Some(url) =
-                    Owned::new(CFURLCreateFromFileSystemRepresentation(ptr::null(), bytes.as_ptr(), length, 0))
+                    Owned::new(CFURLCreateFromFileSystemRepresentation(ptr::null(), bytes.as_ptr(), length, is_dir))
                 else {
                     return Outcome::Failed(format!("no URL for {shown}"));
                 };

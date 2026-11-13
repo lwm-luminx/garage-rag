@@ -619,9 +619,10 @@ pub struct SourceSpec {
     pub trust: String,
     pub include_code: bool,
     pub enabled: bool,
+    pub query: Option<String>,
 }
 
-const SOURCE_KEYS: [&str; 7] = ["slug", "root", "kind", "class", "trust", "include_code", "enabled"];
+const SOURCE_KEYS: [&str; 8] = ["slug", "root", "kind", "class", "trust", "include_code", "enabled", "query"];
 
 impl SourceSpec {
     /// A spec with the defaults (`filesystem`, `document`, `authored`, no code, enabled).
@@ -634,6 +635,7 @@ impl SourceSpec {
             trust: "authored".to_owned(),
             include_code: false,
             enabled: true,
+            query: None,
         }
     }
 
@@ -685,12 +687,21 @@ impl SourceSpec {
         }
         spec.include_code = flag("include_code", false)?;
         spec.enabled = flag("enabled", true)?;
+        spec.query = match map.get("query") {
+            None | Some(Value::Null) => None,
+            Some(Value::String(s)) => {
+                let trimmed = s.trim();
+                (!trimmed.is_empty()).then(|| trimmed.to_owned())
+            }
+            Some(_) => return Err(ServiceError::invalid("sources[].query: expected a string")),
+        };
         Ok(spec)
     }
 
-    /// The entry as the file holds it (`model_dump(by_alias=True)`), every field written.
+    /// The entry as the file holds it (`model_dump(by_alias=True)`), every field written (`query`
+    /// only when present).
     pub fn to_value(&self) -> Value {
-        json!({
+        let mut obj = json!({
             "slug": self.slug,
             "root": self.root,
             "kind": self.kind,
@@ -698,7 +709,11 @@ impl SourceSpec {
             "trust": self.trust,
             "include_code": self.include_code,
             "enabled": self.enabled,
-        })
+        });
+        if let Some(query) = self.query.as_deref().map(str::trim).filter(|q| !q.is_empty()) {
+            obj["query"] = Value::String(query.to_owned());
+        }
+        obj
     }
 
     /// `root` with a leading `~` expanded.
@@ -1211,6 +1226,18 @@ mod tests {
             json!({"slug": "notes", "root": "~/Notes", "kind": "filesystem", "class": "code", "trust": "authored",
                    "include_code": false, "enabled": true})
         );
+        let spotlight = SourceSpec::from_value(&json!({
+            "slug": "mac", "root": "~", "kind": "spotlight", "query": "  kMDItemFSName == '*.pdf'  "
+        }))
+        .unwrap();
+        assert_eq!(spotlight.query.as_deref(), Some("kMDItemFSName == '*.pdf'"));
+        assert_eq!(spotlight.to_value()["query"], json!("kMDItemFSName == '*.pdf'"));
+        let blank_query = SourceSpec::from_value(&json!({
+            "slug": "mac2", "root": "~", "kind": "spotlight", "query": "   "
+        }))
+        .unwrap();
+        assert_eq!(blank_query.query, None);
+        assert!(blank_query.to_value().get("query").is_none());
         assert!(SourceSpec::from_value(&json!({"slug": "x"})).unwrap_err().message().contains("root is required"));
         assert!(
             SourceSpec::from_value(&json!({"slug": "x", "root": "/", "colour": 1}))
