@@ -139,10 +139,7 @@ fn file_mtime(path: &Path) -> f64 {
 }
 
 fn count_json_array(bytes: &[u8]) -> u64 {
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
-        .and_then(|v| v.as_array().map(|a| a.len() as u64))
-        .unwrap_or(0)
+    serde_json::from_slice::<Value>(bytes).ok().and_then(|v| v.as_array().map(|a| a.len() as u64)).unwrap_or(0)
 }
 
 fn is_conversations_entry(lower_name: &str) -> bool {
@@ -331,10 +328,7 @@ impl CodexState {
     }
 
     fn consume_meta(&mut self, p: &Map<String, Value>) {
-        self.session_id = clean_opt(
-            p.get("id").or_else(|| p.get("session_id")).and_then(Value::as_str),
-            true,
-        );
+        self.session_id = clean_opt(p.get("id").or_else(|| p.get("session_id")).and_then(Value::as_str), true);
         self.parent_external_id = clean_opt(p.get("forked_from_id").and_then(Value::as_str), true);
         if let Some(cwd) = clean_opt(p.get("cwd").and_then(Value::as_str), true) {
             if !self.workspace_paths.contains(&cwd) {
@@ -373,10 +367,8 @@ impl CodexState {
         if let Some(v) = u.get("output_tokens").and_then(Value::as_i64) {
             self.output_tokens = Some(v);
         }
-        if let Some(v) = u
-            .get("cached_input_tokens")
-            .or_else(|| u.get("cache_read_input_tokens"))
-            .and_then(Value::as_i64)
+        if let Some(v) =
+            u.get("cached_input_tokens").or_else(|| u.get("cache_read_input_tokens")).and_then(Value::as_i64)
         {
             self.cache_read_tokens = Some(v);
         }
@@ -427,8 +419,7 @@ impl CodexState {
             return;
         }
         let ord = i32::try_from(self.turns.len()).unwrap_or(i32::MAX);
-        let turn_id = clean_opt(p.get("id").and_then(Value::as_str), true)
-            .unwrap_or_else(|| format!("turn-{ord}"));
+        let turn_id = clean_opt(p.get("id").and_then(Value::as_str), true).unwrap_or_else(|| format!("turn-{ord}"));
         let direction = match role {
             "user" => Some("sent".to_owned()),
             "assistant" => Some("received".to_owned()),
@@ -464,8 +455,8 @@ impl CodexState {
         } else {
             let ord = i32::try_from(self.turns.len()).unwrap_or(i32::MAX);
             let synth_id = format!("turn-{ord}");
-            let thinking = (!self.pending_thinking.is_empty())
-                .then(|| std::mem::take(&mut self.pending_thinking).join("\n\n"));
+            let thinking =
+                (!self.pending_thinking.is_empty()).then(|| std::mem::take(&mut self.pending_thinking).join("\n\n"));
             self.turns.push(SessionTurnRecord {
                 external_id: synth_id.clone(),
                 parent_external_id: self.prev_turn_id.replace(synth_id.clone()),
@@ -487,8 +478,7 @@ impl CodexState {
             synth_id
         };
 
-        let name = clean_opt(p.get("name").and_then(Value::as_str), true)
-            .unwrap_or_else(|| item_type.to_owned());
+        let name = clean_opt(p.get("name").and_then(Value::as_str), true).unwrap_or_else(|| item_type.to_owned());
         let mut args = parse_codex_call_args(p);
         clean_json_map(&mut args);
         let (tool_kind, target_path, command) = classify_tool(&name, &args);
@@ -496,10 +486,7 @@ impl CodexState {
         let ord_val = *call_ord;
         *call_ord += 1;
 
-        let call_id = clean_opt(
-            p.get("call_id").or_else(|| p.get("id")).and_then(Value::as_str),
-            true,
-        );
+        let call_id = clean_opt(p.get("call_id").or_else(|| p.get("id")).and_then(Value::as_str), true);
         let idx = self.tool_calls.len();
         if let Some(cid) = &call_id {
             self.pending_calls.insert(cid.clone(), idx);
@@ -537,7 +524,10 @@ impl CodexState {
             call.result_turn_external_id = Some(turn_id.clone());
             call.output_preview.clone_from(&preview);
             call.output_bytes = bytes;
-            if raw_output.contains("\"exit_code\":") && !raw_output.contains("\"exit_code\":0") && !raw_output.contains("\"exit_code\": 0") {
+            if raw_output.contains("\"exit_code\":")
+                && !raw_output.contains("\"exit_code\":0")
+                && !raw_output.contains("\"exit_code\": 0")
+            {
                 "error".clone_into(&mut call.status);
             }
         }
@@ -618,10 +608,8 @@ fn extract_codex_message_text(content: Option<&Value>) -> Option<String> {
     match content {
         Some(Value::String(s)) => clean_opt(Some(s), true),
         Some(Value::Array(items)) => {
-            let parts: Vec<String> = items
-                .iter()
-                .filter_map(|item| clean_opt(item.get("text").and_then(Value::as_str), true))
-                .collect();
+            let parts: Vec<String> =
+                items.iter().filter_map(|item| clean_opt(item.get("text").and_then(Value::as_str), true)).collect();
             (!parts.is_empty()).then(|| parts.join("\n\n"))
         }
         _ => None,
@@ -678,10 +666,7 @@ fn parse_one_chatgpt_conversation(
     conv: &Map<String, Value>,
     fallback_mtime: f64,
 ) -> Option<ParsedSession> {
-    let ext_id = clean_opt(
-        conv.get("conversation_id").or_else(|| conv.get("id")).and_then(Value::as_str),
-        true,
-    )?;
+    let ext_id = clean_opt(conv.get("conversation_id").or_else(|| conv.get("id")).and_then(Value::as_str), true)?;
     let mapping = conv.get("mapping").and_then(Value::as_object)?;
     if mapping.is_empty() {
         return None;
@@ -703,8 +688,7 @@ fn parse_one_chatgpt_conversation(
     let updated = conv.get("update_time").and_then(parse_timestamp_micros).or(created);
     let raw_title = clean_opt(conv.get("title").and_then(Value::as_str), true);
     let title = derive_title(raw_title.as_deref(), &builder.turns, &ext_id);
-    let primary_model = clean_opt(conv.get("default_model_slug").and_then(Value::as_str), true)
-        .or(builder.first_model);
+    let primary_model = clean_opt(conv.get("default_model_slug").and_then(Value::as_str), true).or(builder.first_model);
     let serialized = serde_json::to_vec(conv).unwrap_or_default();
     let mtime = updated.map_or(fallback_mtime, |u| {
         #[allow(clippy::cast_precision_loss)]
@@ -747,11 +731,7 @@ fn parse_one_chatgpt_conversation(
 fn bfs_mapping_nodes(mapping: &Map<String, Value>) -> Vec<String> {
     let mut roots: Vec<&String> = mapping
         .iter()
-        .filter(|(_, node)| {
-            node.get("parent")
-                .and_then(Value::as_str)
-                .is_none_or(|p| !mapping.contains_key(p))
-        })
+        .filter(|(_, node)| node.get("parent").and_then(Value::as_str).is_none_or(|p| !mapping.contains_key(p)))
         .map(|(id, _)| id)
         .collect();
     roots.sort();
@@ -782,10 +762,7 @@ fn active_branch_set<'a>(mapping: &'a Map<String, Value>, current_node: Option<&
         mapping
             .iter()
             .filter_map(|(id, n)| {
-                let empty_children = n
-                    .get("children")
-                    .and_then(Value::as_array)
-                    .is_none_or(Vec::is_empty);
+                let empty_children = n.get("children").and_then(Value::as_array).is_none_or(Vec::is_empty);
                 empty_children.then_some(id.as_str())
             })
             .next_back()
@@ -847,14 +824,10 @@ impl MappingBuilder {
             _ => "system",
         };
         let meta_obj = msg.get("metadata").and_then(Value::as_object);
-        let visually_hidden = meta_obj
-            .and_then(|m| m.get("is_visually_hidden_from_conversation"))
-            .and_then(Value::as_bool)
-            == Some(true);
-        let model = meta_obj
-            .and_then(|m| m.get("model_slug"))
-            .and_then(Value::as_str)
-            .and_then(|s| clean_opt(Some(s), true));
+        let visually_hidden =
+            meta_obj.and_then(|m| m.get("is_visually_hidden_from_conversation")).and_then(Value::as_bool) == Some(true);
+        let model =
+            meta_obj.and_then(|m| m.get("model_slug")).and_then(Value::as_str).and_then(|s| clean_opt(Some(s), true));
         if self.first_model.is_none() && model.is_some() {
             self.first_model.clone_from(&model);
         }

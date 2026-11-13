@@ -136,10 +136,7 @@ fn file_mtime(path: &Path) -> f64 {
 }
 
 fn count_json_array(bytes: &[u8]) -> u64 {
-    serde_json::from_slice::<Value>(bytes)
-        .ok()
-        .and_then(|v| v.as_array().map(|a| a.len() as u64))
-        .unwrap_or(0)
+    serde_json::from_slice::<Value>(bytes).ok().and_then(|v| v.as_array().map(|a| a.len() as u64)).unwrap_or(0)
 }
 
 fn count_zip_conversations(path: &Path) -> u64 {
@@ -203,11 +200,7 @@ fn load_claude_zip(path: &Path, mtime: f64) -> Vec<Result<ParsedSession, String>
 
 /// Parses a single Claude Code / Cowork `.jsonl` transcript; `None` if it holds no session turns
 /// (e.g. an empty or metadata-only sidecar file).
-pub(super) fn parse_claude_jsonl(
-    path: &Path,
-    bytes: &[u8],
-    mtime: f64,
-) -> Option<Result<ParsedSession, String>> {
+pub(super) fn parse_claude_jsonl(path: &Path, bytes: &[u8], mtime: f64) -> Option<Result<ParsedSession, String>> {
     let text = match std::str::from_utf8(bytes) {
         Ok(s) => s,
         Err(err) => return Some(Err(format!("{}: invalid UTF-8: {err}", path.display()))),
@@ -259,10 +252,7 @@ impl JsonlState {
         let stem = path.file_stem().map_or_else(|| "session".into(), |s| s.to_string_lossy().into_owned());
         let parent_name = path.parent().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned());
         let subagent_parent_dir = if parent_name.as_deref() == Some("subagents") {
-            path.parent()
-                .and_then(Path::parent)
-                .and_then(|p| p.file_name())
-                .map(|n| n.to_string_lossy().into_owned())
+            path.parent().and_then(Path::parent).and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned())
         } else {
             None
         };
@@ -318,8 +308,7 @@ impl JsonlState {
             self.workspace_path = clean_opt(obj.get("cwd").and_then(Value::as_str), true);
         }
         if self.git_branch.is_none() {
-            self.git_branch =
-                clean_opt(obj.get("gitBranch").and_then(Value::as_str), true).filter(|b| b != "HEAD");
+            self.git_branch = clean_opt(obj.get("gitBranch").and_then(Value::as_str), true).filter(|b| b != "HEAD");
         }
         let ts = obj.get("timestamp").and_then(parse_timestamp_micros);
         if let Some(t) = ts {
@@ -356,8 +345,7 @@ impl JsonlState {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| format!("turn-{ord}"));
         let parent_ext = clean_opt(obj.get("parentUuid").and_then(Value::as_str), true);
-        let model = clean_opt(msg.get("model").and_then(Value::as_str), true)
-            .filter(|m| !m.starts_with('<'));
+        let model = clean_opt(msg.get("model").and_then(Value::as_str), true).filter(|m| !m.starts_with('<'));
         if let Some(m) = &model {
             *self.model_counts.entry(m.clone()).or_insert(0) += 1;
         }
@@ -427,11 +415,7 @@ impl JsonlState {
     fn finish(mut self, path: &Path, bytes: &[u8], mtime: f64) -> ParsedSession {
         assign_active_lineage(&mut self.turns);
         let (external_id, parent_external_id) = self.resolve_ids();
-        let primary_model = self
-            .model_counts
-            .into_iter()
-            .max_by_key(|(_, count)| *count)
-            .map(|(model, _)| model);
+        let primary_model = self.model_counts.into_iter().max_by_key(|(_, count)| *count).map(|(model, _)| model);
         let explicit_title = self.title.as_deref().or(self.summary.as_deref());
         let title = derive_title(explicit_title, &self.turns, &external_id);
         let workspace_paths = self.workspace_path.iter().cloned().collect();
@@ -551,25 +535,12 @@ impl BlockAccumulator {
     fn push_text(&mut self, raw: &str, turn_ext_id: &str, session_uri: &str, ts: Option<i64>) {
         let cleaned = strip_internal_command_tags(&clean_str(raw));
         if !cleaned.trim().is_empty() {
-            extract_ant_artifacts(
-                &cleaned,
-                turn_ext_id,
-                session_uri,
-                ts,
-                &mut self.artifacts,
-                &mut self.companions,
-            );
+            extract_ant_artifacts(&cleaned, turn_ext_id, session_uri, ts, &mut self.artifacts, &mut self.companions);
             self.text_parts.push(cleaned);
         }
     }
 
-    fn consume_block(
-        &mut self,
-        b: &Map<String, Value>,
-        turn_ext_id: &str,
-        session_uri: &str,
-        ts: Option<i64>,
-    ) {
+    fn consume_block(&mut self, b: &Map<String, Value>, turn_ext_id: &str, session_uri: &str, ts: Option<i64>) {
         match b.get("type").and_then(Value::as_str).unwrap_or_default() {
             "text" => {
                 if let Some(t) = b.get("text").and_then(Value::as_str) {
@@ -582,8 +553,7 @@ impl BlockAccumulator {
                 }
             }
             "tool_use" => {
-                let name = clean_opt(b.get("name").and_then(Value::as_str), true)
-                    .unwrap_or_else(|| "tool".to_owned());
+                let name = clean_opt(b.get("name").and_then(Value::as_str), true).unwrap_or_else(|| "tool".to_owned());
                 let mut args = b.get("input").and_then(Value::as_object).cloned().unwrap_or_default();
                 clean_json_map(&mut args);
                 let (tool_kind, target_path, command) = classify_tool(&name, &args);
@@ -644,11 +614,9 @@ fn strip_internal_command_tags(text: &str) -> String {
 fn flatten_tool_result_content(value: Option<&Value>) -> String {
     match value {
         Some(Value::String(s)) => s.clone(),
-        Some(Value::Array(items)) => items
-            .iter()
-            .filter_map(|item| item.get("text").and_then(Value::as_str))
-            .collect::<Vec<_>>()
-            .join("\n"),
+        Some(Value::Array(items)) => {
+            items.iter().filter_map(|item| item.get("text").and_then(Value::as_str)).collect::<Vec<_>>().join("\n")
+        }
         Some(other) => other.to_string(),
         None => String::new(),
     }
@@ -673,8 +641,8 @@ fn extract_ant_artifacts(
         let body = body_and_more[..end].trim();
         rest = &body_and_more[end + "</antArtifact>".len()..];
 
-        let identifier = xml_attr(header, "identifier")
-            .unwrap_or_else(|| format!("artifact-{}-{}", turn_ext_id, artifacts.len()));
+        let identifier =
+            xml_attr(header, "identifier").unwrap_or_else(|| format!("artifact-{}-{}", turn_ext_id, artifacts.len()));
         let mime = xml_attr(header, "type");
         let title = xml_attr(header, "title");
         let is_code = mime.as_deref().is_some_and(|m| m.contains("code") || m.contains("html"));
@@ -720,11 +688,9 @@ pub(super) fn assign_active_lineage(turns: &mut [SessionTurnRecord]) {
     if turns.is_empty() {
         return;
     }
-    let id_to_idx: HashMap<&str, usize> =
-        turns.iter().enumerate().map(|(i, t)| (t.external_id.as_str(), i)).collect();
-    let has_valid_parents = turns
-        .iter()
-        .any(|t| t.parent_external_id.as_deref().is_some_and(|p| id_to_idx.contains_key(p)));
+    let id_to_idx: HashMap<&str, usize> = turns.iter().enumerate().map(|(i, t)| (t.external_id.as_str(), i)).collect();
+    let has_valid_parents =
+        turns.iter().any(|t| t.parent_external_id.as_deref().is_some_and(|p| id_to_idx.contains_key(p)));
 
     let active_indices: HashSet<usize> = if has_valid_parents {
         let mut set = HashSet::new();
@@ -733,10 +699,7 @@ pub(super) fn assign_active_lineage(turns: &mut [SessionTurnRecord]) {
             if !set.insert(idx) {
                 break;
             }
-            cur = turns[idx]
-                .parent_external_id
-                .as_deref()
-                .and_then(|parent| id_to_idx.get(parent).copied());
+            cur = turns[idx].parent_external_id.as_deref().and_then(|parent| id_to_idx.get(parent).copied());
         }
         set
     } else {
@@ -855,8 +818,7 @@ struct WebConvState {
 impl WebConvState {
     fn consume_message(&mut self, msg: &Map<String, Value>, session_uri: &str) {
         let ord = i32::try_from(self.turns.len()).unwrap_or(i32::MAX);
-        let turn_id = clean_opt(msg.get("uuid").and_then(Value::as_str), true)
-            .unwrap_or_else(|| format!("msg-{ord}"));
+        let turn_id = clean_opt(msg.get("uuid").and_then(Value::as_str), true).unwrap_or_else(|| format!("msg-{ord}"));
         let sender = msg.get("sender").and_then(Value::as_str).unwrap_or("assistant");
         let is_human = sender == "human" || sender == "user";
         let ts = msg.get("created_at").and_then(parse_timestamp_micros);
@@ -911,19 +873,12 @@ impl WebConvState {
     }
 }
 
-fn collect_web_attachments(
-    msg: &Map<String, Value>,
-    turn_id: &str,
-    artifacts: &mut Vec<SessionArtifactRecord>,
-) {
+fn collect_web_attachments(msg: &Map<String, Value>, turn_id: &str, artifacts: &mut Vec<SessionArtifactRecord>) {
     for key in ["attachments", "files"] {
         let Some(arr) = msg.get(key).and_then(Value::as_array) else { continue };
         for (i, item) in arr.iter().enumerate() {
             let Some(obj) = item.as_object() else { continue };
-            let name = clean_opt(
-                obj.get("file_name").or_else(|| obj.get("name")).and_then(Value::as_str),
-                true,
-            );
+            let name = clean_opt(obj.get("file_name").or_else(|| obj.get("name")).and_then(Value::as_str), true);
             let ext_id = clean_opt(obj.get("id").or_else(|| obj.get("uuid")).and_then(Value::as_str), true)
                 .unwrap_or_else(|| format!("{turn_id}-{key}-{i}"));
             let mime = clean_opt(obj.get("file_type").and_then(Value::as_str), true);

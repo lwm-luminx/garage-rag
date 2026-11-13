@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_lines)]
+
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
@@ -12,9 +14,9 @@ use crate::attribution::{NoGit, SelfIdentity, TrustTier};
 use crate::pipeline::{
     Context, Counters, DocumentPayload, ExistingStat, FileCandidate, FileHost, IngestSettings, ReadOutcome, SourceInfo,
 };
+use crate::policy::WalkPolicy;
 use crate::scanner::{ScanOptions, Ticker, scan_source};
 use crate::source::{ScanSummary, SourceError, SourceHost, SourceOptions, SourceRun, SourceStorage, ingest_source};
-use crate::policy::WalkPolicy;
 
 static NEXT_DIR: AtomicUsize = AtomicUsize::new(1);
 
@@ -126,7 +128,7 @@ impl SourceStorage for MemorySessionStorage {
         Ok(ExistingStat {
             exists: true,
             mtime: doc.mtime,
-            byte_size: doc.byte_size as i64,
+            byte_size: doc.byte_size.cast_signed(),
             source_sha256: doc.source_sha256.clone().unwrap_or_default(),
             content_sha256: doc.content_sha256.clone(),
             state: "OK".to_owned(),
@@ -561,12 +563,8 @@ fn chatgpt_codex_and_branched_web_mapping_preserve_inactive_branches() {
         panic!("expected web session");
     };
     assert_eq!(web_rec.turns.len(), 5, "all 5 non-root mapping nodes preserved relationally");
-    let inactive: Vec<&str> = web_rec
-        .turns
-        .iter()
-        .filter(|t| t.active_ord.is_none())
-        .map(|t| t.external_id.as_str())
-        .collect();
+    let inactive: Vec<&str> =
+        web_rec.turns.iter().filter(|t| t.active_ord.is_none()).map(|t| t.external_id.as_str()).collect();
     assert_eq!(inactive, vec!["node-u1", "node-a1", "node-canvas"]);
 }
 
@@ -683,11 +681,8 @@ fn antigravity_prefers_full_transcript_links_subagents_and_indexes_companions() 
     assert_eq!(parent_rec.workspace_path.as_deref(), Some("/Users/dev/garage-rag"));
     assert_eq!(parent_rec.tool_calls.len(), 1);
     assert_eq!(parent_rec.tool_calls[0].tool_kind, "subagent");
-    let kinds: HashMap<String, String> = parent_rec
-        .artifacts
-        .iter()
-        .map(|a| (a.external_id.clone(), a.kind.clone()))
-        .collect();
+    let kinds: HashMap<String, String> =
+        parent_rec.artifacts.iter().map(|a| (a.external_id.clone(), a.kind.clone())).collect();
     assert_eq!(kinds.get("implementation_plan.md").map(String::as_str), Some("plan"));
     assert_eq!(kinds.get("walkthrough.md").map(String::as_str), Some("walkthrough"));
 

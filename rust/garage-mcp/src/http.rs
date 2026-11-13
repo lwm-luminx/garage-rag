@@ -136,6 +136,9 @@ fn content_type_refusal(headers: &HeaderMap, is_post: bool) -> Option<Reply> {
     }
 }
 
+/// Headers kept out of a caller's attributes: they carry the client's credentials.
+const CREDENTIAL_HEADERS: [&str; 3] = ["authorization", "proxy-authorization", "cookie"];
+
 fn header<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
     headers.get(name).and_then(|value| value.to_str().ok())
 }
@@ -286,6 +289,17 @@ impl Endpoint {
             .and_then(|value| value.strip_prefix("Bearer ").or_else(|| value.strip_prefix("bearer ")))
             .map(|token| token.trim().to_string())
             .filter(|token| !token.is_empty());
+        // The request's headers go along as attributes, and GarageService keeps only those its
+        // access policy names (`caller_headers`): a Door's `x-garage-registration`, for one. The
+        // headers that carry credentials never leave the transport.
+        for (name, value) in headers {
+            if CREDENTIAL_HEADERS.contains(&name.as_str()) {
+                continue;
+            }
+            if let Ok(value) = value.to_str() {
+                caller.attributes.entry(name.as_str().to_string()).or_insert_with(|| value.to_string());
+            }
+        }
         caller
     }
 
@@ -624,5 +638,23 @@ mod tests {
         let endpoint = endpoint();
         let initialize = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}});
         assert_eq!(post(&endpoint, None, &initialize)["status"], 200);
+    }
+
+    #[test]
+    fn a_caller_carries_the_headers_but_not_the_credentials() {
+        let mut headers = HeaderMap::new();
+        headers.insert("authorization", HeaderValue::from_static("Bearer gmr_token"));
+        headers.insert("cookie", HeaderValue::from_static("session=1"));
+        headers.insert("proxy-authorization", HeaderValue::from_static("Basic eA=="));
+        headers.insert("x-garage-registration", HeaderValue::from_static("r1"));
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
+        let caller = Endpoint::caller(&headers);
+        assert_eq!(caller.transport, Transport::Http);
+        assert_eq!(caller.registration_token.as_deref(), Some("gmr_token"));
+        assert_eq!(caller.attributes.get("x-garage-registration").map(String::as_str), Some("r1"));
+        assert_eq!(caller.attributes.get("content-type").map(String::as_str), Some("application/json"));
+        for secret in CREDENTIAL_HEADERS {
+            assert!(!caller.attributes.contains_key(secret), "{secret}");
+        }
     }
 }

@@ -1179,6 +1179,7 @@ async fn session_doc_payload(client: &Client, record: &garage_ingest::sessions::
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn sample_parent_session(extra_turn: bool) -> garage_ingest::sessions::SessionRecord {
     use garage_ingest::sessions::{SessionArtifactRecord, SessionRecord, SessionToolCallRecord, SessionTurnRecord};
     let mut turns = vec![
@@ -1305,6 +1306,7 @@ fn sample_parent_session(extra_turn: bool) -> garage_ingest::sessions::SessionRe
 }
 
 #[test]
+#[allow(clippy::too_many_lines)]
 fn sessions_persist_relationally_link_artifacts_and_preserve_chunk_ids_on_append() {
     with_db(|pool| {
         Box::pin(async move {
@@ -1372,7 +1374,7 @@ fn sessions_persist_relationally_link_artifacts_and_preserve_chunk_ids_on_append
                     text: plan_text.into(),
                     token_count: Some(8),
                     char_start: Some(0),
-                    char_end: Some(plan_text.len() as i32),
+                    char_end: Some(i32::try_from(plan_text.len()).unwrap()),
                     heading_path: Some("Implementation Plan".into()),
                     chunk_sha256: plan_sha,
                     chunker: Some("markdown".into()),
@@ -1394,14 +1396,14 @@ fn sessions_persist_relationally_link_artifacts_and_preserve_chunk_ids_on_append
             .await;
             assert!(art_doc_id.is_some(), "companion artifact linked to documents.id");
 
-            // Thinking is searchable in session_turns.tsv, never in documents/chunks.
+            // Thinking stays out of session_turns.tsv (visible content only, docs/schema.md) and out of documents/chunks.
             let thinking_hits: i64 = scalar(
                 &client,
                 "SELECT count(*) FROM session_turns WHERE session_id = $1 AND tsv @@ plainto_tsquery('english', 'uniquexylophone')",
                 &[&parent_sid],
             )
             .await;
-            assert_eq!(thinking_hits, 1);
+            assert_eq!(thinking_hits, 0);
             assert!(fts(&mut client, "uniquexylophone", SearchFilters::default()).await.unwrap().is_empty());
 
             // AI model author identity + tool call correlation + chunks.session_turn_id.

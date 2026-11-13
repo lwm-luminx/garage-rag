@@ -398,7 +398,7 @@ final class StatusPagePresentationTests: XCTestCase {
 
     func testAHelperThatCantBeReachedOffersARestartOnServices() throws {
         let health = StatusHealth(
-            database: .running, sourceCount: 1, embeddingModelCount: 1,
+            database: .running, mcp: .stdio(clients: 1), sourceCount: 1, embeddingModelCount: 1,
             serviceIssues: [
                 .init(id: "ingest-xpc", name: "Ingest", detail: "1 of 2 self tests failed", isUnreachable: false),
                 .init(id: "embed-xpc", name: "Embeddings", detail: "Can't be reached: no reply", isUnreachable: true),
@@ -418,7 +418,7 @@ final class StatusPagePresentationTests: XCTestCase {
 
     func testTheIndexManagerHasNoRestartButOpensServices() throws {
         let health = StatusHealth(
-            database: .running, sourceCount: 1, embeddingModelCount: 1,
+            database: .running, mcp: .stdio(clients: 1), sourceCount: 1, embeddingModelCount: 1,
             serviceIssues: [.init(id: "grpc", name: "Index Manager", detail: "bind: address in use", isUnreachable: true)]
         )
         let problem = try XCTUnwrap(health.problems.first)
@@ -443,7 +443,7 @@ final class StatusPagePresentationTests: XCTestCase {
 
     func testAnUnreachableEngineIsListedOnce() {
         let health = StatusHealth(
-            database: .running, sourceCount: 1, embeddingModelCount: 1, llamaError: "Couldn't communicate",
+            database: .running, mcp: .stdio(clients: 1), sourceCount: 1, embeddingModelCount: 1, llamaError: "Couldn't communicate",
             serviceIssues: [.init(id: "llama-xpc", name: "Built-in Engine", detail: "Can't be reached: Couldn't communicate", isUnreachable: true)]
         )
         XCTAssertEqual(health.problems.map(\.id), ["llama"])

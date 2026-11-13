@@ -180,11 +180,7 @@ fn clean_json_value(value: &mut Value) {
 #[must_use]
 pub fn truncate_chars(text: &str, max_chars: usize) -> String {
     let cleaned = clean_str(text);
-    if cleaned.chars().count() <= max_chars {
-        cleaned
-    } else {
-        cleaned.chars().take(max_chars).collect()
-    }
+    if cleaned.chars().count() <= max_chars { cleaned } else { cleaned.chars().take(max_chars).collect() }
 }
 
 /// Bounded preview and byte length for tool outputs.
@@ -295,13 +291,7 @@ pub fn classify_tool(tool_name: &str, arguments: &Map<String, Value>) -> (String
         "browser"
     } else if matches!(
         lower.as_str(),
-        "read"
-            | "notebookread"
-            | "read_file"
-            | "view_file"
-            | "view_file_outline"
-            | "view_code_item"
-            | "list_dir"
+        "read" | "notebookread" | "read_file" | "view_file" | "view_file_outline" | "view_code_item" | "list_dir"
     ) {
         "read"
     } else if matches!(
@@ -357,17 +347,9 @@ pub fn classify_tool(tool_name: &str, arguments: &Map<String, Value>) -> (String
 }
 
 fn extract_target_path(arguments: &Map<String, Value>) -> Option<String> {
-    for key in [
-        "file_path",
-        "path",
-        "Path",
-        "TargetFile",
-        "DirectoryPath",
-        "SearchPath",
-        "notebook_path",
-        "workdir",
-        "cwd",
-    ] {
+    for key in
+        ["file_path", "path", "Path", "TargetFile", "DirectoryPath", "SearchPath", "notebook_path", "workdir", "cwd"]
+    {
         if let Some(val) = arguments.get(key).and_then(Value::as_str)
             && !val.trim().is_empty()
         {
@@ -418,11 +400,7 @@ pub fn derive_title(explicit: Option<&str>, turns: &[SessionTurnRecord], fallbac
             && turn.role == "user"
             && let Some(content) = turn.content.as_deref()
         {
-            let first_line = content
-                .lines()
-                .map(str::trim)
-                .find(|line| !line.is_empty())
-                .unwrap_or_default();
+            let first_line = content.lines().map(str::trim).find(|line| !line.is_empty()).unwrap_or_default();
             if !first_line.is_empty() {
                 return truncate_chars(first_line, 100);
             }
@@ -503,10 +481,8 @@ impl SessionRecord {
             .and_then(Value::as_array)
             .map(|items| items.iter().filter_map(Value::as_str).map(clean_str).collect())
             .unwrap_or_default();
-        let turns = array_items(obj, "turns")?
-            .iter()
-            .map(SessionTurnRecord::from_json)
-            .collect::<Result<Vec<_>, _>>()?;
+        let turns =
+            array_items(obj, "turns")?.iter().map(SessionTurnRecord::from_json).collect::<Result<Vec<_>, _>>()?;
         let tool_calls = array_items(obj, "tool_calls")?
             .iter()
             .map(SessionToolCallRecord::from_json)
