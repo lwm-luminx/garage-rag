@@ -1119,4 +1119,13 @@
   <data name="LogsPage_ReportBugButton.[using:Microsoft.UI.Xaml.Controls]ToolTipService.ToolTip" xml:space="preserve">
     <value>Open a bug report with these log lines attached</value>
   </data>
+  <data name="ServicesPage_Title.Text" xml:space="preserve">
+    <value>Services</value>
+  </data>
+  <data name="ServicesPage_Intro.Text" xml:space="preserve">
+    <value>Each service runs in its own process. Test runs its self tests; Restart stops it and starts it again.</value>
+  </data>
+  <data name="StatusPage_ShowServicesButton.Content" xml:space="preserve">
+    <value>Show Services</value>
+  </data>
 </root>
