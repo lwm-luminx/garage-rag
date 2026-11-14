@@ -14,19 +14,35 @@ objc_library(
     deps = ["//rust/garage-mcp-ffi"],
 )
 
-# Implementation library for GarageMCPServerService: the Rust MCP server (//rust/garage-mcp-ffi,
-# linked statically) and its host, which carries the local model's requests through the embed
-# worker's host (llama_xpc over NSXPC, Ollama and LM Studio over URLSession).
+# GarageMCPServerService's delegate and the Rust MCP server (//rust/garage-mcp-ffi, linked statically)
+# with its host, which carries the local model's requests through the embed worker's host (llama_xpc
+# over NSXPC, Ollama and LM Studio over URLSession). A library, so a build with its own MCP service (the
+# App Store build's, chosen with :service below) can build on the open delegate.
 swift_library(
-    name = "GarageMCPServerService_lib",
-    srcs = glob(["**/*.swift"]),
-    module_name = "GarageMCPServerService",
-    visibility = ["//visibility:private"],
+    name = "GarageMCPServerServiceCore",
+    srcs = [
+        "GarageMCPRustServer.swift",
+        "GarageMCPServerServiceDelegate.swift",
+    ],
+    module_name = "GarageMCPServerServiceCore",
+    visibility = ["//visibility:public"],
     deps = [
         ":GarageMCPFFI",
         "//macapp/Sources/GarageEmbedWorker",
         "//macapp/Sources/GarageXPCKit",
         "//macapp/Sources/LlamaModelLoader",
+    ],
+)
+
+# The process entry point.
+swift_library(
+    name = "GarageMCPServerService_lib",
+    srcs = ["main.swift"],
+    module_name = "GarageMCPServerService",
+    visibility = ["//visibility:private"],
+    deps = [
+        ":GarageMCPServerServiceCore",
+        "//macapp/Sources/GarageXPCKit",
     ],
 )
 
@@ -49,4 +65,13 @@ macos_xpc_service(
     deps = [
         ":GarageMCPServerService_lib",
     ],
+)
+
+# The MCP service the app embeds: this one unless a build names its own, as garage-enterprise's App
+# Store build does for Garage Door (its .bazelrc). The service named here must keep this bundle's
+# identifier and answer GarageMCPServerServiceProtocol, since the app reaches it by name.
+label_flag(
+    name = "service",
+    build_setting_default = ":GarageMCPServerService",
+    visibility = ["//visibility:public"],
 )
