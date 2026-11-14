@@ -6,7 +6,7 @@ use std::io::{BufRead, Write};
 use serde_json::Value;
 
 use crate::corpus::Caller;
-use crate::protocol::Server;
+use crate::protocol::Handler;
 
 /// Answers messages from `input` on `output` until `input` ends. A line that is not JSON is
 /// skipped, as the Python server skips it.
@@ -14,7 +14,12 @@ use crate::protocol::Server;
 /// # Errors
 ///
 /// An error writing to `output`.
-pub fn serve(server: &Server, caller: &Caller, input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
+pub fn serve(
+    server: &dyn Handler,
+    caller: &Caller,
+    input: impl BufRead,
+    mut output: impl Write,
+) -> std::io::Result<()> {
     for line in input.lines() {
         let line = line?;
         if line.trim().is_empty() {
