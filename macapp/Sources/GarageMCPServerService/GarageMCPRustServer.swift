@@ -13,13 +13,13 @@ import GarageMCPFFI
 ///   server's egress rules approved (`GarageEmbedWorkerHost`, the embed worker's host, carries both).
 /// - Clients reach it over the streamable HTTP transport on loopback, the one listener the app opts in
 ///   to on the MCP page.
-final class GarageMCPRustServer: @unchecked Sendable {
+public final class GarageMCPRustServer: @unchecked Sendable {
     /// Where GarageService listens: its socket wins over host and port.
-    enum GRPCTarget: Equatable {
+    public enum GRPCTarget: Equatable {
         case socket(String)
         case tcp(host: String, port: Int)
 
-        var description: String {
+        public var description: String {
             switch self {
             case .socket(let path): return "unix:\(path)"
             case .tcp(let host, let port): return "\(host):\(port)"
@@ -39,9 +39,13 @@ final class GarageMCPRustServer: @unchecked Sendable {
         }
     }
 
-    struct Failure: LocalizedError {
-        let message: String
-        var errorDescription: String? { message }
+    public struct Failure: LocalizedError {
+        public let message: String
+        public var errorDescription: String? { message }
+
+        public init(message: String) {
+            self.message = message
+        }
     }
 
     /// The host the server calls back into. Owned here, so its context outlives the server.
@@ -50,8 +54,8 @@ final class GarageMCPRustServer: @unchecked Sendable {
     private var server: OpaquePointer?
 
     /// `host:port` the listener bound.
-    let address: String
-    let path: String
+    public let address: String
+    public let path: String
 
     private init(host: GarageMCPServerHost, server: OpaquePointer, address: String, path: String) {
         self.host = host
@@ -65,7 +69,7 @@ final class GarageMCPRustServer: @unchecked Sendable {
     }
 
     /// Starts the HTTP transport and returns once it listens.
-    static func start(
+    public static func start(
         grpc: GRPCTarget,
         token: String?,
         httpHost: String,
@@ -96,7 +100,7 @@ final class GarageMCPRustServer: @unchecked Sendable {
         )
     }
 
-    var isRunning: Bool {
+    public var isRunning: Bool {
         lock.lock()
         defer { lock.unlock() }
         guard let server else { return false }
@@ -104,7 +108,7 @@ final class GarageMCPRustServer: @unchecked Sendable {
     }
 
     /// Stops the listener; requests in flight get up to ten seconds to finish.
-    func stop() {
+    public func stop() {
         lock.lock()
         let running = server
         server = nil
@@ -115,7 +119,7 @@ final class GarageMCPRustServer: @unchecked Sendable {
     }
 
     /// Answers one JSON-RPC message without a listener, for the self test: `nil` for a notification.
-    static func handle(
+    public static func handle(
         message: [String: Any],
         grpc: GRPCTarget,
         token: String?,
@@ -190,10 +194,10 @@ final class GarageMCPRustEndpoint: @unchecked Sendable {
 /// The process the MCP server runs in, as the server sees it (`GarageMcpHost`): it carries the local
 /// model's requests, which the server's egress rules approved, through the embed worker's host, and
 /// loads llama_xpc models on demand. Its calls may come from any thread, several at once.
-final class GarageMCPServerHost: @unchecked Sendable {
-    let worker: GarageEmbedWorkerHost
+public final class GarageMCPServerHost: @unchecked Sendable {
+    public let worker: GarageEmbedWorkerHost
 
-    init(worker: GarageEmbedWorkerHost = GarageEmbedWorkerHost(images: nil)) {
+    public init(worker: GarageEmbedWorkerHost = GarageEmbedWorkerHost(images: nil)) {
         self.worker = worker
     }
 

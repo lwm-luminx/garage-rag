@@ -13,8 +13,9 @@ load("@rules_apple//apple:macos.bzl", "macos_application")
 load("//bazel:codesign.bzl", "HARDENED_RUNTIME_CODESIGNOPTS")
 
 # Every XPC service the app embeds except LlamaXPCService, which the caller picks.
+# The MCP service is a label flag, so a build can embed its own (garage-enterprise's App Store build).
 GARAGE_XPC_SERVICES = [
-    "//macapp/Sources/GarageMCPServerService:GarageMCPServerService",
+    "//macapp/Sources/GarageMCPServerService:service",
     "//macapp/Sources/GarageEmbedXPCService:GarageEmbedXPCService",
     "//macapp/Sources/GarageImageEmbedXPCService:GarageImageEmbedXPCService",
     "//macapp/Sources/GarageIngestXPCService:GarageIngestXPCService",
