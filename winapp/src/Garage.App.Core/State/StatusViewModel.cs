@@ -13,8 +13,9 @@ namespace Garage.App.Core.State;
 
 /// <summary>
 /// The Status page: the Library box (what the pipeline is doing, or what is left to index, with Update
-/// Everything or Stop), Automatic Updates, and the Services box. The Mac's <c>StatusView</c> with
-/// <c>IndexingPresentation</c> and <c>ServiceRowPresentation</c>.
+/// Everything or Stop), Automatic Updates, and the services that need attention; and the Services page's
+/// rows, Test and Restart. The Mac's <c>StatusView</c> and <c>ServicesView</c>, with
+/// <c>IndexingPresentation</c>, <c>ServiceRowPresentation</c> and <c>StatusHealth.ServiceIssue</c>.
 /// </summary>
 public sealed partial class StatusViewModel : ObservableObject
 {
@@ -67,8 +68,12 @@ public sealed partial class StatusViewModel : ObservableObject
     /// <summary>The pipeline.</summary>
     public LibraryCoordinator Library { get; }
 
-    /// <summary>The Services box's rows; empty with a development backend.</summary>
+    /// <summary>The Services page's rows; empty with a development backend.</summary>
     public ObservableCollection<ServiceRowPresentation> Services { get; } = [];
+
+    /// <summary>The services the Status page names: those the Services page draws in red or orange.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<ServiceIssue> ServiceProblems { get; private set; } = [];
 
     /// <summary>Whether the app runs its own services (not a development backend).</summary>
     public bool HasServices => _state.Backend.Host is not null;
@@ -270,6 +275,11 @@ public sealed partial class StatusViewModel : ObservableObject
         if (_postgres is not null)
         {
             rows.Insert(0, ServiceRowPresentation.ForPostgres(_postgres.Status, _postgres.Version, _postgres.Layout.Port));
+        }
+        IReadOnlyList<ServiceIssue> problems = ServiceIssues.From(rows);
+        if (!problems.SequenceEqual(ServiceProblems))
+        {
+            ServiceProblems = problems;
         }
         if (!force && rows.SequenceEqual(Services))
         {

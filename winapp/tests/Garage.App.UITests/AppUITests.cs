@@ -149,7 +149,7 @@ public sealed class AppUITests
         Window main = session.Main;
         ControlType[] interactive = [ControlType.Button, ControlType.CheckBox, ControlType.Edit, ControlType.ComboBox, ControlType.RadioButton, ControlType.Hyperlink, ControlType.Slider, ControlType.Spinner];
         List<string> unnamed = [];
-        foreach (string page in (string[])["Status", "Sources", "Models", "MCP Server", "Search", "Documents", "Facts", "Database", "Logs", "Settings"])
+        foreach (string page in (string[])["Status", "Sources", "Models", "MCP Server", "Search", "Documents", "Facts", "Database", "Services", "Logs", "Settings"])
         {
             session.ShowPage(page);
             Thread.Sleep(1500);

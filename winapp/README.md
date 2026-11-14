@@ -56,7 +56,8 @@ the MCP Server page. It starts a third service process and is off by default; as
 over stdio start Garage themselves.
 
 Automatic Updates are on by default, as on the Mac, and run every hour; turn them off on the
-Status page.
+Status page. Each service's state, self tests, Test and Restart are on the Services page (Advanced);
+Status names a service only when it can't be reached or fails its self tests.
 
 To use a `garage serve` you started yourself instead, launch with `--dev-backend`, or set
 `GARAGE_GRPC_PORT`. Give both the same token, so the server answers the calls that change settings

@@ -33,6 +33,9 @@ public enum AppSection
     /// <summary>Schema, contents and reset.</summary>
     Database,
 
+    /// <summary>Each service process: its state, self tests, Test and Restart.</summary>
+    Services,
+
     /// <summary>App and service logs.</summary>
     Logs,
 }
@@ -46,7 +49,7 @@ public enum SidebarGroup
     /// <summary>Documents, Facts, Graph, Search.</summary>
     Data,
 
-    /// <summary>Database, Logs.</summary>
+    /// <summary>Database, Services, Logs.</summary>
     Advanced,
 }
 
@@ -69,7 +72,7 @@ public static class AppSections
     {
         SidebarGroup.Configuration => [AppSection.Sources, AppSection.Models, AppSection.Mcp],
         SidebarGroup.Data => [AppSection.Documents, AppSection.Facts, AppSection.Graph, AppSection.Search],
-        SidebarGroup.Advanced => [AppSection.Database, AppSection.Logs],
+        SidebarGroup.Advanced => [AppSection.Database, AppSection.Services, AppSection.Logs],
         _ => throw new ArgumentOutOfRangeException(nameof(group), group, null),
     };
 
@@ -85,6 +88,7 @@ public static class AppSections
         AppSection.Graph => "Graph",
         AppSection.Search => "Search",
         AppSection.Database => "Database",
+        AppSection.Services => "Services",
         AppSection.Logs => "Logs",
         _ => throw new ArgumentOutOfRangeException(nameof(section), section, null),
     };

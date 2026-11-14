@@ -316,6 +316,7 @@ public sealed partial class MainWindow : Microsoft.UI.Xaml.Window
                 AppSection.Facts => ContentFrame.Navigate(typeof(FactsPage), _pages),
                 AppSection.Graph => ContentFrame.Navigate(typeof(GraphPage), _pages),
                 AppSection.Database => ContentFrame.Navigate(typeof(DatabasePage), _pages),
+                AppSection.Services => ContentFrame.Navigate(typeof(ServicesPage), _pages),
                 AppSection.Logs => ContentFrame.Navigate(typeof(LogsPage), _pages),
                 _ => ContentFrame.Navigate(typeof(StatusPage), _pages),
             };
@@ -337,6 +338,7 @@ internal static class SectionGlyphs
         AppSection.Graph => "",      // Network      (point.3.connected.trianglepath.dotted)
         AppSection.Search => "",     // Search       (magnifyingglass)
         AppSection.Database => "",   // Library      (cylinder.split.1x2)
+        AppSection.Services => "\uE9F5",   // Processing   (gearshape.2)
         AppSection.Logs => "",       // CommandPrompt (terminal)
         _ => "",
     };
