@@ -249,6 +249,7 @@ final class AppState: ObservableObject {
         updater.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         firstRun.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         firstRun.attach(to: self)
+        postgres.onUnexpectedExit = { [weak self] in self?.restartPostgresAfterUnexpectedExit() }
 
         Task {
             do {
@@ -356,6 +357,32 @@ final class AppState: ObservableObject {
             for service in GarageAppExtensions.installed.services {
                 service.backendDidStart()
             }
+        }
+    }
+
+    /// When the database server went away after it was up, when it last did so (most recent last).
+    private var unexpectedPostgresExits: [Date] = []
+    nonisolated static let postgresRestartLimit = 3
+    nonisolated static let postgresRestartWindow: TimeInterval = 10 * 60
+
+    /// Whether another automatic restart fits the budget: at most `postgresRestartLimit` exits within
+    /// `postgresRestartWindow`, so a server that dies at every start is left failed for the Database
+    /// page to show rather than relaunched forever.
+    nonisolated static func shouldRestartPostgres(after exits: [Date], now: Date = Date()) -> Bool {
+        exits.filter { now.timeIntervalSince($0) < postgresRestartWindow }.count <= postgresRestartLimit
+    }
+
+    /// The database server stopped on its own after it was ready. Start it again, as at launch: the
+    /// gRPC backend and the helpers keep their socket URL and reconnect once it is back.
+    func restartPostgresAfterUnexpectedExit() {
+        let now = Date()
+        unexpectedPostgresExits.append(now)
+        unexpectedPostgresExits.removeAll { now.timeIntervalSince($0) >= Self.postgresRestartWindow }
+        guard Self.shouldRestartPostgres(after: unexpectedPostgresExits, now: now) else { return }
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard let self, case .failed = self.postgres.status else { return }
+            await self.startPostgres()
         }
     }
 

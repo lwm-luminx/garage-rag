@@ -24,6 +24,31 @@ final class PostgresServiceTests: XCTestCase {
         XCTAssertGreaterThan(PostgresService.leftoverServerGrace, 60)
     }
 
+    func testPostmasterPIDFileReadinessNamesOurServer() {
+        // The layout Postgres 18 writes: pid, data directory, start time, port, socket directory,
+        // listen address, shared memory key, status (padded).
+        let ready = "1832\n/pgdata\n1794635616\n14824\n/s\n\n301711624         0\nready   \n"
+        XCTAssertTrue(PostgresService.postmasterPIDFileShowsReady(ready, pid: 1832))
+        // A leftover server from another run answers pg_isready, but the file names it, not us.
+        XCTAssertFalse(PostgresService.postmasterPIDFileShowsReady(ready, pid: 99337))
+        let starting = ready.replacingOccurrences(of: "ready   ", with: "starting")
+        XCTAssertFalse(PostgresService.postmasterPIDFileShowsReady(starting, pid: 1832))
+        XCTAssertFalse(PostgresService.postmasterPIDFileShowsReady("1832\n/pgdata\n", pid: 1832))
+        XCTAssertFalse(PostgresService.postmasterPIDFileShowsReady("", pid: 1832))
+    }
+
+    func testUnexpectedPostgresExitsRestartWithinBudget() {
+        let now = Date()
+        XCTAssertTrue(AppState.shouldRestartPostgres(after: [now], now: now))
+        let three = [now.addingTimeInterval(-120), now.addingTimeInterval(-60), now]
+        XCTAssertTrue(AppState.shouldRestartPostgres(after: three, now: now))
+        let four = [now.addingTimeInterval(-180)] + three
+        XCTAssertFalse(AppState.shouldRestartPostgres(after: four, now: now))
+        // Exits older than the window no longer count.
+        let old = [now.addingTimeInterval(-AppState.postgresRestartWindow - 1)] + three
+        XCTAssertTrue(AppState.shouldRestartPostgres(after: old, now: now))
+    }
+
     @MainActor
     func testDefaultPortAndDatabase() {
         let service = PostgresService()
