@@ -311,6 +311,13 @@ final class PostgresService: ObservableObject {
     private var cachedPassword: String?
     /// Set when the server being launched reports that another postmaster holds the cluster.
     private var leftoverServerSeen = false
+    /// Counts launches, so an exit reported late for an earlier server is not taken for this one's.
+    private var launchGeneration = 0
+
+    /// Called on the main actor when the server stops on its own after it was ready (a crash, a kill,
+    /// or another copy of Garage taking the cluster), with `status` already `.failed`. AppState
+    /// starts it again; without this the app would keep reporting a database that is gone.
+    var onUnexpectedExit: (() -> Void)?
 
     /// Where the server puts its socket, fixed for the life of the app (it follows `--data-directory`).
     /// Nil when the socket's path would be too long, and the server listens on loopback TCP instead.
@@ -541,12 +548,19 @@ final class PostgresService: ObservableObject {
         let leftoverDeadline = Date().addingTimeInterval(Self.leftoverServerGrace)
         while true {
             leftoverServerSeen = false
+            launchGeneration += 1
+            let generation = launchGeneration
             do {
                 try runner.run(
                     executable: Paths.postgresTool("postgres"),
                     arguments: postgresArguments,
                     environment: runtimeEnvironment(),
-                    source: "postgres"
+                    source: "postgres",
+                    onExit: { [weak self] exitStatus in
+                        Task { @MainActor in
+                            self?.serverExited(generation: generation, exitStatus: exitStatus)
+                        }
+                    }
                 ) { [weak self] line in
                     let parsed = PostgresLogParser.parse(line: line)
                     if Self.isLeftoverServerLine(parsed.text) {
@@ -602,9 +616,23 @@ final class PostgresService: ObservableObject {
         }
     }
 
+    /// The server this service launched has exited. During start() the readiness loop deals with
+    /// that; once the server was up, nothing else would notice, and every query would fail with
+    /// "error connecting to server" while the app still showed the database as running.
+    private func serverExited(generation: Int, exitStatus: Int32) {
+        guard generation == launchGeneration, status == .running || status == .needsMigration else { return }
+        let reason = "the database server stopped unexpectedly (exit status \(exitStatus))"
+        appendLog(LogLine(stream: .stderr, text: "Postgres: \(reason)", source: "garage"))
+        pendingMigrations = []
+        status = .failed(reason)
+        onUnexpectedExit?()
+    }
+
     /// Fire-and-forget fast shutdown (SIGINT) for app-quit paths that can't await cleanup
     /// (see AppDelegate.applicationWillTerminate). Prefer stop() elsewhere.
     func terminateImmediately() {
+        // Not an unexpected exit: keep serverExited from asking AppState to start it again.
+        status = .stopping
         runner.interrupt()
         Self.stopAnyRunningInstanceSync()
     }
@@ -1192,8 +1220,12 @@ final class PostgresService: ObservableObject {
         case timedOut
     }
 
-    /// Waits for the server this service launched. A pg_isready answer counts only while that server
-    /// is still running: otherwise it came from another postmaster on the same socket.
+    /// Waits for the server this service launched. A pg_isready answer counts only when the data
+    /// directory's postmaster.pid names that server and says it is ready: a server left by another
+    /// run (another build sharing the App Group folder, or a crashed instance) answers pg_isready on
+    /// the same socket while ours is still alive for the moment before it fails with "pre-existing
+    /// shared memory block is still in use", and taking that answer as ours left the app on a
+    /// server that went away seconds later.
     private func waitUntilReady(timeout: TimeInterval) async -> Readiness {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
@@ -1203,12 +1235,32 @@ final class PostgresService: ObservableObject {
                 arguments: GaragePostgresEndpoint.clientArguments(socketDirectory: socketDirectory)
             )
             if code == 0 {
-                return runner.isRunning ? .ready : .exited
+                guard let pid = runner.runningProcessIdentifier else { return .exited }
+                if !leftoverServerSeen, isRunningInTestEnvironment || ownServerIsReady(pid: pid) {
+                    return .ready
+                }
+            } else {
+                appendLog(LogLine(stream: .stdout, text: String(messages), source: "pg_isready"))
             }
-            appendLog(LogLine(stream: .stdout, text: String(messages), source: "pg_isready"))
             try? await Task.sleep(nanoseconds: 300_000_000)
         }
         return .timedOut
+    }
+
+    private func ownServerIsReady(pid: Int32) -> Bool {
+        let pidFile = Paths.pgDataDir.appendingPathComponent("postmaster.pid")
+        guard let content = try? String(contentsOf: pidFile, encoding: .utf8) else { return false }
+        return Self.postmasterPIDFileShowsReady(content, pid: pid)
+    }
+
+    /// Whether a postmaster.pid's text says the postmaster `pid` accepts connections: its first line
+    /// is the pid, and its eighth the status Postgres keeps there ("starting", "stopping", "ready",
+    /// "standby"; padded with spaces).
+    nonisolated static func postmasterPIDFileShowsReady(_ content: String, pid: Int32) -> Bool {
+        let lines = content.split(separator: "\n", omittingEmptySubsequences: false)
+        guard lines.count >= 8,
+              Int32(lines[0].trimmingCharacters(in: .whitespaces)) == pid else { return false }
+        return lines[7].trimmingCharacters(in: .whitespaces) == "ready"
     }
 
     /// How long start() waits for a server left by an earlier run to give up the cluster: past

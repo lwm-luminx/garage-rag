@@ -210,9 +210,13 @@ final class ProcessRunner: @unchecked Sendable {
         environment: [String: String]? = nil,
         currentDirectory: URL? = nil,
         source: String,
+        onExit: (@Sendable (Int32) -> Void)? = nil,
         onLine: @escaping (LogLine) -> Void
     ) throws -> Process {
         let process = Process()
+        if let onExit {
+            process.terminationHandler = { finished in onExit(finished.terminationStatus) }
+        }
         process.executableURL = executable
         process.arguments = arguments
         if let environment {
@@ -384,6 +388,12 @@ final class ProcessRunner: @unchecked Sendable {
 
     var isRunning: Bool {
         process?.isRunning ?? false
+    }
+
+    /// The pid of the process last launched with `run`, while it is still running.
+    var runningProcessIdentifier: Int32? {
+        guard let process, process.isRunning else { return nil }
+        return process.processIdentifier
     }
 
     deinit {
