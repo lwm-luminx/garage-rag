@@ -235,6 +235,12 @@ impl Endpoint {
 
     /// Answers one exchange, blocking while a tool runs (call it off any async worker).
     pub fn answer(&self, method: &Method, headers: &HeaderMap, body: &[u8]) -> Reply {
+        self.answer_as(method, headers, body, &Self::caller(headers))
+    }
+
+    /// [`Endpoint::answer`] for a `caller` the host vouches for, in place of the one the request's headers
+    /// describe: a host that carries the exchange over its own channel and knows who sent it.
+    pub fn answer_as(&self, method: &Method, headers: &HeaderMap, body: &[u8], caller: &Caller) -> Reply {
         let is_post = method == Method::POST;
         if let Some(refusal) = content_type_refusal(headers, is_post) {
             return refusal;
@@ -242,7 +248,7 @@ impl Endpoint {
         match *method {
             Method::POST => match self.admit(headers) {
                 Ok(_) if body.len() > MAX_BODY_BYTES => plain(StatusCode::PAYLOAD_TOO_LARGE, "Request body too large"),
-                Ok(known) => self.post(headers, known, body),
+                Ok(known) => self.post(known, body, caller),
                 Err(refusal) => refusal,
             },
             Method::DELETE => self.delete(headers),
@@ -353,7 +359,7 @@ impl Endpoint {
 
     /// A POST that was admitted: its message answered as one server-sent event. Blocks while the
     /// tool runs.
-    fn post(&self, headers: &HeaderMap, known: Option<String>, bytes: &[u8]) -> Reply {
+    fn post(&self, known: Option<String>, bytes: &[u8], caller: &Caller) -> Reply {
         let message: Value = match serde_json::from_slice(bytes) {
             Ok(message) => message,
             Err(error) => {
@@ -386,7 +392,7 @@ impl Endpoint {
         }
         let reply = self
             .server
-            .handle(&message, &Self::caller(headers))
+            .handle(&message, caller)
             .unwrap_or_else(|| json!({"jsonrpc": "2.0", "id": null, "error": {"code": -32603, "message": "no reply"}}));
         let mut reply = Reply::new(StatusCode::OK, "text/event-stream", format!("event: message\ndata: {reply}\n\n"))
             .with_session(Some(&session));
@@ -430,7 +436,7 @@ impl State {
         };
         let endpoint = Arc::clone(&self.endpoint);
         // Tools block on the facade and the model: off the async workers.
-        tokio::task::spawn_blocking(move || endpoint.post(&headers, known, &bytes))
+        tokio::task::spawn_blocking(move || endpoint.post(known, &bytes, &Endpoint::caller(&headers)))
             .await
             .unwrap_or_else(|_| rpc_error(StatusCode::INTERNAL_SERVER_ERROR, -32603, "the tool's thread failed", None))
     }
@@ -611,6 +617,29 @@ mod tests {
         let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "rag_stats"}});
         let reply = post(&endpoint, Some(&session), &call);
         assert!(reply["body"].as_str().unwrap().contains(r#""message":"shut""#), "{reply}");
+    }
+
+    /// Answers every request with the caller it was given.
+    struct Echo;
+
+    impl Handler for Echo {
+        fn handle(&self, message: &Value, caller: &Caller) -> Option<Value> {
+            Some(json!({"jsonrpc": "2.0", "id": message["id"], "result": {"who": caller.attributes.get("who")}}))
+        }
+    }
+
+    #[test]
+    fn a_host_can_name_the_caller_itself() {
+        let endpoint = Endpoint::new(Arc::new(Echo));
+        let mut headers = HeaderMap::new();
+        headers.insert("content-type", HeaderValue::from_static("application/json"));
+        headers.insert("accept", HeaderValue::from_static("application/json, text/event-stream"));
+        headers.insert("who", HeaderValue::from_static("from a header"));
+        let mut caller = Caller::new(Transport::Http);
+        caller.attributes.insert("who".into(), "vouched for".into());
+        let body = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}).to_string();
+        let reply = endpoint.answer_as(&Method::POST, &headers, body.as_bytes(), &caller);
+        assert!(String::from_utf8_lossy(&reply.body).contains(r#""who":"vouched for""#));
     }
 
     #[test]
