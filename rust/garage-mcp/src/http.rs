@@ -33,7 +33,7 @@ use serde_json::{Value, json};
 use tokio::sync::watch;
 
 use crate::corpus::{Caller, Transport};
-use crate::protocol::{Server, is_request};
+use crate::protocol::{Handler, is_request};
 
 /// The largest request body accepted.
 pub const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
@@ -222,12 +222,14 @@ fn accepts(headers: &HeaderMap) -> (bool, bool) {
 /// `Content-Type`, the JSON-RPC envelope) but not the `Host` and `Origin` of the listener's
 /// DNS-rebinding protection, which only a socket a browser can reach needs.
 pub struct Endpoint {
-    server: Arc<Server>,
+    server: Arc<dyn Handler>,
     sessions: Mutex<HashSet<String>>,
 }
 
 impl Endpoint {
-    pub fn new(server: Arc<Server>) -> Self {
+    /// The transport in front of `server`: garage-rag's [`Server`], or a handler that puts its own rules
+    /// in front of it.
+    pub fn new(server: Arc<dyn Handler>) -> Self {
         Self { server, sessions: Mutex::new(HashSet::new()) }
     }
 
@@ -448,7 +450,7 @@ impl HttpServer {
     /// # Errors
     ///
     /// Why the server could not start (the address is in use, say).
-    pub fn start(server: Arc<Server>, options: &HttpOptions) -> Result<Self, String> {
+    pub fn start(server: Arc<dyn Handler>, options: &HttpOptions) -> Result<Self, String> {
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .worker_threads(2)
             .thread_name("garage-mcp-http")
@@ -542,6 +544,7 @@ mod tests {
     use super::*;
     use crate::chat::{Chat, ChatError};
     use crate::corpus::{Corpus, CorpusError, DocumentQuery, SearchQuery};
+    use crate::protocol::Server;
 
     struct Empty;
 
@@ -581,6 +584,33 @@ mod tests {
             headers["mcp-session-id"] = json!(session);
         }
         endpoint.exchange(&json!({"method": "POST", "headers": headers, "body": message.to_string()}))
+    }
+
+    /// A handler of another crate in front of the server: it answers `tools/call` itself.
+    struct NoTools(Server);
+
+    impl Handler for NoTools {
+        fn handle(&self, message: &Value, caller: &Caller) -> Option<Value> {
+            if message["method"] == "tools/call" {
+                return Some(
+                    json!({"jsonrpc": "2.0", "id": message["id"], "error": {"code": -32601, "message": "shut"}}),
+                );
+            }
+            self.0.handle(message, caller)
+        }
+    }
+
+    #[test]
+    fn a_handler_of_its_own_goes_in_front_of_the_server() {
+        let chat: crate::tools::ChatFactory =
+            Arc::new(|_| Err::<Box<dyn Chat>, _>(ChatError("no model in tests".into())));
+        let endpoint = Endpoint::new(Arc::new(NoTools(Server::with_chat(Arc::new(Empty), chat))));
+        let initialize = json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}});
+        let reply = post(&endpoint, None, &initialize);
+        let session = reply["headers"]["mcp-session-id"].as_str().unwrap().to_string();
+        let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "rag_stats"}});
+        let reply = post(&endpoint, Some(&session), &call);
+        assert!(reply["body"].as_str().unwrap().contains(r#""message":"shut""#), "{reply}");
     }
 
     #[test]

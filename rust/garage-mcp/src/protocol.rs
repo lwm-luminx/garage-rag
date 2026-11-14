@@ -20,6 +20,20 @@ pub const SERVER_NAME: &str = "garage-rag";
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
 
+/// What answers MCP's JSON-RPC messages for a transport ([`crate::http::Endpoint`], [`crate::stdio::serve`]):
+/// [`Server`] here, or a handler of another crate that puts its own rules in front of a [`Server`] and still
+/// uses these transports.
+pub trait Handler: Send + Sync {
+    /// The reply to one JSON-RPC message, or `None` when it needs none.
+    fn handle(&self, message: &Value, caller: &Caller) -> Option<Value>;
+}
+
+impl Handler for Server {
+    fn handle(&self, message: &Value, caller: &Caller) -> Option<Value> {
+        Server::handle(self, message, caller)
+    }
+}
+
 /// The MCP server: the tools, and the corpus and model they run against.
 pub struct Server {
     toolbox: Toolbox,

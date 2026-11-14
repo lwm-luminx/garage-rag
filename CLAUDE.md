@@ -275,7 +275,7 @@ turns rustc's stripping off (`-Cstrip=none`): macOS 27's dyld rejects what rust-
 - **The MCP server** (`rust/garage-mcp`) ports `mcp_server/` with no search or database code: it reads
   the corpus through GarageService's `Corpus*` calls, whose handlers run the tools' own functions
   and return their results as JSON, each carrying a `CorpusCaller` for the access hooks. It ports the
-  protocol, pydantic's argument errors, `rag_ask`/`rag_generate`/`rag_agent` (the local model through
+  protocol (both transports take a `protocol::Handler`: `Server`, or another crate's rules in front of it), pydantic's argument errors, `rag_ask`/`rag_generate`/`rag_agent` (the local model through
   `garage-embed`'s host and egress rules) and the streamable HTTP transport (GET answers 405).
   `garage-mcp-ffi` is its C ABI (`include/garage_mcp.h`). GarageMCPServerService runs
   it on GarageXPCKit (`GarageMCPRustServer`), and the stdio `garage-mcp` launcher runs it in-process (`rust/garage-cli`, below).

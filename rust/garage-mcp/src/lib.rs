@@ -9,6 +9,7 @@
 //! * [`chat`] and [`agent`]: rag_ask, rag_generate and rag_agent on the local model, reached through
 //!   the host after the egress rules approve it (`garage_embed::egress`).
 //! * [`http`]: the streamable HTTP transport GarageMCPServerService serves at `127.0.0.1:8787/mcp`;
+//!   both transports take a [`protocol::Handler`], [`protocol::Server`] or a crate's own rules in front of it;
 //!   [`stdio::serve`] is the stdio one.
 
 pub mod agent;
@@ -24,4 +25,4 @@ pub mod tools;
 
 pub use corpus::{Caller, Corpus, CorpusError, GrpcCorpus, Transport};
 pub use http::{Endpoint, HttpOptions, HttpServer};
-pub use protocol::Server;
+pub use protocol::{Handler, Server};
