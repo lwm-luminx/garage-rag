@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+	Info.plist keys a signed store platform adds to Garage.app (signed_macos_platform's
+	`app_infoplist`, //bazel:platforms.bzl), merged after ExportCompliance.plist in App Store
+	builds only. This repository's own builds add none, so the default is empty.
+-->
+<plist version="1.0">
+<dict/>
+</plist>

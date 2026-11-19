@@ -32,6 +32,12 @@ exports_files(
     visibility = ["//visibility:public"],
 )
 
+# The default of //bazel's store_app_infoplist flag: no Info.plist keys beyond the app's own.
+exports_files(
+    ["StoreInfo.plist"],
+    visibility = ["//visibility:public"],
+)
+
 exports_files(
     [
         "ExportCompliance.plist",
