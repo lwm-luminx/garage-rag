@@ -23,11 +23,12 @@ final class ChatSession: ObservableObject {
     private var owners: [String: any GarageChatProvider] = [:]
 
     init(
-        providers: [any GarageChatProvider] = GarageAppExtensions.installed.chatProviders,
+        /// nil: the build's own (`GarageAppExtensions.installed`), read here because it is main-actor isolated.
+        providers: [any GarageChatProvider]? = nil,
         tools: GarageMCPToolCaller = GarageMCPToolCaller(clientName: "Garage Chat"),
         defaults: UserDefaults = .standard
     ) {
-        self.providers = providers
+        self.providers = providers ?? GarageAppExtensions.installed.chatProviders
         self.tools = tools
         self.defaults = defaults
         selectedBackendID = defaults.string(forKey: ChatPresentation.selectedBackendDefaultsKey)
