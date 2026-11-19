@@ -13,7 +13,8 @@ select on:
 - the three provisioning-profile label flags, embedded in the app and the two launcher helper
   bundles under those two distributions;
 - optionally, Garage.app's entitlements (`//bazel:store_app_entitlements` or
-  `//bazel:developer_id_app_entitlements`, by distribution) and the Swift module of app extensions
+  `//bazel:developer_id_app_entitlements`, by distribution), Info.plist keys the store distribution
+  adds (`//bazel:store_app_infoplist`) and the Swift module of app extensions
   (`//macapp/Sources/GarageApp:extensions`, module `GarageAppExtensions`, the contract in
   `//macapp/Sources/GarageAppExtensionKit`). Left out, the app is this repository's: its own
   entitlements and no extensions.
@@ -33,6 +34,7 @@ def signed_macos_platform(
         garage_cli_provisioning_profile,
         garage_mcp_provisioning_profile,
         app_entitlements = None,
+        app_infoplist = None,
         app_extensions = None,
         **kwargs):
     """Declares a macOS (Apple silicon) platform for a signed distribution of the app.
@@ -47,6 +49,9 @@ def signed_macos_platform(
         garage_mcp_provisioning_profile: The same for the `garage-mcp` helper bundle.
         app_entitlements: Label of Garage.app's entitlements under this distribution, in place of
             this repository's file for it; None keeps that file.
+        app_infoplist: Label of a plist whose keys Garage.app adds under the store distribution
+            (for example the usage descriptions of a capability only that build has); None adds none.
+            Only for `distribution = "store"`.
         app_extensions: Label of a swift_library with module name `GarageAppExtensions` exporting
             `GarageAppExtensions.installed` (see //macapp/Sources/GarageAppExtensions); None links
             no extensions.
@@ -64,6 +69,10 @@ def signed_macos_platform(
     ]
     if app_entitlements:
         flags.append(_flag("//bazel:{}_app_entitlements".format(distribution), app_entitlements))
+    if app_infoplist:
+        if distribution != "store":
+            fail("{}: app_infoplist is for the store distribution only".format(name))
+        flags.append(_flag("//bazel:store_app_infoplist", app_infoplist))
     if app_extensions:
         flags.append(_flag("//macapp/Sources/GarageApp:extensions", app_extensions))
     native.platform(

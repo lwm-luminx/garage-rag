@@ -69,9 +69,13 @@ def garage_macos_application(name, llama_xpc_service, **kwargs):
         executable_name = "GarageApp",
         # Sparkle's SUFeedURL/SUPublicEDKey only belong in the builds that embed
         # Sparkle. The App Store build updates through the App Store, and carries the
-        # export compliance answer App Store Connect reads on upload instead.
+        # export compliance answer App Store Connect reads on upload instead, plus whatever keys the
+        # store platform adds (//bazel:store_app_infoplist, empty here).
         infoplists = ["//macapp/Sources/GarageApp:Info.plist"] + select({
-            "//bazel:is_store": ["//macapp/Sources/GarageApp:ExportCompliance.plist"],
+            "//bazel:is_store": [
+                "//macapp/Sources/GarageApp:ExportCompliance.plist",
+                "//bazel:store_app_infoplist",
+            ],
             "//conditions:default": ["//macapp/Sources/GarageApp:Sparkle.plist"],
         }),
         # Links Contents/MacOS/garage and garage-mcp to the forwarders in Resources/launchers before

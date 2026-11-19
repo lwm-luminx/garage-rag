@@ -74,6 +74,14 @@ label_flag(
     build_setting_default = "//macapp/Sources/GarageApp:GarageDeveloperID.entitlements",
 )
 
+# Info.plist keys Garage.app adds under the store distribution, merged after the export compliance
+# answer: none unless the platform names a file (signed_macos_platform's `app_infoplist`), for a
+# capability only that repository's build has.
+label_flag(
+    name = "store_app_infoplist",
+    build_setting_default = "//macapp/Sources/GarageApp:StoreInfo.plist",
+)
+
 # Keyed on build settings rather than on a constraint_value, because a build setting survives
 # rules_apple's platform transition (it rewrites --platforms to @apple_support//platforms:macos_*
 # underneath every apple_* rule) while a constraint_value does not.
