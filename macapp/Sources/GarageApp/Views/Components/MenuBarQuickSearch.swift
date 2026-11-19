@@ -224,7 +224,7 @@ struct MenuBarQuickSearch: View {
                         .textSelection(.enabled)
                         .accessibilityIdentifier("menubar.ask.error")
                 } else if let answer {
-                    Text(answer.answer)
+                    Text(answer.formattedAnswer)
                         .font(.system(size: 12))
                         .lineLimit(14)
                         .fixedSize(horizontal: false, vertical: true)
@@ -371,7 +371,7 @@ struct MenuBarQuickSearch: View {
                 if let parsed = MenuBarAnswer.parse(output) {
                     answer = parsed
                 } else {
-                    askError = Self.oneLine(output)
+                    askError = MenuBarAnswer.failureText(forOutput: output)
                 }
             } catch {
                 guard !Task.isCancelled else { return }

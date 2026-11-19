@@ -393,7 +393,10 @@ five read-only tools above, each as a one-line signature in the system prompt
 follow that better than a JSON schema), with a short guide from kinds of question to
 tools and filters and the owner's name from `identity.self_name`, and calls them by replying with one JSON object
 (`{"tool": "rag_search", "arguments": {...}}`); each result comes back as the next
-user turn, and a reply that is not a tool call is the answer. Calls travel in the
+user turn, and a reply that is not a tool call is a first answer. One last turn then
+asks for the complete answer (the person sees only that reply, not the tool results or
+earlier replies) with the question restated, and `answer_text` keeps only that turn's
+prose; a last turn that calls a tool or says nothing keeps the first answer. Calls travel in the
 conversation rather than as the OpenAI `tools` field because the app's llama engine
 renders the chat template from role/content pairs alone, and the one format then
 works on Ollama and LM Studio too. Arguments are validated against the tool's own

@@ -46,8 +46,19 @@ only the documents nearest in meaning and may be about something else entirely. 
 the question. Otherwise search once more with different keywords (a name, a company, a subject), and if that finds \
 nothing either, say that you found nothing about it in the user's files. Never read an answer into an unrelated \
 document.";
-pub const FINAL_ANSWER_PROMPT: &str = "No more tool calls are available. Answer the question now in plain prose \
-from what the tool results so far contain, and say plainly if they do not contain the answer.";
+/// The last turn, after the model's first answer: it is asked once more for the whole answer, since the
+/// person sees only this reply.
+pub const COMPOSE_PROMPT: &str = "This is the last step before your answer is shown to the user, who sees only \
+your next reply: not the tool calls, the tool results or your earlier replies. Write the complete answer to the \
+question now, in plain prose. Include everything from the tool results and your earlier replies that answers it, \
+and name the documents it comes from by their titles. Do not call a tool and do not write JSON. If the tool results \
+do not contain the answer, say so plainly.";
+
+/// The closing prompt with the question restated, so the last turn has it in front of it.
+fn compose_prompt(question: &str, out_of_steps: bool) -> String {
+    let lead = if out_of_steps { "No more tool calls are available. " } else { "" };
+    format!("{lead}{COMPOSE_PROMPT}\n\nQuestion: {question}")
+}
 
 /// A tool as the model sees it.
 #[derive(Clone, Debug, PartialEq)]
@@ -207,6 +218,14 @@ fn py_str(value: &Value) -> String {
 
 static FIRST_SENTENCE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^(.+?[.!?])(\s|$)").expect("valid"));
 static FENCE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)```(?:json)?\s*(.*?)```").expect("valid"));
+static WHOLE_FENCE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)\A```[A-Za-z]*\s*(.*?)\s*```\z").expect("valid"));
+static LABEL: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?im)^[ \t*#]*(?:final answer|answer)\s*:\**[ \t]*").expect("valid"));
+static THINK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?s)<think>.*?</think>").expect("valid"));
+
+/// The keys a small model puts its answer under when it answers in JSON, in the order they are read.
+const ANSWER_KEYS: [&str; 6] = ["answer", "final_answer", "response", "content", "text", "message"];
 
 fn first_sentence(text: &str) -> String {
     FIRST_SENTENCE.captures(text).and_then(|c| c.get(1)).map_or_else(|| text.to_string(), |m| m.as_str().to_string())
@@ -249,6 +268,96 @@ pub fn history_from(value: Option<&Value>) -> Vec<Turn> {
 /// asked: an earlier answer may rest on a communication, which never leaves the machine.
 pub fn history_for_host(history: &[Turn], communications_allowed: bool) -> Vec<Turn> {
     history.iter().filter(|turn| communications_allowed || turn.role == "user").cloned().collect()
+}
+
+/// The answer as prose: only the model's last turn. Every message a model sees in the loop is JSON,
+/// so a small one often answers in JSON too (`{"answer": "..."}`, `{"tool": null, "response": "..."}`,
+/// a fenced object or a quoted string), or writes out its tool calls and their made-up results before
+/// the answer. This keeps the prose after the last written-out tool call or result (or the text of an
+/// answer object at the end); JSON quoted inside prose stays. It also drops a reasoning model's
+/// `<think>` block and a leading "Final answer:" label. Anything else is returned as it is, trimmed.
+pub fn answer_text(text: &str) -> String {
+    let text = THINK.replace_all(text, "");
+    let text = text.trim_matches(is_py_space);
+    let inner = WHOLE_FENCE.captures(text).and_then(|c| c.get(1)).map_or(text, |m| m.as_str().trim());
+    if let Ok(value) = serde_json::from_str::<Value>(inner) {
+        return answer_in(&value).unwrap_or_else(|| text.to_string());
+    }
+    let objects = json_objects(text);
+    if let Some((end, last)) = objects.last() {
+        // A written-out tool call or tool result: what follows the last one is the answer.
+        let transcript = text.contains("Result of ")
+            || objects
+                .iter()
+                .any(|(_, value)| value.get("tool").or_else(|| value.get("name")).is_some_and(Value::is_string));
+        let tail = without_label(text[*end..].trim_start_matches(|c: char| c == '`' || is_py_space(c)));
+        if transcript && !tail.is_empty() {
+            return tail.to_string();
+        }
+        if tail.is_empty()
+            && let Some(answer) = answer_in(last)
+        {
+            return answer;
+        }
+    }
+    without_label(text).to_string()
+}
+
+/// The non-empty string under one of [`ANSWER_KEYS`], or a JSON string itself.
+fn answer_in(value: &Value) -> Option<String> {
+    let answer = match value {
+        Value::String(answer) => Some(answer.as_str()),
+        Value::Object(object) => ANSWER_KEYS
+            .iter()
+            .filter_map(|key| object.get(*key).and_then(Value::as_str))
+            .find(|answer| !answer.trim().is_empty()),
+        _ => None,
+    }?;
+    let answer = answer.trim_matches(is_py_space);
+    (!answer.is_empty()).then(|| answer.to_string())
+}
+
+/// The text after the last "Final answer:" or "Answer:" label that starts a line, or all of it.
+fn without_label(text: &str) -> &str {
+    let label = LABEL.find_iter(text).last();
+    label.map_or(text, |m| &text[m.end()..]).trim_matches(is_py_space)
+}
+
+/// Each top-level `{...}` in the text that parses as JSON: where it ends, and its value.
+fn json_objects(text: &str) -> Vec<(usize, Value)> {
+    let mut found = Vec::new();
+    let (mut depth, mut start, mut in_string, mut escaped) = (0usize, 0usize, false, false);
+    for (i, c) in text.char_indices() {
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            continue;
+        }
+        match c {
+            '"' if depth > 0 => in_string = true,
+            '{' => {
+                if depth == 0 {
+                    start = i;
+                }
+                depth += 1;
+            }
+            '}' if depth > 0 => {
+                depth -= 1;
+                if depth == 0
+                    && let Ok(value) = serde_json::from_str::<Value>(&text[start..=i])
+                {
+                    found.push((i + 1, value));
+                }
+            }
+            _ => {}
+        }
+    }
+    found
 }
 
 /// The opening messages: the system prompt with the tools, then the question.
@@ -572,12 +681,12 @@ pub fn run_agent(
         }
     }
 
-    let mut answer: Option<String> = None;
+    let mut draft: Option<String> = None;
     for _ in 0..options.max_steps {
         let reply = ask(&messages)?;
         match parse_tool_call(&reply.text) {
             None => {
-                answer = Some(reply.text);
+                draft = Some(reply.text);
                 break;
             }
             Some((name, arguments)) => {
@@ -585,15 +694,21 @@ pub fn run_agent(
             }
         }
     }
-    let answer = if let Some(answer) = answer {
-        answer
-    } else {
-        messages.push(json!({"role": "user", "content": FINAL_ANSWER_PROMPT}));
-        let reply = ask(&messages)?;
-        if parse_tool_call(&reply.text).is_some() { NO_ANSWER_TEXT.to_string() } else { reply.text }
+    // One last turn composes the whole answer, which is all the person sees. A model that answers it
+    // with a tool call or nothing keeps its first answer.
+    if let Some(draft) = &draft {
+        messages.push(json!({"role": "assistant", "content": draft}));
+    }
+    messages.push(json!({"role": "user", "content": compose_prompt(question, draft.is_none())}));
+    let reply = ask(&messages)?;
+    let composed = Some(reply.text).filter(|text| parse_tool_call(text).is_none() && !answer_text(text).is_empty());
+    let answer = match (composed, draft) {
+        (Some(composed), _) => composed,
+        (None, Some(draft)) => draft,
+        (None, None) => NO_ANSWER_TEXT.to_string(),
     };
     Ok(json!({
-        "answer": answer.trim_matches(is_py_space),
+        "answer": answer_text(&answer),
         "model": model.model_ref(),
         "provider": model.provider(),
         "question": question,
@@ -606,6 +721,8 @@ pub fn run_agent(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
 
     #[test]
@@ -663,5 +780,128 @@ mod tests {
         assert_eq!(messages[2]["content"], "Dana did.");
         assert_eq!(messages[3]["content"], "Question: When was it signed?");
         assert_eq!(build_agent_messages("q", &[], ""), build_agent_messages_with_history("q", &[], &[], ""));
+    }
+
+    /// A model that gives these replies in turn and remembers what it was sent.
+    struct Scripted {
+        replies: Mutex<Vec<&'static str>>,
+        seen: Mutex<Vec<Vec<Value>>>,
+    }
+
+    impl Scripted {
+        fn new(replies: &[&'static str]) -> Self {
+            Self { replies: Mutex::new(replies.iter().rev().copied().collect()), seen: Mutex::new(Vec::new()) }
+        }
+    }
+
+    impl Chat for Scripted {
+        fn provider(&self) -> &'static str {
+            "llama_xpc"
+        }
+        fn model_ref(&self) -> &'static str {
+            "test-model"
+        }
+        fn host_url(&self) -> &'static str {
+            "http://127.0.0.1:1"
+        }
+        fn complete(&self, messages: &[Value], _: Option<i64>, _: Option<f64>) -> Result<ChatReply, ChatError> {
+            self.seen.lock().unwrap().push(messages.to_vec());
+            let text = self.replies.lock().unwrap().pop().unwrap_or_default().to_string();
+            Ok(ChatReply { text, prompt_tokens: None, completion_tokens: None })
+        }
+    }
+
+    fn run(model: &Scripted, max_steps: usize) -> Value {
+        let options = Options {
+            max_steps,
+            max_tokens: None,
+            temperature: None,
+            search_first: false,
+            owner: String::new(),
+            history: Vec::new(),
+        };
+        let run = |_: &str, _: &Map<String, Value>| Ok(json!({"hits": [{"document_id": 7, "title": "Guide"}]}));
+        run_agent("when do widgets ship?", &agent_tools(), model, &run, &options).unwrap()
+    }
+
+    fn last_prompt(model: &Scripted) -> String {
+        let seen = model.seen.lock().unwrap();
+        seen.last().and_then(|messages| messages.last()).and_then(|m| m["content"].as_str()).unwrap().to_string()
+    }
+
+    #[test]
+    fn the_last_turn_composes_the_answer() {
+        let model = Scripted::new(&[
+            r#"{"tool": "rag_search", "arguments": {"query": "widgets"}}"#,
+            "Tuesdays.",
+            "Widgets ship on Tuesdays, according to the Guide.",
+        ]);
+        let result = run(&model, 6);
+        assert_eq!(result["answer"], "Widgets ship on Tuesdays, according to the Guide.");
+        let prompt = last_prompt(&model);
+        assert!(prompt.starts_with(COMPOSE_PROMPT), "{prompt}");
+        assert!(prompt.ends_with("Question: when do widgets ship?"), "{prompt}");
+        // The first answer is in front of the model when it composes.
+        let seen = model.seen.lock().unwrap();
+        let composing = seen.last().unwrap();
+        assert_eq!(composing[composing.len() - 2]["content"], "Tuesdays.");
+    }
+
+    #[test]
+    fn a_composing_turn_that_calls_a_tool_keeps_the_first_answer() {
+        let model = Scripted::new(&["Widgets ship on Tuesdays.", r#"{"tool": "rag_search", "arguments": {}}"#]);
+        assert_eq!(run(&model, 6)["answer"], "Widgets ship on Tuesdays.");
+        let model = Scripted::new(&["Widgets ship on Tuesdays.", "  "]);
+        assert_eq!(run(&model, 6)["answer"], "Widgets ship on Tuesdays.");
+    }
+
+    #[test]
+    fn out_of_steps_the_last_turn_says_so() {
+        let model = Scripted::new(&[r#"{"tool": "rag_search", "arguments": {}}"#, "On Tuesdays."]);
+        assert_eq!(run(&model, 1)["answer"], "On Tuesdays.");
+        assert!(last_prompt(&model).starts_with("No more tool calls are available. "));
+        let model = Scripted::new(&[r#"{"tool": "rag_search", "arguments": {}}"#, r#"{"tool": "rag_stats"}"#]);
+        assert_eq!(run(&model, 1)["answer"], NO_ANSWER_TEXT);
+    }
+
+    #[test]
+    fn answer_text_keeps_prose() {
+        assert_eq!(answer_text("  Widgets ship on Tuesdays.\n"), "Widgets ship on Tuesdays.");
+        assert_eq!(answer_text("It says {braces} inside."), "It says {braces} inside.");
+    }
+
+    #[test]
+    fn answer_text_unwraps_an_answer_given_as_json() {
+        assert_eq!(answer_text(r#"{"answer": "Widgets ship on Tuesdays."}"#), "Widgets ship on Tuesdays.");
+        assert_eq!(answer_text(r#"{"tool": null, "response": "On Tuesdays."}"#), "On Tuesdays.");
+        assert_eq!(answer_text("```json\n{\"final_answer\": \"On Tuesdays.\"}\n```"), "On Tuesdays.");
+        assert_eq!(answer_text(r#""On Tuesdays.""#), "On Tuesdays.");
+        assert_eq!(answer_text(r#"{"answer": "", "text": "On Tuesdays."}"#), "On Tuesdays.");
+    }
+
+    #[test]
+    fn answer_text_leaves_json_with_no_answer_alone() {
+        assert_eq!(answer_text(r#"{"count": 3}"#), r#"{"count": 3}"#);
+    }
+
+    #[test]
+    fn answer_text_keeps_only_the_last_turn() {
+        let transcript = "{\"tool\": \"rag_search\", \"arguments\": {\"query\": \"widgets\"}}\n\
+            Result of rag_search:\n{\"hits\": [{\"title\": \"Guide\"}]}\n\nWidgets ship on Tuesdays.";
+        assert_eq!(answer_text(transcript), "Widgets ship on Tuesdays.");
+        let fenced = "```json\n{\"tool\": \"rag_search\", \"arguments\": {}}\n```\nOn Tuesdays.";
+        assert_eq!(answer_text(fenced), "On Tuesdays.");
+        let labelled = "I searched twice.\n**Final answer:** On Tuesdays.";
+        assert_eq!(answer_text(labelled), "On Tuesdays.");
+        let trailing = "Let me answer: {\"answer\": \"On Tuesdays.\"}";
+        assert_eq!(answer_text(trailing), "On Tuesdays.");
+        let quoted = "Set {\"retries\": 3} in garage.json.";
+        assert_eq!(answer_text(quoted), quoted);
+    }
+
+    #[test]
+    fn answer_text_drops_a_think_block() {
+        assert_eq!(answer_text("<think>Search first.</think>\n\nOn Tuesdays."), "On Tuesdays.");
+        assert_eq!(answer_text("<think>x</think>{\"answer\": \"On Tuesdays.\"}"), "On Tuesdays.");
     }
 }
