@@ -1006,6 +1006,38 @@
      "description": "Search the corpus for the question before the model's first reply, so a small model starts from the user's documents instead of answering from its training.",
      "title": "Search First",
      "type": "boolean"
+    },
+    "history": {
+     "anyOf": [
+      {
+       "items": {
+        "properties": {
+         "role": {
+          "enum": [
+           "user",
+           "assistant"
+          ],
+          "type": "string"
+         },
+         "content": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "role",
+         "content"
+        ],
+        "type": "object"
+       },
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "The conversation so far, oldest first, for a follow-up question: each turn a role (user or assistant) and its text. The latest 12 turns are kept, each cut to 2000 characters; a model host off this machine sees only the earlier questions, never an earlier answer.",
+     "title": "History"
     }
    },
    "required": [

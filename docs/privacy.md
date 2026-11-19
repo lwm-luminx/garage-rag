@@ -105,7 +105,9 @@ anything else when the caller says what it is sending:
   before building a prompt for an off-box Ollama or LM Studio, so a communication in the
   results aborts the call. `rag_agent`, where the model searches for itself, restricts
   its searches to documents and code and refuses to read a communication when the
-  model host is not loopback, so the model never sees one.
+  model host is not loopback, so the model never sees one. A follow-up's `history` (the
+  app's Chat page) reaches such a host as the earlier questions alone: an earlier answer may
+  rest on a communication, so it stays here.
 - **Embeddings** — backfill, in-process or through the embed worker, asks
   `egress.allows_communications` and leaves chunks of communication documents
   out for a provider that is not on this machine. They stay unembedded for that

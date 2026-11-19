@@ -6,6 +6,7 @@ final class NavigationUITests: GarageUITestCase {
     /// Each `AppSection` case name, in sidebar order, with a piece of text only that page shows.
     private static let pages: [(section: String, marker: String)] = [
         ("status", "Automatic Updates"),
+        ("chat", "Ask your Garage"),
         // Configuration
         ("sources", "Add a Source"),
         ("models", "Embed All"),
@@ -32,7 +33,7 @@ final class NavigationUITests: GarageUITestCase {
         }
     }
 
-    /// Status leads the sidebar on its own; the other pages follow in three groups, each under its
+    /// Status and Chat lead the sidebar on their own; the other pages follow in three groups, each under its
     /// header: Configuration, Data, Advanced.
     func testSidebarGroupsThePagesUnderTheirHeaders() throws {
         try launchApp()
@@ -53,7 +54,7 @@ final class NavigationUITests: GarageUITestCase {
             ).firstMatch
         }
         let groups: [(title: String, after: String, before: String)] = [
-            ("Configuration", "status", "sources"),
+            ("Configuration", "chat", "sources"),
             ("Data", "mcp", "documents"),
             ("Advanced", "search", "database"),
         ]
