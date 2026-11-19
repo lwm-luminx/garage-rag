@@ -84,4 +84,51 @@ final class MenuBarAnswerTests: XCTestCase {
         let message = MenuBarAnswer.Citation(n: 2, documentId: 2, title: nil, location: "imessage:chat123", snippet: "", corpusClass: "communication")
         XCTAssertNil(message.fileURL)
     }
+
+    func testAnAnswerGivenAsJSONIsShownAsProse() throws {
+        let nested = #"{"answer": "{\"answer\": \"On Tuesdays.\"}", "steps": []}"#
+        XCTAssertEqual(try XCTUnwrap(MenuBarAnswer.parse(nested)).answer, "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose(#"{"tool": null, "response": "On Tuesdays."}"#), "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose("```json\n{\"final_answer\": \"On Tuesdays.\"}\n```"), "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose(#""On Tuesdays.""#), "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose("<think>Search first.</think>\nOn Tuesdays."), "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose("Widgets ship {weekly}."), "Widgets ship {weekly}.")
+        XCTAssertEqual(MenuBarAnswer.prose(#"{"count": 3}"#), #"{"count": 3}"#)
+    }
+
+    func testOnlyTheLastTurnIsShown() {
+        let transcript = """
+        {"tool": "rag_search", "arguments": {"query": "widgets"}}
+        Result of rag_search:
+        {"hits": [{"title": "Guide"}]}
+
+        Widgets ship on Tuesdays.
+        """
+        XCTAssertEqual(MenuBarAnswer.prose(transcript), "Widgets ship on Tuesdays.")
+        XCTAssertEqual(
+            MenuBarAnswer.prose("```json\n{\"tool\": \"rag_search\", \"arguments\": {}}\n```\nOn Tuesdays."),
+            "On Tuesdays."
+        )
+        XCTAssertEqual(MenuBarAnswer.prose("I searched twice.\n**Final answer:** On Tuesdays."), "On Tuesdays.")
+        XCTAssertEqual(MenuBarAnswer.prose(#"Let me answer: {"answer": "On Tuesdays."}"#), "On Tuesdays.")
+        let quoted = #"Set {"retries": 3} in garage.json."#
+        XCTAssertEqual(MenuBarAnswer.prose(quoted), quoted)
+    }
+
+    func testAResultWithNoAnswerIsNotShownAsJSON() {
+        XCTAssertEqual(
+            MenuBarAnswer.failureText(forOutput: #"{"answer": "", "steps": []}"#),
+            "The local model did not give an answer. Try rephrasing the question."
+        )
+        XCTAssertEqual(
+            MenuBarAnswer.failureText(forOutput: "Tool call failed:\n  local model is not available"),
+            "Tool call failed: local model is not available"
+        )
+        XCTAssertEqual(MenuBarAnswer.failureText(forOutput: "  "), "The local model returned nothing. Try asking again.")
+    }
+
+    func testTheAnswerRendersItsMarkdown() {
+        let answer = MenuBarAnswer(answer: "Ships **Tuesdays**", model: "", provider: "", question: "")
+        XCTAssertEqual(String(answer.formattedAnswer.characters), "Ships Tuesdays")
+    }
 }
