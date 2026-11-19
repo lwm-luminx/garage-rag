@@ -4,9 +4,10 @@ import CoreSpotlight
 import GarageAppExtensions
 import GarageXPCKit
 
-/// The pages, in sidebar order: Status on its own at the top, then each `SidebarGroup`'s pages.
+/// The pages, in sidebar order: Status and Chat on their own at the top, then each `SidebarGroup`'s pages.
 enum AppSection: String, CaseIterable, Identifiable {
     case status = "Status"
+    case chat = "Chat"
     case sources = "Sources"
     case models = "Models"
     case mcp = "MCP Server"
@@ -23,6 +24,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .status: "gauge.with.dots.needle.50percent"
+        case .chat: "bubble.left.and.text.bubble.right"
         case .database: "cylinder.split.1x2"
         case .services: "gearshape.2"
         case .sources: "tray.and.arrow.down"
@@ -36,13 +38,17 @@ enum AppSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The sidebar section the page sits in; Status sits above them all, in none.
+    /// The sidebar section the page sits in; Status and Chat sit above them all, in none.
     var group: SidebarGroup? {
         SidebarGroup.allCases.first { $0.sections.contains(self) }
     }
+
+    /// The pages that lead the sidebar on larger rows of their own: the home page, and the conversation with the
+    /// corpus, which should be the easiest thing in the app to find.
+    static let leading: [AppSection] = [.status, .chat]
 }
 
-/// The headed sections of the sidebar, below Status.
+/// The headed sections of the sidebar, below Status and Chat.
 enum SidebarGroup: String, CaseIterable, Identifiable {
     /// What Garage reads, which models it runs, and who it serves.
     case configuration = "Configuration"
@@ -88,6 +94,8 @@ struct ContentView: View {
     @State private var documentFocus: DocumentFocus?
     /// A vertex another page asked the Graph page to center on.
     @State private var graphFocus: GraphFocus?
+    /// The Chat page's conversation, kept while the window is open so switching pages does not lose it.
+    @StateObject private var chat = ChatSession()
     @State private var activeSheet: ActiveSheet?
     @State private var pendingPresentation: Task<Void, Never>?
     @AppStorage(SplashPreferences.showAtLaunchKey) private var showSplashAtLaunch = true
@@ -191,17 +199,20 @@ struct ContentView: View {
     private var mainWindow: some View {
         NavigationSplitView {
             List(selection: $selection) {
-                // Status is the home page, so it leads the list on a larger row of its own.
-                Label {
-                    Text(AppSection.status.rawValue)
-                        .font(.title3.weight(.semibold))
-                } icon: {
-                    Image(systemName: AppSection.status.symbol)
-                        .font(.title2)
+                // Status is the home page and Chat the way to ask the corpus, so they lead the list on
+                // larger rows of their own.
+                ForEach(AppSection.leading) { section in
+                    Label {
+                        Text(section.rawValue)
+                            .font(.title3.weight(.semibold))
+                    } icon: {
+                        Image(systemName: section.symbol)
+                            .font(.title2)
+                    }
+                    .padding(.vertical, 6)
+                    .tag(section)
+                    .accessibilityIdentifier("sidebar.\(section)")
                 }
-                .padding(.vertical, 6)
-                .tag(AppSection.status)
-                .accessibilityIdentifier("sidebar.\(AppSection.status)")
 
                 ForEach(SidebarGroup.allCases) { group in
                     Section(group.rawValue) {
@@ -218,6 +229,11 @@ struct ContentView: View {
         } detail: {
             switch selection ?? .status {
             case .status: StatusView(selection: $selection)
+            case .chat:
+                ChatView(session: chat, openDocument: { focus in
+                    documentFocus = focus
+                    selection = .documents
+                })
             case .database: DatabaseView()
             case .services: ServicesView()
             case .sources: SourcesView()

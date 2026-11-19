@@ -399,7 +399,11 @@ renders the chat template from role/content pairs alone, and the one format then
 works on Ollama and LM Studio too. Arguments are validated against the tool's own
 schema, as `tools/call` validates them, and an error goes back to the model to
 correct. The result carries the answer, the steps (`AgentStep`) and one
-`AgentCitation` per document the model saw. The menu bar's "Ask Garage" runs it.
+`AgentCitation` per document the model saw. The menu bar's "Ask Garage" and the app's
+Chat page run it; Chat passes the conversation so far as `history` (role/content pairs, the
+latest 12, each cut to 2000 characters), which sits between the system prompt and the new
+question. A model host that is not loopback gets only the earlier questions, never an earlier
+answer, since an answer may rest on a communication.
 By default (`search_first`) the question goes to `rag_search` before the model's
 first reply, and the model starts from those hits, shown as a call it already made:
 small models such as gemma2-2b otherwise read "when did I last talk to BMW?" as a

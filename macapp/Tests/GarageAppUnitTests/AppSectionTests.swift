@@ -4,11 +4,12 @@ import XCTest
 final class AppSectionTests: XCTestCase {
 
     func testAppSectionAllCasesCount() {
-        XCTAssertEqual(AppSection.allCases.count, 11)
+        XCTAssertEqual(AppSection.allCases.count, 12)
     }
 
     func testAppSectionIdentifiers() {
         XCTAssertEqual(AppSection.status.id, "Status")
+        XCTAssertEqual(AppSection.chat.id, "Chat")
         XCTAssertEqual(AppSection.database.id, "Database")
         XCTAssertEqual(AppSection.sources.id, "Sources")
         XCTAssertEqual(AppSection.documents.id, "Documents")
@@ -23,6 +24,7 @@ final class AppSectionTests: XCTestCase {
 
     func testAppSectionSymbols() {
         XCTAssertEqual(AppSection.status.symbol, "gauge.with.dots.needle.50percent")
+        XCTAssertEqual(AppSection.chat.symbol, "bubble.left.and.text.bubble.right")
         XCTAssertEqual(AppSection.database.symbol, "cylinder.split.1x2")
         XCTAssertEqual(AppSection.sources.symbol, "tray.and.arrow.down")
         XCTAssertEqual(AppSection.documents.symbol, "doc.text.magnifyingglass")
@@ -46,11 +48,13 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(SidebarGroup.data.sections(showsGraph: true), [.documents, .facts, .graph, .search])
         XCTAssertEqual(SidebarGroup.configuration.sections(showsGraph: false), [.sources, .models, .mcp])
         XCTAssertNil(AppSection.status.group)
+        XCTAssertNil(AppSection.chat.group)
     }
 
     /// Every page is in the sidebar exactly once, and `allCases` follows the sidebar's order.
     func testSidebarListsEveryPageOnceInOrder() {
-        let sidebar = [AppSection.status] + SidebarGroup.allCases.flatMap(\.sections)
+        XCTAssertEqual(AppSection.leading, [.status, .chat])
+        let sidebar = AppSection.leading + SidebarGroup.allCases.flatMap(\.sections)
         XCTAssertEqual(sidebar, AppSection.allCases)
     }
 }

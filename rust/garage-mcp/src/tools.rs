@@ -231,6 +231,7 @@ impl Toolbox {
             temperature: args.get("temperature").and_then(Value::as_f64),
             search_first: args.get("search_first").and_then(Value::as_bool).unwrap_or(true),
             owner: settings.self_name,
+            history: agent::history_from(args.get("history")),
         };
         let question = text(args, "question").unwrap_or_default();
         let run = |name: &str, given: &Map<String, Value>| self.run_read(name, given, caller);
