@@ -692,13 +692,14 @@ enum SourcesSummary {
 /// The kinds the Sources page's form offers. A cloud kind (read through its service's API, its root a
 /// folder or label there) is offered only when this build can sign in to the service, that is when a
 /// `GarageCloudCredentials` provider is installed in this process (the App Store build's, through Garage
-/// Door); the open-source build keeps the kinds but has no account to read them with.
+/// Door); the open-source build keeps the kinds but has no account to read them with. Of those, the form offers
+/// only the kinds the provider serves (`GarageCloudCredentials.serves`), so a build can hold a service back.
 enum SourceKinds {
     static let local = ["filesystem", "git", "sqlite", "maildir", "feed", "claude", "chatgpt", "antigravity", "spotlight"]
     static let cloud = ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
 
-    static func offered(cloudAvailable: Bool) -> [String] {
-        cloudAvailable ? local + cloud : local
+    static func offered(cloudAvailable: Bool, serves: (String) -> Bool = { _ in true }) -> [String] {
+        cloudAvailable ? local + cloud.filter(serves) : local
     }
 
     static func isCloud(_ kind: String) -> Bool {

@@ -35,7 +35,9 @@ struct SourcesView: View {
     /// a new folder or kind fills in a new one; a name the person typed is kept.
     @State private var suggestedSlug = ""
 
-    private var kinds: [String] { SourceKinds.offered(cloudAvailable: GarageCloudCredentials.isAvailable) }
+    private var kinds: [String] {
+        SourceKinds.offered(cloudAvailable: GarageCloudCredentials.isAvailable, serves: GarageCloudCredentials.serves)
+    }
     private let classes = ["document", "code", "communication"]
     private let trusts = ["authored", "reference", "received"]
 
