@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "garage",
+  "owner": { "name": "Rick Mark-Penwell", "url": "https://garagerag.app" },
+  "plugins": [
+    {
+      "name": "garage",
+      "source": "./plugins/garage",
+      "description": "Search your Garage, the private index of your documents, code, mail and messages on your own computer, and answer from it with sources.",
+      "category": "productivity"
+    }
+  ]
+}

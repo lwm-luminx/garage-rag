@@ -248,6 +248,13 @@ cargo install --path rust/garage-cli        # garage and garage-mcp in ~/.cargo/
    garage mcp-install --target claude-code-user --http
    ```
 
+7. **Or install the Garage plugin** for Claude Code or Codex, which adds the stdio server and a skill that teaches
+   the assistant to search, read and cite your Garage ([plugins/garage](plugins/garage/README.md)):
+   ```bash
+   claude plugin marketplace add lwm-luminx/garage-rag && claude plugin install garage@garage
+   codex plugin marketplace add lwm-luminx/garage-rag && codex plugin add garage@garage
+   ```
+
 ---
 
 ## Development & Build Commands
