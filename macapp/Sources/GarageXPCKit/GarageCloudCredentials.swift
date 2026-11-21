@@ -18,6 +18,7 @@ public enum GarageCloudCredentials {
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var provider: Provider?
+    nonisolated(unsafe) private static var services: Set<String>?
     nonisolated(unsafe) private static var statusProvider: StatusProvider?
 
     /// Installs `status`, which the Sources page asks whether each cloud source's account is linked;
@@ -36,11 +37,21 @@ public enum GarageCloudCredentials {
         return status?(service)
     }
 
-    /// Installs `provider`, replacing any before it; nil removes it.
-    public static func register(_ provider: Provider?) {
+    /// Installs `provider`, replacing any before it; nil removes it. `services` lists the source kinds it
+    /// serves, which the Sources page offers; nil serves every cloud kind.
+    public static func register(_ provider: Provider?, services: Set<String>? = nil) {
         lock.lock()
         defer { lock.unlock() }
         Self.provider = provider
+        Self.services = provider == nil ? nil : services
+    }
+
+    /// Whether the installed provider serves `service`, a source kind.
+    public static func serves(_ service: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        guard provider != nil else { return false }
+        return services?.contains(service.lowercased()) ?? true
     }
 
     /// Whether a provider is installed.

@@ -494,6 +494,14 @@ final class SourcesPresentationTests: XCTestCase {
             SourceKinds.offered(cloudAvailable: true).suffix(5),
             ["dropbox", "onedrive", "outlook", "google_drive", "gmail"]
         )
+        XCTAssertEqual(
+            SourceKinds.offered(cloudAvailable: true, serves: { ["dropbox", "onedrive", "outlook"].contains($0) })
+                .suffix(3),
+            ["dropbox", "onedrive", "outlook"]
+        )
+        XCTAssertFalse(
+            SourceKinds.offered(cloudAvailable: true, serves: { $0 == "dropbox" }).contains("gmail")
+        )
         XCTAssertTrue(SourceKinds.isCloud("Google_Drive"))
         XCTAssertFalse(SourceKinds.isCloud("maildir"))
         XCTAssertFalse(SourceKinds.isCloud("claude"))
