@@ -24,6 +24,7 @@ This guide provides step-by-step diagnostic procedures and solutions for common 
 | `HTTP 421 Misdirected Request` on MCP server | DNS rebinding protection triggered | [Check Host Header](#mcp-dns-rebinding) |
 | `Vector dimension mismatch` on backfill | Registered model dimension differs from provider | [Verify Model Dimensions](#vector-dimensions) |
 | Large unexpected network downloads | Cloud stubs (Dropbox/iCloud) being read | [Configure Placeholder Limits](#cloud-placeholders) |
+| Garage Remote: `This node hasn't been verified by your account yet` | A newly connected computer that the account hasn't verified | [Verify it from the computer that created your account]({{ '/support/verify-node.html' | relative_url }}) |
 
 ---
 
