@@ -905,6 +905,10 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   `garage-service`'s `catalog.rs` reads it. The site serves a copy at `https://garagerag.app/.data/models.json`,
   which the build puts in place (`site_files` on `//docs:site`, which `.github/workflows/pages.yaml`
   publishes); `docs/.data/models.json` is git-ignored, never edited.
+- `plugins/garage` is the Claude Code / Codex plugin for the local Garage (stdio `garage-mcp` through
+  `scripts/garage-mcp`, the `search-garage` skill), listed by `.claude-plugin/marketplace.json` and
+  `.agents/plugins/marketplace.json` at the root; its README has the layout. Garage Door's per-user build of it lives
+  in garage-enterprise (`door/plugins`). Check a change with `claude plugin validate plugins/garage`.
 - Keep licenses permissive: no AGPL or GPL dependency (`stage.ps1` refuses a DLL on its denylist,
   and the notices script lists every crate's license).
 - Engineering plans live in `docs/plans/` and are published at `https://garagerag.app/plans/`; the index page

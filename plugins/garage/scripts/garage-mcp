@@ -1,0 +1,20 @@
+#!/bin/sh
+# Starts Garage's stdio MCP server for the Garage plugin (Claude Code, Codex).
+#
+# The Mac app's launcher sets up the database URL, the schema and the app's sockets, and opens the app hidden
+# when it is not running, so it is preferred over a bare garage-mcp on PATH. GARAGE_MCP names another one.
+set -eu
+
+if [ -n "${GARAGE_MCP:-}" ]; then
+  exec "$GARAGE_MCP" "$@"
+fi
+for app in "/Applications/Garage.app" "$HOME/Applications/Garage.app"; do
+  if [ -x "$app/Contents/MacOS/garage-mcp" ]; then
+    exec "$app/Contents/MacOS/garage-mcp" "$@"
+  fi
+done
+if command -v garage-mcp >/dev/null 2>&1; then
+  exec garage-mcp "$@"
+fi
+echo "garage-mcp not found. Install Garage from https://garagerag.app, or set GARAGE_MCP to its path." >&2
+exit 127

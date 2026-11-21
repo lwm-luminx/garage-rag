@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "garage",
+  "displayName": "Garage",
+  "version": "0.1.0",
+  "description": "Search your Garage, the private index of your documents, code, mail and messages on your own computer, and answer from it with sources.",
+  "author": {
+    "name": "Rick Mark-Penwell",
+    "url": "https://garagerag.app"
+  },
+  "homepage": "https://garagerag.app",
+  "repository": "https://github.com/lwm-luminx/garage-rag",
+  "license": "MIT",
+  "keywords": [
+    "rag",
+    "search",
+    "personal-knowledge",
+    "mcp",
+    "local-first"
+  ],
+  "privacyPolicyUrl": "https://garagerag.app/privacy.html",
+  "network": {
+    "hosts": []
+  }
+}

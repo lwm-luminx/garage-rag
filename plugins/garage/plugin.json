@@ -1,0 +1,31 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "garage",
+  "version": "0.1.0",
+  "description": "Search your Garage, the private index of your documents, code, mail and messages on your own computer, and answer from it with sources.",
+  "author": { "name": "Rick Mark-Penwell", "url": "https://garagerag.app" },
+  "license": "MIT",
+  "keywords": ["rag", "search", "personal-knowledge", "mcp", "local-first"],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Garage",
+        "shortDescription": "Search your own documents, code and messages",
+        "longDescription": "Garage indexes your documents, code, mail and messages on your own computer. This plugin connects Codex to the Garage on this computer and teaches it to search, read and cite what it finds.",
+        "developerName": "Rick Mark-Penwell",
+        "category": "Productivity",
+        "capabilities": ["Read"],
+        "websiteURL": "https://garagerag.app",
+        "privacyPolicyURL": "https://garagerag.app/privacy.html",
+        "defaultPrompt": [
+          "What does my Garage hold?",
+          "Search my Garage for my notes on this project.",
+          "Find what I wrote about this and summarize it."
+        ],
+        "brandColor": "#7056DC",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/icon.png"
+      }
+    }
+  }
+}
