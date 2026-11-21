@@ -90,6 +90,11 @@ You can make your account more private from anywhere, and it takes effect at onc
 </details>
 
 <details>
+<summary>Garage Remote says a computer hasn't been verified</summary>
+<p>Each computer you add to your account has to be verified by the one that created it, so the door can't slip a computer into your account. <a href="{{ '/support/verify-node.html' | relative_url }}">Here's how to verify it</a>.</p>
+</details>
+
+<details>
 <summary>Can I turn it off?</summary>
 <p>Yes. Turn Garage Door off in Garage, or set your privacy level to private node or private cluster from your account, and your computer's connection closes. Revoke an assistant from your account and it loses access at once.</p>
 </details>
