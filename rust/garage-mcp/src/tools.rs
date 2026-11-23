@@ -40,6 +40,11 @@ pub fn tool_schema(name: &str) -> Option<Value> {
 pub const ASK_SYSTEM_PROMPT: &str = "You answer questions about the user's personal corpus using only the numbered \
 excerpts provided. Cite the excerpts you rely on inline as [n]. If the excerpts do not contain the answer, say so \
 plainly instead of guessing.";
+/// Closes rag_ask's user turn, after the question. A small local model (Gemma 2 2B) given only
+/// `Excerpts: ... Question: ...` carried on the list and answered with the second excerpt verbatim,
+/// heading and all; asking for the answer last, in its own words, gets a summary.
+pub const ASK_CLOSING: &str = "Answer the question in your own words in a few sentences, using only the excerpts \
+above. Do not repeat an excerpt or its heading. Cite the excerpts you used as [n].";
 /// Each excerpt is trimmed to this many characters before it goes in rag_ask's prompt.
 pub const EXCERPT_CHARS: usize = 1200;
 /// Citations carry a shorter snippet.
@@ -286,7 +291,7 @@ pub fn build_ask_messages(question: &str, hits: &[Map<String, Value>]) -> Vec<Va
     };
     vec![
         json!({"role": "system", "content": ASK_SYSTEM_PROMPT}),
-        json!({"role": "user", "content": format!("Excerpts:\n\n{excerpts}\n\nQuestion: {question}")}),
+        json!({"role": "user", "content": format!("Excerpts:\n\n{excerpts}\n\nQuestion: {question}\n\n{ASK_CLOSING}")}),
     ]
 }
 
@@ -326,6 +331,22 @@ mod tests {
                 "rag_agent"
             ]
         );
+    }
+
+    #[test]
+    fn the_ask_prompt_asks_for_the_answer_after_the_question() {
+        let hit: Map<String, Value> =
+            json!({"title": "Bridge", "location": "/notes/bridge.md", "text": "The bridge opened in 1932."})
+                .as_object()
+                .unwrap()
+                .clone();
+        let messages = build_ask_messages("When did the bridge open?", &[hit]);
+        let user = messages[1]["content"].as_str().unwrap();
+        assert!(
+            user.starts_with("Excerpts:\n\n[1] Bridge \u{2014} /notes/bridge.md\nThe bridge opened in 1932."),
+            "{user}"
+        );
+        assert!(user.ends_with(&format!("Question: When did the bridge open?\n\n{ASK_CLOSING}")), "{user}");
     }
 
     #[test]
