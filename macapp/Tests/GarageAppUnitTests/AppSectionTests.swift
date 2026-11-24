@@ -4,7 +4,7 @@ import XCTest
 final class AppSectionTests: XCTestCase {
 
     func testAppSectionAllCasesCount() {
-        XCTAssertEqual(AppSection.allCases.count, 12)
+        XCTAssertEqual(AppSection.allCases.count, 13)
     }
 
     func testAppSectionIdentifiers() {
@@ -17,6 +17,7 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.graph.id, "Graph")
         XCTAssertEqual(AppSection.models.id, "Models")
         XCTAssertEqual(AppSection.mcp.id, "MCP Server")
+        XCTAssertEqual(AppSection.access.id, "Access")
         XCTAssertEqual(AppSection.search.id, "Search")
         XCTAssertEqual(AppSection.services.id, "Services")
         XCTAssertEqual(AppSection.logs.id, "Logs")
@@ -32,13 +33,14 @@ final class AppSectionTests: XCTestCase {
         XCTAssertEqual(AppSection.graph.symbol, "point.3.connected.trianglepath.dotted")
         XCTAssertEqual(AppSection.models.symbol, "cpu")
         XCTAssertEqual(AppSection.mcp.symbol, "server.rack")
+        XCTAssertEqual(AppSection.access.symbol, "lock.shield")
         XCTAssertEqual(AppSection.search.symbol, "magnifyingglass")
         XCTAssertEqual(AppSection.services.symbol, "gearshape.2")
         XCTAssertEqual(AppSection.logs.symbol, "terminal")
     }
 
     func testSidebarGroups() {
-        XCTAssertEqual(SidebarGroup.configuration.sections, [.sources, .models, .mcp])
+        XCTAssertEqual(SidebarGroup.configuration.sections, [.sources, .models, .mcp, .access])
         XCTAssertEqual(SidebarGroup.data.sections, [.documents, .facts, .graph, .search])
         XCTAssertEqual(SidebarGroup.advanced.sections, [.database, .services, .logs])
     }
@@ -46,7 +48,7 @@ final class AppSectionTests: XCTestCase {
     func testTheGraphPageIsOnlyOfferedWhereTheBuildTurnsItOn() {
         XCTAssertEqual(SidebarGroup.data.sections(showsGraph: false), [.documents, .facts, .search])
         XCTAssertEqual(SidebarGroup.data.sections(showsGraph: true), [.documents, .facts, .graph, .search])
-        XCTAssertEqual(SidebarGroup.configuration.sections(showsGraph: false), [.sources, .models, .mcp])
+        XCTAssertEqual(SidebarGroup.configuration.sections(showsGraph: false), [.sources, .models, .mcp, .access])
         XCTAssertNil(AppSection.status.group)
         XCTAssertNil(AppSection.chat.group)
     }

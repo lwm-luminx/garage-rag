@@ -11,6 +11,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case sources = "Sources"
     case models = "Models"
     case mcp = "MCP Server"
+    case access = "Access"
     case documents = "Documents"
     case facts = "Facts"
     case graph = "Graph"
@@ -33,6 +34,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .graph: "point.3.connected.trianglepath.dotted"
         case .models: "cpu"
         case .mcp: "server.rack"
+        case .access: "lock.shield"
         case .search: "magnifyingglass"
         case .logs: "terminal"
         }
@@ -50,7 +52,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 /// The headed sections of the sidebar, below Status and Chat.
 enum SidebarGroup: String, CaseIterable, Identifiable {
-    /// What Garage reads, which models it runs, and who it serves.
+    /// What Garage reads, which models it runs, who it serves, and what each may see.
     case configuration = "Configuration"
     /// The corpus itself.
     case data = "Data"
@@ -60,7 +62,7 @@ enum SidebarGroup: String, CaseIterable, Identifiable {
 
     var sections: [AppSection] {
         switch self {
-        case .configuration: [.sources, .models, .mcp]
+        case .configuration: [.sources, .models, .mcp, .access]
         case .data: [.documents, .facts, .graph, .search]
         case .advanced: [.database, .services, .logs]
         }
@@ -257,6 +259,7 @@ struct ContentView: View {
                 })
             case .models: ModelsView()
             case .mcp: MCPServerView()
+            case .access: AccessView()
             case .search: SearchView()
             case .logs: LogsView()
             }

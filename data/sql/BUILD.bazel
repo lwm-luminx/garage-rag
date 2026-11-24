@@ -7,3 +7,9 @@ copy_to_directory(
     out = "sql",
     visibility = ["//visibility:public"],
 )
+
+# The access policies' DDL, which garage-access-rego also applies itself (include_str!).
+exports_files(
+    ["027_access_policies.sql"],
+    visibility = ["//rust/garage-access-rego:__pkg__"],
+)

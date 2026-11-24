@@ -1247,6 +1247,190 @@ pub struct McpStatusResponse {
     #[prost(message, repeated, tag = "2")]
     pub clients: ::prost::alloc::vec::Vec<McpClientInfo>,
 }
+/// A stored Rego module. Its package is its own; `package garage.access` with a `decision` rule
+/// replaces the built-in entry point (`data.garage.access.rules.decision`).
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessPolicy {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub rego: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub enabled: bool,
+    /// RFC 3339; empty on a request.
+    #[prost(string, tag = "4")]
+    pub updated_at: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAccessPoliciesRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAccessPoliciesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub policies: ::prost::alloc::vec::Vec<AccessPolicy>,
+    /// The built-in module (package garage.access.rules), read-only: the rules and defaults as Rego.
+    #[prost(string, tag = "2")]
+    pub builtin_rego: ::prost::alloc::string::String,
+    /// The build's access policy (GetStatus names it too), and whether these calls edit it: false
+    /// when a build links another extension, whose own tables these are not.
+    #[prost(string, tag = "3")]
+    pub engine: ::prost::alloc::string::String,
+    #[prost(bool, tag = "4")]
+    pub editable: bool,
+    /// Who TestAccess can be asked about: the fixed callers, then each MCP registration.
+    #[prost(message, repeated, tag = "5")]
+    pub callers: ::prost::alloc::vec::Vec<AccessCaller>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessCaller {
+    /// What TestAccessRequest.caller takes: app, mcp:<registration id>, ...
+    #[prost(string, tag = "1")]
+    pub caller: ::prost::alloc::string::String,
+    /// For a picker: "Claude Desktop (claude-desktop)".
+    #[prost(string, tag = "2")]
+    pub label: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutAccessPolicyRequest {
+    #[prost(message, optional, tag = "1")]
+    pub policy: ::core::option::Option<AccessPolicy>,
+    #[prost(bool, tag = "2")]
+    pub check_only: bool,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutAccessPolicyResponse {
+    #[prost(string, tag = "1")]
+    pub message: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveAccessPolicyRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveAccessPolicyResponse {
+    #[prost(string, tag = "1")]
+    pub message: ::prost::alloc::string::String,
+}
+/// A stored rule: {name, effect, targets, match, enabled} as JSON (docs/plans/access-policies.md, "Rules").
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessRule {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub rule_json: ::prost::alloc::string::String,
+    #[prost(bool, tag = "3")]
+    pub enabled: bool,
+    /// Content rules (regex, term): documents not yet evaluated against this version of the rule.
+    #[prost(int64, tag = "4")]
+    pub pending: i64,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAccessRulesRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAccessRulesResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub rules: ::prost::alloc::vec::Vec<AccessRule>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutAccessRuleRequest {
+    #[prost(string, tag = "1")]
+    pub rule_json: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct PutAccessRuleResponse {
+    #[prost(int64, tag = "1")]
+    pub id: i64,
+    #[prost(string, tag = "2")]
+    pub message: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveAccessRuleRequest {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct RemoveAccessRuleResponse {
+    #[prost(string, tag = "1")]
+    pub message: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessDefault {
+    /// A target name or prefix pattern: app, cli, mcp:<registration id>, mcp:\*, \*.
+    #[prost(string, tag = "1")]
+    pub target: ::prost::alloc::string::String,
+    /// allow | deny
+    #[prost(string, tag = "2")]
+    pub effect: ::prost::alloc::string::String,
+}
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct ListAccessDefaultsRequest {}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListAccessDefaultsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub defaults: ::prost::alloc::vec::Vec<AccessDefault>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetAccessDefaultRequest {
+    #[prost(string, tag = "1")]
+    pub target: ::prost::alloc::string::String,
+    /// allow | deny; empty clears the target's default.
+    #[prost(string, tag = "2")]
+    pub effect: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct SetAccessDefaultResponse {
+    #[prost(string, tag = "1")]
+    pub message: ::prost::alloc::string::String,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct TestAccessRequest {
+    /// app | cli | unverified | mcp:unregistered | mcp:<registration id> | door:<registration id>\[/<grant>\]
+    #[prost(string, tag = "1")]
+    pub caller: ::prost::alloc::string::String,
+    /// Defaults to the caller's usual transport.
+    #[prost(string, tag = "2")]
+    pub transport: ::prost::alloc::string::String,
+    /// When set, decide with this module in place of the stored one of the same name (or added, if
+    /// none), as an editor's unsaved text would.
+    #[prost(message, optional, tag = "3")]
+    pub draft: ::core::option::Option<AccessPolicy>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct AccessContentRule {
+    #[prost(string, tag = "1")]
+    pub name: ::prost::alloc::string::String,
+    #[prost(int64, tag = "2")]
+    pub pending: i64,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct TestAccessResponse {
+    #[prost(string, tag = "1")]
+    pub caller_kind: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub transport: ::prost::alloc::string::String,
+    /// The target names the caller goes by, outermost first.
+    #[prost(string, repeated, tag = "3")]
+    pub targets: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The stored modules that decided; empty: the built-in one alone.
+    #[prost(string, repeated, tag = "4")]
+    pub policies: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// data.garage.access.decision, as JSON.
+    #[prost(string, tag = "5")]
+    pub decision_json: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "6")]
+    pub content_rules: ::prost::alloc::vec::Vec<AccessContentRule>,
+    /// No filter: the caller sees every document.
+    #[prost(bool, tag = "7")]
+    pub sees_everything: bool,
+    #[prost(string, tag = "8")]
+    pub filter_sql: ::prost::alloc::string::String,
+    /// Each bind parameter of filter_sql, $1 first, as JSON.
+    #[prost(string, repeated, tag = "9")]
+    pub filter_params: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// The caller's registration, for mcp: and door: callers.
+    #[prost(string, tag = "10")]
+    pub registration_name: ::prost::alloc::string::String,
+}
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BeginIngestSessionRequest {
     #[prost(string, tag = "1")]
@@ -2574,6 +2758,228 @@ pub mod garage_service_client {
                 .insert(GrpcMethod::new("garage.GarageService", "McpStatus"));
             self.inner.unary(req, path, codec).await
         }
+        /// --- Access Policies (docs/plans/access-policies.md) ---
+        /// The Rego modules, rules and defaults that decide, on every read, which documents each caller
+        /// may see. A change applies to the next read. The writes are config-changing (auth.rs).
+        pub async fn list_access_policies(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListAccessPoliciesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessPoliciesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/ListAccessPolicies",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "ListAccessPolicies"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Saves a module once it compiles with the other enabled ones; `check_only` compiles and saves nothing.
+        pub async fn put_access_policy(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PutAccessPolicyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PutAccessPolicyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/PutAccessPolicy",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "PutAccessPolicy"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn remove_access_policy(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveAccessPolicyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveAccessPolicyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/RemoveAccessPolicy",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "RemoveAccessPolicy"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_access_rules(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListAccessRulesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessRulesResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/ListAccessRules",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "ListAccessRules"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn put_access_rule(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PutAccessRuleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PutAccessRuleResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/PutAccessRule",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "PutAccessRule"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn remove_access_rule(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RemoveAccessRuleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveAccessRuleResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/RemoveAccessRule",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "RemoveAccessRule"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_access_defaults(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListAccessDefaultsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessDefaultsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/ListAccessDefaults",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "ListAccessDefaults"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn set_access_default(
+            &mut self,
+            request: impl tonic::IntoRequest<super::SetAccessDefaultRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetAccessDefaultResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/SetAccessDefault",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "SetAccessDefault"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// What a caller's reads would be held to, as the policies stand (or with one module replaced,
+        /// for an editor's unsaved text). Reads and writes nothing else.
+        pub async fn test_access(
+            &mut self,
+            request: impl tonic::IntoRequest<super::TestAccessRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::TestAccessResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/TestAccess",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "TestAccess"));
+            self.inner.unary(req, path, codec).await
+        }
         /// --- Database Facade for Ingest & Embed Workers ---
         pub async fn begin_ingest_session(
             &mut self,
@@ -3171,6 +3577,75 @@ pub mod garage_service_server {
             request: tonic::Request<super::McpStatusRequest>,
         ) -> std::result::Result<
             tonic::Response<super::McpStatusResponse>,
+            tonic::Status,
+        >;
+        /// --- Access Policies (docs/plans/access-policies.md) ---
+        /// The Rego modules, rules and defaults that decide, on every read, which documents each caller
+        /// may see. A change applies to the next read. The writes are config-changing (auth.rs).
+        async fn list_access_policies(
+            &self,
+            request: tonic::Request<super::ListAccessPoliciesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessPoliciesResponse>,
+            tonic::Status,
+        >;
+        /// Saves a module once it compiles with the other enabled ones; `check_only` compiles and saves nothing.
+        async fn put_access_policy(
+            &self,
+            request: tonic::Request<super::PutAccessPolicyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PutAccessPolicyResponse>,
+            tonic::Status,
+        >;
+        async fn remove_access_policy(
+            &self,
+            request: tonic::Request<super::RemoveAccessPolicyRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveAccessPolicyResponse>,
+            tonic::Status,
+        >;
+        async fn list_access_rules(
+            &self,
+            request: tonic::Request<super::ListAccessRulesRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessRulesResponse>,
+            tonic::Status,
+        >;
+        async fn put_access_rule(
+            &self,
+            request: tonic::Request<super::PutAccessRuleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::PutAccessRuleResponse>,
+            tonic::Status,
+        >;
+        async fn remove_access_rule(
+            &self,
+            request: tonic::Request<super::RemoveAccessRuleRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RemoveAccessRuleResponse>,
+            tonic::Status,
+        >;
+        async fn list_access_defaults(
+            &self,
+            request: tonic::Request<super::ListAccessDefaultsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListAccessDefaultsResponse>,
+            tonic::Status,
+        >;
+        async fn set_access_default(
+            &self,
+            request: tonic::Request<super::SetAccessDefaultRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::SetAccessDefaultResponse>,
+            tonic::Status,
+        >;
+        /// What a caller's reads would be held to, as the policies stand (or with one module replaced,
+        /// for an editor's unsaved text). Reads and writes nothing else.
+        async fn test_access(
+            &self,
+            request: tonic::Request<super::TestAccessRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::TestAccessResponse>,
             tonic::Status,
         >;
         /// --- Database Facade for Ingest & Embed Workers ---
@@ -4930,6 +5405,418 @@ pub mod garage_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = McpStatusSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListAccessPolicies" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListAccessPoliciesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListAccessPoliciesRequest>
+                    for ListAccessPoliciesSvc<T> {
+                        type Response = super::ListAccessPoliciesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListAccessPoliciesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_access_policies(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListAccessPoliciesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/PutAccessPolicy" => {
+                    #[allow(non_camel_case_types)]
+                    struct PutAccessPolicySvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::PutAccessPolicyRequest>
+                    for PutAccessPolicySvc<T> {
+                        type Response = super::PutAccessPolicyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PutAccessPolicyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::put_access_policy(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PutAccessPolicySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/RemoveAccessPolicy" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveAccessPolicySvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::RemoveAccessPolicyRequest>
+                    for RemoveAccessPolicySvc<T> {
+                        type Response = super::RemoveAccessPolicyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoveAccessPolicyRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::remove_access_policy(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveAccessPolicySvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListAccessRules" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListAccessRulesSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListAccessRulesRequest>
+                    for ListAccessRulesSvc<T> {
+                        type Response = super::ListAccessRulesResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListAccessRulesRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_access_rules(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListAccessRulesSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/PutAccessRule" => {
+                    #[allow(non_camel_case_types)]
+                    struct PutAccessRuleSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::PutAccessRuleRequest>
+                    for PutAccessRuleSvc<T> {
+                        type Response = super::PutAccessRuleResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PutAccessRuleRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::put_access_rule(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = PutAccessRuleSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/RemoveAccessRule" => {
+                    #[allow(non_camel_case_types)]
+                    struct RemoveAccessRuleSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::RemoveAccessRuleRequest>
+                    for RemoveAccessRuleSvc<T> {
+                        type Response = super::RemoveAccessRuleResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RemoveAccessRuleRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::remove_access_rule(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = RemoveAccessRuleSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/ListAccessDefaults" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListAccessDefaultsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::ListAccessDefaultsRequest>
+                    for ListAccessDefaultsSvc<T> {
+                        type Response = super::ListAccessDefaultsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListAccessDefaultsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::list_access_defaults(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = ListAccessDefaultsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/SetAccessDefault" => {
+                    #[allow(non_camel_case_types)]
+                    struct SetAccessDefaultSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::SetAccessDefaultRequest>
+                    for SetAccessDefaultSvc<T> {
+                        type Response = super::SetAccessDefaultResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::SetAccessDefaultRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::set_access_default(&inner, request)
+                                    .await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = SetAccessDefaultSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/TestAccess" => {
+                    #[allow(non_camel_case_types)]
+                    struct TestAccessSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::TestAccessRequest>
+                    for TestAccessSvc<T> {
+                        type Response = super::TestAccessResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::TestAccessRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::test_access(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = TestAccessSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

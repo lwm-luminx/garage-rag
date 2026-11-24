@@ -1,15 +1,18 @@
 //! The access hooks on the service's side (`docs/plans/access-hooks.md`): the build's policy, the
 //! caller of each read, and the one place a policy's answer becomes SQL or a refusal.
 //!
-//! The policy is whatever the linked extension registers (`garage_access_extension`, which a plain
-//! build takes from `garage-access-none`, so [`NullPolicy`](garage_access::NullPolicy)). Read
-//! paths ask [`AccessGate`], never the policy, so a policy that fails is handled in one place: the
-//! read fails, and the caller is told nothing about the corpus.
+//! The policy is Garage's own, [`RulesPolicy`] (`garage-access-rego`, `docs/plans/access-policies.md`:
+//! Rego modules, rules and defaults stored beside the corpus, which with none stored restricts
+//! nothing), unless the linked extension (`garage_access_extension`, `garage-access-none` in a plain
+//! build, which registers nothing) registers a policy in its place. Read paths ask [`AccessGate`],
+//! never the policy, so a policy that fails is handled in one place: the read fails, and the caller
+//! is told nothing about the corpus.
 
 use std::collections::HashSet;
 use std::sync::{Arc, OnceLock};
 
 use garage_access::{AccessError, AccessPolicy, Caller, NullPolicy, Registration, Registry, SqlFilter};
+use garage_access_rego::RulesPolicy;
 use garage_facade::proto::CorpusCaller;
 use tokio_postgres::types::ToSql;
 
@@ -17,7 +20,8 @@ use crate::db::Client;
 use crate::error::ServiceError;
 use crate::registrations;
 
-/// The policy the linked extension registers, made once per process.
+/// The policy the service holds reads to, made once per process: the extension's, or else the Rego
+/// policy.
 ///
 /// # Errors
 ///
@@ -28,9 +32,20 @@ pub fn installed_policy() -> Result<Arc<dyn AccessPolicy>, AccessError> {
         .get_or_init(|| {
             let mut registry = Registry::new();
             garage_access_extension::register(&mut registry);
-            registry.into_policy()
+            let policy = registry.into_policy()?;
+            Ok(if policy.name() == NullPolicy::NAME { rego_policy() } else { policy })
         })
         .clone()
+}
+
+/// The process's one Rego policy, so its compiled modules are shared by the reads and the access calls.
+pub fn rego_policy() -> Arc<dyn AccessPolicy> {
+    shared_rego().clone()
+}
+
+fn shared_rego() -> &'static Arc<RulesPolicy> {
+    static REGO: OnceLock<Arc<RulesPolicy>> = OnceLock::new();
+    REGO.get_or_init(|| Arc::new(RulesPolicy::default()))
 }
 
 /// What a refused or failed policy answer tells the caller: nothing about the corpus.
@@ -55,6 +70,11 @@ impl AccessGate {
     /// Whether the build has a policy at all. Without one nothing about a caller is looked up.
     pub fn is_null(&self) -> bool {
         self.policy.name() == NullPolicy::NAME
+    }
+
+    /// The Rego policy, when it is the one reads are held to: what the access calls edit and explain.
+    pub fn rego(&self) -> Option<&'static RulesPolicy> {
+        (self.policy.name() == RulesPolicy::NAME).then(|| shared_rego().as_ref())
     }
 
     /// The caller of an MCP read, from what `garage-mcp` passed along: the registration its token
@@ -199,6 +219,15 @@ pub const READ_PATHS: &[(&str, ReadPath)] = &[
     ("McpInstall", ReadPath::NotARead),
     ("McpUninstall", ReadPath::NotARead),
     ("McpStatus", ReadPath::NotARead),
+    ("ListAccessPolicies", ReadPath::NotARead),
+    ("PutAccessPolicy", ReadPath::NotARead),
+    ("RemoveAccessPolicy", ReadPath::NotARead),
+    ("ListAccessRules", ReadPath::NotARead),
+    ("PutAccessRule", ReadPath::NotARead),
+    ("RemoveAccessRule", ReadPath::NotARead),
+    ("ListAccessDefaults", ReadPath::NotARead),
+    ("SetAccessDefault", ReadPath::NotARead),
+    ("TestAccess", ReadPath::NotARead),
     ("BeginIngestSession", ReadPath::NotARead),
     ("PersistScan", ReadPath::NotARead),
     ("CheckDocumentStat", ReadPath::NotARead),
@@ -247,8 +276,10 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_build_has_no_policy() {
-        assert_eq!(installed_policy().unwrap().name(), NullPolicy::NAME);
+    fn a_plain_build_holds_reads_to_the_rego_policy() {
+        assert_eq!(installed_policy().unwrap().name(), RulesPolicy::NAME);
+        assert!(AccessGate::new(installed_policy().unwrap()).rego().is_some());
+        assert!(AccessGate::new(Arc::new(NullPolicy)).rego().is_none());
     }
 
     #[test]

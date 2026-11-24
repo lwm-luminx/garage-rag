@@ -459,3 +459,21 @@ the entry's token and so its row; uninstalling deletes the row. An access policy
 keys its rules on `id` as a value, never a foreign key, since registrations move to
 a catalog database under v2. See [access hooks](plans/access-hooks.md). DDL in
 `019_mcp_registrations.sql`.
+
+### Access policies
+
+What each caller may read ([access policies](plans/access-policies.md)), edited on
+the Access page, with `garage access` or through the access calls:
+
+- `access_rules`: one ALLOW or DENY rule per `name`, with its `targets` (`app`,
+  `cli`, `mcp:<registration id>`, `door:<id>`, prefix patterns ending in `*`), its
+  `matcher` (`source`, `corpus_class`, `trust_tier`, `author`, `path`, `regex`,
+  `term`) and `spec`, and a `version` hashed from them.
+- `access_defaults`: a target's effect when no rule decides.
+- `access_evaluations`: one row per content rule and document, the `version` and
+  `content_sha256` it was evaluated at and whether it `matched`. A missing or stale
+  row is pending, and a pending DENY hides the document from its targets.
+- `access_policies`: Rego modules by `name`, `enabled` or not, evaluated on every
+  read with the rules and defaults as their data.
+
+DDL in `027_access_policies.sql`, which the policy also applies once per process.

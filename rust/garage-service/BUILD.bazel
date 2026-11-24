@@ -13,8 +13,10 @@ rust_library(
     visibility = ["//visibility:public"],
     deps = [
         "//rust/garage-access",
-        # The build's access extension (garage-access-none unless a build points the flag elsewhere).
+        # The build's access extension (garage-access-none unless a build points the flag elsewhere);
+        # with none registered, the service holds reads to garage-access-rego's policy.
         "//rust/garage-access:extension",
+        "//rust/garage-access-rego",
         "//rust/garage-embed",
         "//rust/garage-facade",
         "//rust/garage-ingest",
