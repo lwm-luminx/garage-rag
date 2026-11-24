@@ -1,9 +1,9 @@
 //! The corpus, as the MCP tools read it: GarageService's `Corpus*` calls, whose replies are the
 //! Python tools' own results as JSON, so a tool here answers exactly as the Python one does.
 //!
-//! Every read names its [`Caller`]. Nothing here decides what a caller may see: GarageService
-//! does, once the access hooks land (`docs/plans/access-hooks.md`), so the policy has one home
-//! whichever server a client reached.
+//! Every read names its [`Caller`]. Nothing here decides what a caller may see or which tools it may
+//! use: GarageService's access policy does (`docs/plans/access-policies.md`), so the policy has one
+//! home whichever server a client reached.
 
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 
 use garage_facade::proto::{
     CorpusAuthorsRequest, CorpusCaller, CorpusDocumentRequest, CorpusSearchRequest, CorpusSourcesRequest,
-    CorpusStatsRequest, GetSettingRequest,
+    CorpusStatsRequest, CorpusToolsRequest, GetSettingRequest,
 };
 use garage_facade::{Client, Connection, FacadeError, GrpcTarget};
 use serde_json::Value;
@@ -137,6 +137,18 @@ pub trait Corpus: Send + Sync {
     /// [`CorpusError`] when the read fails.
     fn stats(&self, caller: &Caller) -> Result<Value, CorpusError>;
 
+    /// Which of `tools` the caller may list and call: the access policy's tool decision
+    /// (`data.garage.tools.decision`), which GarageService makes. The default withholds none.
+    ///
+    /// # Errors
+    ///
+    /// [`CorpusError`] when the policy cannot decide; the request then fails rather than offer a
+    /// tool the policy might withhold.
+    fn tools(&self, caller: &Caller, tools: &[String]) -> Result<Vec<String>, CorpusError> {
+        let _ = caller;
+        Ok(tools.to_vec())
+    }
+
     /// One setting the backend runs with (SECTION.KEY), for the local model's configuration.
     ///
     /// # Errors
@@ -237,6 +249,12 @@ impl Corpus for GrpcCorpus {
         let request = CorpusStatsRequest { caller: Some(caller.proto()) };
         let reply = self.call(|mut client| async move { client.corpus_stats(request).await })?;
         decode(&reply.result_json)
+    }
+
+    fn tools(&self, caller: &Caller, tools: &[String]) -> Result<Vec<String>, CorpusError> {
+        let request = CorpusToolsRequest { caller: Some(caller.proto()), tools: tools.to_vec() };
+        let reply = self.call(|mut client| async move { client.corpus_tools(request).await })?;
+        Ok(reply.allowed)
     }
 
     fn setting(&self, name: &str) -> Result<Value, CorpusError> {

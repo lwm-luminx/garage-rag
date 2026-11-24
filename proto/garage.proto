@@ -111,6 +111,9 @@ service GarageService {
     rpc CorpusSources (CorpusSourcesRequest) returns (CorpusReadResponse);
     rpc CorpusAuthors (CorpusAuthorsRequest) returns (CorpusReadResponse);
     rpc CorpusStats (CorpusStatsRequest) returns (CorpusReadResponse);
+    // Which of the MCP server's tools the caller may list and call (the access policy's
+    // data.garage.tools.decision). garage-mcp asks before tools/list and each tools/call.
+    rpc CorpusTools (CorpusToolsRequest) returns (CorpusToolsResponse);
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,6 +1023,10 @@ message TestAccessResponse {
     repeated string filter_params = 9;
     // The caller's registration, for mcp: and door: callers.
     string registration_name = 10;
+    // The MCP tools the caller may list and call (data.garage.tools.decision), with the draft
+    // too, and the ones the policy withholds. Both empty for a caller that is not an assistant.
+    repeated string tools = 11;
+    repeated string withheld_tools = 12;
 }
 
 // ---------------------------------------------------------------------------
@@ -1273,6 +1280,17 @@ message CorpusAuthorsRequest {
 // rag_stats.
 message CorpusStatsRequest {
     CorpusCaller caller = 1;
+}
+
+message CorpusToolsRequest {
+    CorpusCaller caller = 1;
+    // The tools the MCP server offers, by name.
+    repeated string tools = 2;
+}
+
+message CorpusToolsResponse {
+    // The ones the caller may list and call, in the order asked.
+    repeated string allowed = 1;
 }
 
 message CorpusReadResponse {

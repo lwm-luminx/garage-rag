@@ -270,6 +270,9 @@ pub const MCP_TEST: Command = Command {
                     rows.push((name.to_owned(), "FAIL", latency, reason));
                 }
                 Err(ToolError::Invalid(error)) => rows.push((name.to_owned(), "FAIL", latency, error.to_string())),
+                Err(ToolError::Denied(_)) => {
+                    rows.push((name.to_owned(), "SKIP", latency, "withheld by the access policy".into()));
+                }
             }
         };
         let count = |value: &Value, key: &str| value.get(key).and_then(Value::as_array).map_or(0, Vec::len);
@@ -307,10 +310,17 @@ pub const MCP_TEST: Command = Command {
                 let details = match error {
                     ToolError::Failed(reason) | ToolError::Unknown(reason) => reason,
                     ToolError::Invalid(error) => error.to_string(),
+                    ToolError::Denied(_) => "withheld by the access policy".to_owned(),
                 };
                 // Nothing loaded is a state of the app's Models page, not of the MCP server.
-                let status =
-                    if details.contains("not loaded") || details.contains("unavailable") { "SKIP" } else { "FAIL" };
+                let status = if details.contains("not loaded")
+                    || details.contains("unavailable")
+                    || details.contains("withheld")
+                {
+                    "SKIP"
+                } else {
+                    "FAIL"
+                };
                 rows.push(("rag_generate".into(), status, latency.clone(), details.clone()));
                 rows.push(("rag_ask".into(), status, latency, details));
             }

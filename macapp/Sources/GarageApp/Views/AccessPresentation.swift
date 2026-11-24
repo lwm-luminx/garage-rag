@@ -6,7 +6,7 @@ import GarageAppExtensionKit
 
 enum AccessPresentation {
     /// What the page says above the editor.
-    static let explanation = "Every read asks a Rego policy which documents its caller may see: the app, garage on a terminal, and each connected assistant by its registration. The built-in policy applies your rules and defaults; a policy of your own can build on it or replace it. A change applies to the next read."
+    static let explanation = "Every read asks a Rego policy which documents its caller may see: the app, garage on a terminal, and each connected assistant by its registration. The built-in policy applies your rules and defaults; a policy of your own can build on it or replace it. A policy in package garage.tools can also withhold MCP tools from an assistant (deny contains \"rag_agent\" if ...). A change applies to the next read."
 
     /// What the list says with nothing stored.
     static let nothingStored = "No policies of your own. The built-in policy decides from the rules and defaults; with none of those, every caller sees every document."
@@ -60,6 +60,14 @@ enum AccessPresentation {
     static func callerLine(_ result: GarageAccessTestResult) -> String {
         let registration = result.registrationName.isEmpty ? "" : " (\(result.registrationName))"
         return "\(result.callerKind) over \(result.transport)\(registration)"
+    }
+
+    /// The MCP tools line, for an assistant; nil for the app and `garage`, which have no tools.
+    static func toolsText(_ result: GarageAccessTestResult) -> String? {
+        guard result.callerKind == "mcp" else { return nil }
+        if result.withheldTools.isEmpty { return "Every MCP tool" }
+        if result.tools.isEmpty { return "None; every tool is withheld" }
+        return "Withholds \(result.withheldTools.joined(separator: ", "))"
     }
 
     /// The filter with its parameters, as the read would bind them.

@@ -69,4 +69,14 @@ final class AccessPresentationTests: XCTestCase {
             "NOT (d.corpus_class::text = ANY($1::text[]))\n$1 = [\"communication\"]"
         )
     }
+
+    func testAnAssistantsToolsReadAsWhatIsWithheld() {
+        XCTAssertNil(AccessPresentation.toolsText(GarageAccessTestResult(callerKind: "app")))
+        let every = GarageAccessTestResult(callerKind: "mcp", tools: ["rag_search", "rag_agent"])
+        XCTAssertEqual(AccessPresentation.toolsText(every), "Every MCP tool")
+        let some = GarageAccessTestResult(callerKind: "mcp", tools: ["rag_search"], withheldTools: ["rag_ask", "rag_agent"])
+        XCTAssertEqual(AccessPresentation.toolsText(some), "Withholds rag_ask, rag_agent")
+        let none = GarageAccessTestResult(callerKind: "mcp", withheldTools: ["rag_search"])
+        XCTAssertEqual(AccessPresentation.toolsText(none), "None; every tool is withheld")
+    }
 }

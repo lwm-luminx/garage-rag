@@ -31,6 +31,12 @@ static ARGUMENTS: LazyLock<HashMap<String, Arguments>> = LazyLock::new(|| {
         .collect()
 });
 
+/// The tools' names, in `tools/list`'s order: what the server offers before the access policy's
+/// tool decision (`Corpus::tools`) withholds any.
+pub fn tool_names() -> Vec<String> {
+    TOOLS.iter().filter_map(|tool| tool.get("name")?.as_str().map(str::to_owned)).collect()
+}
+
 /// One tool's definition.
 pub fn tool_schema(name: &str) -> Option<Value> {
     TOOLS.iter().find(|tool| tool.get("name").and_then(Value::as_str) == Some(name)).cloned()
@@ -57,6 +63,8 @@ pub enum ToolError {
     Unknown(String),
     /// The arguments are not what the schema allows: the client sees pydantic's text.
     Invalid(ValidationError),
+    /// The access policy withholds the tool from this caller (`data.garage.tools.decision`).
+    Denied(String),
     /// The tool failed. The client sees only that it did, as from the Python server; the reason
     /// is logged, and the agent shows it to its model.
     Failed(String),
@@ -121,7 +129,24 @@ fn i32_of(value: i64) -> i32 {
 }
 
 impl Toolbox {
-    /// `tools/call`: the result object, or why there is none.
+    /// `tools/list`: the definitions of the tools the access policy lets `caller` use.
+    ///
+    /// # Errors
+    ///
+    /// [`CorpusError`] when the policy cannot decide.
+    pub fn list(&self, caller: &Caller) -> Result<Vec<Value>, CorpusError> {
+        let allowed = self.corpus.tools(caller, &tool_names())?;
+        Ok(TOOLS
+            .iter()
+            .filter(|tool| {
+                tool.get("name").and_then(Value::as_str).is_some_and(|name| allowed.iter().any(|a| a == name))
+            })
+            .cloned()
+            .collect())
+    }
+
+    /// `tools/call`: the result object, or why there is none. The access policy is asked first, so a
+    /// tool it withholds runs for no client, whichever handler is in front.
     ///
     /// # Errors
     ///
@@ -130,6 +155,9 @@ impl Toolbox {
         let Some(checker) = ARGUMENTS.get(name) else {
             return Err(ToolError::Unknown(name.to_string()));
         };
+        if self.corpus.tools(caller, &[name.to_string()])?.is_empty() {
+            return Err(ToolError::Denied(name.to_string()));
+        }
         let args = checker.validate(given).map_err(ToolError::Invalid)?;
         match name {
             "rag_ask" => self.ask(&args, caller),
@@ -175,6 +203,7 @@ impl Toolbox {
         let args = checker.validate(given).map_err(|error| error.to_string())?;
         self.read(name, &args, caller).map_err(|error| match error {
             ToolError::Failed(message) | ToolError::Unknown(message) => message,
+            ToolError::Denied(name) => format!("{name} is not available"),
             ToolError::Invalid(error) => error.to_string(),
         })
     }
@@ -239,8 +268,13 @@ impl Toolbox {
             history: agent::history_from(args.get("history")),
         };
         let question = text(args, "question").unwrap_or_default();
+        // The agent's model gets only the tools the policy lets this caller use.
+        let offered = agent::agent_tools();
+        let names: Vec<String> = offered.iter().map(|tool| tool.name.clone()).collect();
+        let allowed = self.corpus.tools(caller, &names)?;
+        let tools: Vec<_> = offered.into_iter().filter(|tool| allowed.contains(&tool.name)).collect();
         let run = |name: &str, given: &Map<String, Value>| self.run_read(name, given, caller);
-        Ok(agent::run_agent(&question, &agent::agent_tools(), model.as_ref(), &run, &options)?)
+        Ok(agent::run_agent(&question, &tools, model.as_ref(), &run, &options)?)
     }
 }
 

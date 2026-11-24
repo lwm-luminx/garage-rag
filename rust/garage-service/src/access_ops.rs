@@ -8,8 +8,8 @@
 
 use std::collections::BTreeMap;
 
-use garage_access::{Caller, Registration, SqlValue};
-use garage_access_rego::policy::{BUILTIN_RULES, Module};
+use garage_access::{Caller, CallerKind, Registration, SqlValue};
+use garage_access_rego::policy::{BUILTIN_RULES, BUILTIN_TOOLS, Module};
 use garage_access_rego::rules::{DOOR_CLIENT, DOOR_CLIENT_HEADER, Effect, Rule};
 use garage_access_rego::{RulesPolicy, store};
 use garage_facade::proto;
@@ -49,7 +49,8 @@ async fn ready(gate: &AccessGate, client: &Client) -> Result<&'static RulesPolic
 /// The server.
 pub async fn list_policies(gate: &AccessGate, client: &Client) -> Result<proto::ListAccessPoliciesResponse> {
     let mut response = proto::ListAccessPoliciesResponse {
-        builtin_rego: BUILTIN_RULES.to_owned(),
+        // Both built-in modules: the document decision and the tool decision.
+        builtin_rego: format!("{BUILTIN_RULES}\n{BUILTIN_TOOLS}"),
         engine: gate.name().to_owned(),
         editable: gate.rego().is_some(),
         ..Default::default()
@@ -308,6 +309,16 @@ pub async fn test(
     let draft = request.draft.map(|d| Module { name: d.name.trim().to_owned(), rego: d.rego });
     let explanation =
         policy.explain(client, &caller, false, draft.as_ref()).await.map_err(|e| ServiceError::invalid(e.0))?;
+    // Only an assistant reaches the MCP tools; the app and `garage` have none to withhold.
+    let (tools, withheld_tools) = if caller.kind == CallerKind::Mcp {
+        let offered = garage_mcp::tools::tool_names();
+        let allowed =
+            policy.tools(client, &caller, &offered, draft.as_ref()).await.map_err(|e| ServiceError::invalid(e.0))?;
+        let withheld = offered.into_iter().filter(|name| !allowed.contains(name)).collect();
+        (allowed, withheld)
+    } else {
+        (Vec::new(), Vec::new())
+    };
     let rules = store::list_rules(client).await.map_err(|e| store_error(&e))?;
     let mut content_rules = Vec::new();
     for name in &explanation.content_rules {
@@ -332,5 +343,7 @@ pub async fn test(
         filter_sql,
         filter_params,
         registration_name: caller.registration.map(|r| r.name).unwrap_or_default(),
+        tools,
+        withheld_tools,
     })
 }

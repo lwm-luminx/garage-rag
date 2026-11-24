@@ -15,6 +15,9 @@
 //! has not been evaluated against is hidden from that DENY's targets until it has: the rules fail
 //! closed.
 //!
+//! The same policies decide which MCP tools a caller may list and call (`data.garage.tools.decision`,
+//! `policy/tools.rego`): every tool, unless a stored module in package `garage.tools` adds it to `deny`.
+//!
 //! GarageService installs [`RulesPolicy`] unless the build's access extension registers a policy of
 //! its own, and its access calls (`ListAccessPolicies`, `PutAccessPolicy`, `TestAccess`, ...) edit
 //! these tables.
@@ -140,6 +143,41 @@ impl RulesPolicy {
         })
     }
 
+    /// Which of `tools` `caller` may list and call (`data.garage.tools.decision`), decided with `draft`
+    /// as [`explain`](Self::explain) does. With no stored policy every tool is allowed and the engine
+    /// is not asked: the rules and defaults hold documents, not tools.
+    ///
+    /// # Errors
+    ///
+    /// The tables cannot be read, or the policy cannot decide.
+    pub async fn tools(
+        &self,
+        client: &tokio_postgres::Client,
+        caller: &Caller,
+        tools: &[String],
+        draft: Option<&policy::Module>,
+    ) -> Result<Vec<String>, AccessError> {
+        self.ready(client).await?;
+        let mut modules =
+            store::list_policies(client).await.map_err(|e| AccessError::new(format!("reading policies: {e}")))?;
+        if draft.is_none() && modules.is_empty() {
+            return Ok(tools.to_vec());
+        }
+        let rules = store::list_rules(client).await.map_err(|e| AccessError::new(format!("reading rules: {e}")))?;
+        let defaults =
+            store::list_defaults(client).await.map_err(|e| AccessError::new(format!("reading defaults: {e}")))?;
+        let policy = match draft {
+            Some(draft) => {
+                modules = store::with_module(modules, draft);
+                Arc::new(Policy::new(&modules).map_err(|e| AccessError::new(e.to_string()))?)
+            }
+            None => self.policy(&modules)?,
+        };
+        policy
+            .tools(&policy::tools_input(caller, &target_names(caller), tools), &policy::data(&rules, &defaults))
+            .map_err(|e| AccessError::new(e.to_string()))
+    }
+
     /// Creates the access tables if this process has not yet, as before its first read.
     ///
     /// # Errors
@@ -181,6 +219,15 @@ impl AccessPolicy for RulesPolicy {
         caller: &'a Caller,
     ) -> BoxFuture<'a, Result<Option<SqlFilter>, AccessError>> {
         Box::pin(self.decide(client, caller))
+    }
+
+    fn tool_filter<'a>(
+        &'a self,
+        client: &'a tokio_postgres::Client,
+        caller: &'a Caller,
+        tools: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<String>, AccessError>> {
+        Box::pin(self.tools(client, caller, tools, None))
     }
 
     // A removed registration's id is never minted again, so rules naming it can never match a later

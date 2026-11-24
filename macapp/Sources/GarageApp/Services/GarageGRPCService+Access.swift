@@ -114,7 +114,9 @@ extension GarageGRPCService: GarageAccessBackend {
             contentRules: response.contentRules.map { (name: $0.name, pending: $0.pending) },
             seesEverything: response.seesEverything,
             filterSQL: response.filterSql,
-            filterParams: response.filterParams
+            filterParams: response.filterParams,
+            tools: response.tools,
+            withheldTools: response.withheldTools
         )
     }
 }

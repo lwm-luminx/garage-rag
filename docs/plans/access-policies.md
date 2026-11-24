@@ -98,6 +98,38 @@ new listener. 0.12 is the newest that builds on the workspace's Rust 1.92.
   built-in one (read-only), each edited as text with Check, Save, Revert and Delete, and a Test panel
   that runs `TestAccess` as any caller with the editor's text as it stands.
 
+## Tools
+
+The same engine decides which MCP tools a caller may list and call (Rick, 2026-11-24: "connect the
+MCP server into the OPA agent"). The built-in module `policy/tools.rego` owns
+`data.garage.tools.decision`, `{"allowed": [...]}`: every tool the server offers (`input.tools`) that no
+policy denies. A stored module withholds a tool by adding to `deny` in the same package, over the same
+input as the document decision:
+
+```rego
+package garage.tools
+
+# Unregistered assistants get the read tools only.
+deny contains name if {
+	input.caller.kind == "mcp"
+	input.caller.registration == null
+	some name in {"rag_ask", "rag_generate", "rag_agent"}
+}
+```
+
+- **GarageService** answers `CorpusTools` (a caller and the offered names; the allowed ones) through
+  the access policy's `tool_filter` (garage-access; every tool by default). With no stored module the
+  engine is not asked. A module that takes the built-in decision, or makes `deny` something other than a
+  set, fails its Check.
+- **garage-mcp** asks before `tools/list`, which lists only the allowed tools, and before each
+  `tools/call` in `Toolbox::call`, so a withheld tool runs behind no handler; the client is told it is
+  not available. `rag_agent` offers its model only the allowed read tools. When the policy cannot
+  decide, `tools/list` is an error and every call fails: never the whole list.
+- **TestAccess** returns an assistant's `tools` and `withheld_tools`; `garage access test` and the Access
+  page's Test panel show them.
+- A tool decides what a client may invoke, not what it may read: `rag_ask` still searches when
+  `rag_search` is withheld, and every read is still held to the document decision.
+
 ## The editor seam
 
 `GarageAppExtensionKit` gains `GarageAccessBackend` (the access calls as plain values) and
@@ -110,4 +142,4 @@ of the app but that protocol, and edits the same rows the text editor and `garag
 - The Windows app has no Access page (its sidebar has no Chat page either).
 - Importing `.rego` files from a folder, and a bundle of policies per library.
 - Hooks on the reads still marked `NotYet` in `READ_PATHS` (facts, the graph, `ListSources`, `GetStats`).
-- The MCP server's tool policy in Rego (enterprise's P4) and the cluster (P5).
+- Per-argument tool rules (a tool allowed with some arguments only), and the cluster (P5).

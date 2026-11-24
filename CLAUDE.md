@@ -632,6 +632,9 @@ above maps them to crates); the Rust code keeps their names in its docs.
   Rego modules evaluated in-process by regorus once per read, over the stored rules and defaults
   (`data/sql/027_access_policies.sql`), whose answer (boundaries per target) becomes one `SqlFilter`. With
   nothing stored a read skips the engine and sees everything; a policy that cannot decide fails the read.
+  The same engine decides which MCP tools a caller may list and call (`data.garage.tools.decision`,
+  `policy/tools.rego`: a stored module adds names to `deny` in package `garage.tools`): garage-mcp asks
+  GarageService's `CorpusTools` before `tools/list` and in `Toolbox::call`, and fails closed.
   GarageService's access calls (`access_ops.rs`: `ListAccessPolicies`, `PutAccessPolicy` with `check_only`,
   `RemoveAccessPolicy`, rules, defaults, `TestAccess` with an unsaved draft; the writes config-changing),
   `garage access …` and the Mac app's Access page (a Rego text editor and a Test panel) edit it. An

@@ -91,6 +91,15 @@ impl AccessGate {
         Ok(Self::caller_from(&self.policy.caller_headers(), given, registration))
     }
 
+    /// Which of `tools` the MCP `caller` may list and call.
+    ///
+    /// # Errors
+    ///
+    /// The policy failed; the message names no tool.
+    pub async fn tools(&self, client: &Client, caller: &Caller, tools: &[String]) -> Result<Vec<String>, ServiceError> {
+        self.policy.tool_filter(client, caller, tools).await.map_err(|error| refused(self.policy.name(), &error))
+    }
+
     /// A registration was uninstalled; tells the policy, after the row is gone.
     pub async fn registration_removed(&self, registration_id: &str) {
         self.policy.on_registration_removed(registration_id).await;
@@ -241,6 +250,8 @@ pub const READ_PATHS: &[(&str, ReadPath)] = &[
     ("CorpusSources", ReadPath::Asks),
     ("CorpusAuthors", ReadPath::Asks),
     ("CorpusStats", ReadPath::Asks),
+    // Reads no document: asks the policy's tool decision, not its document filter.
+    ("CorpusTools", ReadPath::NotARead),
 ];
 
 #[cfg(test)]
