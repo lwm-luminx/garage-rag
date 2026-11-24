@@ -247,6 +247,22 @@ pub trait AccessPolicy: Send + Sync {
         Box::pin(async { Ok(None) })
     }
 
+    /// Which of `tools`, the MCP tools the server offers, `caller` may list and call, in the order
+    /// given. The default withholds none.
+    ///
+    /// # Errors
+    ///
+    /// Anything that keeps the policy from deciding; the MCP request then fails.
+    fn tool_filter<'a>(
+        &'a self,
+        client: &'a tokio_postgres::Client,
+        caller: &'a Caller,
+        tools: &'a [String],
+    ) -> BoxFuture<'a, Result<Vec<String>, AccessError>> {
+        let _ = (client, caller);
+        Box::pin(async move { Ok(tools.to_vec()) })
+    }
+
     /// A registration was uninstalled and its row deleted, after that committed.
     fn on_registration_removed<'a>(&'a self, registration_id: &'a str) -> BoxFuture<'a, ()> {
         let _ = registration_id;

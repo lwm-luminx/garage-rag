@@ -28,6 +28,12 @@ use crate::store::StoredRule;
 
 /// The built-in policy: the stored rules as Rego.
 pub const BUILTIN_RULES: &str = include_str!("../policy/rules.rego");
+/// The built-in tool decision, which stored policies extend with `deny` in its package.
+pub const BUILTIN_TOOLS: &str = include_str!("../policy/tools.rego");
+/// The tool decision's package, which stored policies may add `deny` to.
+const TOOLS_PACKAGE: &str = "data.garage.tools";
+/// The rule the MCP server's tool decision is read from.
+pub const TOOLS_ENTRY_POINT: &str = "data.garage.tools.decision";
 /// The package a policy answers in, and the rule the service reads.
 pub const PACKAGE: &str = "data.garage.access";
 pub const ENTRY_POINT: &str = "data.garage.access.decision";
@@ -183,6 +189,13 @@ pub fn input(caller: &Caller, targets: &[String]) -> Value {
     })
 }
 
+/// The input of a tool decision: [`input`] and the tools the MCP server offers.
+pub fn tools_input(caller: &Caller, targets: &[String], tools: &[String]) -> Value {
+    let mut value = input(caller, targets);
+    value["tools"] = json!(tools);
+    value
+}
+
 /// The data a policy reads: the stored rules and defaults.
 pub fn data(rules: &[StoredRule], defaults: &[(String, Effect)]) -> Value {
     json!({
@@ -224,6 +237,7 @@ impl Policy {
             .add_policy("builtin/rules.rego".into(), BUILTIN_RULES.into())
             .map_err(|e| PolicyError(format!("the built-in policy: {e}")))?;
         let builtin_packages = engine.get_packages().map_err(|e| PolicyError(e.to_string()))?;
+        let mut adds_to_tools = false;
         for module in modules {
             let package = engine
                 .add_policy(format!("{}.rego", module.name), module.rego.clone())
@@ -231,8 +245,32 @@ impl Policy {
             if builtin_packages.contains(&package) {
                 return Err(PolicyError(format!("policy {}: {package} is the built-in rules' package", module.name)));
             }
+            adds_to_tools |= package == TOOLS_PACKAGE;
         }
+        // After the stored modules, which may add to its package (`deny`) but not take its decision.
+        engine
+            .add_policy("builtin/tools.rego".into(), BUILTIN_TOOLS.into())
+            .map_err(|e| PolicyError(format!("the built-in tool policy: {e}")))?;
         let packages = engine.get_packages().map_err(|e| PolicyError(e.to_string()))?;
+        if adds_to_tools {
+            // A module that adds to the tools package is tried once now, so one that takes the
+            // built-in decision or defines `deny` as something other than a set fails its Check, not
+            // the first tools/list after it is saved.
+            let mut trial = engine.clone();
+            trial.set_input(
+                regorus::Value::from_json_str(r#"{"caller": {}, "targets": [], "tools": ["a tool"]}"#)
+                    .map_err(|e| PolicyError(e.to_string()))?,
+            );
+            match trial.eval_rule(TOOLS_ENTRY_POINT.into()) {
+                Ok(regorus::Value::Undefined) => {
+                    return Err(PolicyError(format!(
+                        "{TOOLS_ENTRY_POINT} is undefined: `deny` must be a set of tool names"
+                    )));
+                }
+                Ok(_) => {}
+                Err(e) => return Err(PolicyError(format!("the tool policy: {e}"))),
+            }
+        }
         if !packages.iter().any(|p| p == PACKAGE) {
             engine
                 .add_policy("builtin/entry.rego".into(), DEFAULT_ENTRY.into())
@@ -252,6 +290,34 @@ impl Policy {
     ///
     /// The evaluation fails, runs out of time, or leaves the decision undefined or malformed.
     pub fn decide(&self, input: &Value, data: &Value) -> Result<Decision, PolicyError> {
+        let json = self.eval(ENTRY_POINT, input, data)?;
+        Decision::from_json(&json)
+    }
+
+    /// The tools `input.tools` names that the caller may list and call, in the order given. A name the
+    /// policy answers that was not offered is ignored: a policy withholds tools, never adds them.
+    ///
+    /// # Errors
+    ///
+    /// The evaluation fails, runs out of time, or answers something other than `{"allowed": [names]}`.
+    pub fn tools(&self, input: &Value, data: &Value) -> Result<Vec<String>, PolicyError> {
+        let json = self.eval(TOOLS_ENTRY_POINT, input, data)?;
+        let allowed = json
+            .get("allowed")
+            .and_then(Value::as_array)
+            .ok_or_else(|| PolicyError(format!("{TOOLS_ENTRY_POINT} is not {{\"allowed\": [...]}}")))?;
+        let allowed: Vec<&str> = allowed
+            .iter()
+            .map(|name| {
+                name.as_str()
+                    .ok_or_else(|| PolicyError(format!("{TOOLS_ENTRY_POINT} names a tool that is not a string")))
+            })
+            .collect::<Result<_, _>>()?;
+        let offered = input.get("tools").and_then(Value::as_array).cloned().unwrap_or_default();
+        Ok(offered.iter().filter_map(Value::as_str).filter(|name| allowed.contains(name)).map(str::to_owned).collect())
+    }
+
+    fn eval(&self, entry: &str, input: &Value, data: &Value) -> Result<Value, PolicyError> {
         // Through text, not regorus's From<serde_json::Value>: under Bazel regorus links its own
         // serde_json (the root's crates hub), a different crate from the one garage-rag's hub gives this one.
         let to_rego = |value: &Value, what: &str| {
@@ -261,14 +327,12 @@ impl Policy {
         let mut engine = self.engine.clone();
         engine.add_data(to_rego(data, "data")?).map_err(|e| PolicyError(format!("the policy's data: {e}")))?;
         engine.set_input(to_rego(input, "input")?);
-        let value = engine.eval_rule(ENTRY_POINT.into()).map_err(|e| PolicyError(format!("the policy: {e}")))?;
+        let value = engine.eval_rule(entry.into()).map_err(|e| PolicyError(format!("the policy: {e}")))?;
         if value == regorus::Value::Undefined {
-            return Err(PolicyError(format!("the policy leaves {ENTRY_POINT} undefined for this caller")));
+            return Err(PolicyError(format!("the policy leaves {entry} undefined for this caller")));
         }
-        let json: Value =
-            serde_json::from_str(&value.to_json_str().map_err(|e| PolicyError(format!("the policy's decision: {e}")))?)
-                .map_err(|e| PolicyError(format!("the policy's decision: {e}")))?;
-        Decision::from_json(&json)
+        serde_json::from_str(&value.to_json_str().map_err(|e| PolicyError(format!("the policy's decision: {e}")))?)
+            .map_err(|e| PolicyError(format!("the policy's decision: {e}")))
     }
 }
 
@@ -416,6 +480,45 @@ extra := [{"default": "allow", "deny": [{"corpus_class": "communication"}]}] if 
             let policy = Policy::new(&[module(&format!("package garage.access\n\ndecision := {decision}\n"))]).unwrap();
             assert!(policy.decide(&input, &data(&[], &[])).is_err(), "{decision}");
         }
+    }
+
+    fn offered() -> Vec<String> {
+        ["rag_search", "rag_get_document", "rag_agent"].map(String::from).to_vec()
+    }
+
+    #[test]
+    fn every_tool_is_allowed_until_a_policy_denies_one() {
+        let caller = mcp();
+        let input = tools_input(&caller, &target_names(&caller), &offered());
+        assert_eq!(Policy::builtin().tools(&input, &data(&[], &[])).unwrap(), offered());
+        let policy = Policy::new(&[Module {
+            name: "no-agent".into(),
+            rego: "package garage.tools\n\ndeny contains \"rag_agent\" if input.caller.kind == \"mcp\"\n\ndeny contains \"not_offered\"\n"
+                .into(),
+        }])
+        .unwrap();
+        assert_eq!(policy.tools(&input, &data(&[], &[])).unwrap(), ["rag_search", "rag_get_document"]);
+        let app = tools_input(&Caller::app(), &["app".into()], &offered());
+        assert_eq!(policy.tools(&app, &data(&[], &[])).unwrap(), offered());
+        // The access decision is unchanged beside it.
+        assert_eq!(decide(&policy, &caller, &[], &[]).boundaries.len(), 1);
+    }
+
+    #[test]
+    fn a_tool_policy_that_cannot_decide_fails_closed() {
+        let module = |rego: &str| Module { name: "t".into(), rego: rego.into() };
+        // Taking the built-in decision, or a `deny` that is not a set, fails when compiled (Check).
+        let taken = Policy::new(&[module("package garage.tools\n\ndecision := {\"allowed\": []}\n")]);
+        assert!(taken.err().unwrap().0.contains("conflicts"));
+        let scalar = Policy::new(&[module("package garage.tools\n\ndeny := \"rag_agent\"\n")]);
+        assert!(scalar.err().unwrap().0.contains("must be a set"));
+        // An error while deciding fails the decision rather than allowing the tool.
+        let policy = Policy::new(&[module(
+            "package garage.tools\n\ndeny contains name if { some name in input.tools; input.caller.kind == \"app\"; to_number(\"x\") == 1 }\n",
+        )])
+        .unwrap();
+        let input = tools_input(&Caller::app(), &["app".into()], &offered());
+        assert!(policy.tools(&input, &data(&[], &[])).is_err());
     }
 
     #[test]

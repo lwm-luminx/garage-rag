@@ -276,6 +276,14 @@ const TEST: Command = Command {
                 out::echo(&format!("  ${} = {value}", index + 1));
             }
         }
+        if r.caller_kind == "mcp" {
+            if r.withheld_tools.is_empty() {
+                out::echo("tools:    every MCP tool");
+            } else {
+                out::echo(&format!("tools:    {}", r.tools.join(", ")));
+                out::echo(&format!("withheld: {}", r.withheld_tools.join(", ")));
+            }
+        }
         Ok(())
     },
 };

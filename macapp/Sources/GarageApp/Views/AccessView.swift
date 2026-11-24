@@ -271,6 +271,12 @@ struct AccessView: View {
                     Text("Decided by").foregroundStyle(.secondary)
                     Text(AccessPresentation.decidedBy(result)).font(.caption)
                 }
+                if let tools = AccessPresentation.toolsText(result) {
+                    GridRow(alignment: .top) {
+                        Text("Tools").foregroundStyle(.secondary)
+                        Text(tools).font(.caption.monospaced())
+                    }
+                }
                 GridRow(alignment: .top) {
                     Text("Filter").foregroundStyle(.secondary)
                     Text(AccessPresentation.filterText(result)).font(.caption.monospaced()).textSelection(.enabled)

@@ -146,6 +146,9 @@ pub const ASK: Command = Command {
                 return Err(Failure::failed(format!("[red]model unavailable[/red]: {reason}")));
             }
             Err(ToolError::Invalid(error)) => return Err(Failure::usage(error.to_string())),
+            Err(ToolError::Denied(name)) => {
+                return Err(Failure::failed(format!("{name} is withheld from this caller by the access policy")));
+            }
         };
         if as_json {
             // Plain print: no wrapping or markup in machine output.

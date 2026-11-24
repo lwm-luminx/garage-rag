@@ -1430,6 +1430,12 @@ pub struct TestAccessResponse {
     /// The caller's registration, for mcp: and door: callers.
     #[prost(string, tag = "10")]
     pub registration_name: ::prost::alloc::string::String,
+    /// The MCP tools the caller may list and call (data.garage.tools.decision), with the draft
+    /// too, and the ones the policy withholds. Both empty for a caller that is not an assistant.
+    #[prost(string, repeated, tag = "11")]
+    pub tools: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "12")]
+    pub withheld_tools: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct BeginIngestSessionRequest {
@@ -1811,6 +1817,20 @@ pub struct CorpusAuthorsRequest {
 pub struct CorpusStatsRequest {
     #[prost(message, optional, tag = "1")]
     pub caller: ::core::option::Option<CorpusCaller>,
+}
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CorpusToolsRequest {
+    #[prost(message, optional, tag = "1")]
+    pub caller: ::core::option::Option<CorpusCaller>,
+    /// The tools the MCP server offers, by name.
+    #[prost(string, repeated, tag = "2")]
+    pub tools: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CorpusToolsResponse {
+    /// The ones the caller may list and call, in the order asked.
+    #[prost(string, repeated, tag = "1")]
+    pub allowed: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CorpusReadResponse {
@@ -3301,6 +3321,32 @@ pub mod garage_service_client {
                 .insert(GrpcMethod::new("garage.GarageService", "CorpusStats"));
             self.inner.unary(req, path, codec).await
         }
+        /// Which of the MCP server's tools the caller may list and call (the access policy's
+        /// data.garage.tools.decision). garage-mcp asks before tools/list and each tools/call.
+        pub async fn corpus_tools(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CorpusToolsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusToolsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::unknown(
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic_prost::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/garage.GarageService/CorpusTools",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("garage.GarageService", "CorpusTools"));
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -3744,6 +3790,15 @@ pub mod garage_service_server {
             request: tonic::Request<super::CorpusStatsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::CorpusReadResponse>,
+            tonic::Status,
+        >;
+        /// Which of the MCP server's tools the caller may list and call (the access policy's
+        /// data.garage.tools.decision). garage-mcp asks before tools/list and each tools/call.
+        async fn corpus_tools(
+            &self,
+            request: tonic::Request<super::CorpusToolsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CorpusToolsResponse>,
             tonic::Status,
         >;
     }
@@ -6412,6 +6467,51 @@ pub mod garage_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let method = CorpusStatsSvc(inner);
+                        let codec = tonic_prost::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/garage.GarageService/CorpusTools" => {
+                    #[allow(non_camel_case_types)]
+                    struct CorpusToolsSvc<T: GarageService>(pub Arc<T>);
+                    impl<
+                        T: GarageService,
+                    > tonic::server::UnaryService<super::CorpusToolsRequest>
+                    for CorpusToolsSvc<T> {
+                        type Response = super::CorpusToolsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CorpusToolsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                <T as GarageService>::corpus_tools(&inner, request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let method = CorpusToolsSvc(inner);
                         let codec = tonic_prost::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

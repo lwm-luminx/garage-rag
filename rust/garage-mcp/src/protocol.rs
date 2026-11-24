@@ -9,7 +9,7 @@ use serde_json::{Map, Value, json};
 
 use crate::chat::{Chat, ChatModel};
 use crate::corpus::{Caller, Corpus};
-use crate::tools::{ChatFactory, TOOLS, ToolError, Toolbox};
+use crate::tools::{ChatFactory, ToolError, Toolbox};
 
 /// Protocol versions the server speaks, oldest first; a client asking for another gets the newest.
 pub const SUPPORTED_VERSIONS: [&str; 4] = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"];
@@ -19,6 +19,7 @@ pub const SERVER_NAME: &str = "garage-rag";
 
 const METHOD_NOT_FOUND: i64 = -32601;
 const INVALID_PARAMS: i64 = -32602;
+const INTERNAL_ERROR: i64 = -32603;
 
 /// What answers MCP's JSON-RPC messages for a transport ([`crate::http::Endpoint`], [`crate::stdio::serve`]):
 /// [`Server`] here, or a handler of another crate that puts its own rules in front of a [`Server`] and still
@@ -69,7 +70,7 @@ impl Server {
         let outcome = match method {
             "initialize" => Ok(initialize(&params)),
             "ping" => Ok(json!({})),
-            "tools/list" => Ok(json!({"tools": *TOOLS})),
+            "tools/list" => self.list_tools(caller),
             "tools/call" => self.call_tool(&params, caller),
             "prompts/list" => Ok(json!({"prompts": []})),
             "resources/list" => Ok(json!({"resources": []})),
@@ -80,6 +81,20 @@ impl Server {
             Ok(result) => json!({"jsonrpc": "2.0", "id": id, "result": result}),
             Err(error) => json!({"jsonrpc": "2.0", "id": id, "error": error}),
         })
+    }
+
+    /// The tools the access policy lets `caller` use; when it cannot decide, an error, never the
+    /// whole list.
+    fn list_tools(&self, caller: &Caller) -> Result<Value, Value> {
+        match self.toolbox.list(caller) {
+            Ok(tools) => Ok(json!({"tools": tools})),
+            Err(error) => {
+                eprintln!("garage-mcp: tools/list: {error}");
+                Err(
+                    json!({"code": INTERNAL_ERROR, "message": "the access policy could not decide which tools to offer"}),
+                )
+            }
+        }
     }
 
     fn call_tool(&self, params: &Value, caller: &Caller) -> Result<Value, Value> {
@@ -97,6 +112,7 @@ impl Server {
                 "structuredContent": result,
             }),
             Err(ToolError::Unknown(name)) => tool_error(&format!("Unknown tool: {name}")),
+            Err(ToolError::Denied(name)) => tool_error(&format!("Tool {name} is not available to this client")),
             Err(ToolError::Invalid(error)) => tool_error(&format!("Error executing tool {name}: {error}")),
             Err(ToolError::Failed(reason)) => {
                 // As the Python server: the reason stays here, in the log.
@@ -135,4 +151,93 @@ fn initialize(params: &Value) -> Value {
 /// Whether a message is a request (it has a method and an id), which gets a reply.
 pub fn is_request(message: &Value) -> bool {
     message.get("method").is_some() && message.get("id").is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use serde_json::{Value, json};
+
+    use super::*;
+    use crate::chat::{Chat, ChatError};
+    use crate::corpus::{Corpus, CorpusError, DocumentQuery, SearchQuery, Transport};
+
+    /// A corpus whose access policy withholds rag_stats from callers without a token, and cannot
+    /// decide for the token `broken`.
+    struct Withholding;
+
+    impl Corpus for Withholding {
+        fn search(&self, _: &Caller, _: &SearchQuery) -> Result<Value, CorpusError> {
+            Ok(json!({"query": "", "results": []}))
+        }
+        fn document(&self, _: &Caller, _: &DocumentQuery) -> Result<Value, CorpusError> {
+            Ok(json!({}))
+        }
+        fn sources(&self, _: &Caller) -> Result<Value, CorpusError> {
+            Ok(json!({"sources": []}))
+        }
+        fn authors(&self, _: &Caller, _: i32) -> Result<Value, CorpusError> {
+            Ok(json!({"authors": []}))
+        }
+        fn stats(&self, _: &Caller) -> Result<Value, CorpusError> {
+            Ok(json!({"documents": 1}))
+        }
+        fn setting(&self, _: &str) -> Result<Value, CorpusError> {
+            Ok(Value::Null)
+        }
+        fn tools(&self, caller: &Caller, tools: &[String]) -> Result<Vec<String>, CorpusError> {
+            match caller.registration_token.as_deref() {
+                Some("broken") => Err(CorpusError("the policy cannot decide".into())),
+                Some(_) => Ok(tools.to_vec()),
+                None => Ok(tools.iter().filter(|name| *name != "rag_stats").cloned().collect()),
+            }
+        }
+    }
+
+    fn server() -> Server {
+        let chat: ChatFactory = Arc::new(|_| Err::<Box<dyn Chat>, _>(ChatError("no model in tests".into())));
+        Server::with_chat(Arc::new(Withholding), chat)
+    }
+
+    fn caller(token: Option<&str>) -> Caller {
+        let mut caller = Caller::new(Transport::Http);
+        caller.registration_token = token.map(str::to_owned);
+        caller
+    }
+
+    fn names(reply: &Value) -> Vec<String> {
+        reply["result"]["tools"].as_array().unwrap().iter().map(|t| t["name"].as_str().unwrap().to_owned()).collect()
+    }
+
+    #[test]
+    fn the_access_policy_decides_which_tools_a_caller_lists_and_calls() {
+        let server = server();
+        let list = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+        let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "rag_stats"}});
+
+        let everything = names(&server.handle(&list, &caller(Some("gmr_1"))).unwrap());
+        assert!(everything.contains(&"rag_stats".to_owned()));
+        let reply = server.handle(&call, &caller(Some("gmr_1"))).unwrap();
+        assert_eq!(reply["result"]["isError"], false, "{reply}");
+
+        let withheld = names(&server.handle(&list, &caller(None)).unwrap());
+        assert!(!withheld.contains(&"rag_stats".to_owned()));
+        assert_eq!(withheld.len(), everything.len() - 1);
+        let reply = server.handle(&call, &caller(None)).unwrap();
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][0]["text"], "Tool rag_stats is not available to this client");
+    }
+
+    #[test]
+    fn a_policy_that_cannot_decide_offers_and_runs_nothing() {
+        let server = server();
+        let list = json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"});
+        let reply = server.handle(&list, &caller(Some("broken"))).unwrap();
+        assert_eq!(reply["error"]["code"], INTERNAL_ERROR, "{reply}");
+        let call = json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "rag_stats"}});
+        let reply = server.handle(&call, &caller(Some("broken"))).unwrap();
+        assert_eq!(reply["result"]["isError"], true);
+        assert_eq!(reply["result"]["content"][0]["text"], "Error executing tool rag_stats");
+    }
 }

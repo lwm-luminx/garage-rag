@@ -759,6 +759,17 @@ impl GarageServiceTrait for GarageService {
         ok(proto::CorpusReadResponse { result_json: pyjson::dumps(&result, CORPUS_JSON) })
     }
 
+    async fn corpus_tools(
+        &self,
+        request: Request<proto::CorpusToolsRequest>,
+    ) -> std::result::Result<Response<proto::CorpusToolsResponse>, Status> {
+        let r = request.into_inner();
+        let client = self.client().await?;
+        let caller = self.access.mcp_caller(&client, r.caller.as_ref()).await?;
+        let allowed = self.access.tools(&client, &caller, &r.tools).await?;
+        ok(proto::CorpusToolsResponse { allowed })
+    }
+
     // -- schema and settings ----------------------------------------------------------------
 
     async fn init_db(

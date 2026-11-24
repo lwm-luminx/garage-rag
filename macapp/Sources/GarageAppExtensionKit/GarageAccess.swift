@@ -109,6 +109,10 @@ public struct GarageAccessTestResult: Sendable, Equatable {
     public var filterSQL: String
     /// Each bind parameter of `filterSQL`, `$1` first, as JSON.
     public var filterParams: [String]
+    /// The MCP tools an assistant may list and call (`data.garage.tools.decision`), and the ones the
+    /// policy withholds; both empty for the app and `garage`.
+    public var tools: [String]
+    public var withheldTools: [String]
 
     public init(
         callerKind: String = "",
@@ -120,7 +124,9 @@ public struct GarageAccessTestResult: Sendable, Equatable {
         contentRules: [(name: String, pending: Int64)] = [],
         seesEverything: Bool = true,
         filterSQL: String = "",
-        filterParams: [String] = []
+        filterParams: [String] = [],
+        tools: [String] = [],
+        withheldTools: [String] = []
     ) {
         self.callerKind = callerKind
         self.transport = transport
@@ -132,6 +138,8 @@ public struct GarageAccessTestResult: Sendable, Equatable {
         self.seesEverything = seesEverything
         self.filterSQL = filterSQL
         self.filterParams = filterParams
+        self.tools = tools
+        self.withheldTools = withheldTools
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -141,7 +149,8 @@ public struct GarageAccessTestResult: Sendable, Equatable {
             && lhs.contentRules.map(\.name) == rhs.contentRules.map(\.name)
             && lhs.contentRules.map(\.pending) == rhs.contentRules.map(\.pending)
             && lhs.seesEverything == rhs.seesEverything && lhs.filterSQL == rhs.filterSQL
-            && lhs.filterParams == rhs.filterParams
+            && lhs.filterParams == rhs.filterParams && lhs.tools == rhs.tools
+            && lhs.withheldTools == rhs.withheldTools
     }
 }
 

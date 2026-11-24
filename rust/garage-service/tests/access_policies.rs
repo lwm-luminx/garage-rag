@@ -442,3 +442,74 @@ extra := [{"default": "allow", "deny": [{"corpus_class": "communication"}]}] if 
         })
     });
 }
+
+#[test]
+fn a_tools_policy_withholds_mcp_tools() {
+    with_db(|_pool, url| {
+        Box::pin(async move {
+            let Running { mut client, stop, task } = start(&url).await;
+            let claude = register(&mut client, "claude").await;
+            let offered: Vec<String> = garage_mcp::tools::tool_names();
+            let tools = |token: &str| proto::CorpusToolsRequest { caller: caller(token), tools: offered.clone() };
+
+            // Nothing stored: every tool, for every caller.
+            assert_eq!(client.corpus_tools(tools(&claude)).await.unwrap().into_inner().allowed, offered);
+
+            // Unregistered assistants lose the model tools; a registered one keeps them.
+            let rego = r#"package garage.tools
+
+deny contains name if {
+    input.caller.kind == "mcp"
+    input.caller.registration == null
+    some name in {"rag_ask", "rag_generate", "rag_agent"}
+}
+"#;
+            let policy = proto::AccessPolicy {
+                name: "no-models".into(),
+                rego: rego.into(),
+                enabled: true,
+                ..Default::default()
+            };
+            client
+                .put_access_policy(proto::PutAccessPolicyRequest { policy: Some(policy), check_only: false })
+                .await
+                .unwrap();
+            let unregistered = client.corpus_tools(tools("")).await.unwrap().into_inner().allowed;
+            assert!(unregistered.contains(&"rag_search".to_owned()));
+            for withheld in ["rag_ask", "rag_generate", "rag_agent"] {
+                assert!(!unregistered.contains(&withheld.to_owned()), "{unregistered:?}");
+            }
+            assert_eq!(client.corpus_tools(tools(&claude)).await.unwrap().into_inner().allowed, offered);
+
+            // TestAccess shows an assistant's tools, and none for the app.
+            let tested = client
+                .test_access(proto::TestAccessRequest { caller: "mcp:unregistered".into(), ..Default::default() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert_eq!(tested.tools, unregistered);
+            assert_eq!(tested.withheld_tools, ["rag_ask", "rag_generate", "rag_agent"]);
+            let app = client
+                .test_access(proto::TestAccessRequest { caller: "app".into(), ..Default::default() })
+                .await
+                .unwrap()
+                .into_inner();
+            assert!(app.tools.is_empty());
+
+            // A tools module that takes the built-in decision is refused when it is checked.
+            let taken = proto::AccessPolicy {
+                name: "taken".into(),
+                rego: "package garage.tools\n\ndecision := {\"allowed\": []}\n".into(),
+                enabled: true,
+                ..Default::default()
+            };
+            let error = client
+                .put_access_policy(proto::PutAccessPolicyRequest { policy: Some(taken), check_only: true })
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument, "{error:?}");
+            let _ = stop.send(());
+            task.await.unwrap().unwrap();
+        })
+    });
+}
