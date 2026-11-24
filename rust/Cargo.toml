@@ -5,6 +5,7 @@ resolver = "3"
 members = [
     "garage-access",
     "garage-access-none",
+    "garage-access-rego",
     "garage-cli",
     "garage-cli-uniffi",
     "garage-embed",
@@ -34,6 +35,7 @@ members = [
 default-members = [
     "garage-access",
     "garage-access-none",
+    "garage-access-rego",
     "garage-cli",
     "garage-cli-uniffi",
     "garage-embed",
@@ -71,6 +73,7 @@ publish = false
 garage-access = { path = "garage-access" }
 # The access extension this build links (docs/plans/access-hooks.md): none, in garage-rag.
 garage-access-extension = { path = "garage-access-none", package = "garage-access-none" }
+garage-access-rego = { path = "garage-access-rego" }
 garage-embed = { path = "garage-embed" }
 garage-cli-uniffi = { path = "garage-cli-uniffi" }
 garage-embed-uniffi = { path = "garage-embed-uniffi" }
@@ -103,6 +106,10 @@ plist = "1.8"
 rusqlite = { version = "0.40.2", features = ["bundled"] }
 prost = "0.14"
 regex = "1.13"
+# Rego, in-process (docs/plans/access-policies.md): Microsoft's pure-Rust OPA engine, with only the
+# built-ins a policy over a caller needs: no `http` (http.send), no `opa-runtime` (opa.runtime()).
+# 0.13 and later need a newer Rust than the toolchain.
+regorus = { version = "0.12", default-features = false, features = ["arc", "std", "regex", "glob", "time", "semver"] }
 serde_json = { version = "1.0", features = ["preserve_order"] }
 tokio = { version = "1.53", features = ["macros", "rt-multi-thread", "net", "signal"] }
 tokio-stream = { version = "0.1", features = ["net"] }

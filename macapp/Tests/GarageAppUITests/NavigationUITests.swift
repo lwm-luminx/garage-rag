@@ -11,6 +11,7 @@ final class NavigationUITests: GarageUITestCase {
         ("sources", "Add a Source"),
         ("models", "Embed All"),
         ("mcp", "Connected Assistants"),
+        ("access", "New Policy"),
         // Data
         ("documents", "Filter by title or URI…"),
         ("facts", "Search facts…"),
@@ -55,7 +56,7 @@ final class NavigationUITests: GarageUITestCase {
         }
         let groups: [(title: String, after: String, before: String)] = [
             ("Configuration", "chat", "sources"),
-            ("Data", "mcp", "documents"),
+            ("Data", "access", "documents"),
             ("Advanced", "search", "database"),
         ]
         for group in groups {

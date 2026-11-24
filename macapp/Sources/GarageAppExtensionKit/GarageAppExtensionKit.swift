@@ -59,6 +59,8 @@ public struct GarageAppExtensionSet {
     public var services: [any GarageAppExtensionService]
     /// Answerers the Chat page offers beside this Mac's own model (`GarageChatProvider`).
     public var chatProviders: [any GarageChatProvider]
+    /// Editors the Access page offers beside its Rego text editor (`GarageAccessEditor`).
+    public var accessEditors: [any GarageAccessEditor]
     /// Whether the Graph page (and the "Show in Graph" actions that lead to it) is offered. Off in
     /// the open-source build, where the knowledge graph is not finished; a build that ships it turns it on.
     public var showsGraph: Bool
@@ -72,6 +74,7 @@ public struct GarageAppExtensionSet {
         mcpServerPanels: [any GarageMCPServerPanel] = [],
         services: [any GarageAppExtensionService] = [],
         chatProviders: [any GarageChatProvider] = [],
+        accessEditors: [any GarageAccessEditor] = [],
         showsGraph: Bool = false,
         showsDistillation: Bool = false
     ) {
@@ -80,6 +83,7 @@ public struct GarageAppExtensionSet {
         self.mcpServerPanels = mcpServerPanels
         self.services = services
         self.chatProviders = chatProviders
+        self.accessEditors = accessEditors
         self.showsGraph = showsGraph
         self.showsDistillation = showsDistillation
     }

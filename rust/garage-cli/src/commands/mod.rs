@@ -1,6 +1,7 @@
 //! The commands, as `garage_rag.cli` declares them: the global options, the groups (`config`,
-//! `graph`, `facts`, `facts prompts`) and the dispatch, with Typer's usage errors.
+//! `graph`, `facts`, `facts prompts`, `access`) and the dispatch, with Typer's usage errors.
 
+mod access;
 mod config;
 mod facts;
 mod mcp;
@@ -106,7 +107,7 @@ static ROOT: Group = Group {
         VERSION,
         serve::SERVE,
     ],
-    groups: &[&config::GROUP, &facts::GRAPH, &facts::FACTS],
+    groups: &[&config::GROUP, &facts::GRAPH, &facts::FACTS, &access::ACCESS],
 };
 
 const VERSION: Command = Command {

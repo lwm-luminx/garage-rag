@@ -402,8 +402,14 @@ with the Status page listing the missing sources and model under Health.
   whenever one of the connections is interrupted or invalidated (a restart or a crash). Their "Llama
   Loader" self test is skipped until the endpoint arrives and re-runs when it does.
 - Views, in sidebar order (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`): **Status** on
-  a row of its own, then **Configuration** (Sources, Models, MCP Server), **Data** (Documents, Facts,
+  a row of its own, then **Configuration** (Sources, Models, MCP Server, Access), **Data** (Documents, Facts,
   Search) and **Advanced** (Database, Services, Logs).
+  - **Access** (`Views/AccessView.swift`) — the Rego access policies
+    ([docs/plans/access-policies.md](../docs/plans/access-policies.md)): the built-in policy read-only,
+    each stored one edited as text with Check, Save, Revert and Delete, and a Test panel that shows what
+    any caller's reads would be held to with the editor's text as it stands. A build's extension adds
+    editors as tabs (`GarageAccessEditor`). Its wording is `AccessPresentation`, tested in
+    `AccessPresentationTests`.
   - **Status** — Health (one "All systems go" row, or one row per problem with the button that
     fixes it and the page it belongs to, including a helper that can't be reached or fails its
     tests, with Restart), Library (one bar over reading, indexing and

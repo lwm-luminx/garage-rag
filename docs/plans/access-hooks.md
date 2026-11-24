@@ -9,6 +9,11 @@ status_kind: active
 
 # Access hooks
 
+> **Status (2026-11-24): Garage ships a policy.** Rick moved the Rego access policies into the open-source
+> app ([Access policies in Rego](access-policies.md)): GarageService now installs
+> `rust/garage-access-rego`'s policy unless the build's extension registers its own, so "Garage itself
+> ships no policy" below no longer holds. With nothing stored, that policy restricts nothing.
+
 > **Status (2026-11-06): ported to Rust.** This plan was written for the Python backend, which left
 > the app on 2026-11-04 ([the backend in Rust](python-removal.md)). The design holds; its mechanics
 > change as follows, and the text below stays as written.

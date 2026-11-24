@@ -74,6 +74,22 @@ service GarageService {
     rpc McpUninstall (McpUninstallRequest) returns (McpUninstallResponse);
     rpc McpStatus (McpStatusRequest) returns (McpStatusResponse);
 
+    // --- Access Policies (docs/plans/access-policies.md) ---
+    // The Rego modules, rules and defaults that decide, on every read, which documents each caller
+    // may see. A change applies to the next read. The writes are config-changing (auth.rs).
+    rpc ListAccessPolicies (ListAccessPoliciesRequest) returns (ListAccessPoliciesResponse);
+    // Saves a module once it compiles with the other enabled ones; `check_only` compiles and saves nothing.
+    rpc PutAccessPolicy (PutAccessPolicyRequest) returns (PutAccessPolicyResponse);
+    rpc RemoveAccessPolicy (RemoveAccessPolicyRequest) returns (RemoveAccessPolicyResponse);
+    rpc ListAccessRules (ListAccessRulesRequest) returns (ListAccessRulesResponse);
+    rpc PutAccessRule (PutAccessRuleRequest) returns (PutAccessRuleResponse);
+    rpc RemoveAccessRule (RemoveAccessRuleRequest) returns (RemoveAccessRuleResponse);
+    rpc ListAccessDefaults (ListAccessDefaultsRequest) returns (ListAccessDefaultsResponse);
+    rpc SetAccessDefault (SetAccessDefaultRequest) returns (SetAccessDefaultResponse);
+    // What a caller's reads would be held to, as the policies stand (or with one module replaced,
+    // for an editor's unsaved text). Reads and writes nothing else.
+    rpc TestAccess (TestAccessRequest) returns (TestAccessResponse);
+
     // --- Database Facade for Ingest & Embed Workers ---
     rpc BeginIngestSession (BeginIngestSessionRequest) returns (BeginIngestSessionResponse);
     rpc PersistScan (PersistScanRequest) returns (PersistScanResponse);
@@ -863,6 +879,147 @@ message McpClientInfo {
 message McpStatusResponse {
     string server_command = 1;
     repeated McpClientInfo clients = 2;
+}
+
+// ---------------------------------------------------------------------------
+// Access Policies (docs/plans/access-policies.md)
+// ---------------------------------------------------------------------------
+
+// A stored Rego module. Its package is its own; `package garage.access` with a `decision` rule
+// replaces the built-in entry point (`data.garage.access.rules.decision`).
+message AccessPolicy {
+    string name = 1;
+    string rego = 2;
+    bool enabled = 3;
+    // RFC 3339; empty on a request.
+    string updated_at = 4;
+}
+
+message ListAccessPoliciesRequest {}
+
+message ListAccessPoliciesResponse {
+    repeated AccessPolicy policies = 1;
+    // The built-in module (package garage.access.rules), read-only: the rules and defaults as Rego.
+    string builtin_rego = 2;
+    // The build's access policy (GetStatus names it too), and whether these calls edit it: false
+    // when a build links another extension, whose own tables these are not.
+    string engine = 3;
+    bool editable = 4;
+    // Who TestAccess can be asked about: the fixed callers, then each MCP registration.
+    repeated AccessCaller callers = 5;
+}
+
+message AccessCaller {
+    // What TestAccessRequest.caller takes: app, mcp:<registration id>, ...
+    string caller = 1;
+    // For a picker: "Claude Desktop (claude-desktop)".
+    string label = 2;
+}
+
+message PutAccessPolicyRequest {
+    AccessPolicy policy = 1;
+    bool check_only = 2;
+}
+
+message PutAccessPolicyResponse {
+    string message = 1;
+}
+
+message RemoveAccessPolicyRequest {
+    string name = 1;
+}
+
+message RemoveAccessPolicyResponse {
+    string message = 1;
+}
+
+// A stored rule: {name, effect, targets, match, enabled} as JSON (docs/plans/access-policies.md, "Rules").
+message AccessRule {
+    string name = 1;
+    string rule_json = 2;
+    bool enabled = 3;
+    // Content rules (regex, term): documents not yet evaluated against this version of the rule.
+    int64 pending = 4;
+}
+
+message ListAccessRulesRequest {}
+
+message ListAccessRulesResponse {
+    repeated AccessRule rules = 1;
+}
+
+message PutAccessRuleRequest {
+    string rule_json = 1;
+}
+
+message PutAccessRuleResponse {
+    int64 id = 1;
+    string message = 2;
+}
+
+message RemoveAccessRuleRequest {
+    string name = 1;
+}
+
+message RemoveAccessRuleResponse {
+    string message = 1;
+}
+
+message AccessDefault {
+    // A target name or prefix pattern: app, cli, mcp:<registration id>, mcp:*, *.
+    string target = 1;
+    // allow | deny
+    string effect = 2;
+}
+
+message ListAccessDefaultsRequest {}
+
+message ListAccessDefaultsResponse {
+    repeated AccessDefault defaults = 1;
+}
+
+message SetAccessDefaultRequest {
+    string target = 1;
+    // allow | deny; empty clears the target's default.
+    string effect = 2;
+}
+
+message SetAccessDefaultResponse {
+    string message = 1;
+}
+
+message TestAccessRequest {
+    // app | cli | unverified | mcp:unregistered | mcp:<registration id> | door:<registration id>[/<grant>]
+    string caller = 1;
+    // Defaults to the caller's usual transport.
+    string transport = 2;
+    // When set, decide with this module in place of the stored one of the same name (or added, if
+    // none), as an editor's unsaved text would.
+    AccessPolicy draft = 3;
+}
+
+message AccessContentRule {
+    string name = 1;
+    int64 pending = 2;
+}
+
+message TestAccessResponse {
+    string caller_kind = 1;
+    string transport = 2;
+    // The target names the caller goes by, outermost first.
+    repeated string targets = 3;
+    // The stored modules that decided; empty: the built-in one alone.
+    repeated string policies = 4;
+    // data.garage.access.decision, as JSON.
+    string decision_json = 5;
+    repeated AccessContentRule content_rules = 6;
+    // No filter: the caller sees every document.
+    bool sees_everything = 7;
+    string filter_sql = 8;
+    // Each bind parameter of filter_sql, $1 first, as JSON.
+    repeated string filter_params = 9;
+    // The caller's registration, for mcp: and door: callers.
+    string registration_name = 10;
 }
 
 // ---------------------------------------------------------------------------

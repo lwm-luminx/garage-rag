@@ -1,0 +1,28 @@
+load("@rules_rs//rs:rust_library.bzl", "rust_library")
+load("@rules_rs//rs:rust_test.bzl", "rust_test")
+
+# Access policies in Rego (docs/plans/access-policies.md): the policy GarageService holds every read
+# to unless the build's access extension registers its own. Its database tests are garage-service's
+# (tests/access_policies.rs), which need GARAGE_TEST_DATABASE_URL.
+rust_library(
+    name = "garage-access-rego",
+    srcs = glob(["src/**/*.rs"]),
+    compile_data = [
+        "policy/rules.rego",
+        "//data/sql:027_access_policies.sql",
+    ],
+    crate_name = "garage_access_rego",
+    edition = "2024",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//rust/garage-access",
+        "@crates//:regorus",
+        "@crates//:serde_json",
+        "@crates//:tokio-postgres",
+    ],
+)
+
+rust_test(
+    name = "garage-access-rego-test",
+    crate = ":garage-access-rego",
+)

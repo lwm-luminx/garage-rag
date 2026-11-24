@@ -87,6 +87,8 @@ Most Rust tests need no database. The ones that do run against real Postgres + p
   socket and a port, the operations, the facts listing and the graph (its graph cases run only where
   the server has AGE: `apt install postgresql-16-age` on a Linux dev box; CI's image has none),
   clustering and fact enrichment.
+- `access_policies.rs` beside them: the Rego access policies through a plain build's GarageService, the
+  access calls included.
 - `rust/garage-cli/tests/cli.rs`: the end-to-end test. It runs the real `garage` and `garage-mcp`
   binaries, each as a child process, over the UI tests' fixture corpus
   (`macapp/Tests/Fixtures/corpus`): `init-db`, `register-model`, `add-source`, `scan`, `ingest`,
@@ -623,10 +625,20 @@ above maps them to crates); the Rust code keeps their names in its docs.
 
 - **Access hooks** (`rust/garage-access`, [docs/plans/access-hooks.md](docs/plans/access-hooks.md)) — every
   corpus read names its `Caller` (the app, `garage`, or an MCP client from `CorpusCaller`) and asks the
-  build's `AccessPolicy` for a `SqlFilter` over `d`/`s`, which goes inside the read's own `WHERE`. Garage
-  ships no policy: a plain build links `rust/garage-access-none` as `garage_access_extension`, and a build
-  with one sets the label flag `//rust/garage-access:extension` (garage-enterprise does). A new
+  `AccessPolicy` for a `SqlFilter` over `d`/`s`, which goes inside the read's own `WHERE`. A new
   GarageService method must be placed in `READ_PATHS` (`garage-service/src/access.rs`), or its test fails.
+- **Access policies** (`rust/garage-access-rego`, [docs/plans/access-policies.md](docs/plans/access-policies.md),
+  Rick 2026-11-24: "Text editor for oss. Visual for enterprise") — the policy every build holds reads to:
+  Rego modules evaluated in-process by regorus once per read, over the stored rules and defaults
+  (`data/sql/027_access_policies.sql`), whose answer (boundaries per target) becomes one `SqlFilter`. With
+  nothing stored a read skips the engine and sees everything; a policy that cannot decide fails the read.
+  GarageService's access calls (`access_ops.rs`: `ListAccessPolicies`, `PutAccessPolicy` with `check_only`,
+  `RemoveAccessPolicy`, rules, defaults, `TestAccess` with an unsaved draft; the writes config-changing),
+  `garage access …` and the Mac app's Access page (a Rego text editor and a Test panel) edit it. An
+  extension can still register another policy (the label flag `//rust/garage-access:extension`, default
+  `rust/garage-access-none`, which registers none), and can add editors to the Access page
+  (`GarageAccessEditor` over `GarageAccessBackend` in `GarageAppExtensionKit`): garage-enterprise's visual
+  rule editor is one, and it lives only there.
 
 Two independent hashes drive idempotency: `source_sha256` (raw bytes — skip unopened) and
 `content_sha256` (extracted text — rebuild chunks when an extractor improves). One DB transaction
@@ -853,7 +865,7 @@ prompts, merged by name with the built-in `default`; `enrich-facts` runs every e
   goes through the same `AppState.addSource` / `registerModel` / `setFactsModel` operations and
   `GarageMCPService` registration as the Sources, Models and MCP pages.
 - The sidebar (`AppSection` / `SidebarGroup` in `Views/ContentView.swift`) puts Status on top, then
-  Configuration (Sources, Models, MCP Server), Data (Documents, Facts, Graph, Search) and Advanced
+  Configuration (Sources, Models, MCP Server, Access), Data (Documents, Facts, Graph, Search) and Advanced
   (Database, Services, Logs); `AppSection`'s cases follow that order, and a unit test holds them together.
   Page wording is kept in plain presentation values beside each view (`StatusPagePresentation`,
   `SourcesPresentation`, `DatabasePresentation`, `MCPServerPresentation`) with unit tests.

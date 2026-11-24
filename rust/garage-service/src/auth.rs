@@ -23,7 +23,7 @@ pub const UNAUTHENTICATED_METHODS: [&str; 1] = ["EnsureLlamaModel"];
 
 /// Methods that write configuration (`garage.json`, an MCP client's config file) or run SQL of the
 /// caller's choosing (`InitDb`); answered only for a caller the server can vouch for.
-pub const CONFIG_CHANGING_METHODS: [&str; 10] = [
+pub const CONFIG_CHANGING_METHODS: [&str; 15] = [
     "InitDb",
     "AddSource",
     "RemoveSource",
@@ -34,6 +34,12 @@ pub const CONFIG_CHANGING_METHODS: [&str; 10] = [
     "SetSetting",
     "McpInstall",
     "McpUninstall",
+    // What callers may read (docs/plans/access-policies.md).
+    "PutAccessPolicy",
+    "RemoveAccessPolicy",
+    "PutAccessRule",
+    "RemoveAccessRule",
+    "SetAccessDefault",
 ];
 
 /// The token in `GARAGE_GRPC_TOKEN`, or none when it is unset or empty.

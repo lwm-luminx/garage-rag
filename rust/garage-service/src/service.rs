@@ -23,6 +23,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status};
 
 use crate::access::{AccessGate, document_condition, installed_policy};
+use crate::access_ops;
 use crate::catalog::{self, ModelRequest};
 use crate::clusters::{self, ChatDistiller, ClusterParams, ClusterProgress, ClusterRun, ClusterSummary, Distill};
 use crate::config::{CONFIG_FILENAME, Config, default_config_path, update_config};
@@ -1670,6 +1671,86 @@ impl GarageServiceTrait for GarageService {
                 })
                 .collect(),
         })
+    }
+
+    async fn list_access_policies(
+        &self,
+        _request: Request<proto::ListAccessPoliciesRequest>,
+    ) -> std::result::Result<Response<proto::ListAccessPoliciesResponse>, Status> {
+        let client = self.client().await?;
+        ok(access_ops::list_policies(&self.access, &client).await?)
+    }
+
+    async fn put_access_policy(
+        &self,
+        request: Request<proto::PutAccessPolicyRequest>,
+    ) -> std::result::Result<Response<proto::PutAccessPolicyResponse>, Status> {
+        let request = request.into_inner();
+        if !request.check_only {
+            self.config_change("PutAccessPolicy")?;
+        }
+        let client = self.client().await?;
+        ok(access_ops::put_policy(&self.access, &client, request).await?)
+    }
+
+    async fn remove_access_policy(
+        &self,
+        request: Request<proto::RemoveAccessPolicyRequest>,
+    ) -> std::result::Result<Response<proto::RemoveAccessPolicyResponse>, Status> {
+        self.config_change("RemoveAccessPolicy")?;
+        let client = self.client().await?;
+        ok(access_ops::remove_policy(&self.access, &client, &request.into_inner().name).await?)
+    }
+
+    async fn list_access_rules(
+        &self,
+        _request: Request<proto::ListAccessRulesRequest>,
+    ) -> std::result::Result<Response<proto::ListAccessRulesResponse>, Status> {
+        let client = self.client().await?;
+        ok(access_ops::list_rules(&self.access, &client).await?)
+    }
+
+    async fn put_access_rule(
+        &self,
+        request: Request<proto::PutAccessRuleRequest>,
+    ) -> std::result::Result<Response<proto::PutAccessRuleResponse>, Status> {
+        self.config_change("PutAccessRule")?;
+        let client = self.client().await?;
+        ok(access_ops::put_rule(&self.access, &client, &request.into_inner().rule_json).await?)
+    }
+
+    async fn remove_access_rule(
+        &self,
+        request: Request<proto::RemoveAccessRuleRequest>,
+    ) -> std::result::Result<Response<proto::RemoveAccessRuleResponse>, Status> {
+        self.config_change("RemoveAccessRule")?;
+        let client = self.client().await?;
+        ok(access_ops::remove_rule(&self.access, &client, &request.into_inner().name).await?)
+    }
+
+    async fn list_access_defaults(
+        &self,
+        _request: Request<proto::ListAccessDefaultsRequest>,
+    ) -> std::result::Result<Response<proto::ListAccessDefaultsResponse>, Status> {
+        let client = self.client().await?;
+        ok(access_ops::list_defaults(&self.access, &client).await?)
+    }
+
+    async fn set_access_default(
+        &self,
+        request: Request<proto::SetAccessDefaultRequest>,
+    ) -> std::result::Result<Response<proto::SetAccessDefaultResponse>, Status> {
+        self.config_change("SetAccessDefault")?;
+        let client = self.client().await?;
+        ok(access_ops::set_default(&self.access, &client, &request.into_inner()).await?)
+    }
+
+    async fn test_access(
+        &self,
+        request: Request<proto::TestAccessRequest>,
+    ) -> std::result::Result<Response<proto::TestAccessResponse>, Status> {
+        let client = self.client().await?;
+        ok(access_ops::test(&self.access, &client, request.into_inner()).await?)
     }
 }
 
