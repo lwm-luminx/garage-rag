@@ -62,16 +62,18 @@ Get Garage from the {% if site.app_store_live %}[Mac App Store]({{ site.app_stor
 
 <h3 id="app-pages">The App's Pages</h3>
 
-The sidebar starts with **Status**, followed by three groups:
+The sidebar starts with **Status** and **Chat**, followed by three groups:
 
 - **Status** — the page to check first.
   - **Health** reads "All systems go", or lists each problem (the database stopped or needing a schema update, the MCP server down, missing disk access, a source that can't be read, no sources or embedding model yet, a helper process that can't be reached or fails its tests) with the button that fixes it and a link to its page.
   - **Library** shows how much of your library is read, indexed and gleaned for facts, with an **Update Everything** button (circling arrows; **Stop** while a run is on, hover for the tooltip); while it updates it shows the current stage and the Scan › Read › Index › Glean trail. Below it are the source, document, chunk, indexed and fact figures, then the **Automatic Updates** box.
+- **Chat** — a conversation with your library. The model on this computer (the **Inference** model) searches and reads your files as it answers and cites what it used; click a citation to open the document.
 - **Configuration**
   - **Sources** — one row per source with its state ("24 items to go", "Up to date", "Needs permission to read this folder") and **Scan & Ingest**, which turns into **Cancel** while the source is queued or running. Anything that cannot be read is listed at the top with the button that fixes it. New sources come from location cards, **Add Folder…** or **Custom Source…**.
   - **Models** — four tabs. **Overall** says whether search is ready, which distillation model is set, and which providers are running. **Embedding** lists your text and image embedding models and the presets you can add. **Distillation** picks the fact model and edits the fact prompts. **Inference** picks the local model that answers `rag_ask`, `rag_agent` and `rag_generate` over MCP (or follows the distillation model). The Providers box's **Built-in engine** row lists the models the built-in engine has loaded, each with **Unload** (the eject symbol).
-  - **MCP Server** — whether the local server is up, the assistants connected to it (**Connect**, **Update**, **Disconnect**), and **Try It** to call the tools the way an assistant does.
-- **Data** — **Documents**, **Facts**, **Graph** and **Search** browse and query what has been indexed.
+  - **MCP Server** — whether the local server is up, the assistants connected to it (**Connect**, **Update**, **Disconnect**), and **Try It** to call the tools the way an assistant does. In the Mac App Store version it also holds **Garage Door** and **Linked Garages**.
+  - **Access** — the access policies every read is held to, written in Rego in a text editor: what each caller may search and which MCP tools an assistant may use. **Test** shows what a caller would see with a draft before you save it. With nothing stored, every caller sees everything.
+- **Data** — **Documents**, **Facts**, **Graph** and **Search** browse and query what has been indexed. The **Graph** page, which shows how documents, people and facts connect, is in the Mac App Store version.
 - **Advanced**
   - **Database** — Postgres status (Start, Restart, Stop), the connection URL, schema updates, corpus counts and size on disk, backups and reset.
   - **Services** — the diagnostics. **Index Manager** shows the background service that runs search and indexing jobs, and what it is doing. **Helper Services** lists every helper process (Built-in Engine runs GGUF models; Image Embeddings runs Core ML image models) with **Test** (a flask), **Restart** (its icon turns yellow when the helper fails a test and red when it cannot be reached) and a chevron for its status report, self tests and crash report. **Service Output**, folded at the bottom, holds their log.

@@ -8,21 +8,21 @@ redirect_from:
 
 # Privacy Policy
 
-**Effective Date:** September 27, 2026  
-**Application:** Garage & GarageApp  
+**Effective Date:** September 27, 2026 (updated for Garage 2.0)  
+**Application:** Garage & GarageApp, Garage Door, Garage Remote  
 **Developer:** Rick Mark-Penwell
 
 ---
 
 ## 1. Overview & Local-First Philosophy
 
-Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5). This website, garagerag.app, uses Google Analytics to count visits; the application does not (section 6).
+Garage is designed from the ground up as a **local-first** personal knowledge indexing and retrieval application. We respect your privacy and have designed the application so that it does not collect, track, or sell user data, and does not transmit your content anywhere except to a model server you configure yourself (section 4), or, if you turn on Garage Door, in answer to the requests you and the assistants you approve make (section 7). The few requests the application makes on its own, to fetch its model list, models you download, and updates, carry none of your data (section 5). This website, garagerag.app, uses Google Analytics to count visits; the application does not (section 6). Garage Door, an optional online service that lets assistants on the web and Garage Remote on your phone reach your Garage, keeps an account for you if you turn it on; section 7 lists exactly what it keeps.
 
 ---
 
 ## 2. Data Collection
 
-Garage does **not** collect personal information from users.
+The Garage application does **not** collect personal information from users. (Garage Door, if you choose to use it, keeps the account details in section 7.)
 
 The application does not collect, store, transmit, or share:
 - Names or identity data
@@ -55,8 +55,9 @@ If you allow Garage to access your Contacts, it uses the names there to show peo
 
 Garage does not send your content to third-party services, and contains no client for any cloud AI service:
 
-- **Text recognition (OCR)** in images uses Tesseract on your device. There is no cloud fallback.
+- **Text recognition (OCR)** in images uses Apple's Vision framework on a Mac, and Tesseract elsewhere, on your device. There is no cloud fallback.
 - **Language models** for embeddings, fact extraction, and answers run in the application itself, or in a model server you run yourself (Ollama or LM Studio), on your device by default. If you configure an Ollama or LM Studio server on another computer, Garage sends the text it needs to process to that server and to no other address, and never sends private communications (Messages, Mail) to a server that is not on your device.
+- **Your own model provider (optional).** If you use Garage Door, add a key for a model provider such as OpenAI, and set your account's privacy level to *private with public providers*, then Garage can answer with that provider, for example in Garage Remote's Chat: your computer sends the question and the excerpts it found to that provider, under the provider's terms. Your computer, not Garage Door, makes that request, and it never sends Messages or Mail to it.
 
 If you connect an MCP client such as Claude Desktop or Claude Code to Garage, the search results and document excerpts Garage returns to that client are then handled by that client and its provider under their own terms and privacy policies. Garage itself sends nothing to that client's provider; the client decides what it does with what it receives. Many clients send what they receive, together with your conversation, to their own cloud model provider, and that can include excerpts from Messages and Mail if you have indexed them. By default Garage's MCP server is reachable only from your own device; if you start it with `--allow-remote` to serve clients on other computers, it sends those results and excerpts to them over your network.
 
@@ -64,11 +65,13 @@ If you connect an MCP client such as Claude Desktop or Claude Code to Garage, th
 
 ## 5. Network Requests the Application Makes
 
-Apart from the model server you configure (section 4), Garage connects to the internet only for the following. None of these requests contains your documents, communications, search queries, or any identifier for you or your device.
+Apart from the model server you configure (section 4), Garage connects to the internet only for the following. The first three never contain your documents, communications, search queries, or any identifier for you or your device.
 
 - **Model list.** Each time it starts, GarageApp downloads the current list of recommended models (`https://garagerag.app/.data/models.json`) so its Models page and setup assistant can offer them. The request is an ordinary HTTPS download of a public file; it sends no data about you or your library.
 - **Model downloads.** When you choose to download a model, GarageApp downloads that model file from Hugging Face (`huggingface.co` and the download servers it redirects to). It downloads nothing until you ask.
 - **Update checks (website download only).** The version of GarageApp downloaded from this website can check `https://garagerag.app/appcast.xml` for new versions. It checks automatically only if you agree when it first asks. The App Store version gets updates from the App Store instead and makes no update checks of its own.
+- **Garage Door (only if you turn it on).** Your computer keeps one encrypted outbound connection to `door.garagerag.app` and answers, through it, the requests that you and the assistants you approve make. See section 7.
+- **Dropbox (only if you add a Dropbox source).** Garage lists and downloads that folder's files from Dropbox's API (`api.dropboxapi.com`, `content.dropboxapi.com`) with your Dropbox sign-in, which is kept on your computer.
 
 Like any server, garagerag.app (hosted on GitHub Pages) and Hugging Face receive the network information that every web request carries, such as your IP address and the app's user agent, and handle it under their own privacy policies. Garage does not receive or keep that information.
 
@@ -84,7 +87,29 @@ This applies to the website only. GarageApp and the `garage` tools contain no an
 
 ---
 
-## 7. Security & Access Control
+## 7. Garage Door and Garage Remote (optional)
+
+Garage Door is an online service at `door.garagerag.app` that lets the assistants you approve, and Garage Remote on your iPhone or iPad, reach your Garage. You turn it on from Garage on your computer; nothing in it is needed to use Garage there. It runs on Heroku.
+
+**What Garage Door keeps about you:**
+
+- **Your account.** The identifier Sign in with Apple gives it, and the email address and name Apple shares (Apple can give a private relay address instead). If you also link Google or Microsoft as a way to sign in, their identifier and email address for you.
+- **Your computers and devices.** The name you give each computer, a one-way digest of its connection key, its public keys, and when it was last connected; the certificates of phones you pair.
+- **Assistants you approve.** Each assistant's name and one-way digests of its tokens, so you can see and revoke it.
+- **Your plan.** Your subscription's state, with the App Store's transaction identifier or your Stripe customer and subscription identifiers. Apple or Stripe takes the payment; Garage Door never sees your card.
+- **Your settings.** Your account's privacy level, and keys you choose to hand between your own computers (a Dropbox sign-in, a model provider's key), stored only sealed to your computers' keys, which Garage Door cannot open.
+
+**What it never keeps:** your documents, the questions you or your assistants ask, the answers, tool arguments or results. These pass through in memory on their way between an assistant and your computer and are not stored, logged or cached. For each request the service logs only which door, which method, the status and the time.
+
+**Encryption.** Connections to Garage Door use TLS. Garage Remote, once paired, reaches your computer over a connection sealed end to end, so Garage Door relays only ciphertext it cannot read. Assistants on the web are not end to end: their requests are decrypted at Garage Door on the way through, and not kept.
+
+**Garage Remote** keeps its conversations and its sign-in on your phone. Your library stays on your computer.
+
+**Deleting your account.** Delete Account in Garage, or on your account page at `door.garagerag.app`, removes your account and everything above from Garage Door at once, and revokes Garage Door's Sign in with Apple authorization. An App Store subscription is cancelled in your Apple account settings.
+
+---
+
+## 8. Security & Access Control
 
 - **Keychain Security**: Database superuser passwords and optional API tokens (e.g., LM Studio API keys) are stored securely in the native **macOS Keychain**.
 - **Loopback by default**: By default the embedded HTTP MCP server binds only to `127.0.0.1` and refuses remote clients, and it checks the Host and Origin headers so web pages cannot reach your corpus. Serving other computers takes an explicit opt-in for power users, `--allow-remote`; with it, and with no `--allow-host`, the Host check is off.
@@ -92,19 +117,19 @@ This applies to the website only. GarageApp and the `garage` tools contain no an
 
 ---
 
-## 8. Children's Privacy
+## 9. Children's Privacy
 
-Garage does not knowingly collect information from children or any other users. Because the application does not collect personal data, it does not knowingly collect personal data from children under 13 or the equivalent minimum age in other jurisdictions.
+Garage is not directed to children. The application collects no personal data, and Garage Door does not knowingly keep an account for a child under 13 or the equivalent minimum age in other jurisdictions.
 
 ---
 
-## 9. Changes to This Policy
+## 10. Changes to This Policy
 
 This Privacy Policy may be updated from time to time. Any material updates will be published to this website and included with subsequent application releases.
 
 ---
 
-## 10. Contact
+## 11. Contact
 
 If you have questions about this Privacy Policy or our local-first security architecture, please reach out:
 

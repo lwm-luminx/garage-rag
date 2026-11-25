@@ -33,6 +33,10 @@ app_store_url: "https://apps.apple.com/app/id6811306880"
 # Windows as "coming soon". Set it here once a Windows build is published and every entry point lights up.
 windows_alpha_url: ""
 
+# Whether Garage 2.0 is out (on the Mac App Store and as a GitHub release). While it is false, the home page's 2.0
+# section, Garage Pro and Garage Door say "Coming in Garage 2.0"; set it to true on release day and they say "New".
+release_2_live: false
+
 # Garage Pro and Garage Door (/pro/, /door/). door_url is the account site, which Garage Door's gateway serves.
 # While door_live is false, both pages say Garage Door is in testing and the Pro plan shows "Coming soon" instead
 # of a subscribe button. Set it once the App Store version with Garage Door is on sale. The prices are the Door
