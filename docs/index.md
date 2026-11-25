@@ -68,13 +68,69 @@ structured_data:
   </div>
 </div>
 
+<h2 id="garage-2">{% if site.release_2_live %}New in Garage 2.0{% else %}Coming in Garage 2.0{% endif %}</h2>
+
+<p>Garage 2.0 is about reaching your library from anywhere without moving it off your computer, and about talking with it.{% unless site.release_2_live %} It's in final review now.{% endunless %}</p>
+
+<div class="grid">
+  <div class="card">
+    <span class="card-icon">💬</span>
+    <h3>Chat with your library</h3>
+    <p>A Chat page, right below Status, holds a conversation with your files. The model on your computer searches and reads your library as it goes, and cites what it used.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">📱</span>
+    <h3>Garage Remote, for iPhone and iPad</h3>
+    <p>Search, read and chat with your Garage from your phone. Pair it with a QR code and a matching code; it reaches your computer over a connection sealed end to end, and holds no copy of your library. Android is in testing.</p>
+    <a href="{{ '/pro/' | relative_url }}" class="card-link">Part of Garage Pro →</a>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🚪</span>
+    <h3>Claude and ChatGPT on the web</h3>
+    <p>Garage Door gives your account one MCP address for the assistants you use on the web, and plugins for Claude and Codex with that address inside. Your computer dials out, so nothing on it listens, and the door keeps nothing you search for.</p>
+    <a href="{{ '/door/' | relative_url }}" class="card-link">How Garage Door works →</a>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🕸️</span>
+    <h3>See how it connects</h3>
+    <p>A Graph page in the Mac App Store version shows how documents, people and the facts Garage distilled from them connect, and the Facts page links straight into it.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🔦</span>
+    <h3>Spotlight, both ways</h3>
+    <p>Garage reads more kinds of document, such as RTF, older Word files and OpenDocument, with the Mac's own Spotlight importers, and your document titles and facts show up in Spotlight. Never your messages, never document text.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">📦</span>
+    <h3>Dropbox, read directly</h3>
+    <p>In the Mac App Store version, add a Dropbox folder as a source and Garage reads it straight from Dropbox's own service. Its sign-in is kept on your computer; Garage Door only passes it along, sealed.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🔐</span>
+    <h3>Access rules you can read <span class="pro-status">Open source</span></h3>
+    <p>Write what each assistant may search, and which tools it may call, as a policy in Rego on the new Access page, and try it in the Test panel before you save. Your computer enforces it on every search.</p>
+  </div>
+
+  <div class="card">
+    <span class="card-icon">🦀</span>
+    <h3>Rebuilt in Rust</h3>
+    <p>The indexer, search, the MCP server and the command line are now Rust, with the same library carried over. A damaged file is skipped and remembered instead of stopping the run.</p>
+  </div>
+</div>
+
 ## What Garage does
 
 <div class="grid">
   <div class="card">
     <span class="card-icon">🗂️</span>
     <h3>Indexes what you already have</h3>
-    <p>Folders, git repositories, Markdown, PDF, Office documents, scanned images and Apple Messages and Mail, parsed into searchable {% include term.html term="chunk" text="chunks" %} in a private PostgreSQL database.</p>
+    <p>Folders, git repositories, Dropbox, Markdown, PDF, Office documents, scanned images and Apple Messages and Mail, parsed into searchable {% include term.html term="chunk" text="chunks" %} in a private PostgreSQL database.</p>
   </div>
 
   <div class="card">
@@ -177,7 +233,7 @@ Garage walks the sources you register, extracts text, decides who wrote each doc
   <div>
     <span class="edition-lockup"><span>Garage</span><span class="edition-lockup-edition">Pro</span></span>{% unless site.door_live %} <span class="edition-badge">Coming soon</span>{% endunless %}
     <h2 id="pro-teaser-title">Your Garage, from anywhere</h2>
-    <p>Garage Pro adds Garage Door: Claude and ChatGPT on the web, and Garage on your phone, search your Garage while your files and index stay on your own computers. Nothing on your computer listens, and the door keeps none of what passes through.</p>
+    <p>Garage Pro adds Garage Door: Claude and ChatGPT on the web, and Garage Remote on your iPhone and iPad, search your Garage while your files and index stay on your own computers. Nothing on your computer listens, and the door keeps none of what passes through.</p>
     <div class="hero-actions download-actions">
       <a href="{{ '/pro/' | relative_url }}" class="btn btn-primary">See Garage Pro</a>
       <a href="{{ '/door/' | relative_url }}" class="btn btn-secondary">How Garage Door works</a>

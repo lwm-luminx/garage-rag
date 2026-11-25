@@ -18,7 +18,7 @@ redirect_from:
 <details open>
   <summary>What is Garage?</summary>
   <div class="faq-content">
-    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for your computer: a native macOS app, a <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a>, and a command line for <a href="{{ '/linux.html' | relative_url }}">Linux</a>. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code.</p>
+    <p><strong>Garage</strong> is a local-first personal Retrieval-Augmented Generation (RAG) and knowledge indexing engine for your computer: a native macOS app, a <a href="{{ '/windows.html' | relative_url }}">Windows alpha</a>, and a command line for <a href="{{ '/linux.html' | relative_url }}">Linux</a>. It indexes your documents, notes, codebases, and communications locally using PostgreSQL and <code>pgvector</code>, providing hybrid semantic/keyword search via the Model Context Protocol (MCP 2.0) to local and desktop AI assistants like Claude Desktop and Claude Code. Its Chat page lets you talk with your library directly, and with <a href="{{ '/door/' | relative_url }}">Garage Door</a> in the Mac App Store version, Claude and ChatGPT on the web and Garage Remote on your iPhone or iPad can reach it too, while your files and the index stay on your computer.</p>
   </div>
 </details>
 
@@ -26,6 +26,7 @@ redirect_from:
   <summary>Is Garage completely open-source and free to use?</summary>
   <div class="faq-content">
     <p>Yes. Garage is licensed under the permissive MIT License. You have complete freedom to inspect the source code, run it locally, and adapt it to your workflow.</p>
+    <p>Two things sit beside it and are not open source: <a href="{{ '/door/' | relative_url }}">Garage Door</a>, the service that lets assistants on the web and your phone reach your Garage (free for one computer and two assistants, with <a href="{{ '/pro/' | relative_url }}">Garage Pro</a> as the paid plan), and the Garage Remote phone app. Neither is needed to use Garage on your own computer.</p>
   </div>
 </details>
 
@@ -49,13 +50,14 @@ redirect_from:
       <li><strong>Fully private, on your computer:</strong> with the built-in llama.cpp and Core ML engines on macOS, or LM Studio or Ollama on this computer, and an agent that runs its model locally, nothing leaves the machine.</li>
       <li><strong>Private AI on your own network:</strong> with an Ollama or LM Studio server on another machine, documents and code go to that one server and nowhere else. Messages and Mail stay on this computer even then.</li>
     </ul>
-    <p>Garage itself sends nothing to the cloud, and that is enforced by tests rather than by convention:</p>
+    <p>Garage itself sends your content to no cloud AI service, and that is enforced by tests rather than by convention:</p>
     <ul>
       <li><strong>No cloud AI client:</strong> An automated scan of every source file fails the build if any module imports a cloud AI SDK, and the dependency lockfile must contain none.</li>
-      <li><strong>One egress choke point, one allowlist:</strong> Every outbound connection is built by a single tested module, and goes only to this computer or to the Ollama / LM Studio server you configure. Anything else is refused.</li>
-      <li><strong>Local OCR:</strong> Text in images is recognized with Tesseract on your computer. There is no cloud fallback.</li>
+      <li><strong>One egress choke point, one allowlist:</strong> Every request that carries your content to a model goes through a single tested module, and only to this computer or to the Ollama / LM Studio server you configure. Anything else is refused.</li>
+      <li><strong>Local OCR:</strong> Text in images is recognized on your computer, with Apple's Vision on the Mac and Tesseract elsewhere. There is no cloud fallback.</li>
       <li><strong>Communications stay local:</strong> Content classified as <code>communication</code> (e.g., Messages, Mail) is never sent to a server that is not on this computer, even one you configured.</li>
     </ul>
+    <p>With <a href="{{ '/door/' | relative_url }}">Garage Door</a> turned on, your computer also keeps one outbound connection to the door, which carries the requests you and the assistants you approve make, and stores and logs none of what passes through. A Dropbox source is read straight from Dropbox. And if you add your own model provider's key and set your account to <em>private with public providers</em>, your computer sends a question and the excerpts it found to that provider; Messages and Mail never go to it.</p>
   </div>
 </details>
 
@@ -86,9 +88,11 @@ redirect_from:
       <li><strong>PDF Documents:</strong> Fast native extraction, with automatic page-level escalation for embedded tables and scanned pages.</li>
       <li><strong>Office Documents:</strong> Word (<code>.docx</code>), PowerPoint (<code>.pptx</code>), and Excel (<code>.xlsx</code>).</li>
       <li><strong>Source Code & Config:</strong> <code>.py</code>, <code>.swift</code>, <code>.ts</code>, <code>.rs</code>, <code>.go</code>, <code>.json</code>, <code>.yaml</code>, <code>.toml</code>, etc.</li>
-      <li><strong>Images & Scans:</strong> Local OCR via Tesseract (PNG, JPEG, TIFF, HEIC and more), plus Core ML image embeddings (such as <code>siglip2-base-256</code> on the Apple Neural Engine) when image indexing is enabled so a text search can also find photos, screenshots and diagrams without words in them.</li>
+      <li><strong>Other documents on the Mac:</strong> RTF, older Word (<code>.doc</code>), OpenDocument and other types the Mac's own Spotlight importers read.</li>
+      <li><strong>Images & Scans:</strong> Local OCR with Apple's Vision on the Mac and Tesseract elsewhere (PNG, JPEG, TIFF, HEIC and more), plus Core ML image embeddings (such as <code>siglip2-base-256</code> on the Apple Neural Engine) when image indexing is enabled so a text search can also find photos, screenshots and diagrams without words in them.</li>
       <li><strong>Communications:</strong> Apple Messages (<code>chat.db</code>, one document per conversation) and Apple Mail (<code>.emlx</code>) or <code>.eml</code> messages.</li>
     </ul>
+    <p>Besides folders and git repositories on your computer, the Mac App Store version can read a Dropbox folder straight from Dropbox.</p>
   </div>
 </details>
 
@@ -140,5 +144,19 @@ redirect_from:
       <li><code>rag_agent</code>: Let the same local model search and read the corpus itself with the tools above, in a loop, and answer; the result lists the steps it took and the documents it saw. This is what "Ask Garage" in the menu bar runs.</li>
       <li><code>rag_generate</code>: Send a raw prompt to the same local model, with no retrieval.</li>
     </ul>
+  </div>
+</details>
+
+<details>
+  <summary>Can I choose what each assistant may search?</summary>
+  <div class="faq-content">
+    <p>Yes. The <strong>Access</strong> page holds access policies written in Rego: what each caller (the app, the <code>garage</code> command, or a named MCP client) may read, and which MCP tools an assistant may list and call. Its <strong>Test</strong> panel shows what a caller would see before you save. With no policy stored, every caller sees everything, as before. A policy that can't decide fails the read rather than letting it through.</p>
+  </div>
+</details>
+
+<details>
+  <summary>Can Claude or ChatGPT on the web use Garage?</summary>
+  <div class="faq-content">
+    <p>Yes, through <a href="{{ '/door/' | relative_url }}">Garage Door</a>{% unless site.release_2_live %}, arriving with Garage 2.0 in the Mac App Store{% endunless %}. Your account gets one MCP address to add as a connector, and your computer dials out to the door, so nothing on it listens. Assistants on your own computer don't need it: they connect to Garage directly.</p>
   </div>
 </details>

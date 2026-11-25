@@ -12,7 +12,7 @@ permalink: /door/
     <a href="{{ '/pro/' | relative_url }}" class="btn btn-primary btn-large">Garage Pro and pricing</a>
     <a href="{{ site.door_url }}/sign-in" class="btn btn-secondary btn-large">Sign in to your account</a>
   </div>
-  {% unless site.door_live %}<p class="download-meta"><span class="edition-badge">In testing</span> Garage Door arrives in a coming update of the Mac App Store version.</p>{% endunless %}
+  {% unless site.door_live %}<p class="download-meta"><span class="edition-badge">In testing</span> Garage Door arrives with Garage 2.0 in the Mac App Store.</p>{% endunless %}
 </div>
 
 ## How it works
@@ -60,7 +60,7 @@ permalink: /door/
 
 <div class="callout callout-info">
   <div class="callout-title">How private is it, honestly?</div>
-  <p>For Claude and ChatGPT on the web, the connection is encrypted between the assistant and the door, and between the door and your computer, so the door's servers handle each request in memory on the way through. They keep none of it, but it is not end-to-end encryption. Garage Remote, the iPhone and iPad app, is still in development and is not end to end yet. It gets end-to-end encryption before it is released, so the door will relay only ciphertext it cannot read. Either way, an assistant gets only the excerpts it searches for, never your whole library.</p>
+  <p>For Claude and ChatGPT on the web, the connection is encrypted between the assistant and the door, and between the door and your computer, so the door's servers handle each request in memory on the way through. They keep none of it, but it is not end-to-end encryption. Garage Remote, the iPhone and iPad app, is different: once you pair it, it reaches your computer over a connection sealed end to end, and the door relays only ciphertext it cannot read. Either way, an assistant gets only the excerpts it searches for, never your whole library.</p>
 </div>
 
 ## Your privacy level
@@ -70,7 +70,7 @@ One setting for your whole account decides what Garage Door may do. Each level k
 <ol class="privacy-levels">
   <li><strong>Private node.</strong> Everything stays on each of your computers. Door reaches none of them.</li>
   <li><strong>Private cluster.</strong> Your own computers share with each other through Door, which carries only sealed keys. Nothing reaches them from outside.</li>
-  <li><strong>Private with end-to-end remote.</strong> Garage Remote reaches your computers over a connection sealed end to end, which Door relays and cannot read. Each computer decides whether your phone may also ask its own model; that is off until you turn it on. The sealed connection is still being built: until it ships, Garage Remote connects the way an assistant does, at the next level. <em>Where every new account starts.</em></li>
+  <li><strong>Private with end-to-end remote.</strong> Garage Remote reaches your computers over a connection sealed end to end, which Door relays and cannot read. Each computer decides whether your phone may also ask its own model; that is off until you turn it on. <em>Where every new account starts.</em></li>
   <li><strong>Private with public providers.</strong> Assistants such as Claude and ChatGPT reach your computers through Door, and your computers may send a question and its excerpts to an AI service you connect. Each of these reads what it is sent. Your library stays on your computers, and messages and mail still never leave them for a model.</li>
   <li><strong>Augmented.</strong> Garage's servers help your computers, and Door keeps the keys you give it in its vault.</li>
 </ol>
@@ -87,6 +87,16 @@ You can make your account more private from anywhere, and it takes effect at onc
 <details>
 <summary>Which computers does it work on?</summary>
 <p>Garage Door is built into the Mac App Store version of Garage first. The door itself works with any computer running Garage, and support for others follows the apps.</p>
+</details>
+
+<details>
+<summary>Is there a phone app?</summary>
+<p>Yes: Garage Remote for iPhone and iPad{% unless site.release_2_live %}, arriving with Garage 2.0{% endunless %}. It searches, reads and chats with your Garage over the sealed connection above. Garage Remote for Android is in testing.</p>
+</details>
+
+<details>
+<summary>Is there a plugin for Claude or Codex?</summary>
+<p>Yes. Your Garage Door account builds a Claude plugin and a Codex plugin with your own address inside; download it from your account and install it like any other. Each one is yours alone, so they aren't listed in Anthropic's or OpenAI's directories.</p>
 </details>
 
 <details>
