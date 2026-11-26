@@ -397,6 +397,24 @@
         }
       }
     },
+    "privacy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "type": "string",
+          "enum": [
+            "node",
+            "cluster",
+            "remote",
+            "providers",
+            "augmented"
+          ],
+          "description": "The most this node lets reach it, as Garage's access policy (policy/privacy.rego) holds every read: 'node' (nothing from outside), 'cluster' (adds the owner's linked nodes), 'remote' (adds Garage Remote over Garage Door's sealed stream, end to end), 'providers' (adds hosted assistants such as Claude and ChatGPT through Garage Door) or 'augmented' (adds Garage's servers). The app, garage and assistants on this machine are never kept out. A Garage Door account's own level, when lower, wins for the callers it carries, so the default keeps only Door's level.",
+          "default": "augmented"
+        }
+      }
+    },
     "sources": {
       "type": "array",
       "description": "Sources to index. Declared sources are re-applied on every run; sources present only in the database are left untouched.",

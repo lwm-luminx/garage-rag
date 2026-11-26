@@ -8,6 +8,7 @@ rust_library(
     name = "garage-access-rego",
     srcs = glob(["src/**/*.rs"]),
     compile_data = [
+        "policy/privacy.rego",
         "policy/rules.rego",
         "policy/tools.rego",
         "//data/sql:027_access_policies.sql",

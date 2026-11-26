@@ -9,7 +9,7 @@
 use std::collections::BTreeMap;
 
 use garage_access::{Caller, CallerKind, Registration, SqlValue};
-use garage_access_rego::policy::{BUILTIN_RULES, BUILTIN_TOOLS, Module};
+use garage_access_rego::policy::{BUILTIN_PRIVACY, BUILTIN_RULES, BUILTIN_TOOLS, Module};
 use garage_access_rego::rules::{DOOR_CLIENT, DOOR_CLIENT_HEADER, Effect, Rule};
 use garage_access_rego::{RulesPolicy, store};
 use garage_facade::proto;
@@ -50,7 +50,7 @@ async fn ready(gate: &AccessGate, client: &Client) -> Result<&'static RulesPolic
 pub async fn list_policies(gate: &AccessGate, client: &Client) -> Result<proto::ListAccessPoliciesResponse> {
     let mut response = proto::ListAccessPoliciesResponse {
         // Both built-in modules: the document decision and the tool decision.
-        builtin_rego: format!("{BUILTIN_RULES}\n{BUILTIN_TOOLS}"),
+        builtin_rego: format!("{BUILTIN_RULES}\n{BUILTIN_PRIVACY}\n{BUILTIN_TOOLS}"),
         engine: gate.name().to_owned(),
         editable: gate.rego().is_some(),
         ..Default::default()
