@@ -71,6 +71,8 @@ macro_rules! setting {
 
 const PROVIDERS: &[&str] = &["llama_xpc", "ollama", "lmstudio"];
 const INFERENCE_PROVIDERS: &[&str] = &["", "llama_xpc", "ollama", "lmstudio"];
+/// The privacy levels, most private first (`garage-access-rego`'s `policy/privacy.rego`).
+pub const PRIVACY_LEVELS: &[&str] = &["node", "cluster", "remote", "providers", "augmented"];
 
 /// Every setting the file accepts, in file order (`garage_rag.config.SECTIONS` with each
 /// field's default beside it).
@@ -400,6 +402,14 @@ pub static SECTIONS: &[Setting] = &[
         "",
         "Which inference server runs inference.model, as facts.provider does for facts.model. Empty uses facts.provider."
     ),
+    setting!(
+        "privacy",
+        "level",
+        "privacy_level",
+        Kind::Choice(PRIVACY_LEVELS),
+        "augmented",
+        "The most this node lets reach it, as Garage's access policy (policy/privacy.rego) holds every read: 'node' (nothing from outside), 'cluster' (adds the owner's linked nodes), 'remote' (adds Garage Remote over Garage Door's sealed stream, end to end), 'providers' (adds hosted assistants such as Claude and ChatGPT through Garage Door) or 'augmented' (adds Garage's servers). The app, garage and assistants on this machine are never kept out. A Garage Door account's own level, when lower, wins for the callers it carries, so the default keeps only Door's level."
+    ),
 ];
 
 /// Keys older files may still carry, ignored with a warning (`RETIRED_KEYS`). A section listed
@@ -555,6 +565,12 @@ impl Config {
     /// `database.hnsw_ef_search`.
     pub fn hnsw_ef_search(&self) -> i64 {
         self.integer("hnsw_ef_search")
+    }
+
+    /// `privacy.level` as its number, 1 (`node`) to 5 (`augmented`); an unknown name reads as 1.
+    pub fn privacy_level(&self) -> u8 {
+        let name = self.text("privacy_level");
+        PRIVACY_LEVELS.iter().position(|level| *level == name).map_or(1, |i| u8::try_from(i + 1).unwrap_or(1))
     }
 
     /// `identity.name`, the corpus owner's display name.
@@ -1083,7 +1099,14 @@ mod tests {
         for setting in SECTIONS {
             assert_eq!(config.setting(&setting.name()).unwrap(), setting.default_value());
         }
-        assert_eq!(SECTIONS.len(), 45);
+        assert_eq!(SECTIONS.len(), 46);
+    }
+
+    #[test]
+    fn the_privacy_level_reads_as_its_number() {
+        assert_eq!(Config::default().privacy_level(), 5);
+        assert_eq!(from_json(r#"{"privacy": {"level": "remote"}}"#).unwrap().privacy_level(), 3);
+        assert_eq!(from_json(r#"{"privacy": {"level": "node"}}"#).unwrap().privacy_level(), 1);
     }
 
     #[test]

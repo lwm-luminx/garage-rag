@@ -18,6 +18,13 @@
 //! The same policies decide which MCP tools a caller may list and call (`data.garage.tools.decision`,
 //! `policy/tools.rego`): every tool, unless a stored module in package `garage.tools` adds it to `deny`.
 //!
+//! Garage's privacy levels (`policy/privacy.rego`, `data.garage.privacy.levels.decision`) hold every
+//! caller too: the node's own level (the `privacy.level` setting, [`RulesPolicy::set_privacy_level`]),
+//! lowered by the level a Garage Door caller reports, is a base policy deciding which ways of reaching
+//! the node are open; a stored module in package `garage.privacy` modifies it (`open_routes`,
+//! `close_routes`, `deny`, `withhold_tools`, `grant_tools`). A closed route sees no document and no
+//! tool, whatever package `garage.access` decides.
+//!
 //! GarageService installs [`RulesPolicy`] unless the build's access extension registers a policy of
 //! its own, and its access calls (`ListAccessPolicies`, `PutAccessPolicy`, `TestAccess`, ...) edit
 //! these tables.
@@ -27,12 +34,12 @@ pub mod policy;
 pub mod rules;
 pub mod store;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 
 use garage_access::{AccessError, AccessPolicy, BoxFuture, Caller, Registry, SqlFilter};
 
-use crate::policy::Policy;
+use crate::policy::{PRIVACY_ATTRIBUTES, Policy};
 use crate::rules::{DOOR_CLIENT_HEADER, target_names};
 
 /// What [`RulesPolicy::explain`] found for one caller.
@@ -47,6 +54,8 @@ pub struct Explanation {
     pub content_rules: Vec<String>,
     /// The condition the caller's reads carry; `None`: they see every document.
     pub filter: Option<SqlFilter>,
+    /// The privacy level the caller is held to; its boundaries are also in `decision`.
+    pub privacy: policy::Privacy,
 }
 
 /// Registers the rules as the build's access policy.
@@ -62,18 +71,41 @@ pub struct RulesPolicy {
     /// How long one rule's batch may take; what is left stays pending, and so hidden.
     pub timeout_ms: i64,
     schema_ready: AtomicBool,
+    /// The node's own privacy level, 1 to 5 (`data.garage.settings.privacy_level`).
+    privacy_level: AtomicU8,
     /// The last compiled policy, reused while the stored modules are unchanged.
     compiled: Mutex<Option<Arc<Policy>>>,
 }
 
 impl Default for RulesPolicy {
     fn default() -> Self {
-        Self { batch: 2_000, timeout_ms: 2_000, schema_ready: AtomicBool::new(false), compiled: Mutex::new(None) }
+        Self {
+            batch: 2_000,
+            timeout_ms: 2_000,
+            schema_ready: AtomicBool::new(false),
+            privacy_level: AtomicU8::new(policy::MOST_OPEN_LEVEL),
+            compiled: Mutex::new(None),
+        }
     }
 }
 
 impl RulesPolicy {
     pub const NAME: &'static str = "rego";
+
+    /// Sets the node's own privacy level (the `privacy.level` setting), 1 to 5, for the next read.
+    /// Anything else is kept as given, and the policy reads it as the most private level.
+    pub fn set_privacy_level(&self, level: u8) {
+        self.privacy_level.store(level, Ordering::Release);
+    }
+
+    /// The node's own privacy level, before any caller lowers it.
+    pub fn privacy_level(&self) -> u8 {
+        self.privacy_level.load(Ordering::Acquire)
+    }
+
+    fn data(&self, rules: &[store::StoredRule], defaults: &[(String, rules::Effect)]) -> serde_json::Value {
+        policy::data_at(rules, defaults, self.privacy_level())
+    }
 
     async fn decide(&self, client: &tokio_postgres::Client, caller: &Caller) -> Result<Option<SqlFilter>, AccessError> {
         Ok(self.explain(client, caller, true, None).await?.filter)
@@ -102,15 +134,24 @@ impl RulesPolicy {
         let mut modules =
             store::list_policies(client).await.map_err(|e| AccessError::new(format!("reading policies: {e}")))?;
         let targets = target_names(caller);
-        // Nothing stored: the built-in policy would allow every target with no condition, so a read
-        // skips the engine and runs as it did before there were policies.
+        let input = policy::input(caller, &targets);
+        // Nothing stored: the built-in rules would allow every target with no condition, so a read
+        // asks only the privacy level, and with its route open runs as it did before there were
+        // policies.
         if evaluate && draft.is_none() && rules.is_empty() && defaults.is_empty() && modules.is_empty() {
+            let privacy = self
+                .policy(&modules)?
+                .privacy(&input, &self.data(&[], &[]))
+                .map_err(|e| AccessError::new(e.to_string()))?;
+            let decision = policy::Decision { boundaries: privacy.boundaries.clone() };
+            let boundaries = filter::resolve(&decision, &[]).map_err(|e| AccessError::new(e.to_string()))?;
             return Ok(Explanation {
                 policies: Vec::new(),
                 targets,
-                decision: policy::Decision::default(),
+                filter: filter::build(&boundaries),
+                decision,
                 content_rules: Vec::new(),
-                filter: None,
+                privacy,
             });
         }
         let policy = match draft {
@@ -120,9 +161,9 @@ impl RulesPolicy {
             }
             None => self.policy(&modules)?,
         };
-        let decision = policy
-            .decide(&policy::input(caller, &targets), &policy::data(&rules, &defaults))
-            .map_err(|e| AccessError::new(e.to_string()))?;
+        let data = self.data(&rules, &defaults);
+        let decision = policy.decide(&input, &data).map_err(|e| AccessError::new(e.to_string()))?;
+        let privacy = policy.privacy(&input, &data).map_err(|e| AccessError::new(e.to_string()))?;
         let boundaries = filter::resolve(&decision, &rules).map_err(|e| AccessError::new(e.to_string()))?;
         let content = filter::content_rules(&boundaries);
         if evaluate {
@@ -140,12 +181,13 @@ impl RulesPolicy {
             content_rules: content.iter().map(|r| r.rule.name.clone()).collect(),
             filter: filter::build(&boundaries),
             decision,
+            privacy,
         })
     }
 
     /// Which of `tools` `caller` may list and call (`data.garage.tools.decision`), decided with `draft`
-    /// as [`explain`](Self::explain) does. With no stored policy every tool is allowed and the engine
-    /// is not asked: the rules and defaults hold documents, not tools.
+    /// as [`explain`](Self::explain) does. With no stored policy only the privacy level withholds
+    /// tools: the rules and defaults hold documents, not tools, and are not read.
     ///
     /// # Errors
     ///
@@ -160,12 +202,14 @@ impl RulesPolicy {
         self.ready(client).await?;
         let mut modules =
             store::list_policies(client).await.map_err(|e| AccessError::new(format!("reading policies: {e}")))?;
-        if draft.is_none() && modules.is_empty() {
-            return Ok(tools.to_vec());
-        }
-        let rules = store::list_rules(client).await.map_err(|e| AccessError::new(format!("reading rules: {e}")))?;
-        let defaults =
-            store::list_defaults(client).await.map_err(|e| AccessError::new(format!("reading defaults: {e}")))?;
+        let (rules, defaults) = if draft.is_none() && modules.is_empty() {
+            (Vec::new(), Vec::new())
+        } else {
+            (
+                store::list_rules(client).await.map_err(|e| AccessError::new(format!("reading rules: {e}")))?,
+                store::list_defaults(client).await.map_err(|e| AccessError::new(format!("reading defaults: {e}")))?,
+            )
+        };
         let policy = match draft {
             Some(draft) => {
                 modules = store::with_module(modules, draft);
@@ -174,7 +218,7 @@ impl RulesPolicy {
             None => self.policy(&modules)?,
         };
         policy
-            .tools(&policy::tools_input(caller, &target_names(caller), tools), &policy::data(&rules, &defaults))
+            .tools(&policy::tools_input(caller, &target_names(caller), tools), &self.data(&rules, &defaults))
             .map_err(|e| AccessError::new(e.to_string()))
     }
 
@@ -210,7 +254,9 @@ impl AccessPolicy for RulesPolicy {
     }
 
     fn caller_headers(&self) -> Vec<String> {
-        vec![DOOR_CLIENT_HEADER.to_owned()]
+        let mut headers = vec![DOOR_CLIENT_HEADER.to_owned()];
+        headers.extend(PRIVACY_ATTRIBUTES.iter().map(|name| (*name).to_owned()));
+        headers
     }
 
     fn document_filter<'a>(
@@ -244,6 +290,15 @@ mod tests {
         register(&mut registry);
         let policy = registry.into_policy().unwrap();
         assert_eq!(policy.name(), RulesPolicy::NAME);
-        assert_eq!(policy.caller_headers(), ["x-garage-registration"]);
+        assert_eq!(
+            policy.caller_headers(),
+            [
+                "x-garage-registration",
+                "garage-door-route",
+                "garage-door-privacy",
+                "garage-door-scope",
+                "garage-door-inference"
+            ]
+        );
     }
 }

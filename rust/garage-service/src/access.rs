@@ -48,6 +48,11 @@ fn shared_rego() -> &'static Arc<RulesPolicy> {
     REGO.get_or_init(|| Arc::new(RulesPolicy::default()))
 }
 
+/// Holds the process's Rego policy to the node's privacy level (`privacy.level`), from the next read.
+pub fn set_privacy_level(level: u8) {
+    shared_rego().set_privacy_level(level);
+}
+
 /// What a refused or failed policy answer tells the caller: nothing about the corpus.
 const POLICY_FAILED: &str = "the access policy could not decide; nothing was read";
 

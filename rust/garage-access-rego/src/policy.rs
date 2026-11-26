@@ -28,6 +28,18 @@ use crate::store::StoredRule;
 
 /// The built-in policy: the stored rules as Rego.
 pub const BUILTIN_RULES: &str = include_str!("../policy/rules.rego");
+/// The built-in privacy levels, whose boundaries every decision carries.
+pub const BUILTIN_PRIVACY: &str = include_str!("../policy/privacy.rego");
+/// The rule the privacy decision is read from.
+pub const PRIVACY_ENTRY_POINT: &str = "data.garage.privacy.levels.decision";
+/// The caller attributes the privacy levels read, as the node's end of Garage Door sets them
+/// (garage-enterprise's `mcp/src/context.rs`). Each can only lower the level or narrow the route.
+pub const PRIVACY_ATTRIBUTES: [&str; 4] =
+    ["garage-door-route", "garage-door-privacy", "garage-door-scope", "garage-door-inference"];
+/// The privacy decision's package, which stored policies may add modifications to.
+const PRIVACY_PACKAGE: &str = "data.garage.privacy";
+/// The node's level when nothing lowers it: the privacy.level setting's default.
+pub const MOST_OPEN_LEVEL: u8 = 5;
 /// The built-in tool decision, which stored policies extend with `deny` in its package.
 pub const BUILTIN_TOOLS: &str = include_str!("../policy/tools.rego");
 /// The tool decision's package, which stored policies may add `deny` to.
@@ -196,16 +208,73 @@ pub fn tools_input(caller: &Caller, targets: &[String], tools: &[String]) -> Val
     value
 }
 
-/// The data a policy reads: the stored rules and defaults.
+/// The data a policy reads: the stored rules and defaults, with the node at its most open level.
 pub fn data(rules: &[StoredRule], defaults: &[(String, Effect)]) -> Value {
+    data_at(rules, defaults, MOST_OPEN_LEVEL)
+}
+
+/// The data a policy reads: the stored rules and defaults, and the node's own privacy level
+/// (`data.garage.settings.privacy_level`, 1 to 5).
+pub fn data_at(rules: &[StoredRule], defaults: &[(String, Effect)], privacy_level: u8) -> Value {
     json!({
         "garage": {
             "rules": rules.iter().map(|r| r.rule.to_json()).collect::<Vec<_>>(),
             "defaults": defaults.iter().map(|(target, effect)| json!({
                 "target": target, "effect": effect.name(),
             })).collect::<Vec<_>>(),
+            "settings": {"privacy_level": privacy_level},
         }
     })
+}
+
+/// The privacy decision for one caller (`data.garage.privacy.levels.decision`, `policy/privacy.rego`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Privacy {
+    /// The level in effect, 1 to 5: the node's own, lowered by what the caller reported from Door.
+    pub level: u8,
+    /// The level's name (`node`, `cluster`, `remote`, `providers`, `augmented`).
+    pub name: String,
+    /// What the level turns on, lowest first.
+    pub features: Vec<String>,
+    /// How the caller reached the node: `local`, `linked`, `sealed`, `web`, or a route Door named
+    /// that the policy does not know.
+    pub route: String,
+    /// Whether the level lets the caller in at all.
+    pub open: bool,
+    /// What the level holds the caller's reads to; added to every decision.
+    pub boundaries: Vec<Boundary>,
+    /// Tools the level withholds from the caller even when its route is open.
+    pub withheld_tools: Vec<String>,
+}
+
+impl Privacy {
+    fn from_json(value: &Value) -> Result<Self, PolicyError> {
+        let shape = || PolicyError(format!("{PRIVACY_ENTRY_POINT} is malformed"));
+        let strings = |key: &str| -> Result<Vec<String>, PolicyError> {
+            value
+                .get(key)
+                .and_then(Value::as_array)
+                .ok_or_else(shape)?
+                .iter()
+                .map(|v| v.as_str().map(str::to_owned).ok_or_else(shape))
+                .collect()
+        };
+        let boundaries = Decision::from_json(&json!({"boundaries": value.get("boundaries").ok_or_else(shape)?}))?;
+        Ok(Self {
+            level: value
+                .get("level")
+                .and_then(Value::as_u64)
+                .and_then(|n| u8::try_from(n).ok())
+                .filter(|n| (1..=5).contains(n))
+                .ok_or_else(shape)?,
+            name: value.get("name").and_then(Value::as_str).ok_or_else(shape)?.to_owned(),
+            features: strings("features")?,
+            route: value.get("route").and_then(Value::as_str).ok_or_else(shape)?.to_owned(),
+            open: value.get("open").and_then(Value::as_bool).ok_or_else(shape)?,
+            boundaries: boundaries.boundaries,
+            withheld_tools: strings("withheld_tools")?,
+        })
+    }
 }
 
 /// The compiled modules: the built-in rules, the stored modules, and the default entry point when
@@ -236,17 +305,25 @@ impl Policy {
         engine
             .add_policy("builtin/rules.rego".into(), BUILTIN_RULES.into())
             .map_err(|e| PolicyError(format!("the built-in policy: {e}")))?;
+        // The levels' package is the built-in's; stored modules modify a level in its parent
+        // (`data.garage.privacy`: `open_routes`, `deny`, ...).
+        engine
+            .add_policy("builtin/privacy.rego".into(), BUILTIN_PRIVACY.into())
+            .map_err(|e| PolicyError(format!("the built-in privacy levels: {e}")))?;
         let builtin_packages = engine.get_packages().map_err(|e| PolicyError(e.to_string()))?;
         let mut adds_to_tools = false;
+        let mut modifies_privacy = false;
         for module in modules {
             let package = engine
                 .add_policy(format!("{}.rego", module.name), module.rego.clone())
                 .map_err(|e| PolicyError(format!("policy {}: {e}", module.name)))?;
             if builtin_packages.contains(&package) {
-                return Err(PolicyError(format!("policy {}: {package} is the built-in rules' package", module.name)));
+                return Err(PolicyError(format!("policy {}: {package} is a built-in policy's package", module.name)));
             }
             adds_to_tools |= package == TOOLS_PACKAGE;
+            modifies_privacy |= package == PRIVACY_PACKAGE;
         }
+
         // After the stored modules, which may add to its package (`deny`) but not take its decision.
         engine
             .add_policy("builtin/tools.rego".into(), BUILTIN_TOOLS.into())
@@ -271,6 +348,24 @@ impl Policy {
                 Err(e) => return Err(PolicyError(format!("the tool policy: {e}"))),
             }
         }
+        if modifies_privacy {
+            // Tried once now, as for the tools, so a modification that is not a set, or one that takes
+            // a rule of the level's own, fails its Check rather than every read after it is saved.
+            let mut trial = engine.clone();
+            trial.set_input(
+                regorus::Value::from_json_str(r#"{"caller": {"attributes": {}}, "targets": []}"#)
+                    .map_err(|e| PolicyError(e.to_string()))?,
+            );
+            match trial.eval_rule(PRIVACY_ENTRY_POINT.into()) {
+                Ok(regorus::Value::Undefined) => {
+                    return Err(PolicyError(format!(
+                        "{PRIVACY_ENTRY_POINT} is undefined: open_routes, close_routes, deny, withhold_tools and grant_tools must be sets"
+                    )));
+                }
+                Ok(_) => {}
+                Err(e) => return Err(PolicyError(format!("the privacy levels: {e}"))),
+            }
+        }
         if !packages.iter().any(|p| p == PACKAGE) {
             engine
                 .add_policy("builtin/entry.rego".into(), DEFAULT_ENTRY.into())
@@ -289,9 +384,23 @@ impl Policy {
     /// # Errors
     ///
     /// The evaluation fails, runs out of time, or leaves the decision undefined or malformed.
+    /// The privacy level's boundaries come last, whatever the entry point decided: no stored policy
+    /// opens what the level closes.
     pub fn decide(&self, input: &Value, data: &Value) -> Result<Decision, PolicyError> {
         let json = self.eval(ENTRY_POINT, input, data)?;
-        Decision::from_json(&json)
+        let mut decision = Decision::from_json(&json)?;
+        decision.boundaries.extend(self.privacy(input, data)?.boundaries);
+        Ok(decision)
+    }
+
+    /// The privacy decision alone (`policy/privacy.rego`), which [`decide`](Self::decide) and the tool
+    /// decision already include.
+    ///
+    /// # Errors
+    ///
+    /// The evaluation fails, runs out of time, or answers something malformed.
+    pub fn privacy(&self, input: &Value, data: &Value) -> Result<Privacy, PolicyError> {
+        Privacy::from_json(&self.eval(PRIVACY_ENTRY_POINT, input, data)?)
     }
 
     /// The tools `input.tools` names that the caller may list and call, in the order given. A name the
@@ -533,5 +642,187 @@ extra := [{"default": "allow", "deny": [{"corpus_class": "communication"}]}] if 
         let started = std::time::Instant::now();
         assert!(policy.decide(&input, &data(&[], &[])).is_err());
         assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    /// A caller as the node's end of Garage Door makes one (garage-enterprise's `DoorContext::to_caller`).
+    fn door(route: &str, privacy: &str, extra: &[(&str, &str)]) -> Caller {
+        let mut attributes: std::collections::BTreeMap<String, String> =
+            [("garage-door-route", route), ("garage-door-privacy", privacy)]
+                .iter()
+                .chain(extra)
+                .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+                .collect();
+        attributes.retain(|_, v| !v.is_empty());
+        Caller::mcp("http", None).with_attributes(attributes)
+    }
+
+    fn module(rego: &str) -> Module {
+        Module { name: "p".into(), rego: rego.into() }
+    }
+
+    fn privacy_at(caller: &Caller, node: u8) -> Privacy {
+        Policy::builtin().privacy(&input(caller, &target_names(caller)), &data_at(&[], &[], node)).unwrap()
+    }
+
+    fn tools_at(policy: &Policy, caller: &Caller, node: u8) -> Vec<String> {
+        policy.tools(&tools_input(caller, &target_names(caller), &all_tools()), &data_at(&[], &[], node)).unwrap()
+    }
+
+    const ALL: [&str; 8] = [
+        "rag_search",
+        "rag_get_document",
+        "rag_list_sources",
+        "rag_list_authors",
+        "rag_stats",
+        "rag_ask",
+        "rag_generate",
+        "rag_agent",
+    ];
+
+    fn all_tools() -> Vec<String> {
+        ALL.iter().map(|t| (*t).to_owned()).collect()
+    }
+
+    #[test]
+    fn each_level_opens_its_routes_and_keeps_the_ones_below() {
+        // The lowest level each route opens at: linked nodes 2, the sealed stream 3, hosted assistants 4.
+        for (route, lowest) in [("linked", 2), ("sealed", 3), ("web", 4)] {
+            for level in 1..=5u8 {
+                let privacy = privacy_at(&door(route, &level.to_string(), &[]), 5);
+                assert_eq!(privacy.open, level >= lowest, "{route} at {level}");
+                assert_eq!(privacy.level, level);
+                assert_eq!(privacy.route, route);
+                assert_eq!(privacy.boundaries.is_empty(), privacy.open);
+            }
+        }
+        let names: Vec<_> = (1..=5u8).map(|l| privacy_at(&Caller::app(), l).name).collect();
+        assert_eq!(names, ["node", "cluster", "remote", "providers", "augmented"]);
+        assert_eq!(privacy_at(&Caller::app(), 1).features, Vec::<String>::new());
+        assert_eq!(privacy_at(&Caller::app(), 3).features, ["linked_nodes", "remote_access"]);
+        assert_eq!(
+            privacy_at(&Caller::app(), 5).features,
+            ["linked_nodes", "remote_access", "public_providers", "hosted_vault"]
+        );
+    }
+
+    #[test]
+    fn the_node_is_never_closed_to_itself() {
+        for caller in [Caller::app(), Caller::cli(), Caller::unverified(), Caller::mcp("stdio", None), mcp()] {
+            let privacy = privacy_at(&caller, 1);
+            assert_eq!(privacy.route, "local");
+            assert!(privacy.open && privacy.boundaries.is_empty());
+        }
+    }
+
+    #[test]
+    fn a_caller_can_only_lower_the_level() {
+        // The lower of the node's level and the reported one.
+        assert_eq!(privacy_at(&door("web", "5", &[]), 3).level, 3);
+        assert!(!privacy_at(&door("web", "5", &[]), 3).open);
+        assert_eq!(privacy_at(&door("web", "2", &[]), 5).level, 2);
+        // Anything but 1 to 5 reads as the most private.
+        for junk in ["0", "6", "4.0", "four", " 4"] {
+            assert_eq!(privacy_at(&door("sealed", junk, &[]), 5).level, 1, "{junk}");
+        }
+        // So does a node level out of range.
+        assert_eq!(privacy_at(&Caller::app(), 0).level, 1);
+        assert_eq!(privacy_at(&Caller::app(), 9).level, 1);
+        // No report: the node's own level.
+        assert_eq!(privacy_at(&door("sealed", "", &[]), 4).level, 4);
+    }
+
+    #[test]
+    fn a_route_the_policy_does_not_know_opens_at_no_level() {
+        let privacy = privacy_at(&door("satellite", "5", &[]), 5);
+        assert_eq!(privacy.route, "satellite");
+        assert!(!privacy.open);
+        // A Garage Door connector's registration with no route is a hosted assistant's.
+        let connector = Caller::mcp(
+            "http",
+            Some(Registration { id: "d1".into(), name: "Door".into(), client: "garage-door".into() }),
+        );
+        assert_eq!(privacy_at(&connector, 5).route, "web");
+        assert!(privacy_at(&connector, 5).open);
+        assert!(!privacy_at(&connector, 3).open);
+    }
+
+    #[test]
+    fn a_closed_route_sees_nothing_whatever_a_stored_policy_says() {
+        let caller = door("web", "3", &[]);
+        let closed = decide(&Policy::builtin(), &caller, &[], &[]);
+        let last = closed.boundaries.last().unwrap();
+        assert_eq!(last.target, "privacy:web");
+        assert_eq!(last.default, Effect::Deny);
+        assert!(last.allow.is_empty());
+        // A stored entry point that allows everything still carries the level's boundary.
+        let open_door = Policy::new(&[module("package garage.access\n\ndecision := {\"boundaries\": []}\n")]).unwrap();
+        assert_eq!(decide(&open_door, &caller, &[], &[]).boundaries, std::slice::from_ref(last));
+        // A stored module cannot take the level's own rules, only add to its modifications.
+        let taken = Policy::new(&[module("package garage.privacy.levels\n\nopen := true\n")]);
+        assert!(taken.err().unwrap().0.contains("built-in"));
+        let ignored = Policy::new(&[module("package garage.privacy\n\nopen := true\n")]).unwrap();
+        assert!(!ignored.privacy(&input(&caller, &target_names(&caller)), &data(&[], &[])).unwrap().open);
+        let scalar = Policy::new(&[module("package garage.privacy\n\nopen_routes := \"web\"\n")]);
+        assert!(scalar.err().unwrap().0.contains("must be sets"));
+        // Open, the level adds nothing.
+        assert!(decide(&open_door, &door("web", "4", &[]), &[], &[]).boundaries.is_empty());
+    }
+
+    #[test]
+    fn a_closed_route_gets_no_tools_and_a_phone_runs_the_model_only_when_allowed() {
+        let policy = Policy::builtin();
+        assert_eq!(tools_at(&policy, &door("web", "3", &[]), 5), Vec::<String>::new());
+        assert_eq!(tools_at(&policy, &door("web", "4", &[]), 5), all_tools());
+        assert_eq!(tools_at(&policy, &Caller::app(), 1), all_tools());
+        let retrieval = &all_tools()[..5];
+        // A phone gets the retrieval tools, and the node's model only with the ask scope and the switch on.
+        assert_eq!(tools_at(&policy, &door("sealed", "3", &[]), 5), retrieval);
+        let scoped = |scope: &str, inference: &str| {
+            door("sealed", "3", &[("garage-door-scope", scope), ("garage-door-inference", inference)])
+        };
+        assert_eq!(tools_at(&policy, &scoped("search", "1"), 5), retrieval);
+        assert_eq!(tools_at(&policy, &scoped("ask", "0"), 5), retrieval);
+        assert_eq!(tools_at(&policy, &scoped("ask", "1"), 5), all_tools());
+        assert_eq!(privacy_at(&scoped("ask", "0"), 5).withheld_tools, ["rag_agent", "rag_ask", "rag_generate"]);
+        // A stored deny still applies on top.
+        let deny = Policy::new(&[module("package garage.tools\n\ndeny contains \"rag_stats\" if true\n")]).unwrap();
+        assert_eq!(tools_at(&deny, &scoped("ask", "1"), 5).len(), 7);
+        assert!(tools_at(&deny, &door("sealed", "2", &[]), 5).is_empty());
+    }
+
+    #[test]
+    fn a_stored_module_modifies_the_base_level() {
+        let modified = Policy::new(&[module(
+            r#"package garage.privacy
+
+import data.garage.privacy.levels
+
+open_routes contains "web" if levels.level >= 3
+close_routes contains "sealed" if levels.level < 5
+close_routes contains "local"
+deny contains {"corpus_class": "communication"} if levels.route == "web"
+withhold_tools contains "rag_agent" if levels.route == "web"
+grant_tools contains "rag_ask" if levels.route == "sealed"
+"#,
+        )])
+        .unwrap();
+        let privacy =
+            |caller: &Caller| modified.privacy(&input(caller, &target_names(caller)), &data_at(&[], &[], 5)).unwrap();
+        // Hosted assistants open a level early, held to the added condition.
+        let web = privacy(&door("web", "3", &[]));
+        assert!(web.open);
+        assert_eq!(web.boundaries.len(), 1);
+        assert_eq!(web.boundaries[0].default, Effect::Allow);
+        assert_eq!(web.boundaries[0].deny, [Condition::Inline(Matcher::CorpusClass(vec!["communication".into()]))]);
+        assert_eq!(web.withheld_tools, ["rag_agent"]);
+        // Phones close until augmented, and get rag_ask back there.
+        assert!(!privacy(&door("sealed", "4", &[])).open);
+        let phone = privacy(&door("sealed", "5", &[]));
+        assert!(phone.open);
+        assert_eq!(phone.withheld_tools, ["rag_agent", "rag_generate"]);
+        // The node is never closed to itself.
+        assert!(privacy(&Caller::app()).open);
+        // Below 3 the base level still keeps assistants out.
+        assert!(!privacy(&door("web", "2", &[])).open);
     }
 }

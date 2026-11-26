@@ -130,6 +130,61 @@ deny contains name if {
 - A tool decides what a client may invoke, not what it may read: `rag_ask` still searches when
   `rag_search` is withheld, and every read is still held to the document decision.
 
+## Privacy levels
+
+Rick (2026-11-25): "build out our privacy levels as Rego and OPA policies", and "this means one sets a
+base policy and can modify it". Garage's five privacy levels (Rick's, 2026-11-12, the Garage Door
+account's privacy slider) are a built-in module, `policy/privacy.rego` (package
+`garage.privacy.levels`), that every read and every tool decision goes through. Each level turns on more
+of what may reach the node and keeps everything below it:
+
+| Level | Name | Opens | Route it lets in |
+|---|---|---|---|
+| 1 | `node`, Private node | nothing from outside | |
+| 2 | `cluster`, Private cluster | `linked_nodes` | `linked`: the owner's own nodes |
+| 3 | `remote`, Private with end-to-end remote | `remote_access` | `sealed`: Garage Remote over Door's sealed stream |
+| 4 | `providers`, Private with public providers | `public_providers` | `web`: hosted assistants (Claude, ChatGPT) through Door |
+| 5 | `augmented`, Augmented | `hosted_vault` | (Garage's servers, none yet) |
+
+- **The caller's route.** The node's end of Garage Door names it in the caller's `garage-door-route`
+  attribute; a Garage Door connector's registration without one is `web`. Everything else is `local`:
+  the app, `garage`, and assistants on the machine over stdio or loopback HTTP, which no level shuts out.
+  A route the module does not know opens at no level.
+- **The level in effect** is the node's own, the `privacy.level` setting (default `augmented`: no cap
+  of the node's own), lowered by the account level Door reports in `garage-door-privacy`. A caller's
+  attributes can only lower the level or narrow its route, never open anything, since any client on the
+  machine can send them; Door also enforces the account's level at the gateway.
+- **A shut route** sees no document (a boundary with a deny default and nothing allowed, added after
+  whatever `data.garage.access.decision` answered) and no tool (`tools.rego` denies them all).
+- **A phone** (`sealed`) gets the retrieval tools, and the node's own model (`rag_ask`, `rag_generate`,
+  `rag_agent`) only with the ask scope and the node's remote inference switch on (`garage-door-scope`,
+  `garage-door-inference`), as `door/docs/e2e.md` has it.
+
+**Modifying a level.** The level is a base policy. A stored module in package `garage.privacy`
+modifies it by adding to five sets, which the levels' decision reads and nothing else:
+
+```rego
+package garage.privacy
+
+import data.garage.privacy.levels
+
+open_routes contains "web" if levels.level >= 3            # hosted assistants a level early
+close_routes contains "sealed" if levels.level < 5         # no phones until augmented
+deny contains {"corpus_class": "communication"} if levels.route == "web"
+withhold_tools contains "rag_agent" if levels.route == "web"
+grant_tools contains "rag_ask" if levels.route == "sealed"  # phones may run the node's model
+```
+
+`close_routes` wins over `open_routes` and `withhold_tools` over `grant_tools`; nothing closes the node
+to itself. `deny` holds an open route to more, with the decision's conditions (a stored rule by name or
+an inline metadata matcher). A set that is not a set fails the module's Check; the levels' own package
+cannot be taken. TestAccess shows the result as a `privacy:<route>` boundary in the decision, and
+`ListAccessPolicies` lists the module beside the built-in rules and tools.
+
+garage-enterprise's node end of Door already sets the four attributes (`mcp/src/context.rs`). Its own
+check of the route against the level, and pushing the account's level into `privacy.level` when Door
+announces it, are its follow-ups.
+
 ## The editor seam
 
 `GarageAppExtensionKit` gains `GarageAccessBackend` (the access calls as plain values) and
@@ -143,3 +198,5 @@ of the app but that protocol, and edits the same rows the text editor and `garag
 - Importing `.rego` files from a folder, and a bundle of policies per library.
 - Hooks on the reads still marked `NotYet` in `READ_PATHS` (facts, the graph, `ListSources`, `GetStats`).
 - Per-argument tool rules (a tool allowed with some arguments only), and the cluster (P5).
+- The privacy level does not yet hold the node's outbound model calls (`garage-embed`'s egress rules,
+  which stay as they are), and no caller arrives on the `linked` route until Linked Garages does.

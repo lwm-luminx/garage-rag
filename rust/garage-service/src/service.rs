@@ -88,6 +88,7 @@ impl GarageService {
         callers_vouched_for: bool,
     ) -> Result<Self> {
         let pool = db::pool_for(&config.database_url())?;
+        crate::access::set_privacy_level(config.privacy_level());
         Ok(Self {
             pool,
             config: RwLock::new(config),
@@ -150,6 +151,7 @@ impl GarageService {
     }
 
     fn replace_config(&self, config: Config) {
+        crate::access::set_privacy_level(config.privacy_level());
         *self.config.write().unwrap_or_else(PoisonError::into_inner) = config;
     }
 

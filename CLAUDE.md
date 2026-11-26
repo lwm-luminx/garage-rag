@@ -635,6 +635,12 @@ above maps them to crates); the Rust code keeps their names in its docs.
   The same engine decides which MCP tools a caller may list and call (`data.garage.tools.decision`,
   `policy/tools.rego`: a stored module adds names to `deny` in package `garage.tools`): garage-mcp asks
   GarageService's `CorpusTools` before `tools/list` and in `Toolbox::call`, and fails closed.
+  Garage's privacy levels are a built-in module of the same engine (`policy/privacy.rego`, package
+  `garage.privacy.levels`, Rick 2026-11-25): the node's `privacy.level` (default `augmented`), lowered by
+  the account level a Garage Door caller reports (`garage-door-privacy`), opens the `linked`, `sealed` and
+  `web` routes at 2, 3 and 4, never shuts out a local caller, and adds its boundary after every decision; a
+  stored module in package `garage.privacy` modifies the base level (`open_routes`, `close_routes`, `deny`,
+  `withhold_tools`, `grant_tools`). Caller attributes only ever lower the level.
   GarageService's access calls (`access_ops.rs`: `ListAccessPolicies`, `PutAccessPolicy` with `check_only`,
   `RemoveAccessPolicy`, rules, defaults, `TestAccess` with an unsaved draft; the writes config-changing),
   `garage access …` and the Mac app's Access page (a Rego text editor and a Test panel) edit it. An

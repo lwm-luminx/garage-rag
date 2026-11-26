@@ -8,7 +8,9 @@
 #
 #     deny contains "rag_agent" if input.caller.kind == "mcp"
 #
-# A tool no policy denies stays available, so with no stored policy every caller has every tool.
+# A tool no policy denies stays available, so with no stored policy every caller has every tool that
+# the privacy level (privacy.rego) gives it: none, when the level keeps the caller's route shut, and
+# not the node's own model for a phone without remote inference.
 package garage.tools
 
 decision := {"allowed": allowed} if {
@@ -23,3 +25,7 @@ valid if not data.garage.tools.deny
 valid if is_set(data.garage.tools.deny)
 
 denied(name) if data.garage.tools.deny[name]
+
+denied(_) if not data.garage.privacy.levels.decision.open
+
+denied(name) if name in data.garage.privacy.levels.decision.withheld_tools

@@ -513,3 +513,102 @@ deny contains name if {
         })
     });
 }
+
+/// A caller as the node's end of Garage Door passes it along (garage-enterprise's `DoorContext::to_caller`).
+fn door_caller(route: &str, privacy: &str) -> Option<proto::CorpusCaller> {
+    Some(proto::CorpusCaller {
+        kind: "mcp".into(),
+        transport: "http".into(),
+        attributes: [("garage-door-route", route), ("garage-door-privacy", privacy)]
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect(),
+        ..Default::default()
+    })
+}
+
+#[test]
+fn a_privacy_level_is_a_base_policy_a_stored_module_modifies() {
+    with_db(|pool, url| {
+        Box::pin(async move {
+            let db = pool.get().await.unwrap();
+            let notes = source(&db, "notes").await;
+            document(&db, notes, "plan", "harbour plan", "document").await;
+            document(&db, notes, "chat", "harbour chat", "communication").await;
+            let Running { mut client, stop, task } = start(&url).await;
+            let offered: Vec<String> = garage_mcp::tools::tool_names();
+            let search = |caller: Option<proto::CorpusCaller>| proto::CorpusSearchRequest {
+                caller,
+                query: "harbour".into(),
+                mode: "fts".into(),
+                limit: 20,
+                ..Default::default()
+            };
+            let titles = async |client: &mut Client, caller: Option<proto::CorpusCaller>| -> Vec<String> {
+                let result: Value =
+                    serde_json::from_str(&client.corpus_search(search(caller)).await.unwrap().into_inner().result_json)
+                        .unwrap();
+                let mut titles: Vec<String> = result["hits"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|h| h["title"].as_str().unwrap().to_owned())
+                    .collect();
+                titles.sort();
+                titles
+            };
+            let tools =
+                |caller: Option<proto::CorpusCaller>| proto::CorpusToolsRequest { caller, tools: offered.clone() };
+
+            // Nothing stored: a hosted assistant is in at providers and shut out below it.
+            assert_eq!(titles(&mut client, door_caller("web", "4")).await, ["chat", "plan"]);
+            assert!(titles(&mut client, door_caller("web", "3")).await.is_empty());
+            assert!(client.corpus_tools(tools(door_caller("web", "3"))).await.unwrap().into_inner().allowed.is_empty());
+            assert_eq!(
+                client.corpus_tools(tools(door_caller("web", "4"))).await.unwrap().into_inner().allowed,
+                offered
+            );
+            // The node is never shut to itself.
+            assert_eq!(app_titles(&mut client, "harbour").await, ["chat", "plan"]);
+
+            // A modification: assistants a level early, without communications.
+            let rego = r#"package garage.privacy
+
+import data.garage.privacy.levels
+
+open_routes contains "web" if levels.level >= 3
+
+deny contains {"corpus_class": "communication"} if levels.route == "web"
+"#;
+            let policy = proto::AccessPolicy {
+                name: "assistants-early".into(),
+                rego: rego.into(),
+                enabled: true,
+                ..Default::default()
+            };
+            client
+                .put_access_policy(proto::PutAccessPolicyRequest { policy: Some(policy), check_only: false })
+                .await
+                .unwrap();
+            assert_eq!(titles(&mut client, door_caller("web", "3")).await, ["plan"]);
+            assert_eq!(titles(&mut client, door_caller("web", "4")).await, ["plan"]);
+            assert!(titles(&mut client, door_caller("web", "2")).await.is_empty());
+            assert_eq!(app_titles(&mut client, "harbour").await, ["chat", "plan"]);
+
+            // A modification that is not a set is refused when it is checked.
+            let scalar = proto::AccessPolicy {
+                name: "scalar".into(),
+                rego: "package garage.privacy\n\nopen_routes := \"web\"\n".into(),
+                enabled: true,
+                ..Default::default()
+            };
+            let error = client
+                .put_access_policy(proto::PutAccessPolicyRequest { policy: Some(scalar), check_only: true })
+                .await
+                .unwrap_err();
+            assert_eq!(error.code(), tonic::Code::InvalidArgument, "{error:?}");
+            let _ = stop.send(());
+            task.await.unwrap().unwrap();
+        })
+    });
+}
