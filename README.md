@@ -309,6 +309,10 @@ aspect run //:xcodeproj
 open macapp/Garage.xcodeproj
 ```
 
+## Maintainer
+
+Maintained by [Rick Mark](https://rickmark.me) for Love Wins Media, Inc. I evaluate where dual-use lines are drawn and argue fixes from the defender's side. Security reports: open a private advisory on this repository.
+
 ---
 
 ## License
